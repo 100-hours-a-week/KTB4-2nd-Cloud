@@ -1,0 +1,6 @@
+# Default values for the Yeodam V1 infrastructure.
+# Copy this file to terraform.tfvars only when overriding these values locally.
+
+aws_region         = "ap-northeast-2"
+project_name       = "yeodam"
+deployment_version = "v1"
