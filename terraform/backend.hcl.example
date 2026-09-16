@@ -1,0 +1,4 @@
+# Copy this file to backend.hcl and replace the value with the actual
+# account regional S3 bucket name.
+
+bucket = "yeodam-v1-tfstate-ACCOUNT_ID-ap-northeast-2-an"
