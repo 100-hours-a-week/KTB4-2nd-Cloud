@@ -30,3 +30,36 @@ variable "deployment_version" {
     error_message = "deployment_version must use the form v1, v2, and so on."
   }
 }
+
+variable "vpc_cidr" {
+  description = "IPv4 CIDR block for the Yeodam V1 VPC"
+  type        = string
+  default     = "10.20.0.0/16"
+
+  validation {
+    condition     = var.vpc_cidr == "10.20.0.0/16"
+    error_message = "Yeodam V1 VPC CIDR must be 10.20.0.0/16."
+  }
+}
+
+variable "public_subnet_cidr" {
+  description = "IPv4 CIDR block for the Yeodam V1 public subnet"
+  type        = string
+  default     = "10.20.1.0/24"
+
+  validation {
+    condition     = var.public_subnet_cidr == "10.20.1.0/24"
+    error_message = "Yeodam V1 public subnet CIDR must be 10.20.1.0/24."
+  }
+}
+
+variable "availability_zone" {
+  description = "Availability Zone used for the Yeodam V1 public subnet"
+  type        = string
+  default     = "ap-northeast-2a"
+
+  validation {
+    condition     = var.availability_zone == "ap-northeast-2a"
+    error_message = "Yeodam V1 public subnet must be deployed in ap-northeast-2a."
+  }
+}
