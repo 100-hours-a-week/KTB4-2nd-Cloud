@@ -63,3 +63,47 @@ variable "availability_zone" {
     error_message = "Yeodam V1 public subnet must be deployed in ap-northeast-2a."
   }
 }
+
+variable "ubuntu_ami_id" {
+  description = "Pinned Canonical Ubuntu Server 24.04 LTS AMI ID for V1 EC2 instances"
+  type        = string
+  default     = "ami-086a43496cb46286c"
+
+  validation {
+    condition     = can(regex("^ami-[0-9a-f]{17}$", var.ubuntu_ami_id))
+    error_message = "ubuntu_ami_id must be a valid EC2 AMI ID."
+  }
+}
+
+variable "app_instance_type" {
+  description = "EC2 instance type for the Yeodam V1 App server"
+  type        = string
+  default     = "t3.medium"
+
+  validation {
+    condition     = var.app_instance_type == "t3.medium"
+    error_message = "The Yeodam V1 App EC2 instance type must be t3.medium."
+  }
+}
+
+variable "app_root_volume_size" {
+  description = "Root EBS volume size in GiB for the V1 App EC2 instance"
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.app_root_volume_size == 30
+    error_message = "The V1 App EC2 root volume size must be 30 GiB."
+  }
+}
+
+variable "mysql_data_volume_size" {
+  description = "MySQL data EBS volume size in GiB"
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.mysql_data_volume_size == 10
+    error_message = "The V1 MySQL data volume size must be 10 GiB."
+  }
+}
