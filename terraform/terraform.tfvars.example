@@ -4,3 +4,7 @@
 aws_region         = "ap-northeast-2"
 project_name       = "yeodam"
 deployment_version = "v1"
+
+vpc_cidr          = "10.20.0.0/16"
+public_subnet_cidr = "10.20.1.0/24"
+availability_zone = "ap-northeast-2a"
