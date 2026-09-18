@@ -62,3 +62,28 @@ output "worker_instance_profile_name" {
   description = "Name of the Yeodam V1 Worker EC2 instance profile"
   value       = aws_iam_instance_profile.worker.name
 }
+
+output "app_instance_id" {
+  description = "ID of the Yeodam V1 App EC2 instance"
+  value       = aws_instance.app.id
+}
+
+output "app_private_ip" {
+  description = "Private IPv4 address of the Yeodam V1 App EC2 instance"
+  value       = aws_instance.app.private_ip
+}
+
+output "app_elastic_ip" {
+  description = "Elastic IPv4 address of the Yeodam V1 App EC2 instance"
+  value       = aws_eip.app.public_ip
+}
+
+output "mysql_data_volume_id" {
+  description = "ID of the Yeodam V1 MySQL data EBS volume"
+  value       = aws_ebs_volume.mysql_data.id
+}
+
+output "mysql_data_device_name" {
+  description = "Requested EC2 attachment device name for the MySQL data volume"
+  value       = aws_volume_attachment.mysql_data.device_name
+}

@@ -8,3 +8,8 @@ deployment_version = "v1"
 vpc_cidr          = "10.20.0.0/16"
 public_subnet_cidr = "10.20.1.0/24"
 availability_zone = "ap-northeast-2a"
+
+ubuntu_ami_id         = "ami-086a43496cb46286c"
+app_instance_type     = "t3.medium"
+app_root_volume_size  = 30
+mysql_data_volume_size = 10
