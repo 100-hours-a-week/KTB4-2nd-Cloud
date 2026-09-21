@@ -1,0 +1,36 @@
+name: yeodam-ai-worker
+
+services:
+  ai-worker:
+    image: "${AI_IMAGE:-yeodam-ai-worker:local}${AI_DIGEST:+@${AI_DIGEST}}"
+    platform: linux/amd64
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    # App EC2(BE)가 사설 IP:8000으로 호출 — loopback 아님. worker SG의 app→8000 ingress로 접근 제한
+    ports:
+      - "8000:8000"
+    environment:
+      API_KEY: "${API_KEY:?API_KEY is required}"        # BE의 AI_SERVER_API_KEY와 동일 값
+      S3_BUCKET: "${S3_BUCKET:?S3_BUCKET is required}"   # IMAGE_SOURCE=s3라 필요, Worker 인스턴스 역할로 읽음
+      FAKE_PIPELINE: "${FAKE_PIPELINE:-0}"               # 0=실제 siglip2, 1=가짜
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      # MODEL_PATH, QDRANT_*, IMAGE_SOURCE, WORKER/API_URL, AWS_REGION, MAX_* 등은 Dockerfile ENV에 이미 baked
+    volumes:
+      - qdrant-data:/data                               # Qdrant 스토리지 영속 (컨테이너가 /data/qdrant/* 에 씀)
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  qdrant-data:
