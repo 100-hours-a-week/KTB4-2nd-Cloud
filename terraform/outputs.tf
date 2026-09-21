@@ -87,3 +87,13 @@ output "mysql_data_device_name" {
   description = "Requested EC2 attachment device name for the MySQL data volume"
   value       = aws_volume_attachment.mysql_data.device_name
 }
+
+output "app_data_bucket_name" {
+  description = "Name of the private Yeodam V1 application data S3 bucket"
+  value       = aws_s3_bucket.app_data.id
+}
+
+output "app_data_bucket_arn" {
+  description = "ARN of the private Yeodam V1 application data S3 bucket"
+  value       = aws_s3_bucket.app_data.arn
+}
