@@ -97,3 +97,13 @@ output "app_data_bucket_arn" {
   description = "ARN of the private Yeodam V1 application data S3 bucket"
   value       = aws_s3_bucket.app_data.arn
 }
+
+output "worker_instance_id" {
+  description = "ID of the Yeodam V1 Worker EC2 instance"
+  value       = aws_instance.worker.id
+}
+
+output "worker_private_ip" {
+  description = "Private IPv4 address of the Yeodam V1 Worker EC2 instance"
+  value       = aws_instance.worker.private_ip
+}
