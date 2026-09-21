@@ -118,7 +118,7 @@ data "aws_iam_policy_document" "worker_s3" {
     ]
 
     resources = [
-      "${aws_s3_bucket.app_data.arn}/*",
+      "${aws_s3_bucket.app_data.arn}/trip-uploads/*",
     ]
   }
 }

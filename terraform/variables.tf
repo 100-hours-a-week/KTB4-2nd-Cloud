@@ -107,3 +107,25 @@ variable "mysql_data_volume_size" {
     error_message = "The V1 MySQL data volume size must be 10 GiB."
   }
 }
+
+variable "worker_instance_type" {
+  description = "EC2 instance type for the Yeodam V1 AI Worker server"
+  type        = string
+  default     = "c7i.xlarge"
+
+  validation {
+    condition     = var.worker_instance_type == "c7i.xlarge"
+    error_message = "The Yeodam V1 Worker EC2 instance type must be c7i.xlarge."
+  }
+}
+
+variable "worker_root_volume_size" {
+  description = "Root EBS volume size in GiB for the V1 AI Worker EC2 instance"
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.worker_root_volume_size == 30
+    error_message = "The V1 Worker EC2 root volume size must be 30 GiB."
+  }
+}
