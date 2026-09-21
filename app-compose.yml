@@ -39,7 +39,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:172.28.0.1"
     environment:
       SPRING_PROFILES_ACTIVE: prod
       MYSQL_URL: "${MYSQL_URL:?MYSQL_URL is required}"
