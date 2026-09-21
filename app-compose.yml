@@ -1,0 +1,92 @@
+name: yeodam-app
+
+services:
+  frontend:
+    image: "${FRONTEND_IMAGE:-yeodam-frontend:local}${FRONTEND_DIGEST:+@${FRONTEND_DIGEST}}"
+    platform: linux/amd64
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then((response) => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - app-network
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  backend:
+    image: "${BACKEND_IMAGE:-yeodam-backend:local}${BACKEND_DIGEST:+@${BACKEND_DIGEST}}"
+    platform: linux/amd64
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 90s
+    ports:
+      - "127.0.0.1:8080:8080"
+    extra_hosts:
+      - "host.docker.internal:172.28.0.1"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      MYSQL_URL: "${MYSQL_URL:?MYSQL_URL is required}"
+      MYSQL_USERNAME: "${MYSQL_USERNAME:?MYSQL_USERNAME is required}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}"
+      AWS_REGION: "${AWS_REGION:-ap-northeast-2}"
+      ATTACHMENT_S3_BUCKET: "${ATTACHMENT_S3_BUCKET:?ATTACHMENT_S3_BUCKET is required}"
+      AI_SERVER_BASE_URL: "${AI_SERVER_BASE_URL:?AI_SERVER_BASE_URL is required}"
+      AI_SERVER_API_KEY: "${AI_SERVER_API_KEY:?AI_SERVER_API_KEY is required}"
+      AI_EC2_INSTANCE_ID: "${AI_EC2_INSTANCE_ID:?AI_EC2_INSTANCE_ID is required}"
+      FRONTEND_OAUTH_CALLBACK_URI: "${FRONTEND_OAUTH_CALLBACK_URI:?FRONTEND_OAUTH_CALLBACK_URI is required}"
+      KAKAO_CLIENT_ID: "${KAKAO_CLIENT_ID:?KAKAO_CLIENT_ID is required}"
+      KAKAO_REDIRECT_URI: "${KAKAO_REDIRECT_URI:?KAKAO_REDIRECT_URI is required}"
+      KAKAO_CLIENT_SECRET: "${KAKAO_CLIENT_SECRET:?KAKAO_CLIENT_SECRET is required}"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET is required}"
+      JWT_ISSUER: "${JWT_ISSUER:?JWT_ISSUER is required}"
+      FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:?FRONTEND_ORIGIN is required}"
+      DATA_GO_KR_SERVICE_KEY: "${DATA_GO_KR_SERVICE_KEY:-}"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "--fail",
+          "--silent",
+          "--show-error",
+          "http://127.0.0.1:8080/actuator/health",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - app-network
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  app-network:
+    name: yeodam-app-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+          gateway: 172.28.0.1

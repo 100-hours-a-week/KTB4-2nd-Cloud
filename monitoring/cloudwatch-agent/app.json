@@ -81,14 +81,6 @@
                         "memory_rss"
                     ],
                     "metrics_collection_interval": 60
-                },
-                {
-                    "exe": "redis-server",
-                    "measurement": [
-                        "cpu_usage",
-                        "memory_rss"
-                    ],
-                    "metrics_collection_interval": 60
                 }
             ]
         }

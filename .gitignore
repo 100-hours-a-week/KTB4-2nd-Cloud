@@ -20,3 +20,6 @@ terraform.rc
 
 # Terraform backend local configuration
 **/backend.hcl
+
+# Local application runtime values
+/deploy/app.env
