@@ -67,3 +67,62 @@ resource "aws_iam_instance_profile" "worker" {
     Role = "worker"
   }
 }
+
+data "aws_iam_policy_document" "app_s3" {
+  statement {
+    sid    = "ReadBucketMetadata"
+    effect = "Allow"
+
+    actions = [
+      "s3:GetBucketLocation",
+      "s3:ListBucketMultipartUploads",
+    ]
+
+    resources = [
+      aws_s3_bucket.app_data.arn,
+    ]
+  }
+
+  statement {
+    sid    = "ReadAndWriteApplicationObjects"
+    effect = "Allow"
+
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:AbortMultipartUpload",
+      "s3:ListMultipartUploadParts",
+    ]
+
+    resources = [
+      "${aws_s3_bucket.app_data.arn}/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "app_s3" {
+  name   = "${local.name_prefix}-app-s3-access"
+  role   = aws_iam_role.app_ec2.id
+  policy = data.aws_iam_policy_document.app_s3.json
+}
+
+data "aws_iam_policy_document" "worker_s3" {
+  statement {
+    sid    = "ReadApplicationObjects"
+    effect = "Allow"
+
+    actions = [
+      "s3:GetObject",
+    ]
+
+    resources = [
+      "${aws_s3_bucket.app_data.arn}/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "worker_s3" {
+  name   = "${local.name_prefix}-worker-s3-access"
+  role   = aws_iam_role.worker_ec2.id
+  policy = data.aws_iam_policy_document.worker_s3.json
+}
