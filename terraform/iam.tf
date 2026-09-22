@@ -108,6 +108,44 @@ resource "aws_iam_role_policy" "app_s3" {
   policy = data.aws_iam_policy_document.app_s3.json
 }
 
+data "aws_iam_policy_document" "app_worker_ec2_control" {
+  statement {
+    sid    = "DescribeWorkerInstance"
+    effect = "Allow"
+
+    actions = [
+      "ec2:DescribeInstances",
+    ]
+
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  statement {
+    sid    = "StartWorkerInstance"
+    effect = "Allow"
+
+    actions = [
+      "ec2:StartInstances",
+    ]
+
+    resources = [
+      aws_instance.worker.arn,
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "app_worker_ec2_control" {
+  name   = "${local.name_prefix}-app-worker-ec2-control"
+  role   = aws_iam_role.app_ec2.id
+  policy = data.aws_iam_policy_document.app_worker_ec2_control.json
+}
+
 data "aws_iam_policy_document" "worker_s3" {
   statement {
     sid    = "ReadApplicationObjects"
