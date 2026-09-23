@@ -58,6 +58,8 @@ services:
       JWT_ISSUER: "${JWT_ISSUER:?JWT_ISSUER is required}"
       FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:?FRONTEND_ORIGIN is required}"
       DATA_GO_KR_SERVICE_KEY: "${DATA_GO_KR_SERVICE_KEY:-}"
+      DATA_GO_KR_LEGAL_DISTRICT_API_URL: "${DATA_GO_KR_LEGAL_DISTRICT_API_URL:?DATA_GO_KR_LEGAL_DISTRICT_API_URL is required}"
+      DATA_GO_KR_TIMEOUT: "${DATA_GO_KR_TIMEOUT:-10s}"
     healthcheck:
       test:
         [
