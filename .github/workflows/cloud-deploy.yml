@@ -1,0 +1,93 @@
+name: V1 Production Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud_commit:
+        description: "배포할 Cloud main Commit SHA (40자리)"
+        required: true
+        type: string
+      reason:
+        description: "배포 사유"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: yeodam-v1-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy App and Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+
+    steps:
+      - name: Checkout Cloud main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Validate deployment candidate
+        id: candidate
+        env:
+          CLOUD_COMMIT: ${{ inputs.cloud_commit }}
+        run: |
+          set -Eeuo pipefail
+          [[ "${CLOUD_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "cloud_commit must be a full 40-character commit SHA" >&2
+            exit 1
+          }
+          git cat-file -e "${CLOUD_COMMIT}^{commit}"
+          git merge-base --is-ancestor "${CLOUD_COMMIT}" origin/main || {
+            echo "The selected commit is not included in origin/main" >&2
+            exit 1
+          }
+          echo "sha=${CLOUD_COMMIT}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout deployment candidate
+        run: git checkout --detach "${{ steps.candidate.outputs.sha }}"
+
+      - name: Validate release files
+        run: |
+          set -Eeuo pipefail
+          bash -n \
+            scripts/deploy-release.sh \
+            scripts/rollback-release.sh \
+            scripts/render-runtime-env.sh \
+            scripts/run-cloud-deployment.sh \
+            scripts/validate-image-versions.sh
+          bash scripts/validate-image-versions.sh deploy/image-versions.env
+
+      - name: Configure AWS credentials with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-2
+          role-session-name: yeodam-v1-cloud-deploy
+
+      - name: Deploy selected release
+        env:
+          CLOUD_COMMIT: ${{ steps.candidate.outputs.sha }}
+        run: bash scripts/run-cloud-deployment.sh "${CLOUD_COMMIT}"
+
+      - name: Write deployment summary
+        if: always()
+        env:
+          CLOUD_COMMIT: ${{ steps.candidate.outputs.sha }}
+          DEPLOY_REASON: ${{ inputs.reason }}
+          DEPLOY_RESULT: ${{ job.status }}
+        run: |
+          {
+            echo "## V1 Production Deployment"
+            echo
+            echo "- Cloud commit: \`${CLOUD_COMMIT}\`"
+            echo "- Reason: ${DEPLOY_REASON}"
+            echo "- Result: ${DEPLOY_RESULT}"
+          } >> "${GITHUB_STEP_SUMMARY}"
