@@ -58,6 +58,8 @@ App EC2는 `/yeodam/v1/app/*`, Worker EC2는 `/yeodam/v1/worker/*`만 조회한�
 
 배포 인증 값은 Container 환경변수 파일에 넣지 않는다. 후속 배포 스크립트가 Image Pull 직전에 조회해 `docker login --password-stdin`에 전달하고 임시 인증 정보를 제거한다.
 
+`deploy-release.sh`는 두 값을 임시 Docker 설정 Directory에만 저장한다. Image Pull이 끝나면 Logout하고 임시 Directory를 삭제하므로 Host의 `/root/.docker/config.json`을 새로 만들거나 갱신하지 않는다.
+
 ## 값 등록과 변경
 
 AWS Console에서는 Systems Manager → Parameter Store → Create parameter에서 경로, Type과 값을 입력한다. Secret은 반드시 `SecureString`, 일반 설정은 `String`으로 만든다. Terraform은 조회 권한만 관리하며 실제 Parameter 값은 관리하지 않는다.
