@@ -23,7 +23,9 @@ ssm_run() {
   local parameters_file command_id status output error
 
   parameters_file="$(mktemp)"
-  jq -n --arg command "${command}" '{commands: [$command]}' > "${parameters_file}"
+  jq -n \
+    --arg command "${command}" \
+    '{commands: ["exec bash -c " + ($command | @sh)]}' > "${parameters_file}"
 
   command_id="$(
     aws ssm send-command \
