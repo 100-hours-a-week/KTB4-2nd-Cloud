@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: yeodam-v1-release-manifest
+  group: yeodam-v1-release-manifest-${{ github.event.client_payload.component }}
   cancel-in-progress: false
 
 jobs:
@@ -34,54 +34,55 @@ jobs:
           ref: main
           token: ${{ secrets.CLOUD_RELEASE_TOKEN }}
 
-      - name: Prepare release candidate branch
+      - name: Validate event and update release candidate branch
+        id: update
         env:
           BRANCH_NAME: automation/release-manifest
-        run: |
-          set -Eeuo pipefail
-          if git ls-remote --exit-code --heads origin "${BRANCH_NAME}" >/dev/null 2>&1; then
-            git fetch origin "${BRANCH_NAME}"
-            git checkout -B "${BRANCH_NAME}" "origin/${BRANCH_NAME}"
-            git rebase origin/main
-          else
-            git checkout -B "${BRANCH_NAME}" origin/main
-          fi
-
-      - name: Validate event and update manifest
-        env:
           COMPONENT: ${{ github.event.client_payload.component }}
           SOURCE_REPOSITORY: ${{ github.event.client_payload.source_repository }}
           SOURCE_SHA: ${{ github.event.client_payload.source_sha }}
           IMAGE: ${{ github.event.client_payload.image }}
           DIGEST: ${{ github.event.client_payload.digest }}
         run: |
-          bash scripts/update-image-version.sh \
-            --component "${COMPONENT}" \
-            --source-repository "${SOURCE_REPOSITORY}" \
-            --source-sha "${SOURCE_SHA}" \
-            --image "${IMAGE}" \
-            --digest "${DIGEST}"
-
-      - name: Update release candidate branch
-        id: update
-        env:
-          BRANCH_NAME: automation/release-manifest
-          COMPONENT: ${{ github.event.client_payload.component }}
-        run: |
           set -Eeuo pipefail
-          if git diff --quiet -- deploy/image-versions.env; then
-            echo "changed=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-
-          bash scripts/validate-image-versions.sh deploy/image-versions.env
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add deploy/image-versions.env
-          git commit -m "chore: ${COMPONENT} 배포 이미지 갱신"
-          git push --force-with-lease origin "${BRANCH_NAME}"
-          echo "changed=true" >> "${GITHUB_OUTPUT}"
+
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            if git ls-remote --exit-code --heads origin "${BRANCH_NAME}" >/dev/null 2>&1; then
+              git fetch origin "${BRANCH_NAME}"
+              git checkout -B "${BRANCH_NAME}" "origin/${BRANCH_NAME}"
+              git merge --no-edit origin/main
+            else
+              git checkout -B "${BRANCH_NAME}" origin/main
+            fi
+
+            bash scripts/update-image-version.sh \
+              --component "${COMPONENT}" \
+              --source-repository "${SOURCE_REPOSITORY}" \
+              --source-sha "${SOURCE_SHA}" \
+              --image "${IMAGE}" \
+              --digest "${DIGEST}"
+
+            if git diff --quiet -- deploy/image-versions.env; then
+              echo "changed=false" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+
+            git add deploy/image-versions.env
+            git commit -m "chore: ${COMPONENT} 배포 이미지 갱신"
+            if git push origin "${BRANCH_NAME}"; then
+              echo "changed=true" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+
+            echo "Manifest Branch가 먼저 갱신되어 재시도합니다: ${attempt}/5"
+            sleep $((attempt * 2))
+          done
+
+          echo "Release Manifest Branch 갱신 재시도 횟수를 초과했습니다." >&2
+          exit 1
 
       - name: Create or keep release manifest PR
         if: steps.update.outputs.changed == 'true'
@@ -91,11 +92,11 @@ jobs:
         run: |
           set -Eeuo pipefail
           if [[ "$(gh pr list --base main --head "${BRANCH_NAME}" --state open --json number --jq length)" == "0" ]]; then
-            gh pr create \
-              --base main \
-              --head "${BRANCH_NAME}" \
-              --title "[chore] V1 배포 Image Manifest 갱신" \
-              --body-file - <<'EOF'
+            if ! gh pr create \
+                --base main \
+                --head "${BRANCH_NAME}" \
+                --title "[chore] V1 배포 Image Manifest 갱신" \
+                --body-file - <<'EOF'
           ## What is this PR?
 
           FE/BE/AI `main`에서 발행된 최신 Image Tag와 Digest를 V1 Release Manifest에 반영합니다.
@@ -110,4 +111,8 @@ jobs:
           - [x] Source Repository와 Image Commit SHA 일치 확인
           - [x] GHCR Package와 SHA256 Digest 형식 확인
           EOF
+            then
+              sleep 2
+              [[ "$(gh pr list --base main --head "${BRANCH_NAME}" --state open --json number --jq length)" != "0" ]]
+            fi
           fi

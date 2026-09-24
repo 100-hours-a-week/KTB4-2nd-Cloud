@@ -2,7 +2,7 @@
 
 FE, BE와 AI Image Workflow는 `main` Image를 GHCR에 Push한 뒤 Cloud 저장소에 `image-published` Repository Dispatch Event를 보낸다. Cloud는 Component별 Image Tag와 Digest를 검증한 뒤 `automation/release-manifest` Branch의 `deploy/image-versions.env`를 갱신한다.
 
-열린 Release Manifest PR이 있으면 같은 PR에 변경을 누적한다. PR이 없으면 다음 제목으로 새 PR을 만든다.
+열린 Release Manifest PR이 있으면 같은 PR에 변경을 누적한다. Component별 Workflow는 서로 다른 Concurrency Group에서 실행되며, 동시에 Release Candidate Branch를 변경해 Push가 충돌하면 최신 원격 Branch를 기준으로 자신의 변경을 최대 5회 재적용한다. 같은 Component의 이벤트가 연속되면 가장 최신 Image Event가 최종 Manifest를 결정한다. PR이 없으면 다음 제목으로 새 PR을 만든다.
 
 ```text
 [chore] V1 배포 Image Manifest 갱신
