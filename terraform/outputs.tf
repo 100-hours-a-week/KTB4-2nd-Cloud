@@ -107,3 +107,18 @@ output "worker_private_ip" {
   description = "Private IPv4 address of the Yeodam V1 Worker EC2 instance"
   value       = aws_instance.worker.private_ip
 }
+
+output "github_actions_oidc_provider_arn" {
+  description = "ARN of the GitHub Actions OIDC provider"
+  value       = aws_iam_openid_connect_provider.github_actions.arn
+}
+
+output "github_actions_deploy_role_arn" {
+  description = "ARN of the IAM role assumed by the production GitHub Actions deployment job"
+  value       = aws_iam_role.github_actions_deploy.arn
+}
+
+output "github_actions_deploy_role_name" {
+  description = "Name of the IAM role assumed by the production GitHub Actions deployment job"
+  value       = aws_iam_role.github_actions_deploy.name
+}
