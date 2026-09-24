@@ -3,10 +3,6 @@ name: V1 Production Deployment
 on:
   workflow_dispatch:
     inputs:
-      cloud_commit:
-        description: "배포할 Cloud main Commit SHA (40자리)"
-        required: true
-        type: string
       reason:
         description: "배포 사유"
         required: true
@@ -36,19 +32,9 @@ jobs:
 
       - name: Validate deployment candidate
         id: candidate
-        env:
-          CLOUD_COMMIT: ${{ inputs.cloud_commit }}
         run: |
           set -Eeuo pipefail
-          [[ "${CLOUD_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || {
-            echo "cloud_commit must be a full 40-character commit SHA" >&2
-            exit 1
-          }
-          git cat-file -e "${CLOUD_COMMIT}^{commit}"
-          git merge-base --is-ancestor "${CLOUD_COMMIT}" origin/main || {
-            echo "The selected commit is not included in origin/main" >&2
-            exit 1
-          }
+          CLOUD_COMMIT="$(git rev-parse origin/main)"
           echo "sha=${CLOUD_COMMIT}" >> "${GITHUB_OUTPUT}"
 
       - name: Checkout deployment candidate

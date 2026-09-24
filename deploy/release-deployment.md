@@ -64,12 +64,11 @@ Rollback은 기본적으로 `previous`에 기록된 Release의 Compose, Image Di
 
 ## GitHub Actions 수동 배포
 
-`V1 Production Deployment` Workflow를 `main`에서 수동 실행하고 다음 값을 입력한다.
+`V1 Production Deployment` Workflow를 `main`에서 수동 실행하고 배포 사유를 입력한다.
 
-- `cloud_commit`: 배포할 Cloud `main`의 전체 40자리 Commit SHA
 - `reason`: 배포 목적이나 변경 내용
 
-`production` Environment 승인 후 Workflow는 선택 Commit이 `origin/main`에 포함되는지 확인하고, GitHub OIDC로 AWS 배포 Role을 맡는다. App EC2가 실행 중이고 SSM Online인지 확인한 뒤 Worker EC2의 기존 전원 상태를 기록한다. Worker가 중지 상태라면 배포 동안만 시작한다.
+`production` Environment 승인 후 Workflow는 실행 시점의 최신 Cloud `main` Commit을 배포 대상으로 고정하고, GitHub OIDC로 AWS 배포 Role을 맡는다. App EC2가 실행 중이고 SSM Online인지 확인한 뒤 Worker EC2의 기존 전원 상태를 기록한다. Worker가 중지 상태라면 배포 동안만 시작한다.
 
 각 Host에는 선택한 Cloud Commit을 `/opt/yeodam/releases/{cloud-commit-sha}`로 내려받는다. App을 먼저 배포하고 Worker를 뒤이어 배포한다. App 배포 실패 시 App의 `current`를 재적용하며, Worker 배포 실패 시 Worker의 `current`와 App의 `previous`를 적용한다. 마지막에는 성공·실패와 관계없이 Workflow가 직접 시작한 Worker를 다시 중지한다.
 

@@ -1,0 +1,113 @@
+name: Update Release Image Manifest
+
+on:
+  repository_dispatch:
+    types: [image-published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yeodam-v1-release-manifest
+  cancel-in-progress: false
+
+jobs:
+  update-manifest:
+    name: Update release candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check release token
+        env:
+          CLOUD_RELEASE_TOKEN: ${{ secrets.CLOUD_RELEASE_TOKEN }}
+        run: |
+          [[ -n "${CLOUD_RELEASE_TOKEN}" ]] || {
+            echo "CLOUD_RELEASE_TOKEN is not configured" >&2
+            exit 1
+          }
+
+      - name: Checkout Cloud main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.CLOUD_RELEASE_TOKEN }}
+
+      - name: Prepare release candidate branch
+        env:
+          BRANCH_NAME: automation/release-manifest
+        run: |
+          set -Eeuo pipefail
+          if git ls-remote --exit-code --heads origin "${BRANCH_NAME}" >/dev/null 2>&1; then
+            git fetch origin "${BRANCH_NAME}"
+            git checkout -B "${BRANCH_NAME}" "origin/${BRANCH_NAME}"
+            git rebase origin/main
+          else
+            git checkout -B "${BRANCH_NAME}" origin/main
+          fi
+
+      - name: Validate event and update manifest
+        env:
+          COMPONENT: ${{ github.event.client_payload.component }}
+          SOURCE_REPOSITORY: ${{ github.event.client_payload.source_repository }}
+          SOURCE_SHA: ${{ github.event.client_payload.source_sha }}
+          IMAGE: ${{ github.event.client_payload.image }}
+          DIGEST: ${{ github.event.client_payload.digest }}
+        run: |
+          bash scripts/update-image-version.sh \
+            --component "${COMPONENT}" \
+            --source-repository "${SOURCE_REPOSITORY}" \
+            --source-sha "${SOURCE_SHA}" \
+            --image "${IMAGE}" \
+            --digest "${DIGEST}"
+
+      - name: Update release candidate branch
+        id: update
+        env:
+          BRANCH_NAME: automation/release-manifest
+          COMPONENT: ${{ github.event.client_payload.component }}
+        run: |
+          set -Eeuo pipefail
+          if git diff --quiet -- deploy/image-versions.env; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          bash scripts/validate-image-versions.sh deploy/image-versions.env
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/image-versions.env
+          git commit -m "chore: ${COMPONENT} 배포 이미지 갱신"
+          git push --force-with-lease origin "${BRANCH_NAME}"
+          echo "changed=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or keep release manifest PR
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CLOUD_RELEASE_TOKEN }}
+          BRANCH_NAME: automation/release-manifest
+        run: |
+          set -Eeuo pipefail
+          if [[ "$(gh pr list --base main --head "${BRANCH_NAME}" --state open --json number --jq length)" == "0" ]]; then
+            gh pr create \
+              --base main \
+              --head "${BRANCH_NAME}" \
+              --title "[chore] V1 배포 Image Manifest 갱신" \
+              --body-file - <<'EOF'
+          ## What is this PR?
+
+          FE/BE/AI `main`에서 발행된 최신 Image Tag와 Digest를 V1 Release Manifest에 반영합니다.
+
+          ## Changes
+
+          - Image CI 결과 기반 `deploy/image-versions.env` 갱신
+          - 기존 다른 Component Image 조합 유지
+
+          ## Test CheckList
+
+          - [x] Source Repository와 Image Commit SHA 일치 확인
+          - [x] GHCR Package와 SHA256 Digest 형식 확인
+          EOF
+          fi
