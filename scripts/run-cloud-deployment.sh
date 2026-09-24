@@ -110,21 +110,21 @@ stage_release() {
   command="$(cat <<EOF
 set -Eeuo pipefail
 release_root=/opt/yeodam/releases
-release_dir=\"\${release_root}/${cloud_commit}\"
-install -d --owner=root --group=root --mode=755 \"\${release_root}\"
-if [[ ! -d \"\${release_dir}\" ]]; then
-  staging_dir=\"\$(mktemp -d \"\${release_root}/.staging.XXXXXX\")\"
-  trap 'rm -rf -- \"\${staging_dir}\"' EXIT
+release_dir="\${release_root}/${cloud_commit}"
+install -d --owner=root --group=root --mode=755 "\${release_root}"
+if [[ ! -d "\${release_dir}" ]]; then
+  staging_dir="\$(mktemp -d "\${release_root}/.staging.XXXXXX")"
+  trap 'rm -rf -- "\${staging_dir}"' EXIT
   curl --fail --silent --show-error --location \\
-    \"https://github.com/${REPOSITORY}/archive/${cloud_commit}.tar.gz\" | \\
-    tar --extract --gzip --directory \"\${staging_dir}\" --strip-components=1
-  mv -- \"\${staging_dir}\" \"\${release_dir}\"
+    "https://github.com/${REPOSITORY}/archive/${cloud_commit}.tar.gz" | \\
+    tar --extract --gzip --directory "\${staging_dir}" --strip-components=1
+  mv -- "\${staging_dir}" "\${release_dir}"
   trap - EXIT
 fi
-test -f \"\${release_dir}/deploy/image-versions.env\"
-test -x \"\${release_dir}/scripts/deploy-release.sh\"
-test -x \"\${release_dir}/scripts/rollback-release.sh\"
-bash \"\${release_dir}/scripts/validate-image-versions.sh\" \"\${release_dir}/deploy/image-versions.env\"
+test -f "\${release_dir}/deploy/image-versions.env"
+test -x "\${release_dir}/scripts/deploy-release.sh"
+test -x "\${release_dir}/scripts/rollback-release.sh"
+bash "\${release_dir}/scripts/validate-image-versions.sh" "\${release_dir}/deploy/image-versions.env"
 EOF
 )"
 
