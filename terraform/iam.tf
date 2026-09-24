@@ -146,6 +146,32 @@ resource "aws_iam_role_policy" "app_worker_ec2_control" {
   policy = data.aws_iam_policy_document.app_worker_ec2_control.json
 }
 
+data "aws_iam_policy_document" "app_parameter_store" {
+  statement {
+    sid    = "ReadAppRuntimeParameters"
+    effect = "Allow"
+
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:GetParametersByPath",
+    ]
+
+    resources = [
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_store_path_prefix}/app",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_store_path_prefix}/app/*",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_store_path_prefix}/deploy",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_store_path_prefix}/deploy/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "app_parameter_store" {
+  name   = "${local.name_prefix}-app-parameter-store-read"
+  role   = aws_iam_role.app_ec2.id
+  policy = data.aws_iam_policy_document.app_parameter_store.json
+}
+
 data "aws_iam_policy_document" "worker_s3" {
   statement {
     sid    = "ReadApplicationObjects"
@@ -165,4 +191,30 @@ resource "aws_iam_role_policy" "worker_s3" {
   name   = "${local.name_prefix}-worker-s3-access"
   role   = aws_iam_role.worker_ec2.id
   policy = data.aws_iam_policy_document.worker_s3.json
+}
+
+data "aws_iam_policy_document" "worker_parameter_store" {
+  statement {
+    sid    = "ReadWorkerRuntimeParameters"
+    effect = "Allow"
+
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:GetParametersByPath",
+    ]
+
+    resources = [
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_store_path_prefix}/worker",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_store_path_prefix}/worker/*",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_store_path_prefix}/deploy",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_store_path_prefix}/deploy/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "worker_parameter_store" {
+  name   = "${local.name_prefix}-worker-parameter-store-read"
+  role   = aws_iam_role.worker_ec2.id
+  policy = data.aws_iam_policy_document.worker_parameter_store.json
 }

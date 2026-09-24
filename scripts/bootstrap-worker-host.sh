@@ -7,6 +7,7 @@ readonly SWAP_SIZE_BYTES="2147483648"
 readonly SWAPPINESS="10"
 
 readonly DOCKER_VERSION="5:29.8.1-1~ubuntu.24.04~noble"
+readonly AWS_CLI_INSTALL_SCRIPT_URL="https://awscli.amazonaws.com/v2/install.sh"
 
 usage() {
   cat <<'EOF'
@@ -58,6 +59,7 @@ for command_name in \
   apt-cache \
   apt-get \
   awk \
+  bash \
   chmod \
   cp \
   curl \
@@ -171,7 +173,27 @@ apt-get update
 apt-get install --yes --no-install-recommends \
   ca-certificates \
   curl \
-  gnupg
+  gnupg \
+  unzip
+
+log "AWS CLI v2 설치"
+
+if ! command -v aws >/dev/null 2>&1; then
+  aws_cli_install_script="${work_directory}/install-aws-cli.sh"
+
+  curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    "${AWS_CLI_INSTALL_SCRIPT_URL}" \
+    --output "${aws_cli_install_script}"
+
+  chmod 0700 "${aws_cli_install_script}"
+  bash "${aws_cli_install_script}" --system
+fi
+
+aws --version
 
 log "Docker 공식 APT Repository 구성"
 
@@ -244,6 +266,9 @@ echo "--- Docker ---"
 docker version --format 'Server: {{.Server.Version}}'
 docker compose version
 systemctl is-active docker
+
+echo "--- AWS CLI ---"
+aws --version
 
 echo
 echo "AI Worker EC2 Host 기본 Package 설치 완료"
