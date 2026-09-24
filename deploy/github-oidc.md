@@ -16,10 +16,10 @@ GitHub Actions production Job
 
 ```text
 aud = sts.amazonaws.com
-sub = repo:100-hours-a-week/KTB4-2nd-Cloud:environment:production
+sub = repo:100-hours-a-week@167328634/KTB4-2nd-Cloud@1344655631:environment:production
 ```
 
-따라서 다른 저장소와 Environment 없는 Job은 Role을 맡을 수 없다. GitHub 저장소에서는 `production` Environment를 만들고 다음 보호 설정을 별도로 적용해야 한다.
+조직에 설정된 GitHub OIDC Subject Template은 Repository Owner와 Repository 이름 뒤에 각각 불변 ID를 포함한다. 실제 값은 최초 CD 실행의 CloudTrail `AssumeRoleWithWebIdentity` Event에서 확인했다. 따라서 다른 조직, 저장소와 Environment 없는 Job은 Role을 맡을 수 없다. GitHub 저장소에서는 `production` Environment를 만들고 다음 보호 설정을 별도로 적용해야 한다.
 
 - Required reviewer: Cloud 담당자와 대체 담당자
 - Deployment branch: 보호된 `main`만 허용

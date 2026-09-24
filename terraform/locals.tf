@@ -1,7 +1,7 @@
 locals {
   name_prefix                   = "${var.project_name}-${var.deployment_version}"
   parameter_store_path_prefix   = "/${var.project_name}/${var.deployment_version}"
-  github_actions_deploy_subject = "repo:100-hours-a-week/KTB4-2nd-Cloud:environment:production"
+  github_actions_deploy_subject = "repo:100-hours-a-week@167328634/KTB4-2nd-Cloud@1344655631:environment:production"
 
   common_tags = {
     Project   = var.project_name
