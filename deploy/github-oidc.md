@@ -45,7 +45,7 @@ Name:  AWS_DEPLOY_ROLE_ARN
 Value: terraform output -raw github_actions_deploy_role_arn
 ```
 
-후속 CD Workflow는 다음 권한과 Environment를 사용한다.
+수동 CD Workflow는 다음 권한과 Environment를 사용한다.
 
 ```yaml
 permissions:

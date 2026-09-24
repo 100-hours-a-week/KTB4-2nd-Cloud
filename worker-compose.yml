@@ -4,7 +4,7 @@ services:
   ai-worker:
     image: "${AI_IMAGE:-yeodam-ai-worker:local}${AI_DIGEST:+@${AI_DIGEST}}"
     platform: linux/amd64
-    restart: on-failure:3
+    restart: unless-stopped
     init: true
     stop_grace_period: 7m
     ports:
