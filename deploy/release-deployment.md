@@ -11,9 +11,11 @@
 ├── deploy/image-versions.env
 ├── nginx/yeodam.conf
 └── scripts/
+    ├── configure-worker-idle-shutdown.sh
     ├── deploy-release.sh
     ├── render-runtime-env.sh
-    └── rollback-release.sh
+    ├── rollback-release.sh
+    └── worker-idle-shutdown.sh
 ```
 
 `image-versions.env`에는 통합 검증한 FE/BE/AI Image의 SHA Tag와 Digest를 기록한다. Secret은 포함하지 않는다.
@@ -40,10 +42,22 @@ Script는 다음 순서로 실행된다.
 4. Container 교체와 Health 확인
 5. 실행 Image ID와 지정 Digest 일치 확인
 6. App은 Nginx 설정 검증·Reload와 HTTPS Backend Health 추가 확인
-7. 성공한 경우에만 `/opt/yeodam/state/{scope}`의 현재·이전 Release 기록 변경
-8. 임시 GHCR 인증 삭제
+7. Worker는 10분 유휴 상태를 확인하는 systemd Timer 설치 또는 갱신
+8. 성공한 경우에만 `/opt/yeodam/state/{scope}`의 현재·이전 Release 기록 변경
+9. 임시 GHCR 인증 삭제
 
 배포 전 실패하면 기존 Container를 교체하지 않는다. Container 교체 후 검증에 실패하면 현재 Release 기록은 변경하지 않으며, 상위 Workflow가 App과 Worker Rollback을 실행해야 한다.
+
+## Worker 유휴 자동 종료
+
+Worker 배포가 성공하면 `yeodam-worker-idle-shutdown.timer`를 활성화한다. Timer는 부팅 2분 후부터 1분마다 Loopback의 `/health`를 확인한다. 다음 조건을 모두 만족하면 10초 후 한 번 더 확인하고 `systemctl poweroff`를 실행한다.
+
+- `status=ok`
+- `active_tasks=0`
+- `queued=0`
+- `idle_seconds`가 600초 이상
+
+Health 요청 실패, 비정상 응답, 준비 미완료 또는 작업 존재 시에는 종료하지 않는다. Terraform의 `instance_initiated_shutdown_behavior = "stop"` 설정에 따라 내부 Poweroff는 Instance 삭제가 아니라 Stop으로 처리된다. 다음 여행 생성 요청이 들어오면 Backend가 EC2를 다시 시작하고 Docker의 재시작 정책에 따라 AI Container가 자동 복구된다.
 
 ## Rollback
 
