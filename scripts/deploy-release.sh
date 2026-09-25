@@ -7,6 +7,8 @@ readonly RELEASE_ROOT="/opt/yeodam/releases"
 readonly STATE_ROOT="/opt/yeodam/state"
 readonly DEFAULT_REGION="ap-northeast-2"
 readonly DEFAULT_PARAMETER_PREFIX="/yeodam/v1"
+readonly WORKER_IDLE_SHUTDOWN_SECONDS="600"
+readonly WORKER_IDLE_RECHECK_SECONDS="10"
 
 scope=""
 release_dir=""
@@ -30,7 +32,9 @@ Usage:
 
 The release directory must contain:
   app:    app-compose.yml, nginx/yeodam.conf, deploy/image-versions.env
-  worker: worker-compose.yml, deploy/image-versions.env
+  worker: worker-compose.yml, deploy/image-versions.env,
+          scripts/configure-worker-idle-shutdown.sh,
+          scripts/worker-idle-shutdown.sh
   both:   scripts/render-runtime-env.sh
 EOF
 }
@@ -254,6 +258,10 @@ if [[ "${scope}" == "app" ]]; then
 else
   readonly compose_file="${release_dir}/worker-compose.yml"
   readonly runtime_env="/run/yeodam/worker.env"
+  readonly idle_shutdown_configurer="${release_dir}/scripts/configure-worker-idle-shutdown.sh"
+  readonly idle_shutdown_script="${release_dir}/scripts/worker-idle-shutdown.sh"
+  [[ -f "${idle_shutdown_configurer}" ]] || fail "Worker 유휴 종료 설정 Script를 찾을 수 없습니다: ${idle_shutdown_configurer}"
+  [[ -f "${idle_shutdown_script}" ]] || fail "Worker 유휴 종료 실행 Script를 찾을 수 없습니다: ${idle_shutdown_script}"
   services=(ai-worker)
   health_timeout=180
 fi
@@ -328,6 +336,11 @@ if [[ "${scope}" == "app" ]]; then
 else
   verify_image ai-worker "${ai_image}" "${ai_digest}"
   curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/health >/dev/null
+
+  log "Worker 유휴 자동 종료 구성"
+  bash "${idle_shutdown_configurer}" \
+    --idle-seconds "${WORKER_IDLE_SHUTDOWN_SECONDS}" \
+    --recheck-seconds "${WORKER_IDLE_RECHECK_SECONDS}"
 fi
 
 log "성공 Release 기록"
