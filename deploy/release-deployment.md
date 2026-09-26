@@ -44,9 +44,18 @@ Script는 다음 순서로 실행된다.
 6. App은 Nginx 설정 검증·Reload와 HTTPS Backend Health 추가 확인
 7. Worker는 10분 유휴 상태를 확인하는 systemd Timer 설치 또는 갱신
 8. 성공한 경우에만 `/opt/yeodam/state/{scope}`의 현재·이전 Release 기록 변경
-9. 임시 GHCR 인증 삭제
+9. 실행 중이거나 남아 있는 Container가 참조하지 않는 Docker Image 정리
+10. 임시 GHCR 인증 삭제
 
 배포 전 실패하면 기존 Container를 교체하지 않는다. Container 교체 후 검증에 실패하면 현재 Release 기록은 변경하지 않으며, 상위 Workflow가 App과 Worker Rollback을 실행해야 한다.
+
+## Host Image 보관 정책
+
+Image의 장기 보관 위치는 EC2 Root Volume이 아니라 GHCR이다. App/Worker Host에는 실행 중이거나 Container가 참조하는 Image만 유지하고, 성공 Release 기록을 변경한 뒤 `docker image prune --all --force`로 나머지를 정리한다. Docker는 Container가 참조하는 Image를 삭제하지 않으므로 새 Release 검증 전의 실행 Image는 보호된다.
+
+Rollback 대상 Image가 Host에 없으면 해당 Release의 `image-versions.env`에 기록된 SHA Tag와 Digest로 GHCR에서 다시 Pull한다. 따라서 로컬 Image 정리는 Rollback 기록을 없애지 않지만, Registry와 Network를 사용할 수 없는 상황에서는 Rollback 시간이 늘어나거나 실패할 수 있다.
+
+Image 정리는 배포의 부가적인 용량 관리 단계다. 정리에 실패하더라도 이미 검증을 마친 Release를 실패나 Rollback으로 바꾸지 않고 경고를 남긴다. 운영자는 `df -h /`와 `docker system df`로 Host 용량을 확인한다.
 
 ## Worker 유휴 자동 종료
 
