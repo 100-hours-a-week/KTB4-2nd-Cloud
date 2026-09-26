@@ -182,6 +182,14 @@ record_release_state() {
   fi
 }
 
+prune_unused_images() {
+  log "미사용 Docker Image 정리"
+
+  if ! docker image prune --all --force; then
+    echo "WARNING: 미사용 Docker Image 정리에 실패했습니다. 배포 결과는 유지하며 Host 용량을 별도로 확인해야 합니다." >&2
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --scope)
@@ -345,6 +353,8 @@ fi
 
 log "성공 Release 기록"
 record_release_state
+
+prune_unused_images
 
 docker --config "${docker_config}" logout ghcr.io >/dev/null 2>&1 || true
 unset ghcr_username DOCKER_CONFIG
