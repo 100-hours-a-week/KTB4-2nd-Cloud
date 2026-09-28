@@ -142,3 +142,8 @@ output "operations_alarm_topic_arn" {
   description = "SNS topic receiving Yeodam V1 CloudWatch alarm state changes"
   value       = aws_sns_topic.operations_alarm.arn
 }
+
+output "discord_alarm_forwarder_function_name" {
+  description = "Lambda function forwarding CloudWatch alarm state changes to Discord"
+  value       = aws_lambda_function.discord_alarm_forwarder.function_name
+}
