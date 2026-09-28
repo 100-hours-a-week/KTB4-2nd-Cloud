@@ -122,3 +122,13 @@ output "github_actions_deploy_role_name" {
   description = "Name of the IAM role assumed by the production GitHub Actions deployment job"
   value       = aws_iam_role.github_actions_deploy.name
 }
+
+output "nginx_access_log_group_name" {
+  description = "CloudWatch Logs group for the Yeodam V1 Nginx JSON access log"
+  value       = aws_cloudwatch_log_group.nginx_access.name
+}
+
+output "nginx_error_log_group_name" {
+  description = "CloudWatch Logs group for the Yeodam V1 Nginx error log"
+  value       = aws_cloudwatch_log_group.nginx_error.name
+}

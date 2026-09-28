@@ -214,4 +214,4 @@ sha256sum "${CONFIG_INSTALL_PATH}"
 trap - ERR
 
 echo
-echo "CloudWatch Agent Host Metric 구성 완료"
+echo "CloudWatch Agent Host Metric과 Nginx Log 수집 구성 완료"

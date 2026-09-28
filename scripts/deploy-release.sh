@@ -31,7 +31,8 @@ Usage:
     [--parameter-prefix PARAMETER_PATH]
 
 The release directory must contain:
-  app:    app-compose.yml, nginx/yeodam.conf, deploy/image-versions.env
+  app:    app-compose.yml, nginx/yeodam.conf, monitoring/cloudwatch-agent/app.json,
+          scripts/configure-cloudwatch-agent.sh, deploy/image-versions.env
   worker: worker-compose.yml, deploy/image-versions.env,
           scripts/configure-worker-idle-shutdown.sh,
           scripts/worker-idle-shutdown.sh
@@ -260,7 +261,11 @@ if [[ "${scope}" == "app" ]]; then
   readonly compose_file="${release_dir}/app-compose.yml"
   readonly runtime_env="/run/yeodam/app.env"
   readonly nginx_source="${release_dir}/nginx/yeodam.conf"
+  readonly cloudwatch_agent_config="${release_dir}/monitoring/cloudwatch-agent/app.json"
+  readonly cloudwatch_agent_configurer="${release_dir}/scripts/configure-cloudwatch-agent.sh"
   [[ -f "${nginx_source}" ]] || fail "Nginx 설정을 찾을 수 없습니다: ${nginx_source}"
+  [[ -f "${cloudwatch_agent_config}" ]] || fail "CloudWatch Agent 설정을 찾을 수 없습니다: ${cloudwatch_agent_config}"
+  [[ -f "${cloudwatch_agent_configurer}" ]] || fail "CloudWatch Agent 설정 Script를 찾을 수 없습니다: ${cloudwatch_agent_configurer}"
   services=(backend frontend)
   health_timeout=120
 else
@@ -333,6 +338,7 @@ if [[ "${scope}" == "app" ]]; then
   nginx_restore_required="true"
 
   install --owner=root --group=root --mode=0644 "${nginx_source}" "${nginx_target}"
+  sed -i "s/__YEODAM_RELEASE__/${release_name}/g" "${nginx_target}"
   ln -sfn "${nginx_target}" "${nginx_enabled}"
   rm -f -- "${maintenance_enabled}"
   nginx -t
@@ -340,6 +346,9 @@ if [[ "${scope}" == "app" ]]; then
   curl --fail --silent --show-error --max-time 10 \
     --resolve yeodam-2gether.com:443:127.0.0.1 \
     https://yeodam-2gether.com/api/actuator/health >/dev/null
+
+  log "CloudWatch Agent Host Metric과 Nginx Log 수집 설정 적용"
+  bash "${cloudwatch_agent_configurer}" --config "${cloudwatch_agent_config}"
   nginx_restore_required="false"
 else
   verify_image ai-worker "${ai_image}" "${ai_digest}"
