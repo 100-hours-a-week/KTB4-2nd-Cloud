@@ -133,6 +133,11 @@ output "nginx_error_log_group_name" {
   value       = aws_cloudwatch_log_group.nginx_error.name
 }
 
+output "ai_log_group_name" {
+  description = "CloudWatch Logs group for the Yeodam V1 AI JSON container log"
+  value       = aws_cloudwatch_log_group.ai.name
+}
+
 output "operations_dashboard_name" {
   description = "CloudWatch dashboard for Yeodam V1 operations"
   value       = aws_cloudwatch_dashboard.operations.dashboard_name

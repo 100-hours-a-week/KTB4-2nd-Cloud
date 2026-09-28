@@ -14,6 +14,7 @@ services:
       S3_BUCKET: "${S3_BUCKET:?S3_BUCKET is required}"
       FAKE_PIPELINE: "${FAKE_PIPELINE:-0}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      RELEASE: "${RELEASE:-local}"
     volumes:
       - qdrant-data:/data
     healthcheck:
@@ -25,10 +26,12 @@ services:
     security_opt:
       - no-new-privileges:true
     logging:
-      driver: json-file
+      driver: awslogs
       options:
-        max-size: 10m
-        max-file: "3"
+        awslogs-region: "${AWS_REGION:-ap-northeast-2}"
+        awslogs-group: "/yeodam/v1/ai"
+        awslogs-stream: "ai-worker"
+        awslogs-create-group: "false"
 
 volumes:
   qdrant-data:
