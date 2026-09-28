@@ -18,6 +18,16 @@ resource "aws_cloudwatch_log_group" "nginx_error" {
   }
 }
 
+resource "aws_cloudwatch_log_group" "ai" {
+  name              = "/${var.project_name}/${var.deployment_version}/ai"
+  retention_in_days = 30
+
+  tags = {
+    Name = "${local.name_prefix}-ai"
+    Role = "observability"
+  }
+}
+
 resource "aws_sns_topic" "operations_alarm" {
   name = "${local.name_prefix}-operations-alarm"
 

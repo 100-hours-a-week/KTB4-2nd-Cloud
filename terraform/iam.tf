@@ -48,6 +48,28 @@ resource "aws_iam_role_policy_attachment" "worker_ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+data "aws_iam_policy_document" "worker_cloudwatch_logs" {
+  statement {
+    sid    = "WriteAIContainerLogs"
+    effect = "Allow"
+
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+
+    resources = [
+      "${aws_cloudwatch_log_group.ai.arn}:*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "worker_cloudwatch_logs" {
+  name   = "${local.name_prefix}-worker-cloudwatch-logs"
+  role   = aws_iam_role.worker_ec2.id
+  policy = data.aws_iam_policy_document.worker_cloudwatch_logs.json
+}
+
 resource "aws_iam_instance_profile" "app" {
   name = "${local.name_prefix}-app-instance-profile"
   role = aws_iam_role.app_ec2.name

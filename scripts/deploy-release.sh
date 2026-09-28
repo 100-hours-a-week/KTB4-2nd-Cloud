@@ -303,6 +303,12 @@ bash "${runtime_renderer}" \
   --region "${aws_region}" \
   --path-prefix "${parameter_prefix}"
 
+if [[ "${scope}" == "worker" ]]; then
+  ai_release="${ai_image##*:sha-}"
+  [[ "${ai_release}" =~ ^[0-9a-f]{40}$ ]] || fail "AI Image에서 Release SHA를 확인할 수 없습니다."
+  printf 'RELEASE=%s\n' "${ai_release}" >> "${runtime_env}"
+fi
+
 log "GHCR 임시 인증"
 ghcr_username="$(aws ssm get-parameter --region "${aws_region}" --name "${parameter_prefix}/deploy/GHCR_USERNAME" --query 'Parameter.Value' --output text --no-cli-pager)"
 ghcr_token="$(aws ssm get-parameter --region "${aws_region}" --name "${parameter_prefix}/deploy/GHCR_TOKEN" --with-decryption --query 'Parameter.Value' --output text --no-cli-pager)"
