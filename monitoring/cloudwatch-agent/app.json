@@ -84,5 +84,23 @@
                 }
             ]
         }
+    },
+    "logs": {
+        "logs_collected": {
+            "files": {
+                "collect_list": [
+                    {
+                        "file_path": "/var/log/nginx/yeodam-access.json",
+                        "log_group_name": "/yeodam/v1/nginx/access",
+                        "log_stream_name": "{instance_id}"
+                    },
+                    {
+                        "file_path": "/var/log/nginx/yeodam-error.log",
+                        "log_group_name": "/yeodam/v1/nginx/error",
+                        "log_stream_name": "{instance_id}"
+                    }
+                ]
+            }
+        }
     }
 }
