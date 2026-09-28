@@ -9,7 +9,10 @@ vpc_cidr          = "10.20.0.0/16"
 public_subnet_cidr = "10.20.1.0/24"
 availability_zone = "ap-northeast-2a"
 
-ubuntu_ami_id         = "ami-086a43496cb46286c"
-app_instance_type     = "t3.medium"
-app_root_volume_size  = 30
+ubuntu_ami_id          = "ami-086a43496cb46286c"
+app_instance_type      = "t3.medium"
+app_root_volume_size   = 30
 mysql_data_volume_size = 10
+
+# Optional. After apply, the recipient must confirm the SNS subscription email.
+# alarm_notification_email = "operations@example.com"

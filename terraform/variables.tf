@@ -129,3 +129,18 @@ variable "worker_root_volume_size" {
     error_message = "The V1 Worker EC2 root volume size must be 30 GiB."
   }
 }
+
+variable "alarm_notification_email" {
+  description = "Optional email address subscribed to the V1 CloudWatch alarm SNS topic"
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = (
+      var.alarm_notification_email == null ||
+      can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.alarm_notification_email))
+    )
+    error_message = "alarm_notification_email must be null or a valid email address."
+  }
+}

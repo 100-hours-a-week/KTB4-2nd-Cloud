@@ -132,3 +132,13 @@ output "nginx_error_log_group_name" {
   description = "CloudWatch Logs group for the Yeodam V1 Nginx error log"
   value       = aws_cloudwatch_log_group.nginx_error.name
 }
+
+output "operations_dashboard_name" {
+  description = "CloudWatch dashboard for Yeodam V1 operations"
+  value       = aws_cloudwatch_dashboard.operations.dashboard_name
+}
+
+output "operations_alarm_topic_arn" {
+  description = "SNS topic receiving Yeodam V1 CloudWatch alarm state changes"
+  value       = aws_sns_topic.operations_alarm.arn
+}

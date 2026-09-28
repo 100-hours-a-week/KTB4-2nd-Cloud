@@ -109,4 +109,13 @@ resource "aws_instance" "worker" {
   depends_on = [
     aws_iam_role_policy_attachment.worker_ssm,
   ]
+
+  lifecycle {
+    # The auto-assigned public IPv4 is released while the on-demand Worker is
+    # stopped. Ignore that transient read value so a normal plan never replaces
+    # the Worker merely because it is currently stopped.
+    ignore_changes = [
+      associate_public_ip_address,
+    ]
+  }
 }

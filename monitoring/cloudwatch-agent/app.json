@@ -62,7 +62,8 @@
                     "exe": "nginx",
                     "measurement": [
                         "cpu_usage",
-                        "memory_rss"
+                        "memory_rss",
+                        "pid_count"
                     ],
                     "metrics_collection_interval": 60
                 },
@@ -70,7 +71,8 @@
                     "exe": "mysqld",
                     "measurement": [
                         "cpu_usage",
-                        "memory_rss"
+                        "memory_rss",
+                        "pid_count"
                     ],
                     "metrics_collection_interval": 60
                 },
@@ -78,7 +80,8 @@
                     "exe": "dockerd",
                     "measurement": [
                         "cpu_usage",
-                        "memory_rss"
+                        "memory_rss",
+                        "pid_count"
                     ],
                     "metrics_collection_interval": 60
                 }
