@@ -46,6 +46,50 @@ resource "aws_s3_bucket_versioning" "app_data" {
   }
 }
 
+resource "aws_s3_bucket_lifecycle_configuration" "app_data" {
+  bucket = aws_s3_bucket.app_data.id
+
+  rule {
+    id     = "expire-temporary-download-archives"
+    status = "Enabled"
+
+    filter {
+      and {
+        prefix = "trip-downloads/"
+
+        tags = {
+          status = "temporary"
+        }
+      }
+    }
+
+    expiration {
+      days = 1
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 1
+    }
+  }
+
+  rule {
+    id     = "remove-expired-download-delete-markers"
+    status = "Enabled"
+
+    filter {
+      prefix = "trip-downloads/"
+    }
+
+    expiration {
+      expired_object_delete_marker = true
+    }
+  }
+
+  depends_on = [
+    aws_s3_bucket_versioning.app_data,
+  ]
+}
+
 data "aws_iam_policy_document" "app_data_bucket" {
   statement {
     sid    = "DenyInsecureTransport"

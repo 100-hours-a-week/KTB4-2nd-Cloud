@@ -100,6 +100,21 @@ data "aws_iam_policy_document" "app_s3" {
       "${aws_s3_bucket.app_data.arn}/trip-uploads/*",
     ]
   }
+
+  statement {
+    sid    = "ReadAndWriteTemporaryDownloadArchives"
+    effect = "Allow"
+
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:PutObjectTagging",
+    ]
+
+    resources = [
+      "${aws_s3_bucket.app_data.arn}/trip-downloads/*",
+    ]
+  }
 }
 
 resource "aws_iam_role_policy" "app_s3" {
