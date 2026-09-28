@@ -141,9 +141,9 @@ resource "aws_cloudwatch_metric_alarm" "app_process_missing" {
   namespace         = "CWAgent"
   metric_name       = "procstat_lookup_pid_count"
   dimensions = {
-    InstanceId   = aws_instance.app.id
-    exe          = each.value
-    process_name = each.value
+    InstanceId = aws_instance.app.id
+    exe        = each.value
+    pid_finder = "native"
   }
   statistic           = "Minimum"
   period              = 60
