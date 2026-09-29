@@ -354,10 +354,10 @@ resource "aws_cloudwatch_dashboard" "operations" {
         width  = 12
         height = 6
         properties = {
-          title  = "Nginx route latency"
+          title  = "Nginx route latency by status"
           region = var.aws_region
           view   = "table"
-          query  = "SOURCE '${aws_cloudwatch_log_group.nginx_access.name}' | stats pct(request_time * 1000, 95) as request_p95_ms, pct(upstream_response_time * 1000, 95) as upstream_p95_ms by normalized_route | sort request_p95_ms desc | limit 30"
+          query  = "SOURCE '${aws_cloudwatch_log_group.nginx_access.name}' | stats count(*) as requests, pct(request_time * 1000, 95) as request_p95_ms, pct(upstream_response_time * 1000, 95) as upstream_p95_ms by normalized_route, status | sort request_p95_ms desc | limit 30"
         }
       },
       {
@@ -400,6 +400,46 @@ resource "aws_cloudwatch_dashboard" "operations" {
         type   = "log"
         x      = 0
         y      = 32
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Trip creation total latency"
+          region = var.aws_region
+          view   = "table"
+          query  = <<-QUERY
+            SOURCE '${aws_cloudwatch_log_group.backend.name}'
+            | fields toMillis(@timestamp) as timestamp_ms
+            | filter event = "trip_creation" and result in ["started", "success", "failure"]
+            | stats min(timestamp_ms) as started_ms, max(timestamp_ms) as ended_ms, count_distinct(result) as states, latest(result) as final_result by job_id, trip_id
+            | filter states >= 2 and final_result in ["success", "failure"]
+            | stats count(*) as samples, avg(ended_ms - started_ms) as avg_ms, pct(ended_ms - started_ms, 95) as p95_ms, max(ended_ms - started_ms) as max_ms by final_result
+          QUERY
+        }
+      },
+      {
+        type   = "log"
+        x      = 12
+        y      = 32
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Trip creations without terminal event in selected range"
+          region = var.aws_region
+          view   = "table"
+          query  = <<-QUERY
+            SOURCE '${aws_cloudwatch_log_group.backend.name}'
+            | fields @timestamp, event, result, job_id, trip_id, release
+            | filter event = "trip_creation" and result in ["started", "success", "failure"]
+            | stats earliest(@timestamp) as started_at_ms, count_distinct(result) as states, latest(result) as latest_result by job_id, trip_id, release
+            | filter states = 1 and latest_result = "started"
+            | sort started_at_ms asc
+          QUERY
+        }
+      },
+      {
+        type   = "log"
+        x      = 0
+        y      = 38
         width  = 24
         height = 6
         properties = {
@@ -418,7 +458,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
       {
         type   = "log"
         x      = 0
-        y      = 38
+        y      = 44
         width  = 12
         height = 6
         properties = {
@@ -436,7 +476,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
       {
         type   = "log"
         x      = 12
-        y      = 38
+        y      = 44
         width  = 12
         height = 6
         properties = {
@@ -454,7 +494,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
       {
         type   = "log"
         x      = 0
-        y      = 44
+        y      = 50
         width  = 24
         height = 6
         properties = {
@@ -473,7 +513,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
       {
         type   = "alarm"
         x      = 0
-        y      = 50
+        y      = 56
         width  = 24
         height = 6
         properties = {
