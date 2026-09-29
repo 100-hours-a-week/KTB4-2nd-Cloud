@@ -312,7 +312,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
           period  = 60
           stat    = "Minimum"
           metrics = [for name in ["nginx", "mysqld", "dockerd"] :
-            ["CWAgent", "procstat_lookup_pid_count", "InstanceId", aws_instance.app.id, "exe", name, "process_name", name, { label = name }]
+            ["CWAgent", "procstat_lookup_pid_count", "InstanceId", aws_instance.app.id, "exe", name, "pid_finder", "native", { label = name }]
           ]
         }
       },
@@ -361,9 +361,119 @@ resource "aws_cloudwatch_dashboard" "operations" {
         }
       },
       {
-        type   = "alarm"
+        type   = "log"
         x      = 0
         y      = 26
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Backend event results"
+          region = var.aws_region
+          view   = "table"
+          query  = <<-QUERY
+            SOURCE '${aws_cloudwatch_log_group.backend.name}'
+            | filter ispresent(event) and ispresent(result)
+            | stats count(*) as events by event, result
+            | sort events desc
+          QUERY
+        }
+      },
+      {
+        type   = "log"
+        x      = 12
+        y      = 26
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Backend event latency"
+          region = var.aws_region
+          view   = "table"
+          query  = <<-QUERY
+            SOURCE '${aws_cloudwatch_log_group.backend.name}'
+            | filter ispresent(event) and ispresent(duration_ms) and result != "started"
+            | stats count(*) as samples, avg(duration_ms) as avg_ms, pct(duration_ms, 95) as p95_ms, max(duration_ms) as max_ms by event, result
+            | sort p95_ms desc
+          QUERY
+        }
+      },
+      {
+        type   = "log"
+        x      = 0
+        y      = 32
+        width  = 24
+        height = 6
+        properties = {
+          title  = "Backend recent failures"
+          region = var.aws_region
+          view   = "table"
+          query  = <<-QUERY
+            SOURCE '${aws_cloudwatch_log_group.backend.name}'
+            | fields @timestamp, event, result, failure_stage, error_code, request_id, trip_id, job_id, release, message
+            | filter result = "failure" or level = "ERROR"
+            | sort @timestamp desc
+            | limit 30
+          QUERY
+        }
+      },
+      {
+        type   = "log"
+        x      = 0
+        y      = 38
+        width  = 12
+        height = 6
+        properties = {
+          title  = "AI job results"
+          region = var.aws_region
+          view   = "table"
+          query  = <<-QUERY
+            SOURCE '${aws_cloudwatch_log_group.ai.name}'
+            | filter event in ["ai_job", "ai_worker_execution", "ai_callback"] and ispresent(result)
+            | stats count(*) as events by event, result
+            | sort events desc
+          QUERY
+        }
+      },
+      {
+        type   = "log"
+        x      = 12
+        y      = 38
+        width  = 12
+        height = 6
+        properties = {
+          title  = "AI pipeline step latency"
+          region = var.aws_region
+          view   = "table"
+          query  = <<-QUERY
+            SOURCE '${aws_cloudwatch_log_group.ai.name}'
+            | filter event = "ai_pipeline_step" and ispresent(duration_ms) and result != "started"
+            | stats count(*) as samples, avg(duration_ms) as avg_ms, pct(duration_ms, 95) as p95_ms, max(duration_ms) as max_ms by step, result
+            | sort p95_ms desc
+          QUERY
+        }
+      },
+      {
+        type   = "log"
+        x      = 0
+        y      = 44
+        width  = 24
+        height = 6
+        properties = {
+          title  = "AI recent failures"
+          region = var.aws_region
+          view   = "table"
+          query  = <<-QUERY
+            SOURCE '${aws_cloudwatch_log_group.ai.name}'
+            | fields @timestamp, event, result, step, failure_stage, error_code, request_id, trip_id, job_id, release, message
+            | filter result = "failure" or level = "ERROR"
+            | sort @timestamp desc
+            | limit 30
+          QUERY
+        }
+      },
+      {
+        type   = "alarm"
+        x      = 0
+        y      = 50
         width  = 24
         height = 6
         properties = {
