@@ -28,6 +28,16 @@ resource "aws_cloudwatch_log_group" "ai" {
   }
 }
 
+resource "aws_cloudwatch_log_group" "backend" {
+  name              = "/${var.project_name}/${var.deployment_version}/backend"
+  retention_in_days = 30
+
+  tags = {
+    Name = "${local.name_prefix}-backend"
+    Role = "observability"
+  }
+}
+
 resource "aws_sns_topic" "operations_alarm" {
   name = "${local.name_prefix}-operations-alarm"
 

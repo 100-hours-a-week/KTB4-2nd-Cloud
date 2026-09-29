@@ -138,6 +138,11 @@ output "ai_log_group_name" {
   value       = aws_cloudwatch_log_group.ai.name
 }
 
+output "backend_log_group_name" {
+  description = "CloudWatch Logs group for the Yeodam V1 Backend JSON container log"
+  value       = aws_cloudwatch_log_group.backend.name
+}
+
 output "operations_dashboard_name" {
   description = "CloudWatch dashboard for Yeodam V1 operations"
   value       = aws_cloudwatch_dashboard.operations.dashboard_name
