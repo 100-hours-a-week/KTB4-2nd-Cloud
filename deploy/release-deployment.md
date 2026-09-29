@@ -80,6 +80,8 @@ Worker 배포가 성공하면 `yeodam-worker-idle-shutdown.timer`를 활성화�
 
 Health 요청 실패, 비정상 응답, 준비 미완료 또는 작업 존재 시에는 종료하지 않는다. Terraform의 `instance_initiated_shutdown_behavior = "stop"` 설정에 따라 내부 Poweroff는 Instance 삭제가 아니라 Stop으로 처리된다. 다음 여행 생성 요청이 들어오면 Backend가 EC2를 다시 시작하고 Docker의 재시작 정책에 따라 AI Container가 자동 복구된다.
 
+운영 배포를 시작하면 CD Script가 Worker의 Timer와 실행 중인 종료 Service를 먼저 중지한다. App Release를 준비한 뒤 Worker 상태와 SSM 연결을 다시 확인하고, 그 사이 Worker가 종료됐다면 다시 시작한 뒤 Worker Release를 준비한다. 배포 성공 여부와 관계없이 종료 처리에서 Timer를 다시 시작하며, 배포 전에 Worker가 중지 상태였다면 Release 적용 후 다시 중지한다. 이를 통해 유휴 종료와 SSM 배포 명령이 동시에 실행되는 상황을 방지한다.
+
 ## Rollback
 
 ```bash
