@@ -10,6 +10,7 @@ readonly REPOSITORY="100-hours-a-week/KTB4-2nd-Cloud"
 cloud_commit="${1:-}"
 worker_original_state=""
 worker_started="false"
+worker_idle_shutdown_paused="false"
 
 fail() {
   echo "ERROR: $*" >&2
@@ -27,7 +28,7 @@ ssm_run() {
     --arg command "${command}" \
     '{commands: ["exec bash -c " + ($command | @sh)]}' > "${parameters_file}"
 
-  command_id="$(
+  if ! command_id="$(
     aws ssm send-command \
       --region "${REGION}" \
       --instance-ids "${instance_id}" \
@@ -36,7 +37,10 @@ ssm_run() {
       --parameters "file://${parameters_file}" \
       --query 'Command.CommandId' \
       --output text
-  )"
+  )"; then
+    rm -f -- "${parameters_file}"
+    return 1
+  fi
   rm -f -- "${parameters_file}"
 
   local deadline=$((SECONDS + 900))
@@ -90,10 +94,74 @@ wait_for_ssm() {
   fail "SSM 연결을 기다리는 시간이 초과됐습니다: ${instance_id}"
 }
 
+worker_state() {
+  aws ec2 describe-instances \
+    --region "${REGION}" \
+    --instance-ids "${WORKER_INSTANCE_ID}" \
+    --query 'Reservations[0].Instances[0].State.Name' \
+    --output text
+}
+
+ensure_worker_ready() {
+  local state
+
+  state="$(worker_state)"
+  case "${state}" in
+    running|pending)
+      ;;
+    stopping)
+      echo "Worker EC2가 종료 중이므로 중지 완료 후 다시 시작합니다."
+      aws ec2 wait instance-stopped --region "${REGION}" --instance-ids "${WORKER_INSTANCE_ID}"
+      aws ec2 start-instances --region "${REGION}" --instance-ids "${WORKER_INSTANCE_ID}" >/dev/null
+      ;;
+    stopped)
+      echo "Worker EC2를 배포를 위해 시작합니다."
+      aws ec2 start-instances --region "${REGION}" --instance-ids "${WORKER_INSTANCE_ID}" >/dev/null
+      ;;
+    *)
+      fail "Worker EC2 상태가 배포 가능한 상태가 아닙니다: ${state}"
+      ;;
+  esac
+
+  aws ec2 wait instance-status-ok --region "${REGION}" --instance-ids "${WORKER_INSTANCE_ID}"
+  wait_for_ssm "${WORKER_INSTANCE_ID}"
+}
+
+pause_worker_idle_shutdown() {
+  local attempt state
+
+  for attempt in 1 2 3; do
+    ensure_worker_ready
+    if ssm_run \
+      "${WORKER_INSTANCE_ID}" \
+      "Pause Yeodam worker idle shutdown" \
+      "systemctl stop yeodam-worker-idle-shutdown.timer; systemctl stop yeodam-worker-idle-shutdown.service || true; [[ \"\$(systemctl is-active yeodam-worker-idle-shutdown.timer || true)\" == \"inactive\" ]]"; then
+      worker_idle_shutdown_paused="true"
+      echo "Worker 유휴 자동 종료를 배포 동안 중지했습니다."
+      return 0
+    fi
+
+    state="$(worker_state)"
+    echo "Worker 유휴 자동 종료 중지에 실패했습니다: attempt=${attempt}, state=${state}" >&2
+    [[ "${state}" == "stopping" || "${state}" == "stopped" || "${state}" == "pending" ]] || return 1
+  done
+
+  fail "Worker 유휴 자동 종료를 중지하지 못했습니다."
+}
+
 restore_worker_state() {
   local exit_code=$?
 
   trap - EXIT
+  if [[ "${worker_idle_shutdown_paused}" == "true" && "$(worker_state)" == "running" ]]; then
+    echo "Worker 유휴 자동 종료를 다시 시작합니다."
+    ssm_run \
+      "${WORKER_INSTANCE_ID}" \
+      "Resume Yeodam worker idle shutdown" \
+      "systemctl start yeodam-worker-idle-shutdown.timer" \
+      || echo "ERROR: Worker 유휴 자동 종료를 다시 시작하지 못했습니다." >&2
+  fi
+
   if [[ "${worker_started}" == "true" && "${worker_original_state}" == "stopped" ]]; then
     echo "Worker EC2를 배포 전 상태로 중지합니다."
     aws ec2 stop-instances --region "${REGION}" --instance-ids "${WORKER_INSTANCE_ID}" >/dev/null
@@ -163,20 +231,32 @@ app_state="$(aws ec2 describe-instances --region "${REGION}" --instance-ids "${A
 wait_for_ssm "${APP_INSTANCE_ID}"
 
 worker_original_state="$(aws ec2 describe-instances --region "${REGION}" --instance-ids "${WORKER_INSTANCE_ID}" --query 'Reservations[0].Instances[0].State.Name' --output text)"
-[[ "${worker_original_state}" == "running" || "${worker_original_state}" == "stopped" ]] \
-  || fail "Worker EC2 상태가 배포 가능한 상태가 아닙니다: ${worker_original_state}"
+case "${worker_original_state}" in
+  running)
+    ;;
+  stopped)
+    worker_started="true"
+    ;;
+  stopping)
+    echo "Worker EC2가 배포 시작 시 종료 중이므로 중지 상태로 복원합니다."
+    worker_original_state="stopped"
+    worker_started="true"
+    ;;
+  pending)
+    echo "Worker EC2가 배포 시작 시 기동 중이므로 실행 상태로 유지합니다."
+    worker_original_state="running"
+    ;;
+  *)
+    fail "Worker EC2 상태가 배포 가능한 상태가 아닙니다: ${worker_original_state}"
+    ;;
+esac
 trap restore_worker_state EXIT
-
-if [[ "${worker_original_state}" == "stopped" ]]; then
-  echo "Worker EC2를 배포를 위해 시작합니다."
-  worker_started="true"
-  aws ec2 start-instances --region "${REGION}" --instance-ids "${WORKER_INSTANCE_ID}" >/dev/null
-  aws ec2 wait instance-status-ok --region "${REGION}" --instance-ids "${WORKER_INSTANCE_ID}"
-fi
-wait_for_ssm "${WORKER_INSTANCE_ID}"
+ensure_worker_ready
+pause_worker_idle_shutdown
 
 echo "App/Worker에 Release를 준비합니다: ${cloud_commit}"
 stage_release "${APP_INSTANCE_ID}"
+ensure_worker_ready
 stage_release "${WORKER_INSTANCE_ID}"
 
 echo "App Release를 배포합니다."
