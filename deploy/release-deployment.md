@@ -36,7 +36,7 @@ sudo /opt/yeodam/releases/CLOUD_SHA/scripts/deploy-release.sh \
 
 Script는 다음 순서로 실행된다.
 
-1. Instance Role로 Parameter Store를 조회해 `/run/yeodam/{scope}.env` 생성. Worker는 배포할 AI Image Commit SHA를 `RELEASE`로 추가
+1. Instance Role로 Parameter Store를 조회해 `/run/yeodam/{scope}.env` 생성. App은 Backend Image Commit SHA를, Worker는 AI Image Commit SHA를 `RELEASE`로 추가
 2. `/yeodam/v1/deploy/*`의 GHCR 인증을 임시 Docker 설정에 주입
 3. Compose 설정 확인과 Image 사전 Pull
 4. Container 교체와 Health 확인
@@ -54,6 +54,12 @@ Script는 다음 순서로 실행된다.
 AI Container는 stdout에 한 줄 JSON을 기록하고 Docker `awslogs` Driver가 `/yeodam/v1/ai` Log Group으로 직접 전송한다. Log Group은 Terraform이 만들고 30일 동안 보존한다. Worker Instance Role은 이 Group의 Log Stream 생성과 Event 전송만 허용되며 Log Group 생성 권한은 갖지 않는다.
 
 따라서 최초 적용이나 Log Group 재생성 시에는 Terraform Apply를 먼저 완료한 뒤 Production CD를 실행해야 한다. 배포 Script는 AI Image Tag의 40자리 Commit SHA를 `RELEASE` 환경변수로 주입하므로 CloudWatch Logs에서 실행 Image와 Event를 연결할 수 있다. 운영 기본 Log Level은 `INFO`이며 원인 분석을 위한 `DEBUG`는 짧은 구간에만 사용한다.
+
+## Backend JSON Log 전송
+
+Backend Container는 stdout에 한 줄 JSON을 기록하고 Docker `awslogs` Driver가 `/yeodam/v1/backend` Log Group으로 직접 전송한다. Log Group은 Terraform이 만들고 30일 동안 보존한다. App Instance Role은 이 Group의 Log Stream 생성과 Event 전송 권한을 가지며, Docker에는 Log Group 생성 권한을 맡기지 않는다.
+
+배포 Script는 Backend Image Tag의 40자리 Commit SHA를 `RELEASE` 환경변수로 주입한다. Backend가 기록한 `request_id`, `trip_id`, `job_id`와 Nginx 및 AI Log의 같은 식별자를 Logs Insights에서 함께 조회하면 사용자 요청부터 AI 처리까지 연결할 수 있다. 최초 적용 시에는 Terraform Apply로 Log Group과 권한을 먼저 만든 뒤 Production CD를 실행해야 한다.
 
 ## Host Image 보관 정책
 

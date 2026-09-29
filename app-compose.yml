@@ -42,6 +42,7 @@ services:
       - "host.docker.internal:172.28.0.1"
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      RELEASE: "${RELEASE:-local}"
       MYSQL_URL: "${MYSQL_URL:?MYSQL_URL is required}"
       MYSQL_USERNAME: "${MYSQL_USERNAME:?MYSQL_USERNAME is required}"
       MYSQL_PASSWORD: "${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}"
@@ -79,10 +80,12 @@ services:
     networks:
       - app-network
     logging:
-      driver: json-file
+      driver: awslogs
       options:
-        max-size: 10m
-        max-file: "3"
+        awslogs-region: "${AWS_REGION:-ap-northeast-2}"
+        awslogs-group: "/yeodam/v1/backend"
+        awslogs-stream: "backend"
+        awslogs-create-group: "false"
 
 networks:
   app-network:

@@ -303,7 +303,11 @@ bash "${runtime_renderer}" \
   --region "${aws_region}" \
   --path-prefix "${parameter_prefix}"
 
-if [[ "${scope}" == "worker" ]]; then
+if [[ "${scope}" == "app" ]]; then
+  backend_release="${backend_image##*:sha-}"
+  [[ "${backend_release}" =~ ^[0-9a-f]{40}$ ]] || fail "Backend Image에서 Release SHA를 확인할 수 없습니다."
+  printf 'RELEASE=%s\n' "${backend_release}" >> "${runtime_env}"
+else
   ai_release="${ai_image##*:sha-}"
   [[ "${ai_release}" =~ ^[0-9a-f]{40}$ ]] || fail "AI Image에서 Release SHA를 확인할 수 없습니다."
   printf 'RELEASE=%s\n' "${ai_release}" >> "${runtime_env}"
