@@ -1,0 +1,12 @@
+{
+  "name": "yeodam-baseline-150",
+  "version": "2026-09-29-v1",
+  "files": [
+    {
+      "path": "/absolute/path/to/photos/IMG_0001.jpg",
+      "filename": "photo-0001.jpg",
+      "contentType": "image/jpeg",
+      "sizeBytes": 8388608
+    }
+  ]
+}
