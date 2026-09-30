@@ -27,3 +27,11 @@ terraform.rc
 # Local application runtime values
 /deploy/app.env
 /deploy/worker.env
+
+# Local load-test runtime values, datasets, and results
+/tests/load/config/*.env
+!/tests/load/config/*.example.env
+/tests/load/fixtures/*.json
+!/tests/load/fixtures/*.example.json
+/tests/load/results/*
+!/tests/load/results/.gitkeep
