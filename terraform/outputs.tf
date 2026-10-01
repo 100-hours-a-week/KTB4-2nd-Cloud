@@ -108,6 +108,26 @@ output "worker_private_ip" {
   value       = aws_instance.worker.private_ip
 }
 
+output "load_generator_instance_id" {
+  description = "Instance ID of the temporary V1 k6 load generator, or null when disabled"
+  value       = var.enable_load_generator ? aws_instance.load_generator[0].id : null
+}
+
+output "load_generator_public_ip" {
+  description = "Public IPv4 address of the temporary V1 k6 load generator, or null when disabled"
+  value       = var.enable_load_generator ? aws_instance.load_generator[0].public_ip : null
+}
+
+output "load_generator_fixture_s3_prefix" {
+  description = "Private S3 prefix used to transfer temporary load test fixtures"
+  value       = "s3://${aws_s3_bucket.app_data.id}/load-test-fixtures"
+}
+
+output "load_test_result_s3_prefix" {
+  description = "Private S3 prefix used to collect k6 result files"
+  value       = "s3://${aws_s3_bucket.app_data.id}/load-test-results"
+}
+
 output "github_actions_oidc_provider_arn" {
   description = "ARN of the GitHub Actions OIDC provider"
   value       = aws_iam_openid_connect_provider.github_actions.arn

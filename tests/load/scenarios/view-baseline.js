@@ -1,4 +1,5 @@
 import { check, sleep } from 'k6';
+import exec from 'k6/execution';
 
 import { initializeAuthenticatedSession, viewTrip } from '../lib/api.mjs';
 import {
@@ -19,6 +20,7 @@ const thinkTimeSeconds = positiveIntegerEnv('K6_VIEW_THINK_TIME_SECONDS', 2);
 
 export const options = {
   discardResponseBodies: true,
+  noCookiesReset: true,
   scenarios: {
     view_baseline: {
       executor: 'constant-vus',
@@ -41,17 +43,25 @@ let authenticated = false;
 
 export function viewBaseline() {
   businessFailures.add(0, { operation: 'trip_view_result' });
-  if (!authenticated) {
-    initializeAuthenticatedSession(baseUrl, accessToken);
-    authenticated = true;
-  }
+  try {
+    if (!authenticated) {
+      initializeAuthenticatedSession(baseUrl, accessToken);
+      authenticated = true;
+    }
 
-  const viewed = viewTrip(baseUrl, tripId);
-  const valid = check(viewed.detail, {
-    'trip_view: requested trip returned': (detail) => detail && detail.tripId === tripId,
-  });
-  if (!valid) businessFailures.add(1, { operation: 'trip_view_result' });
-  sleep(thinkTimeSeconds);
+    const viewed = viewTrip(baseUrl, tripId);
+    const valid = check(viewed.detail, {
+      'trip_view: requested trip returned': (detail) => detail && detail.tripId === tripId,
+    });
+    if (!valid) businessFailures.add(1, { operation: 'trip_view_result' });
+  } catch (error) {
+    if (String(error).includes('실제 status=401')) {
+      exec.test.abort(`view_baseline: 인증 만료로 중단했습니다. ${error}`);
+    }
+    throw error;
+  } finally {
+    sleep(thinkTimeSeconds);
+  }
 }
 
 export function setup() {

@@ -130,6 +130,34 @@ variable "worker_root_volume_size" {
   }
 }
 
+variable "enable_load_generator" {
+  description = "Whether to create the temporary V1 k6 load generator resources"
+  type        = bool
+  default     = false
+}
+
+variable "load_generator_instance_type" {
+  description = "EC2 instance type for the temporary V1 k6 load generator"
+  type        = string
+  default     = "c6i.large"
+
+  validation {
+    condition     = var.load_generator_instance_type == "c6i.large"
+    error_message = "The initial V1 Baseline load generator instance type must be c6i.large."
+  }
+}
+
+variable "load_generator_root_volume_size" {
+  description = "Root EBS volume size in GiB for the temporary V1 k6 load generator"
+  type        = number
+  default     = 16
+
+  validation {
+    condition     = var.load_generator_root_volume_size == 16
+    error_message = "The V1 Baseline load generator root volume size must be 16 GiB."
+  }
+}
+
 variable "alarm_notification_email" {
   description = "Optional email address subscribed to the V1 CloudWatch alarm SNS topic"
   type        = string

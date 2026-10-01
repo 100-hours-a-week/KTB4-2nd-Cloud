@@ -18,6 +18,14 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
+file_size() {
+  if stat --version >/dev/null 2>&1; then
+    stat -c '%s' "$1"
+  else
+    stat -f '%z' "$1"
+  fi
+}
+
 jq -e '
   (.files | type == "array") and
   (.files | length >= 1 and length <= 200) and
@@ -35,7 +43,7 @@ while IFS=$'\t' read -r path expected_size; do
     exit 1
   fi
 
-  actual_size="$(stat -f '%z' "${path}" 2>/dev/null || stat -c '%s' "${path}")"
+  actual_size="$(file_size "${path}")"
   if (( actual_size < 1 || actual_size > 15728640 )); then
     echo "Photo size must be between 1B and 15MiB: ${path} (${actual_size}B)" >&2
     exit 1
