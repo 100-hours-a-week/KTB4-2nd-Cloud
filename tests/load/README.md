@@ -243,6 +243,35 @@ export K6_VIEW_THINK_TIME_SECONDS='2'
 
 완료 여행 조회의 초기 SLO인 p95 1초를 Threshold로 사용합니다. Upload 중간/마지막 Batch에는 첫 Baseline 전 고정 지연시간 목표를 두지 않습니다.
 
+## V1 세션 비율 혼합 한계 시험
+
+V1 설계의 피크 1시간은 여행 생성 4세션·일반 조회 11세션이다. 이는 API 요청 비율이나 고정 VU 비율이 아니다. `mixed-limit.js`는 두 세션의 **시작률**을 4:11로 유지하며 `K6_LOAD_MULTIPLIER`로 함께 늘린다. 기본 1시간에서 배수 1/2/3은 각각 생성 4/8/12건과 조회 11/22/33세션을 시작한다. 응답이 느려져도 예정된 유입은 유지하며, VU 부족으로 시작하지 못한 `dropped_iterations`는 실패로 기록한다.
+
+- 생성 세션: 인증 확인 → 여행 생성 → 150장 10장 단위 업로드 → 마지막 Batch가 AI 완료를 기다리는 동안 2초 간격 처리 상태 조회 → 결과 여행 상세 조회
+- 일반 조회 세션: 인증 확인 → 여행 목록 → 지도 → 완료 여행 상세 → 장소 폴더 목록. 요청 사이 기본 2초를 두며 `K6_GENERAL_VIEW_THINK_TIME_SECONDS`로 조정할 수 있다. 설계의 5개 기본 요청을 현재 API로 재현하지만, 로그인 화면/OAuth 자체와 사진·일기 조회까지 포함한 완전한 FE 사용자 여정은 아니다.
+
+운영에서는 서로 다른 카카오 계정으로 정상 가입한 **생성 계정**을 준비한다. 한 생성 VU는 한 계정만 사용하고, 동시 세션이 계정을 공유하지 않는다. 처리시간 변동에 대비해 생성 계정은 부하 배수보다 최소 1개 더 준비한다. 조회 계정에는 해당 계정 소유의 완료 여행 ID를 1:1로 연결한다. Access Token 유효기간은 30분이므로 이 시험은 계정별 Refresh Cookie로 매 세션 시작 시 Access Token을 갱신한다. 생성·조회 계정 사이에도 Refresh Cookie를 공유하지 않는다. Refresh Token은 장기 인증 정보이므로 Shell에서 숨김 입력하고 파일·명령 인자·결과에 저장하지 않는다. 아래는 생성 계정 2개와 조회 계정 1개의 예시다. 배수나 실행시간을 올리기 전에 계정 수와 발생기 메모리 여유를 다시 확인한다. k6가 VU마다 사진 데이터를 적재하므로 조회 VU도 발생기 메모리를 사용한다. 기존 발생기 `c6i.large`에서는 150장 단일 실행의 최대 RSS가 약 1.44GiB였으므로, **이 혼합 시험 전에는 발생기 증설 또는 분리가 필요하다.**
+
+```bash
+cd /opt/yeodam-load/source/tests/load
+export K6_BASE_URL='https://yeodam-2gether.com'
+export K6_DATA_MANIFEST='/opt/yeodam-load/manifests/baseline-150.json'
+export K6_RESULTS_DIRECTORY='/opt/yeodam-load/results'
+read -r -s -p 'creation refresh token 1: ' creation_token_1; echo
+read -r -s -p 'creation refresh token 2: ' creation_token_2; echo
+read -r -s -p 'view refresh token: ' view_token; echo
+export K6_CREATION_REFRESH_TOKENS="${creation_token_1},${creation_token_2}"
+export K6_VIEW_REFRESH_TOKENS="${view_token}"
+export K6_VIEW_TRIP_IDS='완료된_조회_계정_소유_여행_ID'
+export K6_LOAD_MULTIPLIER='1'
+export K6_LIMIT_DURATION='1h'
+./scripts/run-k6.sh scenarios/mixed-limit.js
+```
+
+`K6_CREATION_REFRESH_TOKENS`는 생성 VU당 서로 다른 사용자 Refresh Token을 쉼표로 구분한다. `K6_VIEW_REFRESH_TOKENS`와 `K6_VIEW_TRIP_IDS`는 같은 순서·개수여야 한다. 시작 전에 조회 ID를 실제 정수로 바꾸고, 배포 Release와 계정별 소유권을 확인한다. 브라우저의 `/api/auth` 경로에 발급된 `refreshToken` Cookie 값을 사용한다. 401이 발생하면 시험을 중단한다. 실행은 1시간 유입 후 시작된 생성 세션을 최대 35분 더 기다릴 수 있다. 결과의 `run.log`에는 세션별 `trip_id`·`request_id`, `summary.json`에는 시나리오별 실제 시작/완료 수와 `dropped_iterations`가 남는다. Token은 결과 이벤트에 기록하지 않는다.
+
+운영 테스트 시간을 공지하고 배포를 멈춘 뒤 배수 1부터 시작한다. 각 단계의 k6 결과와 CloudWatch에서 생성 성공/실패·원본 수, 조회 성공률과 p95, 처리 상태 Polling, AI 대기/완료, App/Worker/발생기 자원 및 회복을 확인한다. 이전 단계의 작업이 남아 있거나 중단 기준에 닿으면 다음 배수로 올리지 않는다. `dropped_iterations`가 발생하면 먼저 계정/VU 수와 발생기 자원을 점검한다. 이것만으로 App 한계라고 판정하지 않는다. 사진 재사용, 소수 계정·완료 여행 반복 조회, 외부 API 변동은 결과의 대표성 한계로 함께 기록한다. 이 시나리오의 최초 재현 가능한 서비스 미달 지점은 **이 세션 구성에서의 한계**이며 모든 API의 절대 최대 RPS가 아니다.
+
 ## 실행 중단 기준
 
 k6 HTTP Threshold만으로 Host/Container 상태를 알 수 없으므로 실행자와 Dashboard 확인 담당자가 함께 판단합니다. 다음 조건에서는 k6에 `Ctrl-C`를 보내 즉시 중단합니다.
@@ -278,8 +307,4 @@ export K6_TRIP_ID='123'
 
 이 삭제는 운영 DB의 논리 삭제이며 S3 Versioning/Lifecycle의 물리 객체 정리와 같지 않습니다. 운영 DB/S3를 직접 수정하는 정리 명령은 이 테스트에 포함하지 않습니다.
 
-## 다음 작업 경계
-
-10장, 11장과 30장으로 Script·측정 경로·발생기 자원을 확인한 뒤 평균 150장 Baseline을 최소 3회 반복하고 누락된 Metric/Log를 보완합니다. `runner-time.txt`, Network Byte와 EC2 Metric에서 발생기가 먼저 포화되면 Peak/Spike 전에 사양이나 실행 방식을 다시 정합니다.
-
-Peak/Spike/AI 처리량과 제한적 Stress는 Baseline 결과와 발생기 검증이 끝난 뒤 별도 Scenario로 추가합니다. 이번 구성에서는 Nginx `limit_req`, `limit_conn`을 변경하지 않습니다.
+이번 변경은 혼합 한계 시험의 구성까지다. 운영 실행과 결과 판정은 계정·발생기·시험 시간 준비 후 별도로 진행한다. Nginx `limit_req`, `limit_conn`은 변경하지 않는다.
