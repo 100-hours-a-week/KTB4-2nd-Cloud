@@ -85,6 +85,66 @@ resource "aws_s3_bucket_lifecycle_configuration" "app_data" {
     }
   }
 
+  rule {
+    id     = "expire-load-test-fixtures"
+    status = "Enabled"
+
+    filter {
+      prefix = "load-test-fixtures/"
+    }
+
+    expiration {
+      days = 1
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 1
+    }
+  }
+
+  rule {
+    id     = "remove-load-test-fixture-delete-markers"
+    status = "Enabled"
+
+    filter {
+      prefix = "load-test-fixtures/"
+    }
+
+    expiration {
+      expired_object_delete_marker = true
+    }
+  }
+
+  rule {
+    id     = "expire-load-test-results"
+    status = "Enabled"
+
+    filter {
+      prefix = "load-test-results/"
+    }
+
+    expiration {
+      days = 30
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 1
+    }
+  }
+
+  rule {
+    id     = "remove-load-test-result-delete-markers"
+    status = "Enabled"
+
+    filter {
+      prefix = "load-test-results/"
+    }
+
+    expiration {
+      expired_object_delete_marker = true
+    }
+  }
+
   depends_on = [
     aws_s3_bucket_versioning.app_data,
   ]
