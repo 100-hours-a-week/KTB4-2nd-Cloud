@@ -102,16 +102,21 @@ let refreshSeeded = false;
 let lastRefreshAt = 0;
 
 function initializeRefreshableSession(refreshToken) {
+  const refreshUrl = `${baseUrl}/api/auth/token/refresh`;
+  const jar = http.cookieJar();
   if (!refreshSeeded) {
-    http.cookieJar().set(baseUrl, 'refreshToken', refreshToken, {
+    jar.set(refreshUrl, 'refreshToken', refreshToken, {
       path: '/api/auth',
       secure: true,
     });
     refreshSeeded = true;
   }
   const csrf = issueCsrfToken(baseUrl);
-  const response = http.post(`${baseUrl}/api/auth/token/refresh`, null, {
+  const currentRefreshToken = jar.cookiesForURL(refreshUrl).refreshToken?.[0];
+  if (!currentRefreshToken) fail('token_refresh: Refresh Cookie가 k6 Cookie Jar에 없습니다.');
+  const response = http.post(refreshUrl, null, {
     headers: { 'X-CSRF-TOKEN': csrf },
+    cookies: { refreshToken: { value: currentRefreshToken, replace: true } },
     responseType: 'none',
     tags: { endpoint: 'auth_token_refresh', operation: 'token_refresh' },
     timeout: '30s',
