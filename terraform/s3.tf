@@ -11,6 +11,19 @@ resource "aws_s3_bucket" "app_data" {
   }
 }
 
+resource "aws_s3_bucket_cors_configuration" "app_data" {
+  bucket = aws_s3_bucket.app_data.id
+
+  cors_rule {
+    allowed_origins = [
+      "https://yeodam-2gether.com",
+      "http://localhost:5173",
+    ]
+    allowed_methods = ["PUT"]
+    allowed_headers = ["Content-Type", "If-None-Match"]
+  }
+}
+
 resource "aws_s3_bucket_ownership_controls" "app_data" {
   bucket = aws_s3_bucket.app_data.id
 
