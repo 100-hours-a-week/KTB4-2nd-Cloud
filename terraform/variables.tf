@@ -142,8 +142,8 @@ variable "load_generator_instance_type" {
   default     = "c6i.large"
 
   validation {
-    condition     = var.load_generator_instance_type == "c6i.large"
-    error_message = "The initial V1 Baseline load generator instance type must be c6i.large."
+    condition     = contains(["c6i.large", "m6i.xlarge"], var.load_generator_instance_type)
+    error_message = "The V1 load generator instance type must be c6i.large or m6i.xlarge."
   }
 }
 

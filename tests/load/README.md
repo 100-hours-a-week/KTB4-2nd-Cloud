@@ -252,6 +252,18 @@ V1 설계의 피크 1시간은 여행 생성 4세션·일반 조회 11세션이�
 
 운영에서는 서로 다른 카카오 계정으로 정상 가입한 **생성 계정**을 준비한다. 한 생성 VU는 한 계정만 사용하고, 동시 세션이 계정을 공유하지 않는다. 처리시간 변동에 대비해 생성 계정은 부하 배수보다 최소 1개 더 준비한다. 조회 계정에는 해당 계정 소유의 완료 여행 ID를 1:1로 연결한다. Access Token 유효기간은 30분이므로 이 시험은 계정별 Refresh Cookie로 매 세션 시작 시 Access Token을 갱신한다. 생성·조회 계정 사이에도 Refresh Cookie를 공유하지 않는다. Refresh Token은 장기 인증 정보이므로 Shell에서 숨김 입력하고 파일·명령 인자·결과에 저장하지 않는다. 아래는 생성 계정 2개와 조회 계정 1개의 예시다. 배수나 실행시간을 올리기 전에 계정 수와 발생기 메모리 여유를 다시 확인한다. k6가 VU마다 사진 데이터를 적재하므로 조회 VU도 발생기 메모리를 사용한다. 기존 발생기 `c6i.large`에서는 150장 단일 실행의 최대 RSS가 약 1.44GiB였으므로, **이 혼합 시험 전에는 발생기 증설 또는 분리가 필요하다.**
 
+Refresh Token과 조회 계정 소유의 완료 여행 ID를 준비하고 운영 테스트 시간을 확정한 뒤, 실행 직전에만 발생기를 `m6i.xlarge`로 변경한다. 아래 Terraform 명령은 Cloud 저장소 Root에서 실행한다. `plan`에서 기존 발생기 **1 changed, 0 added, 0 destroyed**이며 App/Worker/MySQL 변경이 없는지 확인한 다음에만 `apply`한다. 기본값은 비용을 위해 `c6i.large`로 유지한다. 테스트가 끝나면 같은 절차로 `c6i.large`로 되돌린다. EC2 타입 변경 중 발생기는 잠시 중지되므로 기존 SSM Session은 끊기며, 재접속 후 `free -h`와 `k6 version`을 확인한다.
+
+```bash
+cd /Users/lee-y.ch/Desktop/yeodam/KTB4-2nd-Cloud
+export AWS_PROFILE=yeodam-admin
+aws sts get-caller-identity
+terraform -chdir=terraform plan -var='enable_load_generator=true' -var='load_generator_instance_type=m6i.xlarge' -out=/tmp/yeodam-load-m6i-xlarge.tfplan
+terraform -chdir=terraform apply /tmp/yeodam-load-m6i-xlarge.tfplan
+```
+
+시험과 결과 백업이 끝나면 `load_generator_instance_type=c6i.large`로 다시 Plan을 확인해 Apply한다. 두 Plan 파일에는 Terraform State의 민감한 값이 포함될 수 있으므로 Git에 넣지 않고 사용 후 삭제한다. 토큰을 아직 받지 못했거나 조회 계정의 완료 여행을 확인하지 못했다면 증설하지 않는다.
+
 ```bash
 cd /opt/yeodam-load/source/tests/load
 export K6_BASE_URL='https://yeodam-2gether.com'
