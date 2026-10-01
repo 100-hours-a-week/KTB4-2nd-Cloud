@@ -14,5 +14,10 @@ app_instance_type      = "t3.medium"
 app_root_volume_size   = 30
 mysql_data_volume_size = 10
 
+# Temporary. Set true only while preparing or running the V1 Baseline test.
+enable_load_generator          = false
+load_generator_instance_type   = "c6i.large"
+load_generator_root_volume_size = 16
+
 # Optional. After apply, the recipient must confirm the SNS subscription email.
 # alarm_notification_email = "operations@example.com"

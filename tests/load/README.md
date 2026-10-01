@@ -9,6 +9,8 @@
 - `cleanup-trip.js`: Dashboard/Log 검증이 끝난 테스트 여행을 애플리케이션 API로 삭제
 - 테스트 데이터 Manifest 검증과 실행 결과 저장
 
+Upload 원본 수는 마지막 처리 응답의 분류·미분류 사진 수 합계로 검증합니다. 여행 상세의 `attachmentCount`는 화면에 노출되는 사진 수이므로 업로드 원본 수와 직접 비교하지 않고, 생성한 `tripId`가 정상 조회되는지만 확인합니다.
+
 실제 운영 Baseline은 팀 공지, 배포/디버깅 중지, CloudWatch Dashboard 확인 담당자 지정과 즉시 중단 명령 준비 후 실행합니다. Script 작성과 정적 검증만으로 운영 실행을 완료했다고 보지 않습니다.
 
 ## 고정 실행 도구
@@ -37,6 +39,19 @@ Manifest는 다음 조건을 만족해야 합니다.
 
 예시는 `fixtures/manifest.example.json`에 있습니다. 실제 Manifest와 사진은 `.gitignore` 대상입니다.
 
+사진 Directory에서 10장, 11장, 30장, 150장 Manifest를 한 번에 만들 수 있습니다. 지원 형식은 JPG/JPEG, HEIC/HEIF와 PNG입니다. 최상위 Directory별 사진 비율을 유지하면서 파일의 상대 경로를 SHA-256으로 정렬하므로, 디카와 휴대폰처럼 기기별 Directory를 나눈 데이터에서 한쪽 사진만 먼저 선택되지 않습니다. 같은 Directory와 Version을 사용하면 매번 같은 사진이 선택되고, 적은 장수의 Manifest는 더 큰 Manifest의 부분집합이 됩니다.
+
+```bash
+cd /Users/lee-y.ch/Desktop/yeodam/KTB4-2nd-Cloud/tests/load
+
+./scripts/prepare-baseline-manifests.sh \
+  '/Users/lee-y.ch/Downloads/eval' \
+  "$(pwd)/fixtures" \
+  '2026-09-30-eval-v1'
+```
+
+생성된 `baseline-10.json`, `baseline-11.json`, `baseline-30.json`, `baseline-150.json`은 Git에 포함되지 않습니다. 발생기 EC2에서는 사진 압축을 푼 절대 경로를 첫 번째 인자로 사용해 Manifest를 다시 만듭니다. Local 경로가 들어간 Manifest를 EC2에 그대로 복사하지 않습니다.
+
 ```bash
 cd /Users/lee-y.ch/Desktop/yeodam/KTB4-2nd-Cloud/tests/load
 
@@ -56,6 +71,117 @@ k6 inspect --include-system-env-vars scenarios/upload-baseline.js
 ```
 
 `inspect` 출력에서 `upload_baseline` Executor와 `checks`, `http_req_failed`, `yeodam_business_failures`, `yeodam_successful_journeys` Threshold가 보여야 합니다. Manifest 경로나 파일 크기가 다르면 HTTP 요청 전 Init Context에서 종료됩니다.
+
+## 부하 발생기 준비
+
+Baseline은 App/Worker와 분리한 임시 `c6i.large` EC2에서 실행합니다. 발생기는 외부 Inbound를 열지 않고 SSM으로만 접속하며, 테스트가 끝나면 Terraform에서 제거합니다. 다음 명령은 Cloud 저장소 Root에서 실행합니다.
+
+```bash
+cd /Users/lee-y.ch/Desktop/yeodam/KTB4-2nd-Cloud
+export AWS_PROFILE=yeodam-admin
+
+aws sts get-caller-identity
+terraform -chdir=terraform plan \
+  -var='enable_load_generator=true' \
+  -out=/tmp/yeodam-v1-load-generator.tfplan
+terraform -chdir=terraform apply /tmp/yeodam-v1-load-generator.tfplan
+```
+
+Apply 전 Account가 여담 운영 계정인지, Region이 `ap-northeast-2`인지 확인합니다. 최초 Plan은 발생기 EC2, 전용 IAM/SSM과 Security Group `7 added`, Fixture/Result Lifecycle `1 changed`, `0 destroyed`만 허용합니다. App/Worker 교체나 삭제가 보이면 Apply하지 않습니다.
+
+사진과 현재 Load Test Script를 Private S3에 올립니다. 사진은 `load-test-fixtures/`에서 1일 뒤 정리되고, 결과는 `load-test-results/`에서 30일 뒤 정리됩니다.
+
+```bash
+fixture_prefix="$(terraform -chdir=terraform output -raw load_generator_fixture_s3_prefix)"
+run_id="$(date -u '+%Y%m%dT%H%M%SZ')"
+
+./tests/load/scripts/upload-generator-assets.sh \
+  '/Users/lee-y.ch/Downloads/eval.zip' \
+  "${fixture_prefix}" \
+  "${run_id}"
+```
+
+Instance가 SSM Online인지 확인한 뒤 Session을 시작합니다.
+
+```bash
+instance_id="$(terraform -chdir=terraform output -raw load_generator_instance_id)"
+
+aws ssm describe-instance-information \
+  --filters "Key=InstanceIds,Values=${instance_id}"
+aws ssm start-session --target "${instance_id}"
+```
+
+SSM Session 안에서는 먼저 Root Shell에서 Setup Script와 Checksum을 받은 뒤 Workspace를 구성합니다. `RUN_ID`는 앞에서 Asset을 올릴 때 사용한 값과 같아야 합니다.
+
+```bash
+sudo -i
+
+run_id='RUN_ID'
+fixture_prefix='s3://BUCKET/load-test-fixtures'
+run_prefix="${fixture_prefix}/${run_id}"
+
+aws s3 cp "${run_prefix}/setup-generator-workspace.sh" /tmp/setup-generator-workspace.sh
+aws s3 cp "${run_prefix}/setup-generator-workspace.sh.sha256" /tmp/setup-generator-workspace.sh.sha256
+cd /tmp
+sha256sum --check setup-generator-workspace.sh.sha256
+chmod 0700 setup-generator-workspace.sh
+./setup-generator-workspace.sh "${run_prefix}" '2026-09-30-eval-v1'
+
+cat /opt/yeodam-load/bootstrap.txt
+k6 version
+exit
+```
+
+실행은 `ubuntu` 사용자로 전환합니다. Access Token은 명령 인자, S3, `.env`와 Shell History에 남기지 않고 Session에서 숨김 입력으로만 설정합니다.
+
+```bash
+sudo -iu ubuntu
+cd /opt/yeodam-load/source/tests/load
+
+export K6_BASE_URL='https://yeodam-2gether.com'
+read -r -s -p 'K6_ACCESS_TOKEN: ' K6_ACCESS_TOKEN
+echo
+export K6_ACCESS_TOKEN
+export K6_DATA_MANIFEST='/opt/yeodam-load/manifests/baseline-10.json'
+export K6_RESULTS_DIRECTORY='/opt/yeodam-load/results'
+export K6_CLOUD_RELEASE='cloud-commit'
+export K6_FRONTEND_RELEASE='frontend-commit'
+export K6_BACKEND_RELEASE='backend-commit'
+export K6_AI_RELEASE='ai-commit'
+
+./scripts/run-k6.sh scenarios/upload-baseline.js
+```
+
+10장 결과를 Dashboard/Log와 대조하기 전에는 11장이나 30장으로 넘어가지 않습니다. 실행 결과를 확인한 뒤 발생기에서 Private S3 결과 Prefix로 올립니다.
+
+```bash
+result_prefix='s3://BUCKET/load-test-results/RUN_ID'
+aws s3 cp /opt/yeodam-load/results "${result_prefix}" \
+  --recursive \
+  --sse AES256 \
+  --only-show-errors
+```
+
+결과를 Local에 내려받고 Fixture를 정리한 다음 발생기 제거 Plan을 확인합니다.
+
+```bash
+cd /Users/lee-y.ch/Desktop/yeodam/KTB4-2nd-Cloud
+export AWS_PROFILE=yeodam-admin
+
+run_id='RUN_ID'
+fixture_prefix="$(terraform -chdir=terraform output -raw load_generator_fixture_s3_prefix)"
+result_prefix="$(terraform -chdir=terraform output -raw load_test_result_s3_prefix)/${run_id}"
+
+aws s3 sync "${result_prefix}" "tests/load/results/${run_id}"
+aws s3 rm "${fixture_prefix}/${run_id}" --recursive
+
+terraform -chdir=terraform plan \
+  -var='enable_load_generator=false' \
+  -out=/tmp/yeodam-v1-load-generator-destroy.tfplan
+terraform -chdir=terraform apply /tmp/yeodam-v1-load-generator-destroy.tfplan
+```
+
+제거 Plan에는 임시 발생기 관련 리소스만 삭제되어야 합니다. App, Worker, MySQL EBS, Application S3는 삭제 대상이면 안 됩니다.
 
 ## 실행 전 기록
 
@@ -104,7 +230,7 @@ GET /api/users/me
 
 ## 완료 여행 조회 Baseline
 
-초기값은 1 VU, 5분, 요청 사이 2초입니다. `K6_COMPLETED_TRIP_ID`는 테스트 계정이 소유한 완료 여행이어야 합니다.
+초기값은 1 VU, 5분, 요청 사이 2초입니다. `K6_COMPLETED_TRIP_ID`는 테스트 계정이 소유한 완료 여행이어야 합니다. k6의 기본 동작은 VU 반복마다 Cookie Jar를 비우므로, 이 Scenario는 `noCookiesReset`을 켜고 처음 확인한 Access Token Cookie를 같은 VU에서 유지합니다. 실행 중 401이 발생하면 전체 테스트를 중단하며, 다른 요청 오류가 발생해도 요청 간 대기시간을 유지합니다.
 
 ```bash
 export K6_COMPLETED_TRIP_ID='123'
@@ -138,7 +264,8 @@ CPU/Memory의 짧은 최대값만으로 즉시 중단하지 않습니다. 높은
 
 - `run.log`: k6 출력과 `trip_id`/`request_id`가 포함된 JSON Event
 - `summary.json`: k6 Metric/Threshold 요약
-- `execution.txt`: 실행 Script/k6 Version/종료 코드
+- `execution.txt`: 실행 Script/k6 Version/종료 코드와 실행 전후 Network Byte
+- `runner-time.txt`: GNU time 기준 CPU 사용률과 최대 RSS. GNU time이 없으면 미생성 사유 파일 저장
 
 `results/`는 Git에서 제외됩니다. `job_id`는 API 응답에 없으므로, 기록된 마지막 Batch `request_id`와 `trip_id`를 이용해 CloudWatch Logs에서 확인합니다.
 
@@ -153,6 +280,6 @@ export K6_TRIP_ID='123'
 
 ## 다음 작업 경계
 
-소량 Dry Run으로 Script와 데이터셋의 실제 Memory/Network 사용량을 확인한 뒤 별도 Issue에서 일시적인 k6 발생기 EC2 사양, 설치/접근/종료 절차를 구성합니다. 이후 운영 Baseline을 최소 3회 반복하고 누락된 Metric/Log를 보완합니다.
+10장, 11장과 30장으로 Script·측정 경로·발생기 자원을 확인한 뒤 평균 150장 Baseline을 최소 3회 반복하고 누락된 Metric/Log를 보완합니다. `runner-time.txt`, Network Byte와 EC2 Metric에서 발생기가 먼저 포화되면 Peak/Spike 전에 사양이나 실행 방식을 다시 정합니다.
 
 Peak/Spike/AI 처리량과 제한적 Stress는 Baseline 결과와 발생기 검증이 끝난 뒤 별도 Scenario로 추가합니다. 이번 구성에서는 Nginx `limit_req`, `limit_conn`을 변경하지 않습니다.

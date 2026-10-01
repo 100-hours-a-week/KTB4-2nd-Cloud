@@ -116,8 +116,6 @@ export function uploadBaseline() {
     requestIds.push(viewed.requestId);
     const viewOk = check(viewed.detail, {
       'trip_view: trip id matches': (detail) => detail && detail.tripId === tripId,
-      'trip_view: attachment count matches': (detail) =>
-        detail && detail.attachmentCount === dataset.files.length,
     });
     if (!viewOk) {
       businessFailures.add(1, { operation: 'trip_view_result' });
