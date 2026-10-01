@@ -1,11 +1,14 @@
 import { check } from 'k6';
 import exec from 'k6/execution';
 
-import { accountIndexForScenario, buildMixedScenarios } from '../lib/mixed-accounts.mjs';
+import { accountIndexForScenario, buildMixedScenarios, minimumCreationAccounts } from '../lib/mixed-accounts.mjs';
 
 const multiplier = Number(__ENV.K6_LOAD_MULTIPLIER || 1);
 const creationCount = Number(__ENV.K6_ACCOUNT_CHECK_CREATION_COUNT || 2);
 const viewCount = Number(__ENV.K6_ACCOUNT_CHECK_VIEW_COUNT || 1);
+if (creationCount < minimumCreationAccounts(multiplier)) {
+  throw new Error(`${multiplier}배수의 생성 계정은 최소 ${minimumCreationAccounts(multiplier)}개가 필요합니다.`);
+}
 const planned = buildMixedScenarios(creationCount, viewCount, multiplier, '1h');
 
 export const options = {

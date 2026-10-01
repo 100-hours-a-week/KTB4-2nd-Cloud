@@ -8,7 +8,7 @@ import { csvEnv, normalizeBaseUrl, optionalEnv, positiveIntegerEnv, requiredEnv,
 import { loadDataset, splitBatches } from '../lib/dataset.mjs';
 import { buildMultipart } from '../lib/multipart.mjs';
 import { businessFailures, photosUploaded, successfulJourneys, uploadFinalDuration } from '../lib/metrics.mjs';
-import { accountIndexForScenario, buildMixedScenarios } from '../lib/mixed-accounts.mjs';
+import { accountIndexForScenario, buildMixedScenarios, minimumCreationAccounts } from '../lib/mixed-accounts.mjs';
 import { initializeRefreshableSession, refreshIfDue } from '../lib/refresh-session.mjs';
 import { emitRunEvent, summaryOutput } from '../lib/summary.mjs';
 
@@ -33,8 +33,8 @@ if (new Set(creationTokens).size !== creationTokens.length) {
 if (new Set([...creationTokens, ...viewTokens]).size !== creationTokens.length + viewTokens.length) {
   throw new Error('생성·조회 VU 사이에 중복된 Refresh Token이 있습니다. 계정별 독립 세션을 사용하세요.');
 }
-if (creationTokens.length < multiplier + 1) {
-  throw new Error('생성 계정은 부하 배수보다 최소 1개 더 필요합니다. 처리시간 변동에 대비한 유입 여유를 확보하세요.');
+if (creationTokens.length < minimumCreationAccounts(multiplier)) {
+  throw new Error(`${multiplier}배수에는 생성 계정이 최소 ${minimumCreationAccounts(multiplier)}개 필요합니다. 계정당 30분보다 짧은 시작 간격은 VU 부족으로 누락될 수 있습니다.`);
 }
 
 export const options = {
