@@ -8,6 +8,8 @@ import { csvEnv, normalizeBaseUrl, optionalEnv, positiveIntegerEnv, requiredEnv,
 import { loadDataset, splitBatches } from '../lib/dataset.mjs';
 import { buildMultipart } from '../lib/multipart.mjs';
 import { businessFailures, photosUploaded, successfulJourneys, uploadFinalDuration } from '../lib/metrics.mjs';
+import { accountIndexForScenario, buildMixedScenarios } from '../lib/mixed-accounts.mjs';
+import { initializeRefreshableSession, refreshIfDue } from '../lib/refresh-session.mjs';
 import { emitRunEvent, summaryOutput } from '../lib/summary.mjs';
 
 const baseUrl = normalizeBaseUrl(requiredEnv('K6_BASE_URL'));
@@ -38,30 +40,7 @@ if (creationTokens.length < multiplier + 1) {
 export const options = {
   discardResponseBodies: true,
   noCookiesReset: true,
-  scenarios: {
-    trip_creation: {
-      executor: 'constant-arrival-rate',
-      rate: 4 * multiplier,
-      timeUnit: '1h',
-      duration,
-      preAllocatedVUs: creationTokens.length,
-      maxVUs: creationTokens.length,
-      gracefulStop: '35m',
-      exec: 'createJourney',
-      tags: { test_scope: 'mixed_limit', workload: 'trip_creation' },
-    },
-    general_view: {
-      executor: 'constant-arrival-rate',
-      rate: 11 * multiplier,
-      timeUnit: '1h',
-      duration,
-      preAllocatedVUs: viewTokens.length,
-      maxVUs: viewTokens.length,
-      gracefulStop: '2m',
-      exec: 'viewJourney',
-      tags: { test_scope: 'mixed_limit', workload: 'general_view' },
-    },
-  },
+  scenarios: buildMixedScenarios(creationTokens.length, viewTokens.length, multiplier, duration),
   thresholds: {
     checks: ['rate==1'],
     http_req_failed: ['rate<0.01'],
@@ -69,7 +48,7 @@ export const options = {
     yeodam_business_failures: ['count==0'],
     yeodam_successful_journeys: ['rate==1'],
     yeodam_general_view_success: ['rate==1'],
-    'yeodam_trip_view_duration{scenario:general_view}': ['p(95)<1000'],
+    'yeodam_trip_view_duration{workload:general_view}': ['p(95)<1000'],
   },
 };
 
@@ -96,40 +75,6 @@ function get(baseUrlValue, path, operation) {
   });
   requireOk(response, operation);
   return requestId(response);
-}
-
-let refreshSeeded = false;
-let lastRefreshAt = 0;
-
-function initializeRefreshableSession(refreshToken) {
-  const refreshUrl = `${baseUrl}/api/auth/token/refresh`;
-  const jar = http.cookieJar();
-  if (!refreshSeeded) {
-    jar.set(refreshUrl, 'refreshToken', refreshToken, {
-      path: '/api/auth',
-      secure: true,
-    });
-    refreshSeeded = true;
-  }
-  const csrf = issueCsrfToken(baseUrl);
-  const currentRefreshToken = jar.cookiesForURL(refreshUrl).refreshToken?.[0];
-  if (!currentRefreshToken) fail('token_refresh: Refresh Cookie가 k6 Cookie Jar에 없습니다.');
-  const response = http.post(refreshUrl, null, {
-    headers: { 'X-CSRF-TOKEN': csrf },
-    cookies: { refreshToken: { value: currentRefreshToken, replace: true } },
-    responseType: 'none',
-    tags: { endpoint: 'auth_token_refresh', operation: 'token_refresh' },
-    timeout: '30s',
-  });
-  requireOk(response, 'token_refresh');
-  lastRefreshAt = Date.now();
-  return get(baseUrl, '/users/me', 'auth_check');
-}
-
-function refreshIfDue(refreshToken) {
-  if (Date.now() - lastRefreshAt >= 20 * 60 * 1000) {
-    initializeRefreshableSession(refreshToken);
-  }
 }
 
 function delay(ms) {
@@ -172,7 +117,7 @@ async function uploadFinalWithPolling(refreshToken, csrfToken, tripId, files, ba
   while (!settled) {
     await delay(2000);
     if (!settled) {
-      refreshIfDue(refreshToken);
+      refreshIfDue(baseUrl, refreshToken);
       processingPolls.add(1);
       pollCount += 1;
       const id = get(baseUrl, `/trips/${tripId}/processing-status`, 'processing_status');
@@ -196,13 +141,13 @@ async function uploadFinalWithPolling(refreshToken, csrfToken, tripId, files, ba
 }
 
 export async function createJourney() {
-  const token = creationTokens[exec.vu.idInScenario - 1];
   const startedAt = new Date().toISOString();
   const ids = [];
   let tripId = null;
   businessFailures.add(0, { operation: 'trip_creation' });
   try {
-    ids.push(initializeRefreshableSession(token));
+    const token = creationTokens[accountIndexForScenario(exec.scenario.name, 'trip_creation', creationTokens.length)];
+    ids.push(initializeRefreshableSession(baseUrl, token));
     const created = createTrip(baseUrl, issueCsrfToken(baseUrl), {
       tripName: safeTripName(optionalEnv('K6_TRIP_NAME_PREFIX', '한계')),
       startDate: optionalEnv('K6_TRIP_START_DATE', utcDateOffset(-1)),
@@ -213,7 +158,7 @@ export async function createJourney() {
     ids.push(created.requestId);
     const csrf = issueCsrfToken(baseUrl);
     for (let index = 0; index < batches.length - 1; index += 1) {
-      refreshIfDue(token);
+      refreshIfDue(baseUrl, token);
       ids.push(uploadBatch(baseUrl, csrf, tripId, batches[index], index + 1, dataset.files.length, false).requestId);
     }
     const final = await uploadFinalWithPolling(
@@ -245,20 +190,23 @@ export async function createJourney() {
   } catch (error) {
     successfulJourneys.add(false);
     emitRunEvent({ event: 'journey_completed', scenario: 'trip_creation', startedAt, endedAt: new Date().toISOString(), tripId, requestIds: ids.filter(Boolean), result: 'failure', error: String(error) });
-    if (String(error).includes('status=401')) exec.test.abort(`trip_creation: 인증 만료로 중단했습니다. ${error}`);
+    if (/token_refresh|auth_check|account_assignment|status=401/u.test(String(error))) {
+      exec.test.abort(`trip_creation: 인증 또는 계정 할당 실패로 중단했습니다. ${error}`);
+    }
     throw error;
   }
 }
 
 export function viewJourney() {
-  const index = exec.vu.idInScenario - 1;
-  const token = viewTokens[index];
-  const tripId = viewTripIds[index];
+  let tripId = null;
   const startedAt = new Date().toISOString();
   const ids = [];
   businessFailures.add(0, { operation: 'general_view' });
   try {
-    ids.push(initializeRefreshableSession(token));
+    const index = accountIndexForScenario(exec.scenario.name, 'general_view', viewTokens.length);
+    const token = viewTokens[index];
+    tripId = viewTripIds[index];
+    ids.push(initializeRefreshableSession(baseUrl, token));
     sleep(viewThinkTimeSeconds);
     ids.push(get(baseUrl, '/trips', 'trip_list'));
     sleep(viewThinkTimeSeconds);
@@ -280,7 +228,9 @@ export function viewJourney() {
   } catch (error) {
     viewSuccess.add(false);
     emitRunEvent({ event: 'journey_completed', scenario: 'general_view', startedAt, endedAt: new Date().toISOString(), tripId, requestIds: ids.filter(Boolean), result: 'failure', error: String(error) });
-    if (String(error).includes('status=401')) exec.test.abort(`general_view: 인증 만료로 중단했습니다. ${error}`);
+    if (/token_refresh|auth_check|account_assignment|status=401/u.test(String(error))) {
+      exec.test.abort(`general_view: 인증 또는 계정 할당 실패로 중단했습니다. ${error}`);
+    }
     throw error;
   }
 }
