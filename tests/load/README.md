@@ -1,11 +1,12 @@
 # V1 k6 Baseline 부하 테스트
 
-운영 `https://yeodam-2gether.com`의 Nginx → Backend → S3/MySQL → AI Worker 경로를 현재 설정 그대로 측정합니다. 이 구성은 Nginx 방어 설정, Peak/Spike와 서버 장애까지 진행하는 Breakpoint Test를 포함하지 않습니다.
+운영 `https://yeodam-2gether.com`의 주요 요청 경로를 현재 설정 그대로 측정합니다. Baseline과 생성·조회 혼합 시험 외에 조회 경로만 분리한 단계별 한계 시험을 포함하며, Nginx 방어 설정이나 장애 주입은 포함하지 않습니다.
 
 ## 현재 범위
 
 - `upload-baseline.js`: 테스트 계정 인증, 여행 생성, 10장 단위 순차 Upload, 마지막 Batch AI 처리와 완료 여행 조회
 - `view-baseline.js`: 이미 완료된 여행의 상세 API를 1 VU로 반복 조회
+- `view-limit.js`: 완료 여행의 목록·지도·상세·장소 폴더를 정해진 세션 시작률로 조회. 단계마다 별도 실행
 - `cleanup-trip.js`: Dashboard/Log 검증이 끝난 테스트 여행을 애플리케이션 API로 삭제
 - 테스트 데이터 Manifest 검증과 실행 결과 저장
 
@@ -242,6 +243,45 @@ export K6_VIEW_THINK_TIME_SECONDS='2'
 ```
 
 완료 여행 조회의 초기 SLO인 p95 1초를 Threshold로 사용합니다. Upload 중간/마지막 Batch에는 첫 Baseline 전 고정 지연시간 목표를 두지 않습니다.
+
+## 조회 경로 단계별 한계 시험
+
+`view-limit.js`는 혼합 시험에서 사용한 일반 조회 여정(목록 → 지도 → 완료 여행 상세 → 장소 폴더)을 2초 간격으로 실행한다. 사진 업로드와 AI 작업은 호출하지 않는다. 따라서 결과는 **Nginx → Backend → MySQL 조회 경로**의 한계이며, 여행 생성·Worker 처리량이나 Nginx 단독 한계로 해석하지 않는다. 한 계정의 Access Token을 VU들이 공유하고 그 계정의 완료 여행을 반복하므로, 데이터가 다양한 실제 사용자 전체보다 캐시 효과가 클 수 있다.
+
+`K6_VIEW_LIMIT_SESSIONS_PER_MINUTE`는 초당 API 요청 수가 아니라 분당 **조회 여정 시작 수**다. 여정마다 조회 API 네 곳을 한 번씩 호출하므로, 실패와 대기 증가가 없을 때 계획 API RPS는 `세션/분 × 4 ÷ 60`이다. 실제 RPS는 결과의 `yeodam_view_limit_read_requests` 및 같은 시간대 Nginx Route 건수로 확인한다. `users/me` 인증 확인 요청은 계획 API RPS에서 제외한다. 한 단계는 최대 5분이며 자동으로 다음 요청률로 올라가지 않는다.
+
+운영 시험 전에는 조회 계정이 소유한 완료 여행 ID를 확인한다. `K6_VIEW_TRIP_IDS`에 여러 ID를 주면 세션마다 순서대로 사용한다. 여행 `160` 등이 아직 완료·소유 상태인지 재확인한다. 결과에는 여행 ID가 기록되지만 Token 값은 남기지 않는다. 테스트 중 배포와 다른 부하 시험은 중지하고, 실제 사용자 영향과 현재 Alarm을 확인한다. Token은 Shell에서 숨김 입력하며 매 단계 시작 시 유효기간을 확인한다. `401`이면 시험이 즉시 중단되므로 새 Token을 받아 원인을 분리한다.
+
+```bash
+# 부하 발생기 EC2의 ubuntu Shell, /opt/yeodam-load/source/tests/load에서 실행
+export K6_BASE_URL='https://yeodam-2gether.com'
+export K6_RESULTS_DIRECTORY='/opt/yeodam-load/results'
+export K6_VIEW_TRIP_IDS='160,159,152'
+export K6_VIEW_THINK_TIME_SECONDS='2'
+export K6_VIEW_LIMIT_DURATION='3m'
+read -r -s -p 'K6_ACCESS_TOKEN: ' K6_ACCESS_TOKEN; echo
+export K6_ACCESS_TOKEN
+
+# 소량 확인: 예상 조회 API 약 0.4 RPS
+export K6_VIEW_LIMIT_SESSIONS_PER_MINUTE='6'
+./scripts/run-k6.sh scenarios/view-limit.js
+```
+
+첫 단계에서 `exit_code=0`, 조회 성공률 100%, `dropped_iterations=0`과 CloudWatch의 요청 수가 맞는지 확인한다. 문제가 없으면 **한 번에 한 단계씩** `12 → 24 → 48 → 96` 세션/분으로 올린다. 계획 API RPS는 각각 약 `0.8 → 1.6 → 3.2 → 6.4`다. 요청 수만 비교하면 24세션/분 단계가 V1 예상 Peak 약 1.297 RPS를 넘지만, 조회 전용이므로 혼합 Peak와 동일한 부하는 아니다. 96까지도 정상이라면 192 이상의 단계가 필요한지 App·DB·Nginx 지표를 보고 결정한다. 자동 반복 Shell Loop로 연속 실행하지 않는다.
+
+각 단계가 끝나면 다음 값만 먼저 확인한다. `yeodam_view_limit_read_requests.values.rate`는 인증 요청을 제외한 실측 조회 API RPS다. 상세 p95와 실패율은 k6에서, Route별 p95·5xx/Timeout 및 App CPU·Memory·TCP·CPU Credit·DB 상태는 동일 시간대 CloudWatch에서 확인한다. FE·BE·Cloud Release, 사용한 여행 ID, 시작·종료 시각과 발생기 CPU·Memory도 결과와 함께 기록한다.
+
+```bash
+result_dir="$(ls -dt /opt/yeodam-load/results/* | head -1)"
+grep -E '^(run_id|script|exit_code)=' "$result_dir/execution.txt"
+jq '{http: .metrics.http_req_failed.values,
+     journeys: .metrics.yeodam_view_limit_success.values,
+     readRequests: .metrics.yeodam_view_limit_read_requests.values,
+     detail: .metrics.yeodam_view_limit_trip_detail_duration.values,
+     dropped: .metrics.dropped_iterations.values}' "$result_dir/summary.json"
+```
+
+k6는 조회 실패율 1% 이상, 상세 p95 1초 이상, 유입 누락이 30초 이후 계속되면 해당 단계를 조기 중단한다. 5xx·Timeout 1% 이상, App CPU 90% 이상이 1분 지표 2회 연속, Memory 90%·OOM, 실제 사용자 영향이 보이면 `Ctrl-C`로 즉시 중단한다. `dropped_iterations`가 있으면 서비스 한계로 바로 계산하지 않고 VU·발생기 병목도 확인한다. `401`로 끝난 단계는 인증 문제로 분리하고 서비스 한계 판정에 사용하지 않는다. 마지막 정상 단계와 첫 실패 단계를 함께 기록하되, 3분 시험을 장시간 지속 가능 처리량으로 부르지 않는다.
 
 ## V1 세션 비율 혼합 한계 시험
 
