@@ -1,0 +1,86 @@
+name: Cloud PR Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: cloud-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Release configuration
+    runs-on: ubuntu-latest
+    outputs:
+      runtime_required: ${{ steps.scope.outputs.runtime_required }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Skip the runtime smoke only for documentation-only PRs
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          if git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" |
+            grep -Ev '\.(md|pdf)$' | grep -q .; then
+            echo 'runtime_required=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'runtime_required=false' >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Validate shell, release and Compose files
+        run: bash scripts/validate-cloud-pr.sh
+
+  integration:
+    name: Image combination smoke
+    needs: validate
+    if: needs.validate.outputs.runtime_required == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Log in to GHCR for private release images
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Verify and pull the exact release images
+        run: bash scripts/verify-release-images.sh
+
+      - name: Run isolated user-journey smoke
+        run: bash tests/ci/run-integration.sh
+
+  cloud-ci-gate:
+    name: cloud-ci-gate
+    if: always()
+    needs: [validate, integration]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require validation and applicable integration
+        env:
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          RUNTIME_REQUIRED: ${{ needs.validate.outputs.runtime_required }}
+        run: |
+          set -Eeuo pipefail
+          [[ "${VALIDATE_RESULT}" == success ]] || exit 1
+          if [[ "${RUNTIME_REQUIRED}" == true ]]; then
+            [[ "${INTEGRATION_RESULT}" == success ]] || exit 1
+          else
+            [[ "${INTEGRATION_RESULT}" == skipped ]] || exit 1
+          fi

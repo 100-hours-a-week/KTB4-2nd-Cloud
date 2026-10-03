@@ -1,0 +1,94 @@
+name: yeodam-cloud-ci
+
+services:
+  mysql:
+    image: mysql:9.7.2
+    environment:
+      MYSQL_ROOT_PASSWORD: ci-root-only
+      MYSQL_DATABASE: yeodam
+      MYSQL_USER: yeodam
+      MYSQL_PASSWORD: ci-app-only
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -pci-root-only --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  s3:
+    image: localstack/localstack:4.9.0
+    environment:
+      SERVICES: s3
+      AWS_DEFAULT_REGION: ap-northeast-2
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  ec2-stub:
+    image: python:3.12-slim
+    command: ["python", "/ci/ec2-stub.py"]
+    volumes:
+      - ./ec2-stub.py:/ci/ec2-stub.py:ro
+
+  ai-worker:
+    image: "${AI_IMAGE}@${AI_DIGEST}"
+    platform: linux/amd64
+    environment:
+      API_KEY: ci-ai-key
+      S3_BUCKET: yeodam-ci
+      IMAGE_SOURCE: s3
+      FAKE_PIPELINE: "1"
+      AWS_REGION: ap-northeast-2
+      AWS_DEFAULT_REGION: ap-northeast-2
+      AWS_ACCESS_KEY_ID: testing
+      AWS_SECRET_ACCESS_KEY: testing
+      AWS_ENDPOINT_URL_S3: http://s3:4566
+      AWS_EC2_METADATA_DISABLED: "true"
+    ports:
+      - "127.0.0.1:18000:8000"
+    depends_on:
+      s3:
+        condition: service_healthy
+
+  backend:
+    image: "${BACKEND_IMAGE}@${BACKEND_DIGEST}"
+    platform: linux/amd64
+    environment:
+      SPRING_PROFILES_ACTIVE: performance
+      MYSQL_URL: jdbc:mysql://mysql:3306/yeodam?serverTimezone=UTC&characterEncoding=utf8
+      MYSQL_USERNAME: yeodam
+      MYSQL_PASSWORD: ci-app-only
+      AWS_REGION: ap-northeast-2
+      AWS_DEFAULT_REGION: ap-northeast-2
+      AWS_ACCESS_KEY_ID: testing
+      AWS_SECRET_ACCESS_KEY: testing
+      AWS_EC2_METADATA_DISABLED: "true"
+      AWS_ENDPOINT_URL_EC2: http://ec2-stub:5000
+      ATTACHMENT_S3_BUCKET: yeodam-ci
+      ATTACHMENT_S3_ENDPOINT: http://s3:4566
+      ATTACHMENT_S3_PATH_STYLE: "true"
+      AI_SERVER_BASE_URL: http://ai-worker:8000
+      AI_SERVER_API_KEY: ci-ai-key
+      AI_EC2_INSTANCE_ID: i-ci-only
+      JWT_SECRET: ci-only-secret-key-with-at-least-32-bytes
+      JWT_ISSUER: http://localhost:18080
+      FRONTEND_ORIGIN: http://localhost:13000
+      DATA_GO_KR_LEGAL_DISTRICT_API_URL: http://ec2-stub:5000/places
+    ports:
+      - "127.0.0.1:18080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+      ec2-stub:
+        condition: service_started
+      ai-worker:
+        condition: service_started
+
+  frontend:
+    image: "${FRONTEND_IMAGE}@${FRONTEND_DIGEST}"
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:13000:3000"
