@@ -119,7 +119,10 @@ def main():
     assert result["data"]["status"] == "COMPLETED", result
 
     viewed, _, result = request(BASE + f"/trips/{trip_id}", headers=headers)
-    assert viewed == 200 and result["data"]["attachmentCount"] == 1, result
+    assert viewed == 200, result
+    assert result["data"]["tripId"] == trip_id, result
+    # CI PNG에는 위치 정보가 없어 AI가 미분류하며, 조회 수는 ACTIVE 사진만 센다.
+    assert result["data"]["attachmentCount"] == 0, result
     print("FE Health 및 BE→AI 사진 접수·처리·조회 계약 통과")
 
 
