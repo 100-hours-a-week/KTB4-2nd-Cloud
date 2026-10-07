@@ -93,6 +93,38 @@ resource "aws_iam_role_policy" "read_root_password" {
   policy = data.aws_iam_policy_document.read_root_password.json
 }
 
+data "aws_iam_policy_document" "mysql_backup" {
+  statement {
+    sid       = "LocateBackupBucket"
+    actions   = ["s3:GetBucketLocation", "s3:ListBucket"]
+    resources = [var.backup_bucket_arn]
+  }
+
+  statement {
+    sid       = "WriteAndReadDatabaseBackup"
+    actions   = ["s3:PutObject", "s3:GetObject", "s3:AbortMultipartUpload"]
+    resources = ["${var.backup_bucket_arn}/*"]
+  }
+
+  statement {
+    sid       = "PublishBackupLag"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = ["Yeodam/V2/Staging/MySQL"]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "mysql_backup" {
+  name   = "${var.name_prefix}-mysql-backup"
+  role   = aws_iam_role.mysql.id
+  policy = data.aws_iam_policy_document.mysql_backup.json
+}
+
 resource "aws_iam_instance_profile" "mysql" {
   name = "${var.name_prefix}-mysql"
   role = aws_iam_role.mysql.name
@@ -135,10 +167,14 @@ resource "aws_instance" "mysql" {
   }
 
   user_data = templatefile("${path.module}/bootstrap.sh.tftpl", {
-    volume_id  = aws_ebs_volume.data.id
-    secret_arn = aws_secretsmanager_secret.root_password.arn
-    aws_region = var.aws_region
-    image      = var.mysql_image
+    volume_id                 = aws_ebs_volume.data.id
+    secret_arn                = aws_secretsmanager_secret.root_password.arn
+    aws_region                = var.aws_region
+    image                     = var.mysql_image
+    backup_bucket             = var.backup_bucket_name
+    full_backup_script_b64    = filebase64("${path.module}/files/full-backup.sh")
+    binlog_shipper_script_b64 = filebase64("${path.module}/files/ship-binlogs.sh")
+    binlog_lag_script_b64     = filebase64("${path.module}/files/measure-binlog-lag.sh")
   })
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-mysql" })
@@ -146,6 +182,7 @@ resource "aws_instance" "mysql" {
   depends_on = [
     aws_iam_role_policy_attachment.ssm,
     aws_iam_role_policy.read_root_password,
+    aws_iam_role_policy.mysql_backup,
   ]
 }
 

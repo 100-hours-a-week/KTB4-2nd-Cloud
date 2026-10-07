@@ -9,3 +9,5 @@ variable "data_volume_size_gib" { type = number }
 variable "aws_region" { type = string }
 variable "tags" { type = map(string) }
 variable "mysql_image" { type = string }
+variable "backup_bucket_name" { type = string }
+variable "backup_bucket_arn" { type = string }

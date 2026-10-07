@@ -18,7 +18,7 @@ AMI는 Canonical 소유 계정의 서울 리전 Ubuntu 24.04 ARM64 `ami-0ccbfe11
 
 Route 53 Private Hosted Zone `staging.yeodam.internal`을 정의했다. **`mysql.staging.yeodam.internal` A Record는 처음에는 만들지 않는다.** DB 데이터와 접속을 확인한 뒤 로컬 `terraform.tfvars`의 `mysql_active_private_ip`를 검증한 Private IP로 설정하고 다시 Plan/Apply해야 이름이 연결된다. EC2 교체나 Backup 복원 시에도 새 DB의 데이터가 확인되기 전에는 DNS 대상이 자동으로 바뀌지 않는다. 기존 Connection Pool은 DNS 변경만으로 이동하지 않으므로 BE 재연결을 별도 시험한다.
 
-MySQL Container에는 `log-bin`, `sync_binlog=1`, `innodb_flush_log_at_trx_commit=1`을 설정했다. 이는 로컬 Binary Log와 Commit 내구성의 **시작 설정**이다. 닫힌 Log의 외부 S3 전송, 누락 감지, Full Backup, 14일 보존, 실제 복원은 다음 Issue 범위다. 그 전에는 4단계 설계의 RPO 5분을 달성했다고 말할 수 없다.
+MySQL Container에는 `log-bin`, `sync_binlog=1`, `innodb_flush_log_at_trx_commit=1`을 설정했다. 이는 로컬 Binary Log와 Commit 내구성의 **시작 설정**이다. #135에서 [Full Backup과 닫힌 Log의 S3 외부 보존](v2-staging-mysql-backup.md) 코드를 더했다. 실제 적용과 복원 결과가 나오기 전에는 4단계 설계의 RPO 5분을 달성했다고 말할 수 없다.
 
 ## 적용 절차와 검증
 

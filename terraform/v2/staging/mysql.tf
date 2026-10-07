@@ -36,6 +36,8 @@ module "mysql" {
   data_volume_size_gib      = 120
   aws_region                = var.aws_region
   mysql_image               = "docker.io/library/mysql:9.7.2@sha256:e2bde46db6563855d7177adb5f0b57b9dc663f5a20927a90f4259d3312068497"
+  backup_bucket_name        = aws_s3_bucket.mysql_backup.id
+  backup_bucket_arn         = aws_s3_bucket.mysql_backup.arn
   tags                      = local.common_tags
 }
 

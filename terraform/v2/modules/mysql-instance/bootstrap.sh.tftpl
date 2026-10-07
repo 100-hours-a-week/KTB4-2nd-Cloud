@@ -78,7 +78,7 @@ TimeoutStartSec=900
 ExecStartPre=/usr/local/sbin/yeodam-mysql-prepare-data
 ExecStartPre=/usr/local/sbin/yeodam-mysql-load-secret
 ExecStartPre=-/usr/bin/docker rm -f yeodam-v2-mysql
-ExecStart=/usr/bin/docker run --rm --name yeodam-v2-mysql --log-driver=journald --publish 3306:3306 --volume /srv/yeodam/mysql:/var/lib/mysql --volume /etc/yeodam/mysql-root-password:/run/secrets/mysql-root-password:ro --env MYSQL_ROOT_PASSWORD_FILE=/run/secrets/mysql-root-password --env MYSQL_ROOT_HOST=localhost '${image}' --log-bin=mysql-bin --sync-binlog=1 --innodb-flush-log-at-trx-commit=1
+ExecStart=/usr/bin/docker run --rm --name yeodam-v2-mysql --log-driver=journald --publish 3306:3306 --volume /srv/yeodam/mysql:/var/lib/mysql --volume /etc/yeodam/mysql-root-password:/run/secrets/mysql-root-password:ro --env MYSQL_ROOT_PASSWORD_FILE=/run/secrets/mysql-root-password --env MYSQL_ROOT_HOST=localhost '${image}' --log-bin=mysql-bin --binlog-expire-logs-seconds=1382400 --sync-binlog=1 --innodb-flush-log-at-trx-commit=1
 ExecStop=/usr/bin/docker stop yeodam-v2-mysql
 TimeoutStopSec=60
 
@@ -86,7 +86,103 @@ TimeoutStopSec=60
 WantedBy=multi-user.target
 SERVICE
 
+cat > /etc/yeodam/mysql-backup.env <<'CONFIG'
+AWS_REGION='${aws_region}'
+BACKUP_BUCKET='${backup_bucket}'
+MYSQL_CONTAINER='yeodam-v2-mysql'
+MYSQL_DATA_DIR='/srv/yeodam/mysql'
+CONFIG
+chmod 0600 /etc/yeodam/mysql-backup.env
+
+base64 -d > /usr/local/sbin/yeodam-mysql-full-backup <<'SCRIPT'
+${full_backup_script_b64}
+SCRIPT
+base64 -d > /usr/local/sbin/yeodam-mysql-ship-binlogs <<'SCRIPT'
+${binlog_shipper_script_b64}
+SCRIPT
+base64 -d > /usr/local/sbin/yeodam-mysql-measure-binlog-lag <<'SCRIPT'
+${binlog_lag_script_b64}
+SCRIPT
+chmod 0750 /usr/local/sbin/yeodam-mysql-{full-backup,ship-binlogs,measure-binlog-lag}
+
+cat > /etc/systemd/system/yeodam-mysql-full-backup.service <<'SERVICE'
+[Unit]
+Description=Yeodam MySQL logical full backup to S3
+After=yeodam-mysql.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/systemctl is-active --quiet yeodam-mysql.service
+ExecStart=/usr/local/sbin/yeodam-mysql-full-backup
+TimeoutStartSec=0
+SERVICE
+
+cat > /etc/systemd/system/yeodam-mysql-full-backup.timer <<'TIMER'
+[Unit]
+Description=Weekly Yeodam MySQL full backup
+
+[Timer]
+OnCalendar=Thu *-*-* 03:00:00 Asia/Seoul
+Persistent=true
+AccuracySec=1s
+Unit=yeodam-mysql-full-backup.service
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+cat > /etc/systemd/system/yeodam-mysql-ship-binlogs.service <<'SERVICE'
+[Unit]
+Description=Ship closed Yeodam MySQL binary logs to S3
+After=yeodam-mysql.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/systemctl is-active --quiet yeodam-mysql.service
+ExecStart=/usr/local/sbin/yeodam-mysql-ship-binlogs
+TimeoutStartSec=180
+SERVICE
+
+cat > /etc/systemd/system/yeodam-mysql-ship-binlogs.timer <<'TIMER'
+[Unit]
+Description=Ship Yeodam MySQL binary logs every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+AccuracySec=1s
+Unit=yeodam-mysql-ship-binlogs.service
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+cat > /etc/systemd/system/yeodam-mysql-measure-binlog-lag.service <<'SERVICE'
+[Unit]
+Description=Publish age of externally preserved MySQL binary logs
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/yeodam-mysql-measure-binlog-lag
+TimeoutStartSec=60
+SERVICE
+
+cat > /etc/systemd/system/yeodam-mysql-measure-binlog-lag.timer <<'TIMER'
+[Unit]
+Description=Measure MySQL binary log shipping age every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+AccuracySec=1s
+Unit=yeodam-mysql-measure-binlog-lag.service
+
+[Install]
+WantedBy=timers.target
+TIMER
+
 systemctl daemon-reload
 systemctl enable yeodam-mysql.service
+systemctl enable --now yeodam-mysql-full-backup.timer yeodam-mysql-ship-binlogs.timer yeodam-mysql-measure-binlog-lag.timer
 # The secret has no version until an operator sets its value after apply.
 systemctl start yeodam-mysql.service || true
