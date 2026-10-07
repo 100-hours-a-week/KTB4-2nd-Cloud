@@ -68,3 +68,4 @@ output "mysql_private_ip" { value = module.mysql.private_ip }
 output "mysql_data_volume_id" { value = module.mysql.data_volume_id }
 output "mysql_root_password_secret_arn" { value = module.mysql.root_password_secret_arn }
 output "mysql_private_dns_name" { value = "mysql.staging.yeodam.internal" }
+output "mysql_backup_bucket_name" { value = aws_s3_bucket.mysql_backup.id }

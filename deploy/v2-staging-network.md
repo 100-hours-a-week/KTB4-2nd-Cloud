@@ -62,7 +62,7 @@ terraform -chdir=terraform/v2/staging validate
 terraform -chdir=terraform/v2/staging plan -input=false
 ```
 
-`init`은 V2 스테이징 state key를 표시해야 한다. #124만 작성했을 때의 `plan`은 **15개 생성**, #126 ALB 추가 후에는 **30개 생성**, #128 ECS 기반 추가 후에는 **36개 생성**, #131 사진 저장소 추가 후에는 **46개 생성**, #133 MySQL 기반 추가 후에는 **62개 생성**이었다. 모두 변경과 삭제는 0개다. 후속 작업 문서에서 각 자원의 이유와 적용 절차를 확인한다. V1 자원의 주소나 ID가 나오면 중단한다. 적용 전에는 계정/리전, CIDR 중복, NAT 상시 비용과 생성·변경·삭제 수를 다시 확인한다. 이 문서 작성 시점에는 적용하지 않았으므로 VPC ID와 실제 라우팅 결과는 없다.
+`init`은 V2 스테이징 state key를 표시해야 한다. #124만 작성했을 때의 `plan`은 **15개 생성**, #126 ALB 추가 후에는 **30개 생성**, #128 ECS 기반 추가 후에는 **36개 생성**, #131 사진 저장소 추가 후에는 **46개 생성**, #133 MySQL 기반 추가 후에는 **62개 생성**, #135 MySQL Backup 추가 후에는 **72개 생성**이었다. 모두 변경과 삭제는 0개다. 후속 작업 문서에서 각 자원의 이유와 적용 절차를 확인한다. V1 자원의 주소나 ID가 나오면 중단한다. 적용 전에는 계정/리전, CIDR 중복, NAT 상시 비용과 생성·변경·삭제 수를 다시 확인한다. 이 문서 작성 시점에는 적용하지 않았으므로 VPC ID와 실제 라우팅 결과는 없다.
 
 적용 후에는 `terraform output`의 VPC/Subnet/NAT/S3 Endpoint ID를 확인하고, AWS의 Route Table에서 Public `0.0.0.0/0 → IGW`, Private `0.0.0.0/0 → NAT`, S3 Prefix List `→ Gateway Endpoint`를 대조한다. 이어 `terraform plan`이 변경 0건인지 확인한다. 실제 외부 API·GHCR/S3 통신과 ALB 도달성은 다음 FE/BE Task 작업에서 검증한다.
 
