@@ -45,6 +45,6 @@ terraform -chdir=terraform/v2/staging validate
 terraform -chdir=terraform/v2/staging plan -input=false
 ```
 
-계정은 여담 AWS 계정, 리전은 `ap-northeast-2`, Hosted Zone은 `yeodam-2gether.com`인지 확인한다. #126 시점의 미적용 State Plan은 **30개 생성, 변경 0, 삭제 0**이었다. 이는 #124 네트워크 15개와 #126 ALB/TLS/DNS 검증 15개다. 이후 #128 [ECS 실행 기반](v2-staging-ecs-foundation.md) 6개가 추가돼 Plan은 **36개 생성, 변경 0, 삭제 0**이 됐다. 기존 V1 자원 변경·삭제와 스테이징 서비스 Alias 생성은 없었다. Plan은 변경되기 쉬우므로 적용 직전 다시 생성하고 각 자원과 비용을 검토한다. 저장한 Plan 파일과 State는 Git에 넣지 않는다.
+계정은 여담 AWS 계정, 리전은 `ap-northeast-2`, Hosted Zone은 `yeodam-2gether.com`인지 확인한다. #126 시점의 미적용 State Plan은 **30개 생성, 변경 0, 삭제 0**이었다. 이는 #124 네트워크 15개와 #126 ALB/TLS/DNS 검증 15개다. 이후 #128 [ECS 실행 기반](v2-staging-ecs-foundation.md) 6개와 #131 [사진 저장소](v2-staging-photo-storage.md) 10개가 추가돼 Plan은 **46개 생성, 변경 0, 삭제 0**이 됐다. 기존 V1 자원 변경·삭제와 스테이징 서비스 Alias 생성은 없었다. Plan은 변경되기 쉬우므로 적용 직전 다시 생성하고 각 자원과 비용을 검토한다. 저장한 Plan 파일과 State는 Git에 넣지 않는다.
 
 적용 뒤에는 ACM 상태가 `ISSUED`인지, HTTP가 HTTPS로 Redirect되는지, 두 Target Group의 Healthy 수가 실제 Task 수와 맞는지 순서대로 확인한다. Alias 연결 전에는 `staging` 도메인의 브라우저 요청 성공을 기대하지 않는다. Alias를 연결한 뒤에는 화면, `/api/health`, 실제 BE API를 각각 호출해 응답 출처와 Target Group을 확인한다. FE/BE Task 하나를 종료하거나 Rolling 배포하며 실패 요청, Target 제외 및 복귀 시간은 후속 다중 인스턴스 시험에서 기록한다. ACM이 `PENDING_VALIDATION`에 머무르면 CNAME의 Zone과 실제 공개 DNS 응답을 확인한다. Target이 Unhealthy이면 앱 경로와 Status Code, Task Security Group, 컨테이너 포트, 앱 기동 로그를 차례로 확인한다.

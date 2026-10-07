@@ -15,7 +15,7 @@
 
 Secrets Manager **Secret 값과 Version은 Terraform에 넣지 않는다.** 실제 GHCR 계정명·읽기 권한 Token은 Task 실행 전에 권한 있는 운영자가 AWS Secrets Manager에 `username`과 `password` 키를 가진 JSON 값으로 입력한다. CLI 인자, Git, `.env`, Terraform 변수·State·Plan 파일에 Token을 남기지 않는다. Secret 값이 비어 있는 상태에서 Task Definition에 `repositoryCredentials`를 연결하면 Image Pull이 실패한다. Secret 이름은 `yeodam/v2/staging/ghcr-credentials`이며, 운영 환경에서는 별도 이름과 권한을 사용해야 한다.
 
-Execution Role은 `ecs-tasks.amazonaws.com`만 Assume할 수 있다. 부여한 권한은 두 Log Group의 `CreateLogStream`·`PutLogEvents`와 해당 GHCR Secret의 `GetSecretValue`뿐이다. **애플리케이션이 S3·DB·Queue에 접근할 Task Role과는 별개다.** FE와 BE Task Role은 서비스별 필요 권한을 확인한 뒤 후속 Issue에서 분리한다. Task Definition의 `executionRoleArn`에 이번 Role을 넣고, `taskRoleArn`에는 각 서비스 Role을 넣어야 한다. GHCR은 승인된 V2 설계대로 유지하며, Fargate의 Private Subnet에서 NAT를 통해 Registry에 연결한다.
+Execution Role은 `ecs-tasks.amazonaws.com`만 Assume할 수 있다. 부여한 권한은 두 Log Group의 `CreateLogStream`·`PutLogEvents`와 해당 GHCR Secret의 `GetSecretValue`뿐이다. **애플리케이션이 S3·DB·Queue에 접근할 Task Role과는 별개다.** 이후 #131 [사진 저장소 작업](v2-staging-photo-storage.md)에서 BE의 S3용 Task Role을 정의했다. FE Task Role과 BE의 다른 앱 권한은 서비스별 계약을 확인한 뒤 추가한다. Task Definition의 `executionRoleArn`에 이번 Role을 넣고, `taskRoleArn`에는 각 서비스 Role을 넣어야 한다. GHCR은 승인된 V2 설계대로 유지하며, Fargate의 Private Subnet에서 NAT를 통해 Registry에 연결한다.
 
 이번 범위에는 Task Definition, ECS Service, Auto Scaling, Task Security Group, ALB Target 등록, Container Insights와 Image 배포가 없다. Cluster와 Log Group이 생겨도 접속 가능한 스테이징 앱은 아직 없다. 이후 MySQL·Redis, FE/BE Service와 Secret·Task Role 연결이 필요하다. 첫 Task 기동 시에는 NAT 경로, GHCR 인증정보, Image Digest, `awslogs` 설정, 컨테이너 Health 응답을 각각 확인한다.
 
