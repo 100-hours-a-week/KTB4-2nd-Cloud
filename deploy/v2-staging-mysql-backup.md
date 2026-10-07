@@ -4,7 +4,7 @@
 
 Issue #135는 [MySQL 실행 기반](v2-staging-mysql.md)에 `mysqldump` Full Backup, 닫힌 Binary Log의 S3 보존, 전송 지연 관측과 복원 절차를 더한다. 대상은 **스테이징 MySQL 한 개**다. Backend나 AI 코드는 변경하지 않는다. V1 운영 데이터는 스테이징에 복사하지 않고 시험 Schema와 Row로 복원을 확인한다.
 
-이 문서의 설정값은 4단계 설계의 주 1회 Full Backup, 1분 간격 Log 전송, 14일 보존, 전송 성공 지연 3분 경고·5분 위반을 따른다. 목표 RPO 5분은 AWS에서 실제 장애 주입과 복원 결과로 확인하기 전까지 달성했다고 적지 않는다. AWS 스테이징 자원은 아직 적용하지 않았으므로 아래의 AWS 명령은 **실행 절차**다.
+이 문서의 설정값은 4단계 설계의 주 1회 Full Backup, 1분 간격 Log 전송, 14일 보존, 전송 성공 지연 3분 경고·5분 위반을 따른다. 2026-10-07 스테이징에 적용하고 작은 시험 데이터의 S3 복원을 확인했다. 목표 RPO 5분은 실제 장애 주입과 복원 결과로 확인하기 전까지 달성했다고 적지 않는다. 아래의 AWS 명령은 재현·운영 절차이며 실제 수행 결과는 뒤의 측정 기록에 구분해 적었다.
 
 ## 저장과 일관성
 
@@ -26,7 +26,19 @@ terraform -chdir=terraform/v2/staging validate
 terraform -chdir=terraform/v2/staging plan -input=false
 ```
 
-2026-10-07 실제 계정 Plan은 **72개 생성, 변경 0, 삭제 0**이었다. 앞선 #133까지 62개에 이번 Backup Bucket·설정·두 Alarm·MySQL Role Policy 10개가 더해졌다. 계정 `483175530259`, Region `ap-northeast-2`이고 V1 Terraform 자원은 이 스테이징 State에 없다. S3 Backup Bucket과 Alarm은 소액이라도 지속 과금된다. **#133까지의 Terraform 전체가 아직 미적용**이므로 Plan의 모든 생성 자원에 NAT·ALB·EC2·EBS 비용이 포함된다. 실제 적용은 전체 대상과 비용을 확인한 뒤 별도로 진행한다. User Data 변경은 이미 실행 중인 EC2에서 스크립트가 자동 재실행된다는 뜻이 아니므로, 적용된 Host라면 Timer·스크립트 설치를 SSM에서 따로 확인해야 한다.
+2026-10-07 실제 계정 `483175530259`, Region `ap-northeast-2`에서 **72개 생성, 변경·삭제 0개** Plan을 적용했다. 앞선 #133까지 62개에 이번 Backup Bucket·설정·두 Alarm·MySQL Role Policy 10개가 더해진 전체 스테이징 Plan이며 V1 Terraform 자원은 이 State에 없다. NAT·ALB·EC2·EBS 등의 상시 비용과 S3·CloudWatch 사용량 비용이 이 시점부터 발생한다. 부팅 오류 수정 뒤 MySQL EC2 User Data만 **1개 제자리 변경**했고 이후 Plan은 변경 없음으로 확인할 예정이다. User Data 변경이 기존 Host에서 스크립트를 다시 실행해 주지는 않아 SSM으로 초기화 상태를 별도로 확인했다.
+
+## 스테이징 적용과 첫 복원 측정 — 2026-10-07
+
+초기 Apply는 72개 생성, 변경·삭제 0개로 끝났다. MySQL EC2 `i-05535ae6ff812972c`와 Data EBS `vol-082934f7a39af5ad1`이 생성됐고, 스테이징 전용 Backup Bucket은 `yeodam-v2-staging-mysql-backup-483175530259-ap-northeast-2`다. Root Secret에는 스테이징 전용 무작위 값을 Secrets Manager에서 설정했다. 값은 Terraform State·Git·이 문서에 넣지 않았다. FE/BE ECS Service는 아직 없고 V1 운영 데이터도 이 DB에 복사하지 않았다.
+
+첫 부팅의 `cloud-init`은 패키지 설치에서 실패했다. EC2가 NAT Gateway와 Private Route보다 먼저 시작돼 Ubuntu 미러 연결이 타임아웃됐고, 경로 완성 뒤에는 같은 미러가 HTTP 200을 반환했다. Terraform MySQL 모듈이 네트워크 모듈 전체를 기다리도록 바꿨다. 재시도에서는 Ubuntu ARM 이미지에 `awscli` APT 후보가 없어 멈췄다. [AWS 공식 Linux ARM 설치 절차](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)의 ZIP 설치로 User Data를 수정하고 SSM에서 현재 Host를 복구했다. 수정된 User Data의 Terraform Plan은 EC2 1개 제자리 변경, 생성·삭제 0개였고 Apply 뒤 같은 Instance와 Data EBS를 유지했다. 재시작 후 MySQL 서비스, Data EBS 마운트, 세 Timer, 시험 데이터 2건이 남아 있음을 확인했다.
+
+`yeodam.recovery_probe`에 `before` 1건을 기록하고 Full Backup을 수동 실행한 결과 3초가 걸렸으며 S3에는 압축 Dump 1,008바이트와 `.ready` Marker 193바이트가 생겼다. 이후 `after` 1건을 기록하고 닫힌 Binary Log를 S3에 전송했다. 복원 시험은 S3에서 Dump와 연속된 Log 4개를 내려받아 각 Log의 S3 SHA-256 Metadata·크기를 대조했다. 별도 네트워크 미연결 MySQL 컨테이너에 Dump만 적용했을 때 1건, Log 재생 뒤에는 `before,after` 2건이었다. **다운로드 시작부터 별도 DB의 Row 검증까지 28.561초**가 걸렸다. 이 수치는 작은 시험 데이터의 **DB 단독 복원 시간**이며 새 EC2 생성, 장애 감지, DNS·BE 재연결은 포함하지 않는다.
+
+`ExternalBinlogAgeSeconds`가 1분 주기로 발행됐고 초기 전송 전 두 Alarm은 `ALARM`, 전송 뒤에는 `OK`로 바뀌었다. 정상 구간 표본 최대치는 47~59초였다. 첫 발행 값은 마지막 성공 시각 파일이 없어 Epoch부터 계산된 초기값이므로 실제 전송 지연 표본으로 사용하지 않는다. **Alarm Action이 없어 Discord나 SNS 알림은 전송되지 않는다.** 현재 CloudWatch는 PLG 도입 전 이 백업 경로를 관측하기 위한 임시 수단이며, PLG의 지표·알림 경로가 준비되면 유지 여부를 재검토한다.
+
+이번 시험은 실제 Data EBS 손실이나 새 Host 전환이 아니므로 **RPO 5분 달성 및 전체 RTO를 입증하지 않는다.** 실제 장애 시점과 마지막 복원 Commit을 기록하는 시험, 운영 규모의 Dump 크기·복원 시간, 백업 중 쓰기 지연·오류율은 후속 측정으로 남긴다.
 
 ## 적용 후 백업 확인
 

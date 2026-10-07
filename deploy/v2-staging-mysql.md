@@ -1,6 +1,6 @@
 # V2 스테이징 MySQL 실행 기반
 
-2026-10-07 Issue #133은 MySQL을 FE/BE Task와 분리된 스테이징 EC2에서 실행하도록 Terraform과 초기화 절차를 작성한다. 이 문서의 결과는 **코드와 실제 AWS 계정 Plan 검증**이다. 현재 스테이징 AWS 자원은 적용하지 않았고, MySQL 기동·접속·복구시간도 측정하지 않았다. 다음 Issue에서 Full Backup, Binary Log 외부 보존과 실제 복원을 함께 구현·검증한다.
+2026-10-07 Issue #133은 MySQL을 FE/BE Task와 분리된 스테이징 EC2에서 실행하도록 Terraform과 초기화 절차를 작성했다. 이어 #135에서 스테이징 전체를 적용해 MySQL 9.7.2 기동·Data EBS 마운트·재시작 후 데이터 유지를 확인했다. S3 Full Backup과 Binary Log의 작은 시험 데이터 복원 결과는 [백업·복원 문서](v2-staging-mysql-backup.md)에 기록했다. FE/BE의 실제 DB 접속과 전체 장애 복구시간은 아직 측정하지 않았다.
 
 ## 승인 설계와 이번 구현
 
@@ -33,7 +33,7 @@ terraform -chdir=terraform/v2/staging validate
 terraform -chdir=terraform/v2/staging plan -input=false
 ```
 
-2026-10-07 실제 계정의 미적용 State Plan은 **62개 생성, 변경 0, 삭제 0**이다. 앞선 네트워크·ALB·ECS·사진 저장소 46개와 이번 MySQL 관련 16개이며 V1 자원 변경·삭제는 없다. 적용 전 대상 계정 `483175530259`, 리전 `ap-northeast-2`, ARM AMI, DB Instance·EBS 용량, NAT/EC2/EBS 상시 비용, 생성/변경/삭제 수를 다시 확인한다. 4단계 설계는 `t4g.medium`과 120GiB Data EBS 및 30GiB Root EBS의 730시간 예상을 약 $44/월로 제시했지만, 현재 가격과 스테이징의 실제 실행시간은 적용 전에 다시 계산해야 한다. 네트워크·ALB와 #135의 S3 Backup 저장·요청 비용은 이 금액에 포함되지 않는다.
+#133 당시의 미적용 State Plan은 **62개 생성, 변경 0, 삭제 0**이었다. #135에서 Backup을 더한 전체 Plan **72개 생성, 변경·삭제 0개**를 계정 `483175530259`, 서울 리전에 적용했다. MySQL EC2 `i-05535ae6ff812972c`는 `t4g.medium`, 별도 Data EBS `vol-082934f7a39af5ad1`은 120GiB다. 4단계 설계는 MySQL Host와 EBS의 730시간 예상을 약 $44/월로 제시했지만 실제 청구액은 사용 시간과 함께 별도 대조해야 한다. 네트워크·ALB·S3 Backup 저장·요청 비용은 이 금액에 포함되지 않는다.
 
 AWS 적용 후 Terraform Output에서 Instance ID, Private IP, Data Volume ID와 Root Secret ARN을 확인한다. Secret에는 이 환경 전용 강한 **평문 Root 암호**를 AWS Console에서 입력한다. Secret에 아직 값이 없으면 DB systemd 서비스는 시작하지 못하고 재시도한다. 값이 들어간 뒤 SSM Session Manager로 DB EC2에 접속해 다음을 확인한다.
 

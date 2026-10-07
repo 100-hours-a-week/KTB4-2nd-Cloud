@@ -31,6 +31,6 @@ terraform -chdir=terraform/v2/staging validate
 terraform -chdir=terraform/v2/staging plan -input=false
 ```
 
-2026-10-07 실제 계정의 미적용 스테이징 State Plan은 **46개 생성, 변경 0, 삭제 0**이었다. #124 네트워크 15개, #126 ALB 15개, #128 ECS 기반 6개, 이번 Bucket 설정 8개와 BE Task Role/Policy 2개다. V1 자원 변경·삭제는 없다. 적용 직전 계정 `483175530259`, Region `ap-northeast-2`, Bucket 이름·CORS Origin, 생성/변경/삭제 수를 다시 확인한다. Plan과 State 파일은 Git에 넣지 않는다. AWS 적용은 네트워크·ALB·ECS·상태 저장소의 실행 시점과 비용을 함께 검토한 뒤 진행한다.
+#131 당시 미적용 스테이징 State Plan은 **46개 생성, 변경 0, 삭제 0**이었다. #124 네트워크 15개, #126 ALB 15개, #128 ECS 기반 6개, 이번 Bucket 설정 8개와 BE Task Role/Policy 2개다. #135에서 MySQL과 Backup을 더한 전체 72개를 계정 `483175530259`, 서울 리전에 적용해 스테이징 사진 Bucket `yeodam-v2-staging-app-data-483175530259-ap-northeast-2`를 생성했다. FE 브라우저 PUT과 BE Presigned URL의 실제 연동은 아직 검증하지 않았다. Plan과 State 파일은 Git에 넣지 않는다.
 
 적용 후에는 `terraform output`의 Bucket 이름과 BE Task Role ARN을 확인하고, AWS에서 Public Access Block·암호화·Versioning·CORS·Policy·Lifecycle을 대조한다. 브라우저 직접 PUT 검증은 FE와 BE의 V2 연동 뒤 수행한다. 그때 스테이징 Origin의 Preflight와 PUT 성공, 다른 Origin의 CORS 거부, BE 완료 요청 뒤 `HeadObject` 확인, 중복 PUT의 `If-None-Match` 동작을 기록한다. CORS 오류가 나면 브라우저 Origin과 실제 PUT Header 및 S3 CORS를 비교한다. `AccessDenied`면 Presigned URL을 만든 BE Task Role, Object Key Prefix와 Bucket Policy를 확인한다. `SignatureDoesNotMatch`면 URL 발급 시 서명한 Header와 실제 브라우저 Header, 만료 시각을 대조한다.

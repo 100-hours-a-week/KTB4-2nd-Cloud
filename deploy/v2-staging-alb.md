@@ -1,6 +1,6 @@
 # V2 스테이징 ALB와 HTTPS 라우팅
 
-2026-10-07 기준 이 문서는 Issue #126의 **Terraform 코드와 실제 계정 Plan 검증**을 기록한다. ALB, 인증서, DNS 검증 레코드, FE/BE Target은 아직 AWS에 적용하지 않았다. HTTP 요청이나 Task 장애 전환이 성공했다는 운영 검증 기록이 아니다.
+2026-10-07 기준 이 문서는 Issue #126의 Terraform 코드와 실제 계정 Plan 검증을 기록한다. #135에서 스테이징 전체와 함께 ALB, ACM 인증서, DNS 검증 레코드, FE/BE Target Group을 AWS에 적용했다. 공개 스테이징 도메인의 ALB Alias와 FE/BE ECS Service는 아직 없으므로 화면·API 요청과 Task 장애 전환은 검증하지 않았다.
 
 ## 요청이 이동하는 경로
 

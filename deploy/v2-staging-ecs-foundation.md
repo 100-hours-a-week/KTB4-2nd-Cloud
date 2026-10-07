@@ -1,6 +1,6 @@
 # V2 스테이징 ECS 실행 기반
 
-2026-10-07 Issue #128은 [스테이징 네트워크](v2-staging-network.md)와 [ALB/HTTPS](v2-staging-alb.md) 다음에 FE/BE Fargate Task가 사용할 **공통 실행 기반**을 Terraform에 추가한다. 작성 시점에는 코드와 실제 AWS 계정 Plan만 검증했다. AWS `apply`, Task 시작, Image Pull, 로그 수집을 실제 확인한 결과가 아니다.
+2026-10-07 Issue #128은 [스테이징 네트워크](v2-staging-network.md)와 [ALB/HTTPS](v2-staging-alb.md) 다음에 FE/BE Fargate Task가 사용할 **공통 실행 기반**을 Terraform에 추가했다. #135에서 스테이징 전체와 함께 ECS Cluster, FE/BE Log Group, GHCR Secret과 실행 권한을 AWS에 적용했다. ECS Service와 Task는 아직 없으므로 Image Pull과 FE/BE 로그 수집은 검증하지 않았다.
 
 ## 이번 작업의 실행 경계
 
