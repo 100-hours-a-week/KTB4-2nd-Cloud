@@ -13,6 +13,11 @@ output "private_app_subnet_id" {
   value       = aws_subnet.private_app.id
 }
 
+output "private_app_cidr" {
+  description = "Private App subnet CIDR for security group rules"
+  value       = aws_subnet.private_app.cidr_block
+}
+
 output "private_app_route_table_id" {
   description = "Private route table including the NAT and S3 endpoint paths"
   value       = aws_route_table.private_app.id
