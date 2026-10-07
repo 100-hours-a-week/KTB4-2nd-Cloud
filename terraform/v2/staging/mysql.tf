@@ -26,6 +26,9 @@ resource "aws_vpc_security_group_egress_rule" "backend_mysql" {
 module "mysql" {
   source = "../modules/mysql-instance"
 
+  # Bootstrap installs packages through NAT, so the private route must exist first.
+  depends_on = [module.network]
+
   name_prefix               = "yeodam-v2-staging"
   vpc_id                    = module.network.vpc_id
   private_subnet_id         = module.network.private_app_subnet_id
