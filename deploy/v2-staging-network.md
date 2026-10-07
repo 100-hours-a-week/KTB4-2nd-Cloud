@@ -33,6 +33,14 @@ VPC는 `10.30.0.0/16`이며 DNS 지원과 Hostname을 켠다. Private Subnet에�
 
 네트워크 리소스는 `terraform/v2/modules/network/`에 두어 나중에 V2 운영 환경에서도 같은 구조를 재사용할 수 있게 했다. 환경별 CIDR, 이름, AZ와 state는 각 root가 소유한다. 모듈을 공유하더라도 운영과 스테이징이 하나의 VPC나 state를 공유하지는 않는다.
 
+## 앱을 연결하기 전에 확인할 계약
+
+스테이징 도메인은 기존 Route 53 Hosted Zone의 별도 서브도메인으로 연결할 예정이다. 주소 후보는 `staging.yeodam-2gether.com`이며 아직 DNS, ACM 인증서, ALB는 생성하지 않았다. 다음 작업의 ALB는 `/api/*`를 BE Target Group으로, 나머지를 FE Target Group으로 보내야 한다. 현재 코드의 Health 경로는 FE `/api/health`, BE `/api/actuator/health`다. FE Health 경로도 `/api/*`이므로 **Listener 경로 규칙에서 FE Health를 BE API 규칙보다 우선**시키거나 FE Health 경로를 팀과 조정해야 한다. Target Group 자체의 Health Check는 Listener 규칙을 거치지 않고 해당 Target에 직접 요청하지만, 외부 진단 주소와 라우팅은 별개로 확인한다.
+
+현재 FE Image 발행 Workflow는 `NEXT_PUBLIC_API_BASE_URL=https://yeodam-2gether.com/api`를 **빌드 시점**에 넣는다. 이 Image를 그대로 스테이징에 배포하면 브라우저와 SSR의 API 요청이 운영 BE로 향할 수 있다. FE 팀과 스테이징용 빌드 또는 환경별 API 주소 처리 계약을 정하고, 스테이징에서 운영 API로 요청이 나가지 않는지 확인하기 전에는 사용자 흐름 시험을 시작하지 않는다. Cloud가 FE 구현을 임의로 변경하지 않는다.
+
+BE의 OAuth Callback/Frontend Origin/JWT Issuer도 현재 운영 도메인을 사용한다. 스테이징 주소와 인증 설정을 분리하고 Kakao Callback 등록 여부를 팀과 확인해야 한다. 브라우저→S3 직접 업로드 시험 전에는 **스테이징 Bucket과 스테이징 Origin의 CORS**도 별도로 확인한다. 네트워크를 분리한 것만으로 앱의 데이터·인증 경로가 자동으로 분리되지는 않는다.
+
 ## 예상 네트워크 비용
 
 2026-10-07 AWS Pricing API의 서울 리전 On-Demand 단가 기준이다. 아래 월액은 **730시간 연속 유지 가정**이며 아직 실제 청구액이 아니다.
