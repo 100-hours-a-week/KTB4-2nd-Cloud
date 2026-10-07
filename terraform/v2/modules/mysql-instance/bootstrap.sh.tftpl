@@ -3,7 +3,14 @@ set -Eeuo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install --yes --no-install-recommends docker.io awscli
+apt-get install --yes --no-install-recommends docker.io curl unzip
+aws_cli_dir=$(mktemp -d)
+curl --fail --location --silent --show-error \
+  https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip \
+  --output "$aws_cli_dir/awscliv2.zip"
+unzip -q "$aws_cli_dir/awscliv2.zip" -d "$aws_cli_dir"
+"$aws_cli_dir/aws/install" --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli
+rm -rf "$aws_cli_dir"
 systemctl enable --now docker
 
 install -d -m 0700 /etc/yeodam
