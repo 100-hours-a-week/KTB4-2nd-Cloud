@@ -61,3 +61,10 @@ output "app_data_bucket_name" {
 output "backend_task_role_arn" {
   value = aws_iam_role.backend_task.arn
 }
+
+output "backend_task_security_group_id" { value = aws_security_group.backend_tasks.id }
+output "mysql_instance_id" { value = module.mysql.instance_id }
+output "mysql_private_ip" { value = module.mysql.private_ip }
+output "mysql_data_volume_id" { value = module.mysql.data_volume_id }
+output "mysql_root_password_secret_arn" { value = module.mysql.root_password_secret_arn }
+output "mysql_private_dns_name" { value = "mysql.staging.yeodam.internal" }
