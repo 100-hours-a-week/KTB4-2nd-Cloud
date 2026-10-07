@@ -15,7 +15,7 @@ ALB는 요청을 받은 도메인만으로 FE와 BE를 구분하지 않는다. 4
 
 현재 FE는 `/api/health`를 제공한다. 이 경로는 일반적인 `/api/*` 규칙보다 높은 우선순위 10으로 FE에 전달하고, BE 규칙은 우선순위 20이다. Target Group의 Health Check도 각각 FE `/api/health`, BE `/api/actuator/health`를 직접 호출한다. 4단계 설계의 공통 `/health/ready`는 아직 현재 두 저장소의 구현 계약이 아니므로 이번 Terraform에 임의로 적용하지 않았다. 특히 BE Actuator Health에 DB/Redis 의존성 상태가 포함되면 공통 저장소 장애 시 모든 BE Target이 비정상으로 보일 수 있다. ECS 연결 전 BE 팀과 실제 Health 응답 및 준비 상태 계약을 확인하고, 필요하면 의존성을 제외한 전용 Readiness 경로로 변경한다.
 
-브라우저의 상대 경로 API 호출은 FE 구현 변경이 필요하다. 현재 FE Image는 빌드 시 `NEXT_PUBLIC_API_BASE_URL` 값을 포함하며 운영 도메인 주소로 빌드한 Image를 스테이징에서 그대로 쓰면 API가 운영 BE로 향할 수 있다. FE 팀의 같은 Origin `/api` 전환과 SSR의 내부 BE 호출 경로를 확인하기 전에는 스테이징 브라우저 검증을 완료로 표시하지 않는다. 브라우저가 보는 `/api`와 BE가 받는 `/api`는 같은 요청 경로다. 서로 다른 점은 ALB가 그 경로로 목적지를 선택한다는 것이다.
+현재 FE Image Workflow가 빌드 인자 `NEXT_PUBLIC_API_BASE_URL=https://yeodam-2gether.com/api`를 지정하고 Dockerfile이 이를 빌드에 전달한다. 따라서 같은 Image를 스테이징에 두기만 하면 브라우저 API 요청이 운영 BE로 향할 수 있다. 같은 Origin 방식을 쓰려면 **먼저 FE Image Workflow의 빌드 인자를 `/api`로 변경**해야 한다. Dockerfile 수정은 필수 사항이 아니다. 다만 현재 Next.js 코드는 같은 API 설정을 SSR 호출과 OAuth 이동에도 사용하므로, FE 팀이 이 두 경로를 별도로 처리해야 전체 흐름이 정상 동작한다. 이 변경과 실제 브라우저 검증 전에는 스테이징 사용자 흐름을 완료로 표시하지 않는다. 브라우저가 보는 `/api`와 BE가 받는 `/api`는 같은 요청 경로다. ALB가 그 경로로 목적지를 선택한다.
 
 ## TLS, 공개 DNS와 네트워크 경계
 
@@ -45,6 +45,6 @@ terraform -chdir=terraform/v2/staging validate
 terraform -chdir=terraform/v2/staging plan -input=false
 ```
 
-계정은 여담 AWS 계정, 리전은 `ap-northeast-2`, Hosted Zone은 `yeodam-2gether.com`인지 확인한다. 2026-10-07의 미적용 스테이징 State에 대한 Plan은 **30개 생성, 변경 0, 삭제 0**이었다. 이는 #124 네트워크 15개와 #126 ALB/TLS/DNS 검증 15개다. 기존 V1 자원 변경·삭제와 스테이징 서비스 Alias 생성은 없었다. Plan은 변경되기 쉬우므로 적용 직전 다시 생성하고 각 자원과 비용을 검토한다. 저장한 Plan 파일과 State는 Git에 넣지 않는다.
+계정은 여담 AWS 계정, 리전은 `ap-northeast-2`, Hosted Zone은 `yeodam-2gether.com`인지 확인한다. #126 시점의 미적용 State Plan은 **30개 생성, 변경 0, 삭제 0**이었다. 이는 #124 네트워크 15개와 #126 ALB/TLS/DNS 검증 15개다. 이후 #128 [ECS 실행 기반](v2-staging-ecs-foundation.md) 6개가 추가돼 Plan은 **36개 생성, 변경 0, 삭제 0**이 됐다. 기존 V1 자원 변경·삭제와 스테이징 서비스 Alias 생성은 없었다. Plan은 변경되기 쉬우므로 적용 직전 다시 생성하고 각 자원과 비용을 검토한다. 저장한 Plan 파일과 State는 Git에 넣지 않는다.
 
 적용 뒤에는 ACM 상태가 `ISSUED`인지, HTTP가 HTTPS로 Redirect되는지, 두 Target Group의 Healthy 수가 실제 Task 수와 맞는지 순서대로 확인한다. Alias 연결 전에는 `staging` 도메인의 브라우저 요청 성공을 기대하지 않는다. Alias를 연결한 뒤에는 화면, `/api/health`, 실제 BE API를 각각 호출해 응답 출처와 Target Group을 확인한다. FE/BE Task 하나를 종료하거나 Rolling 배포하며 실패 요청, Target 제외 및 복귀 시간은 후속 다중 인스턴스 시험에서 기록한다. ACM이 `PENDING_VALIDATION`에 머무르면 CNAME의 Zone과 실제 공개 DNS 응답을 확인한다. Target이 Unhealthy이면 앱 경로와 Status Code, Task Security Group, 컨테이너 포트, 앱 기동 로그를 차례로 확인한다.
