@@ -19,7 +19,7 @@ Private App Subnet A (ap-northeast-2a, 10.30.10.0/24)
   └─ 서울 리전 S3 → Gateway Endpoint
 ```
 
-VPC는 `10.30.0.0/16`이며 DNS 지원과 Hostname을 켠다. Private Subnet에는 Public IP를 자동 할당하지 않는다. 이 문서의 #124 범위는 네트워크 15개 자원이다. 이후 #126에서 두 AZ의 Public Subnet을 쓰는 ALB와 Security Group 코드를 추가했다. **두 작업 모두 아직 AWS에 적용하지 않았다.** ECS, MySQL, Redis, Queue도 아직 만들지 않는다. App·DB·Redis를 가용 영역 A에 두는 것은 4단계 설계의 Single-AZ 출발점이며, Task 하나의 교체와 AZ 전체 장애를 같은 가용성으로 주장하지 않는다. 초기 알림은 이후 구현될 짧은 Polling 요청 기준이다.
+VPC는 `10.30.0.0/16`이며 DNS 지원과 Hostname을 켠다. Private Subnet에는 Public IP를 자동 할당하지 않는다. 이 문서의 #124 범위는 네트워크 15개 자원이다. 이후 #126에서 두 AZ의 Public Subnet을 쓰는 ALB와 Security Group, #128에서 [ECS 실행 기반](v2-staging-ecs-foundation.md) 코드를 추가했다. **모두 아직 AWS에 적용하지 않았다.** ECS Service와 Task, MySQL, Redis, Queue는 아직 구성하지 않는다. App·DB·Redis를 가용 영역 A에 두는 것은 4단계 설계의 Single-AZ 출발점이며, Task 하나의 교체와 AZ 전체 장애를 같은 가용성으로 주장하지 않는다. 초기 알림은 이후 구현될 짧은 Polling 요청 기준이다.
 
 실제 계정의 기존 VPC CIDR은 V1 `10.20.0.0/16`과 기본 VPC `172.31.0.0/16`으로, 제안한 `10.30.0.0/16`과 겹치지 않았다. `ap-northeast-2a`와 `ap-northeast-2c`도 2026-10-07 계정에서 사용 가능한 것으로 조회했다. 적용 직전에 다시 확인한다.
 
@@ -62,7 +62,7 @@ terraform -chdir=terraform/v2/staging validate
 terraform -chdir=terraform/v2/staging plan -input=false
 ```
 
-`init`은 V2 스테이징 state key를 표시해야 한다. #124만 작성했을 때의 `plan`은 **15개 생성, 변경 0, 삭제 0**이었다. #126 ALB 코드가 추가된 현재 미적용 State의 결과는 **30개 생성, 변경 0, 삭제 0**이므로 [ALB 문서](v2-staging-alb.md)와 함께 검토한다. V1 자원의 주소나 ID가 나오면 중단한다. 적용 전에는 계정/리전, CIDR 중복, NAT 상시 비용과 생성·변경·삭제 수를 다시 확인한다. 이 문서 작성 시점에는 적용하지 않았으므로 VPC ID와 실제 라우팅 결과는 없다.
+`init`은 V2 스테이징 state key를 표시해야 한다. #124만 작성했을 때의 `plan`은 **15개 생성**, #126 ALB 추가 후에는 **30개 생성**, #128 ECS 기반 추가 후에는 **36개 생성**이었다. 모두 변경과 삭제는 0개다. [ALB 문서](v2-staging-alb.md)와 [ECS 기반 문서](v2-staging-ecs-foundation.md)를 함께 검토한다. V1 자원의 주소나 ID가 나오면 중단한다. 적용 전에는 계정/리전, CIDR 중복, NAT 상시 비용과 생성·변경·삭제 수를 다시 확인한다. 이 문서 작성 시점에는 적용하지 않았으므로 VPC ID와 실제 라우팅 결과는 없다.
 
 적용 후에는 `terraform output`의 VPC/Subnet/NAT/S3 Endpoint ID를 확인하고, AWS의 Route Table에서 Public `0.0.0.0/0 → IGW`, Private `0.0.0.0/0 → NAT`, S3 Prefix List `→ Gateway Endpoint`를 대조한다. 이어 `terraform plan`이 변경 0건인지 확인한다. 실제 외부 API·GHCR/S3 통신과 ALB 도달성은 다음 FE/BE Task 작업에서 검증한다.
 
