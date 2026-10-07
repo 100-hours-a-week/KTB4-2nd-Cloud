@@ -53,3 +53,11 @@ output "frontend_log_group_name" {
 output "backend_log_group_name" {
   value = module.ecs_foundation.backend_log_group_name
 }
+
+output "app_data_bucket_name" {
+  value = module.app_storage.bucket_name
+}
+
+output "backend_task_role_arn" {
+  value = aws_iam_role.backend_task.arn
+}
