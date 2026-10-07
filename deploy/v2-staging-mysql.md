@@ -33,7 +33,7 @@ terraform -chdir=terraform/v2/staging validate
 terraform -chdir=terraform/v2/staging plan -input=false
 ```
 
-2026-10-07 실제 계정의 미적용 State Plan은 **62개 생성, 변경 0, 삭제 0**이다. 앞선 네트워크·ALB·ECS·사진 저장소 46개와 이번 MySQL 관련 16개이며 V1 자원 변경·삭제는 없다. 적용 전 대상 계정 `483175530259`, 리전 `ap-northeast-2`, ARM AMI, DB Instance·EBS 용량, NAT/EC2/EBS 상시 비용, 생성/변경/삭제 수를 다시 확인한다. 4단계 설계는 `t4g.medium`과 120GiB Data EBS 및 30GiB Root EBS의 730시간 예상을 약 $44/월로 제시했지만, 현재 가격과 스테이징의 실제 실행시간은 적용 전에 다시 계산해야 한다. 네트워크·ALB 비용과 EBS Snapshot/Backup은 이 금액에 포함되지 않는다.
+2026-10-07 실제 계정의 미적용 State Plan은 **62개 생성, 변경 0, 삭제 0**이다. 앞선 네트워크·ALB·ECS·사진 저장소 46개와 이번 MySQL 관련 16개이며 V1 자원 변경·삭제는 없다. 적용 전 대상 계정 `483175530259`, 리전 `ap-northeast-2`, ARM AMI, DB Instance·EBS 용량, NAT/EC2/EBS 상시 비용, 생성/변경/삭제 수를 다시 확인한다. 4단계 설계는 `t4g.medium`과 120GiB Data EBS 및 30GiB Root EBS의 730시간 예상을 약 $44/월로 제시했지만, 현재 가격과 스테이징의 실제 실행시간은 적용 전에 다시 계산해야 한다. 네트워크·ALB와 #135의 S3 Backup 저장·요청 비용은 이 금액에 포함되지 않는다.
 
 AWS 적용 후 Terraform Output에서 Instance ID, Private IP, Data Volume ID와 Root Secret ARN을 확인한다. Secret에는 이 환경 전용 강한 **평문 Root 암호**를 AWS Console에서 입력한다. Secret에 아직 값이 없으면 DB systemd 서비스는 시작하지 못하고 재시도한다. 값이 들어간 뒤 SSM Session Manager로 DB EC2에 접속해 다음을 확인한다.
 
