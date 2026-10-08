@@ -244,15 +244,16 @@ resource "aws_ebs_volume" "v1_source_mysql" {
   }
 }
 
+# The subnet does not auto-assign a public IP; the separate EIP supplies it.
+# AWS reports the public-IP association as true after attaching the EIP.
 resource "aws_instance" "v1_source_app" {
-  ami                         = data.aws_ami.v1_source_ubuntu.id
-  instance_type               = var.v1_source_app_instance_type
-  subnet_id                   = module.network.public_subnet_ids["app"]
-  vpc_security_group_ids      = [aws_security_group.v1_source_app.id]
-  iam_instance_profile        = aws_iam_instance_profile.v1_source_app.name
-  associate_public_ip_address = false
-  monitoring                  = true
-  disable_api_termination     = true
+  ami                     = data.aws_ami.v1_source_ubuntu.id
+  instance_type           = var.v1_source_app_instance_type
+  subnet_id               = module.network.public_subnet_ids["app"]
+  vpc_security_group_ids  = [aws_security_group.v1_source_app.id]
+  iam_instance_profile    = aws_iam_instance_profile.v1_source_app.name
+  monitoring              = true
+  disable_api_termination = true
 
   metadata_options {
     http_endpoint               = "enabled"
