@@ -1,0 +1,29 @@
+# Optional compatibility service for a source Backend image that requires Redis.
+# Select it only after checking the actual source release's auth contract.
+services:
+  backend:
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: "${V1_SOURCE_REDIS_IMAGE:?Pin the source Redis image before enabling it}"
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - v1-source-redis:/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  v1-source-redis:
