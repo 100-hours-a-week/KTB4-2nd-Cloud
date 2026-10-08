@@ -22,3 +22,8 @@ output "backend_log_group_name" {
   description = "BE awslogs group"
   value       = aws_cloudwatch_log_group.backend.name
 }
+
+output "backend_log_group_arn" {
+  description = "BE awslogs group ARN for a dedicated backend execution role"
+  value       = aws_cloudwatch_log_group.backend.arn
+}

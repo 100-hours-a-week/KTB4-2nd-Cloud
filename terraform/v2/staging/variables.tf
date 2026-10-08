@@ -56,3 +56,9 @@ variable "mysql_active_private_ip" {
     error_message = "mysql_active_private_ip must be a valid IPv4 address or null."
   }
 }
+
+variable "redis_node_type" {
+  description = "Initial staging Redis node size; revisit after auth-state load measurements"
+  type        = string
+  default     = "cache.t4g.micro"
+}

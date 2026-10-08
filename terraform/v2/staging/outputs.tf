@@ -69,3 +69,9 @@ output "mysql_data_volume_id" { value = module.mysql.data_volume_id }
 output "mysql_root_password_secret_arn" { value = module.mysql.root_password_secret_arn }
 output "mysql_private_dns_name" { value = "mysql.staging.yeodam.internal" }
 output "mysql_backup_bucket_name" { value = aws_s3_bucket.mysql_backup.id }
+
+output "redis_primary_endpoint_address" { value = module.redis.primary_endpoint_address }
+output "redis_port" { value = module.redis.port }
+output "redis_auth_token_secret_arn" { value = module.redis.auth_token_secret_arn }
+output "redis_replication_group_id" { value = module.redis.replication_group_id }
+output "backend_task_execution_role_arn" { value = aws_iam_role.backend_execution.arn }
