@@ -69,6 +69,7 @@ services:
       MYSQL_PASSWORD: ci-app-only
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      AUTH_SESSION_KEY_PREFIX: "yeodam:ci:auth:"
       AWS_REGION: ap-northeast-2
       AWS_DEFAULT_REGION: ap-northeast-2
       AWS_ACCESS_KEY_ID: testing

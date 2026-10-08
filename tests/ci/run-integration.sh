@@ -9,7 +9,7 @@ cleanup() {
   result=$?
   if ((result != 0)); then
     "${compose[@]}" ps || true
-    "${compose[@]}" logs --no-color --tail=80 backend ai-worker mysql s3 ec2-stub || true
+    "${compose[@]}" logs --no-color --tail=80 backend ai-worker mysql redis s3 ec2-stub || true
   fi
   "${compose[@]}" down --volumes --remove-orphans || true
   exit "${result}"
@@ -35,4 +35,13 @@ wait_for_http AI http://127.0.0.1:18000/health
 
 "${compose[@]}" exec -T mysql mysql --user=root --password=ci-root-only yeodam \
   < tests/ci/seed.sql
+export CI_AUTH_SID=00000000-0000-4000-8000-000000000001
+session_prefix="$("${compose[@]}" exec -T backend printenv AUTH_SESSION_KEY_PREFIX)"
+session_key="${session_prefix}session:${CI_AUTH_SID}"
+session_expires_at_ms="$((($(date +%s) + 86400) * 1000))"
+"${compose[@]}" exec -T redis redis-cli HSET "${session_key}" \
+  userId 900001 \
+  refreshTokenHash aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+  expiresAt "${session_expires_at_ms}" >/dev/null
+"${compose[@]}" exec -T redis redis-cli EXPIRE "${session_key}" 86400 >/dev/null
 python3 tests/ci/smoke.py

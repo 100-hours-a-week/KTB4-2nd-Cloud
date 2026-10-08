@@ -4,6 +4,8 @@ VALUES (900001, 'cloud-ci@yeodam.invalid', 'CI검증');
 INSERT INTO user_stats (user_id) VALUES (900001);
 INSERT INTO consents (user_id, is_agreed, agreed_at)
 VALUES (900001, TRUE, CURRENT_TIMESTAMP(6));
+-- The currently deployed BE image still validates login sessions in MySQL.
+-- Keep this fixture until the Redis-backed BE image is the release baseline.
 INSERT INTO login_sessions (sid, user_id, refresh_token_hash, expires_at)
 VALUES (
   '00000000-0000-4000-8000-000000000001', 900001,
