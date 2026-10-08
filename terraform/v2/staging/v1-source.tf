@@ -154,8 +154,14 @@ data "aws_iam_policy_document" "v1_source_app" {
 
   statement {
     sid       = "ReadOnlyOwnRuntimeParameters"
-    actions   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
+    actions   = ["ssm:GetParameter", "ssm:GetParameters"]
     resources = ["arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.v1_source_parameter_prefix}/app/*", "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.v1_source_parameter_prefix}/deploy/*"]
+  }
+
+  statement {
+    sid       = "ReadOwnRuntimeParameterPath"
+    actions   = ["ssm:GetParametersByPath"]
+    resources = ["arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.v1_source_parameter_prefix}/app"]
   }
 
   statement {
@@ -203,8 +209,14 @@ data "aws_iam_policy_document" "v1_source_worker" {
 
   statement {
     sid       = "ReadOnlyOwnRuntimeParameters"
-    actions   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
+    actions   = ["ssm:GetParameter", "ssm:GetParameters"]
     resources = ["arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.v1_source_parameter_prefix}/worker/*", "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.v1_source_parameter_prefix}/deploy/*"]
+  }
+
+  statement {
+    sid       = "ReadOwnRuntimeParameterPath"
+    actions   = ["ssm:GetParametersByPath"]
+    resources = ["arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.v1_source_parameter_prefix}/worker"]
   }
 
   statement {
