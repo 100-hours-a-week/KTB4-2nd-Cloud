@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import struct
 import time
 import urllib.error
@@ -14,7 +15,7 @@ from http.cookies import SimpleCookie
 
 BASE = "http://127.0.0.1:18080/api"
 JWT_SECRET = b"ci-only-secret-key-with-at-least-32-bytes"
-SID = "00000000-0000-4000-8000-000000000001"
+SID = os.environ.get("CI_AUTH_SID", "00000000-0000-4000-8000-000000000001")
 
 
 def request(url, method="GET", data=None, headers=None, timeout=30):
