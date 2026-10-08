@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install --yes --no-install-recommends docker.io curl unzip
+aws_cli_dir=$(mktemp -d)
+curl --fail --location --silent --show-error \
+  https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip \
+  --output "$aws_cli_dir/awscliv2.zip"
+unzip -q "$aws_cli_dir/awscliv2.zip" -d "$aws_cli_dir"
+"$aws_cli_dir/aws/install" --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli
+rm -rf "$aws_cli_dir"
+systemctl enable --now docker
+
+install -d -m 0700 /etc/yeodam
+install -d -m 0755 /usr/local/sbin
+
+cat > /usr/local/sbin/yeodam-mysql-prepare-data <<'SCRIPT'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+volume_id='${volume_id}'
+expected_serial=$(printf '%s' "$volume_id" | tr -d '-' | tr '[:upper:]' '[:lower:]')
+device=''
+
+for attempt in $(seq 1 120); do
+  while read -r name serial kind; do
+    [ "$kind" = disk ] || continue
+    normalized=$(printf '%s' "$serial" | tr -d '-' | tr '[:upper:]' '[:lower:]')
+    if [ "$normalized" = "$expected_serial" ]; then
+      device="/dev/$name"
+    fi
+  done < <(lsblk -dn -o NAME,SERIAL,TYPE)
+  [ -n "$device" ] && break
+  sleep 5
+done
+
+[ -n "$device" ] || { echo "MySQL data volume $volume_id was not attached" >&2; exit 1; }
+filesystem=$(blkid -o value -s TYPE "$device" || true)
+case "$filesystem" in
+  '') mkfs.ext4 "$device" ;;
+  ext4) ;;
+  *) echo "Unexpected filesystem on $device: $filesystem" >&2; exit 1 ;;
+esac
+
+uuid=$(blkid -o value -s UUID "$device")
+install -d -m 0755 /srv/yeodam/mysql
+if ! grep -Fq "UUID=$uuid " /etc/fstab; then
+  printf 'UUID=%s /srv/yeodam/mysql ext4 defaults,nofail 0 2\n' "$uuid" >> /etc/fstab
+fi
+mountpoint -q /srv/yeodam/mysql || mount /srv/yeodam/mysql
+if [ -d /srv/yeodam/mysql/lost+found ]; then
+  rmdir /srv/yeodam/mysql/lost+found
+fi
+SCRIPT
+
+cat > /usr/local/sbin/yeodam-mysql-load-secret <<'SCRIPT'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+aws secretsmanager get-secret-value \
+  --secret-id '${secret_arn}' \
+  --region '${aws_region}' \
+  --query SecretString \
+  --output text > /etc/yeodam/mysql-root-password.next
+test -s /etc/yeodam/mysql-root-password.next
+mv /etc/yeodam/mysql-root-password.next /etc/yeodam/mysql-root-password
+SCRIPT
+
+chmod 0750 /usr/local/sbin/yeodam-mysql-prepare-data /usr/local/sbin/yeodam-mysql-load-secret
+
+cat > /etc/systemd/system/yeodam-mysql.service <<'SERVICE'
+[Unit]
+Description=Yeodam V2 MySQL on retained data EBS
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=30
+TimeoutStartSec=900
+ExecStartPre=/usr/local/sbin/yeodam-mysql-prepare-data
+ExecStartPre=/usr/local/sbin/yeodam-mysql-load-secret
+ExecStartPre=-/usr/bin/docker rm -f yeodam-v2-mysql
+ExecStart=/usr/bin/docker run --rm --name yeodam-v2-mysql --log-driver=journald --publish 3306:3306 --volume /srv/yeodam/mysql:/var/lib/mysql --volume /etc/yeodam/mysql-root-password:/run/secrets/mysql-root-password:ro --env MYSQL_ROOT_PASSWORD_FILE=/run/secrets/mysql-root-password --env MYSQL_ROOT_HOST=localhost '${image}' --log-bin=mysql-bin --binlog-expire-logs-seconds=1382400 --sync-binlog=1 --innodb-flush-log-at-trx-commit=1
+ExecStop=/usr/bin/docker stop yeodam-v2-mysql
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+cat > /etc/yeodam/mysql-backup.env <<'CONFIG'
+AWS_REGION='${aws_region}'
+BACKUP_BUCKET='${backup_bucket}'
+MYSQL_CONTAINER='yeodam-v2-mysql'
+MYSQL_DATA_DIR='/srv/yeodam/mysql'
+CONFIG
+chmod 0600 /etc/yeodam/mysql-backup.env
+
+base64 -d > /usr/local/sbin/yeodam-mysql-full-backup <<'SCRIPT'
+${full_backup_script_b64}
+SCRIPT
+base64 -d > /usr/local/sbin/yeodam-mysql-ship-binlogs <<'SCRIPT'
+${binlog_shipper_script_b64}
+SCRIPT
+base64 -d > /usr/local/sbin/yeodam-mysql-measure-binlog-lag <<'SCRIPT'
+${binlog_lag_script_b64}
+SCRIPT
+chmod 0750 /usr/local/sbin/yeodam-mysql-{full-backup,ship-binlogs,measure-binlog-lag}
+
+cat > /etc/systemd/system/yeodam-mysql-full-backup.service <<'SERVICE'
+[Unit]
+Description=Yeodam MySQL logical full backup to S3
+After=yeodam-mysql.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/systemctl is-active --quiet yeodam-mysql.service
+ExecStart=/usr/local/sbin/yeodam-mysql-full-backup
+TimeoutStartSec=0
+SERVICE
+
+cat > /etc/systemd/system/yeodam-mysql-full-backup.timer <<'TIMER'
+[Unit]
+Description=Weekly Yeodam MySQL full backup
+
+[Timer]
+OnCalendar=Thu *-*-* 03:00:00 Asia/Seoul
+Persistent=true
+AccuracySec=1s
+Unit=yeodam-mysql-full-backup.service
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+cat > /etc/systemd/system/yeodam-mysql-ship-binlogs.service <<'SERVICE'
+[Unit]
+Description=Ship closed Yeodam MySQL binary logs to S3
+After=yeodam-mysql.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/systemctl is-active --quiet yeodam-mysql.service
+ExecStart=/usr/local/sbin/yeodam-mysql-ship-binlogs
+TimeoutStartSec=180
+SERVICE
+
+cat > /etc/systemd/system/yeodam-mysql-ship-binlogs.timer <<'TIMER'
+[Unit]
+Description=Ship Yeodam MySQL binary logs every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+AccuracySec=1s
+Unit=yeodam-mysql-ship-binlogs.service
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+cat > /etc/systemd/system/yeodam-mysql-measure-binlog-lag.service <<'SERVICE'
+[Unit]
+Description=Publish age of externally preserved MySQL binary logs
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/yeodam-mysql-measure-binlog-lag
+TimeoutStartSec=60
+SERVICE
+
+cat > /etc/systemd/system/yeodam-mysql-measure-binlog-lag.timer <<'TIMER'
+[Unit]
+Description=Measure MySQL binary log shipping age every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+AccuracySec=1s
+Unit=yeodam-mysql-measure-binlog-lag.service
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+systemctl daemon-reload
+systemctl enable yeodam-mysql.service
+systemctl enable --now yeodam-mysql-full-backup.timer yeodam-mysql-ship-binlogs.timer yeodam-mysql-measure-binlog-lag.timer
+# The secret has no version until an operator sets its value after apply.
+systemctl start yeodam-mysql.service || true

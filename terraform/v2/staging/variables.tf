@@ -39,3 +39,26 @@ variable "alb_secondary_availability_zone" {
     error_message = "The two ALB public subnets must be in different availability zones."
   }
 }
+
+variable "mysql_ami_id" {
+  description = "Reviewed Canonical Ubuntu 24.04 ARM64 AMI for the staging MySQL host"
+  type        = string
+  default     = "ami-0ccbfe1123f2d682d"
+}
+
+variable "mysql_active_private_ip" {
+  description = "Validated MySQL private IP to publish in the private zone; null until recovery checks pass"
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.mysql_active_private_ip == null || can(cidrhost("${var.mysql_active_private_ip}/32", 0))
+    error_message = "mysql_active_private_ip must be a valid IPv4 address or null."
+  }
+}
+
+variable "redis_node_type" {
+  description = "Initial staging Redis node size; revisit after auth-state load measurements"
+  type        = string
+  default     = "cache.t4g.micro"
+}

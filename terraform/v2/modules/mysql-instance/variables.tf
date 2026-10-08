@@ -1,0 +1,13 @@
+variable "name_prefix" { type = string }
+variable "vpc_id" { type = string }
+variable "private_subnet_id" { type = string }
+variable "availability_zone" { type = string }
+variable "backend_security_group_id" { type = string }
+variable "ami_id" { type = string }
+variable "instance_type" { type = string }
+variable "data_volume_size_gib" { type = number }
+variable "aws_region" { type = string }
+variable "tags" { type = map(string) }
+variable "mysql_image" { type = string }
+variable "backup_bucket_name" { type = string }
+variable "backup_bucket_arn" { type = string }
