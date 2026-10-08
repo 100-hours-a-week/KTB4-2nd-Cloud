@@ -14,6 +14,14 @@ services:
       timeout: 5s
       retries: 30
 
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   s3:
     image: localstack/localstack:4.9.0
     environment:
@@ -59,6 +67,8 @@ services:
       MYSQL_URL: jdbc:mysql://mysql:3306/yeodam?serverTimezone=UTC&characterEncoding=utf8
       MYSQL_USERNAME: yeodam
       MYSQL_PASSWORD: ci-app-only
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
       AWS_REGION: ap-northeast-2
       AWS_DEFAULT_REGION: ap-northeast-2
       AWS_ACCESS_KEY_ID: testing
@@ -79,6 +89,8 @@ services:
       - "127.0.0.1:18080:8080"
     depends_on:
       mysql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       s3:
         condition: service_healthy
