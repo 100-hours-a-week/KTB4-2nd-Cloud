@@ -62,3 +62,32 @@ variable "redis_node_type" {
   type        = string
   default     = "cache.t4g.micro"
 }
+
+variable "v1_source_ami_id" {
+  description = "Reviewed Ubuntu 24.04 x86_64 AMI for the V1 rehearsal App and Worker"
+  type        = string
+  default     = "ami-086a43496cb46286c"
+}
+
+variable "v1_source_app_instance_type" {
+  description = "V1 rehearsal App size; production parity is t3.medium"
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "v1_source_worker_instance_type" {
+  description = "V1 rehearsal AI Worker size; stop outside rehearsal windows"
+  type        = string
+  default     = "c7i.xlarge"
+}
+
+variable "v1_source_mysql_data_gib" {
+  description = "Retained MySQL data volume for the V1 rehearsal source"
+  type        = number
+  default     = 20
+
+  validation {
+    condition     = var.v1_source_mysql_data_gib >= 10
+    error_message = "The V1 rehearsal MySQL volume must be at least 10 GiB."
+  }
+}

@@ -29,7 +29,7 @@ services:
       driver: awslogs
       options:
         awslogs-region: "${AWS_REGION:-ap-northeast-2}"
-        awslogs-group: "/yeodam/v1/ai"
+        awslogs-group: "${AI_LOG_GROUP:-/yeodam/v1/ai}"
         awslogs-stream: "ai-worker"
         awslogs-create-group: "false"
 

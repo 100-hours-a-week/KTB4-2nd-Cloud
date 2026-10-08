@@ -83,7 +83,7 @@ services:
       driver: awslogs
       options:
         awslogs-region: "${AWS_REGION:-ap-northeast-2}"
-        awslogs-group: "/yeodam/v1/backend"
+        awslogs-group: "${BACKEND_LOG_GROUP:-/yeodam/v1/backend}"
         awslogs-stream: "backend"
         awslogs-create-group: "false"
 

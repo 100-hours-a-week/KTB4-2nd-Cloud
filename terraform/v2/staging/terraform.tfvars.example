@@ -3,3 +3,7 @@ vpc_cidr                        = "10.30.0.0/16"
 app_availability_zone           = "ap-northeast-2a"
 alb_secondary_availability_zone = "ap-northeast-2c"
 redis_node_type                 = "cache.t4g.micro"
+v1_source_ami_id                = "ami-086a43496cb46286c"
+v1_source_app_instance_type     = "t3.medium"
+v1_source_worker_instance_type  = "c7i.xlarge"
+v1_source_mysql_data_gib        = 20
