@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install --yes --no-install-recommends ca-certificates curl gnupg unzip
+
+if ! command -v aws >/dev/null 2>&1; then
+  aws_cli_dir=$(mktemp -d)
+  curl --fail --location --silent --show-error \
+    https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
+    --output "$aws_cli_dir/awscliv2.zip"
+  unzip -q "$aws_cli_dir/awscliv2.zip" -d "$aws_cli_dir"
+  "$aws_cli_dir/aws/install" --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli
+  rm -rf "$aws_cli_dir"
+fi
+
+install -m 0755 -d /etc/apt/keyrings
+curl --fail --location --silent --show-error \
+  https://download.docker.com/linux/ubuntu/gpg \
+  --output /etc/apt/keyrings/docker.asc
+chmod 0644 /etc/apt/keyrings/docker.asc
+cat > /etc/apt/sources.list.d/docker.sources <<'SOURCES'
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: noble
+Components: stable
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/docker.asc
+SOURCES
+apt-get update
+apt-get install --yes --no-install-recommends docker-ce docker-ce-cli containerd.io docker-compose-plugin
+systemctl enable --now docker
+
+expected_serial=$(printf '%s' '${volume_id}' | tr -d '-' | tr '[:upper:]' '[:lower:]')
+device=''
+for attempt in $(seq 1 120); do
+  while read -r name serial kind; do
+    [ "$kind" = disk ] || continue
+    normalized=$(printf '%s' "$serial" | tr -d '-' | tr '[:upper:]' '[:lower:]')
+    if [ "$normalized" = "$expected_serial" ]; then
+      device="/dev/$name"
+    fi
+  done < <(lsblk -dn -o NAME,SERIAL,TYPE)
+  [ -n "$device" ] && break
+  sleep 5
+done
+[ -n "$device" ] || { echo 'PLG data volume was not attached' >&2; exit 1; }
+
+filesystem=$(blkid -o value -s TYPE "$device" || true)
+case "$filesystem" in
+  '') mkfs.ext4 "$device" ;;
+  ext4) ;;
+  *) echo "Unexpected PLG filesystem: $filesystem" >&2; exit 1 ;;
+esac
+uuid=$(blkid -o value -s UUID "$device")
+install -d -m 0755 /srv/yeodam/plg
+if ! grep -Fq "UUID=$uuid " /etc/fstab; then
+  printf 'UUID=%s /srv/yeodam/plg ext4 defaults,nofail 0 2\n' "$uuid" >> /etc/fstab
+fi
+mountpoint -q /srv/yeodam/plg || mount /srv/yeodam/plg
+rmdir /srv/yeodam/plg/lost+found 2>/dev/null || true
+install -d -m 0755 -o 65534 -g 65534 /srv/yeodam/plg/prometheus
+install -d -m 0755 -o 10001 -g 10001 /srv/yeodam/plg/loki
+install -d -m 0755 -o 472 -g 472 /srv/yeodam/plg/grafana
+install -d -m 0700 /etc/yeodam/plg

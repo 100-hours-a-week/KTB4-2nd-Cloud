@@ -1,0 +1,47 @@
+logging {
+  level = "info"
+}
+
+loki.source.file "nginx_access" {
+  targets = [
+    {__path__ = "/var/log/nginx/yeodam-access.json", environment = "staging", service_name = "v1-nginx", stream = "access"},
+    {__path__ = "/var/log/nginx/yeodam-error.log", environment = "staging", service_name = "v1-nginx", stream = "error"},
+  ]
+  forward_to = [loki.write.staging.receiver]
+}
+
+loki.write "staging" {
+  endpoint {
+    url = "http://plg.staging.yeodam.internal:3100/loki/api/v1/push"
+  }
+}
+
+prometheus.exporter.unix "v1_app" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+  rootfs_path = "/host/root"
+}
+
+prometheus.scrape "v1_app" {
+  targets         = prometheus.exporter.unix.v1_app.targets
+  scrape_interval = "15s"
+  forward_to      = [prometheus.relabel.v1_app.receiver]
+}
+
+prometheus.relabel "v1_app" {
+  rule {
+    target_label = "job"
+    replacement  = "v1-app-node"
+  }
+  rule {
+    target_label = "environment"
+    replacement  = "staging"
+  }
+  forward_to = [prometheus.remote_write.staging.receiver]
+}
+
+prometheus.remote_write "staging" {
+  endpoint {
+    url = "http://plg.staging.yeodam.internal:9090/api/v1/write"
+  }
+}

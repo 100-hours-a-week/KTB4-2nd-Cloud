@@ -1,0 +1,65 @@
+{
+  "uid": "yeodam-v1-source",
+  "title": "V1 staging source",
+  "tags": ["yeodam", "staging", "migration"],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "refresh": "30s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Nginx requests per second",
+      "datasource": {"type": "loki", "uid": "staging-loki"},
+      "targets": [{"refId": "A", "expr": "sum(rate({service_name=\"v1-nginx\",stream=\"access\"}[1m]))"}],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Nginx 5xx per second",
+      "datasource": {"type": "loki", "uid": "staging-loki"},
+      "targets": [{"refId": "A", "expr": "sum(rate({service_name=\"v1-nginx\",stream=\"access\"} | json | status >= 500 [1m]))"}],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Nginx request p95",
+      "datasource": {"type": "loki", "uid": "staging-loki"},
+      "targets": [{"refId": "A", "expr": "quantile_over_time(0.95, {service_name=\"v1-nginx\",stream=\"access\"} | json | unwrap request_time [5m])"}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "V1 App host memory used",
+      "datasource": {"type": "prometheus", "uid": "staging-prometheus"},
+      "targets": [{"refId": "A", "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"v1-app-node\"} / node_memory_MemTotal_bytes{job=\"v1-app-node\"})"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Trip create requests per second",
+      "datasource": {"type": "loki", "uid": "staging-loki"},
+      "targets": [{"refId": "A", "expr": "sum(rate({service_name=\"v1-nginx\",stream=\"access\"} | json | method = \"POST\" | normalized_route = \"/api/trips\" [1m]))"}],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Initial attachment upload p95",
+      "datasource": {"type": "loki", "uid": "staging-loki"},
+      "targets": [{"refId": "A", "expr": "quantile_over_time(0.95, {service_name=\"v1-nginx\",stream=\"access\"} | json | normalized_route = \"/api/trips/:tripId/initial-attachments\" | unwrap request_time [5m])"}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+    }
+  ]
+}
