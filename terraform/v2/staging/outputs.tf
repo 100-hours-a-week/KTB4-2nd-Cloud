@@ -83,3 +83,8 @@ output "v1_source_mysql_data_volume_id" { value = aws_ebs_volume.v1_source_mysql
 output "v1_source_worker_instance_id" { value = aws_instance.v1_source_worker.id }
 output "v1_source_worker_private_ip" { value = aws_instance.v1_source_worker.private_ip }
 output "v1_source_app_data_bucket_name" { value = module.v1_source_storage.bucket_name }
+
+output "plg_instance_id" { value = aws_instance.plg.id }
+output "plg_private_dns_name" { value = aws_route53_record.plg_private.fqdn }
+output "plg_data_volume_id" { value = aws_ebs_volume.plg_data.id }
+output "plg_admin_secret_arn" { value = aws_secretsmanager_secret.plg_admin.arn }

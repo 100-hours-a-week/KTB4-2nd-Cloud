@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Yeodam staging
+    orgId: 1
+    folder: Yeodam staging
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards
