@@ -8,6 +8,8 @@ services:
     init: true
     ports:
       - "127.0.0.1:3000:3000"
+    environment:
+      SERVER_API_BASE_URL: "http://backend:8080/api"
     healthcheck:
       test:
         [
