@@ -127,9 +127,10 @@ variable "load_generator_instance_type" {
 }
 
 variable "frontend_image" {
-  description = "Immutable GHCR frontend image reference; null keeps the staging service absent until an approved image is ready"
+  description = "Initial V2 staging frontend main image, pinned by digest; override for a later approved release"
   type        = string
-  default     = null
+  # KTB4-2nd-FE main bd50569, Frontend Image run 37902003903.
+  default = "ghcr.io/100-hours-a-week/yeodam-frontend@sha256:2ff2e41c82c97ddcdf0e7ec6300cba42b756ef2a4cbd27971831fd772c05ab81"
 
   validation {
     condition     = var.frontend_image == null || can(regex("^ghcr[.]io/100-hours-a-week/yeodam-frontend@sha256:[0-9a-f]{64}$", var.frontend_image))
