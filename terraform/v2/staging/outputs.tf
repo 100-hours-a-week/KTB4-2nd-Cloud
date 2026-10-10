@@ -42,6 +42,10 @@ output "frontend_ecs_service_name" {
   value = try(aws_ecs_service.frontend[0].name, null)
 }
 
+output "frontend_staging_deploy_role_arn" {
+  value = aws_iam_role.frontend_staging_deploy.arn
+}
+
 output "backend_ecs_service_name" {
   value = try(aws_ecs_service.backend[0].name, null)
 }
