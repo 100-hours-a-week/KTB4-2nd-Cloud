@@ -4,6 +4,9 @@ set -Eeuo pipefail
 bash -n scripts/*.sh tests/ci/*.sh
 bash scripts/validate-image-versions.sh deploy/image-versions.env
 python3 -m json.tool monitoring/cloudwatch-agent/app.json >/dev/null
+python3 -m json.tool monitoring/v2-staging/grafana/dashboards/v1-source.json >/dev/null
+docker compose -f monitoring/v2-staging/plg-compose.yml config --quiet
+docker compose -f monitoring/v2-staging/v1-source-alloy-compose.yml config --quiet
 
 temporary_dir="$(mktemp -d)"
 trap 'rm -rf -- "${temporary_dir}"' EXIT

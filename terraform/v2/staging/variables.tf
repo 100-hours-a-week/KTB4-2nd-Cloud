@@ -91,3 +91,37 @@ variable "v1_source_mysql_data_gib" {
     error_message = "The V1 rehearsal MySQL volume must be at least 10 GiB."
   }
 }
+
+variable "plg_instance_type" {
+  description = "Private staging PLG host size; measure memory under rehearsal load"
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "plg_data_gib" {
+  description = "Retained EBS capacity for the staging PLG data stores"
+  type        = number
+  default     = 40
+
+  validation {
+    condition     = var.plg_data_gib >= 20
+    error_message = "PLG data volume must have at least 20 GiB."
+  }
+}
+
+variable "enable_load_generator" {
+  description = "Create the temporary staging k6 host only during a rehearsal"
+  type        = bool
+  default     = false
+}
+
+variable "load_generator_instance_type" {
+  description = "Staging k6 host size; verify generator headroom during each run"
+  type        = string
+  default     = "c6i.large"
+
+  validation {
+    condition     = contains(["c6i.large", "m6i.xlarge"], var.load_generator_instance_type)
+    error_message = "The staging load generator must use c6i.large or m6i.xlarge."
+  }
+}
