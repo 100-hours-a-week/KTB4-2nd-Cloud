@@ -38,6 +38,18 @@ output "ecs_cluster_arn" {
   value = module.ecs_foundation.cluster_arn
 }
 
+output "frontend_ecs_service_name" {
+  value = try(aws_ecs_service.frontend[0].name, null)
+}
+
+output "backend_ecs_service_name" {
+  value = try(aws_ecs_service.backend[0].name, null)
+}
+
+output "app_staging_domain" {
+  value = try(aws_route53_record.app_staging[0].fqdn, null)
+}
+
 output "ecs_task_execution_role_arn" {
   value = module.ecs_foundation.task_execution_role_arn
 }
