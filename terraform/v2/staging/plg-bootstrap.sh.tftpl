@@ -2,6 +2,8 @@
 set -Eeuo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
+# The Ubuntu AMI uses HTTP apt mirrors, while this host only permits HTTPS egress.
+sed -i '/^URIs:/ s#http://#https://#g' /etc/apt/sources.list.d/ubuntu.sources
 apt-get update
 apt-get install --yes --no-install-recommends ca-certificates curl gnupg unzip
 
