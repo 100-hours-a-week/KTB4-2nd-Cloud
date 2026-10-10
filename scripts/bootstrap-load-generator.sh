@@ -37,6 +37,9 @@ trap cleanup EXIT
 log "기본 Package 설치"
 
 export DEBIAN_FRONTEND=noninteractive
+# The reviewed Ubuntu AMI defaults to HTTP apt mirrors. The staging load
+# generator permits HTTPS egress only, including during first boot.
+sed -i '/^URIs:/ s#http://#https://#g' /etc/apt/sources.list.d/ubuntu.sources
 apt-get update
 apt-get install --yes --no-install-recommends \
   ca-certificates \

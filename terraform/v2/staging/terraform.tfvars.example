@@ -7,3 +7,5 @@ v1_source_ami_id                = "ami-086a43496cb46286c"
 v1_source_app_instance_type     = "t3.medium"
 v1_source_worker_instance_type  = "c7i.xlarge"
 v1_source_mysql_data_gib        = 20
+enable_load_generator           = false
+load_generator_instance_type    = "c6i.large"
