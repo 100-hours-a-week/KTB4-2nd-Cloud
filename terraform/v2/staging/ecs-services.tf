@@ -190,6 +190,11 @@ resource "aws_ecs_service" "frontend" {
   deployment_maximum_percent         = 200
   health_check_grace_period_seconds  = 90
 
+  lifecycle {
+    # Subsequent image revisions are deployed by the staging CD workflow.
+    ignore_changes = [task_definition]
+  }
+
   tags = local.common_tags
 }
 
