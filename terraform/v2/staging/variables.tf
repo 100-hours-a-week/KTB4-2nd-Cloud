@@ -125,3 +125,60 @@ variable "load_generator_instance_type" {
     error_message = "The staging load generator must use c6i.large or m6i.xlarge."
   }
 }
+
+variable "frontend_image" {
+  description = "Immutable GHCR frontend image reference; null keeps the staging service absent until an approved image is ready"
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.frontend_image == null || can(regex("^ghcr[.]io/100-hours-a-week/yeodam-frontend@sha256:[0-9a-f]{64}$", var.frontend_image))
+    error_message = "frontend_image must be a yeodam-frontend GHCR digest reference."
+  }
+}
+
+variable "backend_image" {
+  description = "Immutable GHCR backend image reference; null keeps the staging service absent until runtime dependencies are ready"
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.backend_image == null || can(regex("^ghcr[.]io/100-hours-a-week/yeodam-backend@sha256:[0-9a-f]{64}$", var.backend_image))
+    error_message = "backend_image must be a yeodam-backend GHCR digest reference."
+  }
+}
+
+variable "frontend_desired_count" {
+  description = "Initial staging frontend task count; raise to two for distribution and rolling checks"
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.frontend_desired_count >= 1 && var.frontend_desired_count <= 4 && floor(var.frontend_desired_count) == var.frontend_desired_count
+    error_message = "frontend_desired_count must be an integer from 1 to 4."
+  }
+}
+
+variable "backend_desired_count" {
+  description = "Initial staging backend task count; raise to two after shared-state checks"
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.backend_desired_count >= 1 && var.backend_desired_count <= 6 && floor(var.backend_desired_count) == var.backend_desired_count
+    error_message = "backend_desired_count must be an integer from 1 to 6."
+  }
+}
+
+variable "backend_environment" {
+  description = "Non-secret Backend runtime values; provide required app contract values before enabling backend_image"
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = length(setintersection(toset(keys(var.backend_environment)), toset([
+      "MYSQL_PASSWORD", "KAKAO_CLIENT_SECRET", "JWT_SECRET", "AI_SERVER_API_KEY", "REDIS_PASSWORD",
+    ]))) == 0
+    error_message = "backend_environment must not contain credentials; use staging SSM parameters or Redis Secrets Manager."
+  }
+}
