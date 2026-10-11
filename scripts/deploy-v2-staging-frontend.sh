@@ -38,28 +38,50 @@ verify_healthy() {
   local desired
   local healthy
   local attempt
+  local service_summary
 
-  aws ecs wait services-stable --region "${region}" --cluster "${cluster}" \
-    --services "${service}" || return 1
-  service_state > "${temporary_dir}/verified-service.json"
-  jq -e --arg expected "${expected}" \
-    '.status == "ACTIVE" and .taskDefinition == $expected and
-     .runningCount == .desiredCount and .desiredCount > 0 and
-     ([.deployments[] | select(.status == "PRIMARY" and .rolloutState == "COMPLETED")] | length) == 1' \
-    "${temporary_dir}/verified-service.json" >/dev/null || return 1
-  desired="$(jq -r '.desiredCount' "${temporary_dir}/verified-service.json")"
-  healthy="$(aws elbv2 describe-target-health --region "${region}" \
-    --target-group-arn "${target_group}" --query 'TargetHealthDescriptions[*].TargetHealth.State' \
-    --output json | jq '[.[] | select(. == "healthy")] | length')" || return 1
-  (( healthy >= desired )) || return 1
-
-  for attempt in {1..12}; do
-    if curl --fail --silent --show-error --max-time 10 --output "${temporary_dir}/health.json" \
-      "${health_url}" && jq -e '.status == "ok"' "${temporary_dir}/health.json" >/dev/null; then
-      return 0
+  # ECS may report the desired running count before the rollout is COMPLETED.
+  for attempt in {1..60}; do
+    if ! service_state > "${temporary_dir}/verified-service.json"; then
+      echo 'Could not read frontend service state.' >&2
+      return 1
     fi
-    sleep 5
+    if ! jq -e --arg expected "${expected}" '
+      .status == "ACTIVE" and .taskDefinition == $expected and
+      .runningCount == .desiredCount and .desiredCount > 0 and .pendingCount == 0 and
+      (.deployments | length) == 1 and
+      .deployments[0].status == "PRIMARY" and
+      .deployments[0].rolloutState == "COMPLETED"
+    ' "${temporary_dir}/verified-service.json" >/dev/null; then
+      service_summary="$(jq -r '
+        "task=\(.taskDefinition // "none") running=\(.runningCount // 0)/\(.desiredCount // 0) pending=\(.pendingCount // 0) deployments=\([.deployments[]? | "\(.status):\(.rolloutState // "UNKNOWN")"] | join(","))"
+      ' "${temporary_dir}/verified-service.json")"
+      echo "Waiting for ECS rollout (${attempt}/60): ${service_summary}" >&2
+    else
+      desired="$(jq -r '.desiredCount' "${temporary_dir}/verified-service.json")"
+      if ! aws elbv2 describe-target-health --region "${region}" \
+        --target-group-arn "${target_group}" \
+        --query 'TargetHealthDescriptions[*].TargetHealth.State' --output json \
+        > "${temporary_dir}/target-health.json"; then
+        echo 'Could not read frontend target health.' >&2
+        return 1
+      fi
+      healthy="$(jq '[.[] | select(. == "healthy")] | length' "${temporary_dir}/target-health.json")"
+      if (( healthy < desired )); then
+        echo "Waiting for ALB targets (${attempt}/60): healthy=${healthy}/${desired}" >&2
+      elif curl --fail --silent --show-error --max-time 10 \
+        --output "${temporary_dir}/health.json" "${health_url}" &&
+        jq -e '.status == "ok"' "${temporary_dir}/health.json" >/dev/null; then
+        return 0
+      else
+        echo "Waiting for HTTPS health (${attempt}/60): ${health_url}" >&2
+      fi
+    fi
+    if (( attempt < 60 )); then
+      sleep 10
+    fi
   done
+  echo "Frontend did not pass ECS, ALB and HTTPS checks after 60 attempts: ${expected}" >&2
   return 1
 }
 
