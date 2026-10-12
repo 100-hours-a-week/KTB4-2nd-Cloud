@@ -1,0 +1,82 @@
+{
+  "uid": "yeodam-staging-mysql-replication",
+  "title": "V1 to V2 MySQL replication",
+  "tags": ["yeodam", "staging", "migration", "mysql"],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "refresh": "15s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Replica I/O and SQL threads (1 = running)",
+      "datasource": {"type": "prometheus", "uid": "staging-prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "yeodam_mysql_replica_io_running{job=\"v2-mysql-replica\"}", "legendFormat": "I/O"},
+        {"refId": "B", "expr": "yeodam_mysql_replica_sql_running{job=\"v2-mysql-replica\"}", "legendFormat": "SQL"}
+      ],
+      "fieldConfig": {"defaults": {"min": 0, "max": 1}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Seconds behind source (absent when stopped)",
+      "datasource": {"type": "prometheus", "uid": "staging-prometheus"},
+      "targets": [{"refId": "A", "expr": "yeodam_mysql_replica_lag_seconds{job=\"v2-mysql-replica\"}"}],
+      "fieldConfig": {"defaults": {"unit": "s", "min": 0}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Source, received and applied Binary Log file number",
+      "datasource": {"type": "prometheus", "uid": "staging-prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "yeodam_mysql_source_binlog_file_sequence{job=\"v1-app-node\"}", "legendFormat": "Source current"},
+        {"refId": "B", "expr": "yeodam_mysql_replica_read_file_sequence{job=\"v2-mysql-replica\"}", "legendFormat": "Replica received"},
+        {"refId": "C", "expr": "yeodam_mysql_replica_exec_file_sequence{job=\"v2-mysql-replica\"}", "legendFormat": "Replica applied"}
+      ],
+      "fieldConfig": {"defaults": {"min": 0}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Binary Log byte positions (compare only within the same file)",
+      "datasource": {"type": "prometheus", "uid": "staging-prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "yeodam_mysql_source_binlog_position{job=\"v1-app-node\"}", "legendFormat": "Source current"},
+        {"refId": "B", "expr": "yeodam_mysql_replica_read_position{job=\"v2-mysql-replica\"}", "legendFormat": "Replica received"},
+        {"refId": "C", "expr": "yeodam_mysql_replica_exec_position{job=\"v2-mysql-replica\"}", "legendFormat": "Replica applied"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "bytes", "min": 0}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Metric probe success (1 = query worked)",
+      "datasource": {"type": "prometheus", "uid": "staging-prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "yeodam_mysql_source_probe_success{job=\"v1-app-node\"}", "legendFormat": "Source"},
+        {"refId": "B", "expr": "yeodam_mysql_replica_probe_success{job=\"v2-mysql-replica\"}", "legendFormat": "Replica"}
+      ],
+      "fieldConfig": {"defaults": {"min": 0, "max": 1}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Seconds since last database sample",
+      "datasource": {"type": "prometheus", "uid": "staging-prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "time() - yeodam_mysql_source_sample_timestamp_seconds{job=\"v1-app-node\"}", "legendFormat": "Source"},
+        {"refId": "B", "expr": "time() - yeodam_mysql_replica_sample_timestamp_seconds{job=\"v2-mysql-replica\"}", "legendFormat": "Replica"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s", "min": 0}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+    }
+  ]
+}

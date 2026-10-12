@@ -18,5 +18,6 @@ services:
       - /sys:/host/sys:ro
       - /:/host/root:ro
       - /var/lib/yeodam/alloy:/var/lib/alloy/data
+      - /var/lib/yeodam/mysql-metrics:/var/lib/yeodam/mysql-metrics:ro
     security_opt:
       - no-new-privileges:true

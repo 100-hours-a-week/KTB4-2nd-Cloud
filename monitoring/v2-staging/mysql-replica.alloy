@@ -1,0 +1,34 @@
+logging {
+  level = "info"
+}
+
+prometheus.exporter.unix "mysql_replica" {
+  set_collectors = ["textfile"]
+  textfile {
+    directory = "/var/lib/yeodam/mysql-metrics"
+  }
+}
+
+prometheus.scrape "mysql_replica" {
+  targets         = prometheus.exporter.unix.mysql_replica.targets
+  scrape_interval = "15s"
+  forward_to      = [prometheus.relabel.mysql_replica.receiver]
+}
+
+prometheus.relabel "mysql_replica" {
+  rule {
+    target_label = "job"
+    replacement  = "v2-mysql-replica"
+  }
+  rule {
+    target_label = "environment"
+    replacement  = "staging"
+  }
+  forward_to = [prometheus.remote_write.staging.receiver]
+}
+
+prometheus.remote_write "staging" {
+  endpoint {
+    url = "http://plg.staging.yeodam.internal:9090/api/v1/write"
+  }
+}
