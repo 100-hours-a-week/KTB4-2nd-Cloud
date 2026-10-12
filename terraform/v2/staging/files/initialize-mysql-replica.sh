@@ -6,6 +6,8 @@ umask 077
 region=ap-northeast-2
 mysql_container=yeodam-v2-mysql
 channel=v1_to_v2
+source_schema=yeodam_v1_source
+destination_schema=yeodam
 password_parameter=/yeodam/v2/staging/replication/MYSQL_SOURCE_PASSWORD
 ca_parameter=/yeodam/v2/staging/replication/SOURCE_CA_PEM
 
@@ -20,6 +22,13 @@ ca_parameter=/yeodam/v2/staging/replication/SOURCE_CA_PEM
 }
 [[ "${CONFIRM_DESTINATION_RESET:-}" == RESET_STAGING_YEODAM_AFTER_BACKUP ]] || {
   echo 'Explicit destination reset confirmation is required' >&2; exit 1;
+}
+unit=/etc/systemd/system/yeodam-mysql.service
+grep -Fq -- '--replicate-rewrite-db=v1_to_v2:yeodam_v1_source->yeodam' "$unit" || {
+  echo 'Persistent source-to-destination schema rewrite is missing' >&2; exit 1;
+}
+grep -Fq -- '--replicate-wild-do-table=v1_to_v2:yeodam.%' "$unit" || {
+  echo 'Persistent destination table filter is missing' >&2; exit 1;
 }
 
 temp_dir=$(mktemp -d)
@@ -46,14 +55,23 @@ target_gtid_mode=$(printf '%s\n' "$target_identity" | awk '{print $3}')
 }
 
 channel_count=$(printf "SELECT COUNT(*) FROM performance_schema.replication_connection_configuration WHERE CHANNEL_NAME='%s';\n" "$channel" | mysql_root)
-[[ "$channel_count" == 0 ]] || {
-  echo 'Replication channel already exists; refusing to reset the destination' >&2; exit 1;
+[[ "$channel_count" == 0 || "$channel_count" == 1 ]] || {
+  echo 'Unexpected replication channel count' >&2; exit 1;
 }
+other_channels=$(printf "SELECT COUNT(*) FROM performance_schema.replication_connection_configuration WHERE CHANNEL_NAME NOT IN ('','%s');\n" "$channel" | mysql_root)
+[[ "$other_channels" == 0 ]] || { echo 'An unrelated replication channel exists' >&2; exit 1; }
+if [[ "$channel_count" == 1 ]]; then
+  configured_source=$(printf "SELECT HOST FROM performance_schema.replication_connection_configuration WHERE CHANNEL_NAME='%s';\n" "$channel" | mysql_root)
+  [[ "$configured_source" == "$SOURCE_HOST" ]] || {
+    echo 'Existing channel points at an unexpected source' >&2; exit 1;
+  }
+fi
 
 aws s3 cp "s3://${BACKUP_BUCKET}/${SNAPSHOT_READY_KEY}" "$temp_dir/ready" \
   --region "$region" --only-show-errors
 marker_value() { awk -F= -v name="$1" '$1 == name { print $2 }' "$temp_dir/ready"; }
 snapshot_key=$(marker_value snapshot_key)
+marker_schema=$(marker_value source_schema)
 source_uuid=$(marker_value source_uuid)
 source_file=$(marker_value source_file)
 source_position=$(marker_value source_position)
@@ -62,6 +80,9 @@ expected_size=$(marker_value compressed_bytes)
 
 [[ "$snapshot_key" == "${SNAPSHOT_READY_KEY%.ready}.sql.gz" ]] || {
   echo 'The marker does not match the selected snapshot' >&2; exit 1;
+}
+[[ "$marker_schema" == "$source_schema" ]] || {
+  echo 'Snapshot is not from the V1 application schema' >&2; exit 1;
 }
 [[ "$source_uuid" =~ ^[0-9a-f-]{36}$ && "$source_uuid" != "$target_uuid" ]] || {
   echo 'Invalid or identical source and target UUIDs' >&2; exit 1;
@@ -114,14 +135,28 @@ destination_backup=$(sudo /usr/local/sbin/yeodam-mysql-full-backup)
 }
 echo "$destination_backup"
 
-printf 'SET SESSION sql_log_bin=0; DROP DATABASE IF EXISTS yeodam;\n' | mysql_root
+# Delete only the expected failed/old channel, after the destination backup.
+# Restarting reapplies the channel-specific startup filters, which RESET
+# REPLICA ALL removes together with the old channel.
+if [[ "$channel_count" == 1 ]]; then
+  printf "STOP REPLICA FOR CHANNEL '%s'; RESET REPLICA ALL FOR CHANNEL '%s';\n" "$channel" "$channel" | mysql_root
+  sudo systemctl restart yeodam-mysql.service
+  for _ in $(seq 1 60); do
+    if printf 'SELECT 1;\n' | mysql_root >/dev/null 2>&1; then break; fi
+    sleep 2
+  done
+  printf 'SELECT 1;\n' | mysql_root >/dev/null
+fi
+
+printf 'SET SESSION sql_log_bin=0; DROP DATABASE IF EXISTS %s; CREATE DATABASE %s CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;\n' "$destination_schema" "$destination_schema" | mysql_root
 {
   printf 'SET SESSION sql_log_bin=0;\n'
+  printf 'USE %s;\n' "$destination_schema"
   aws s3 cp "s3://${BACKUP_BUCKET}/${snapshot_key}" - \
     --region "$region" --only-show-errors | gzip -dc
 } | mysql_root
 
-table_count=$(printf "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='yeodam';\n" | mysql_root)
+table_count=$(printf "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='%s';\n" "$destination_schema" | mysql_root)
 [[ "$table_count" =~ ^[0-9]+$ && "$table_count" -gt 0 ]] || {
   echo 'The imported source schema has no tables' >&2; exit 1;
 }
@@ -136,7 +171,14 @@ install -m 0644 "$temp_dir/ca.pem" /srv/yeodam/mysql/source-ca.pem
 printf "CHANGE REPLICATION SOURCE TO SOURCE_HOST='%s', SOURCE_PORT=3306, SOURCE_USER='yeodam_repl', SOURCE_PASSWORD='%s', SOURCE_LOG_FILE='%s', SOURCE_LOG_POS=%s, SOURCE_AUTO_POSITION=0, SOURCE_SSL=1, SOURCE_SSL_CA='/var/lib/mysql/source-ca.pem', SOURCE_SSL_VERIFY_SERVER_CERT=0 FOR CHANNEL '%s';\n" \
   "$SOURCE_HOST" "$password" "$source_file" "$source_position" "$channel" | mysql_root
 unset password
-printf "CHANGE REPLICATION FILTER REPLICATE_WILD_DO_TABLE = ('yeodam.%%') FOR CHANNEL '%s';\n" "$channel" | mysql_root
+# Startup channel filters are registered only when the channel already exists.
+# Restart after CHANGE REPLICATION SOURCE, before applying any source events.
+sudo systemctl restart yeodam-mysql.service
+for _ in $(seq 1 60); do
+  if printf 'SELECT 1;\n' | mysql_root >/dev/null 2>&1; then break; fi
+  sleep 2
+done
+printf 'SELECT 1;\n' | mysql_root >/dev/null
 printf "START REPLICA FOR CHANNEL '%s';\n" "$channel" | mysql_root
 
 for _ in $(seq 1 30); do
@@ -146,7 +188,9 @@ for _ in $(seq 1 30); do
   if grep -Eq '^ *Replica_IO_Running: Yes$' <<<"$status" \
       && grep -Eq '^ *Replica_SQL_Running: Yes$' <<<"$status" \
       && grep -Eq '^ *Last_IO_Errno: 0$' <<<"$status" \
-      && grep -Eq '^ *Last_SQL_Errno: 0$' <<<"$status"; then
+      && grep -Eq '^ *Last_SQL_Errno: 0$' <<<"$status" \
+      && grep -Eq '^ *Replicate_Rewrite_DB: \(yeodam_v1_source,yeodam\)$' <<<"$status" \
+      && grep -Eq '^ *Replicate_Wild_Do_Table: yeodam.%$' <<<"$status"; then
     printf '%s\n' "$status" | grep -E '^ *(Channel_Name|Source_Host|Source_Log_File|Read_Source_Log_Pos|Replica_IO_Running|Replica_SQL_Running|Seconds_Behind_Source|Last_IO_Errno|Last_SQL_Errno|Source_SSL_CA_File):'
     echo "Imported $table_count source tables; replication channel $channel is running."
     exit 0
