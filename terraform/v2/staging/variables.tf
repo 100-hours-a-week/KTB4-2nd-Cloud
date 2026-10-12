@@ -172,14 +172,25 @@ variable "backend_desired_count" {
 }
 
 variable "backend_environment" {
-  description = "Non-secret Backend runtime values; provide required app contract values before enabling backend_image"
+  description = "Non-secret Backend runtime values; MySQL connection is selected by backend_mysql_mode"
   type        = map(string)
   default     = {}
 
   validation {
     condition = length(setintersection(toset(keys(var.backend_environment)), toset([
-      "MYSQL_PASSWORD", "KAKAO_CLIENT_SECRET", "JWT_SECRET", "AI_SERVER_API_KEY", "REDIS_PASSWORD",
+      "MYSQL_PASSWORD", "MYSQL_URL", "MYSQL_USERNAME", "KAKAO_CLIENT_SECRET", "JWT_SECRET", "AI_SERVER_API_KEY", "REDIS_PASSWORD",
     ]))) == 0
-    error_message = "backend_environment must not contain credentials; use staging SSM parameters or Redis Secrets Manager."
+    error_message = "backend_environment must not override MySQL connection or credentials; use backend_mysql_mode and staging secrets."
+  }
+}
+
+variable "backend_mysql_mode" {
+  description = "Use the isolated validation schema while V1-to-V2 replication owns the migration target"
+  type        = string
+  default     = "validation"
+
+  validation {
+    condition     = contains(["validation", "migration_target"], var.backend_mysql_mode)
+    error_message = "backend_mysql_mode must be validation or migration_target."
   }
 }
