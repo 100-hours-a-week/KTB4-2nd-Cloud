@@ -10,7 +10,8 @@ locals {
     }
   }
 
-  private_app_cidr = cidrsubnet(var.vpc_cidr, 8, 10)
+  private_app_cidr           = cidrsubnet(var.vpc_cidr, 8, 10)
+  private_msk_secondary_cidr = cidrsubnet(var.vpc_cidr, 8, 11)
 }
 
 resource "aws_vpc" "this" {
@@ -45,6 +46,18 @@ resource "aws_subnet" "private_app" {
 
   tags = merge(var.tags, {
     Name = "${var.name_prefix}-private-app"
+    Tier = "private"
+  })
+}
+
+resource "aws_subnet" "private_msk_secondary" {
+  vpc_id                  = aws_vpc.this.id
+  availability_zone       = var.alb_secondary_availability_zone
+  cidr_block              = local.private_msk_secondary_cidr
+  map_public_ip_on_launch = false
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-private-msk-secondary"
     Tier = "private"
   })
 }
@@ -116,6 +129,22 @@ resource "aws_route" "private_internet" {
 resource "aws_route_table_association" "private_app" {
   subnet_id      = aws_subnet.private_app.id
   route_table_id = aws_route_table.private_app.id
+}
+
+# MSK brokers only need VPC-local client access. Keep the secondary broker
+# subnet off the App NAT path so no cross-AZ NAT dependency is introduced.
+resource "aws_route_table" "private_msk_secondary" {
+  vpc_id = aws_vpc.this.id
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-private-msk-secondary-rt"
+    Tier = "private"
+  })
+}
+
+resource "aws_route_table_association" "private_msk_secondary" {
+  subnet_id      = aws_subnet.private_msk_secondary.id
+  route_table_id = aws_route_table.private_msk_secondary.id
 }
 
 resource "aws_vpc_endpoint" "s3" {

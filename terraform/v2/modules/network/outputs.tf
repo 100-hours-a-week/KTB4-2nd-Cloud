@@ -11,6 +11,17 @@ output "public_subnet_ids" {
 output "private_app_subnet_id" {
   description = "Private subnet for FE, BE and initial shared services"
   value       = aws_subnet.private_app.id
+  depends_on  = [aws_route.private_internet, aws_route_table_association.private_app]
+}
+
+output "private_msk_subnet_ids" {
+  description = "Private subnets in two availability zones for MSK Provisioned Standard"
+  value       = [aws_subnet.private_app.id, aws_subnet.private_msk_secondary.id]
+}
+
+output "private_msk_secondary_route_table_id" {
+  description = "VPC-local route table for the secondary MSK subnet"
+  value       = aws_route_table.private_msk_secondary.id
 }
 
 output "private_app_cidr" {

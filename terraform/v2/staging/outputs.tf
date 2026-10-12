@@ -10,6 +10,14 @@ output "private_app_subnet_id" {
   value = module.network.private_app_subnet_id
 }
 
+output "msk_private_subnet_ids" {
+  value = module.network.private_msk_subnet_ids
+}
+
+output "msk_secondary_route_table_id" {
+  value = module.network.private_msk_secondary_route_table_id
+}
+
 output "nat_gateway_id" {
   value = module.network.nat_gateway_id
 }
