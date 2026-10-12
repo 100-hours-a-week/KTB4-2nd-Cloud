@@ -25,7 +25,7 @@ if password=$(aws ssm get-parameter \
   --query Parameter.Value --output text 2>"$error_file"); then
   :
 elif grep -q 'ParameterNotFound' "$error_file"; then
-  password=$(openssl rand -hex 32)
+  password=$(openssl rand -hex 16)
   printf '%s' "$password" | aws ssm put-parameter \
     --region "$region" --name "$password_parameter" --type SecureString \
     --value file:///dev/stdin --query Version --output text >/dev/null
@@ -37,7 +37,14 @@ fi
 case "$password" in
   *[!0-9a-fA-F]*|'') echo 'Replication password must be hexadecimal' >&2; exit 1 ;;
 esac
-[ "${#password}" -eq 64 ] || { echo 'Replication password must be 64 hex characters' >&2; exit 1; }
+if [ "${#password}" -eq 64 ]; then
+  # Existing staging credentials predate the 32-character replication limit.
+  password=$(openssl rand -hex 16)
+  printf '%s' "$password" | aws ssm put-parameter \
+    --region "$region" --name "$password_parameter" --type SecureString \
+    --value file:///dev/stdin --overwrite --query Version --output text >/dev/null
+fi
+[ "${#password}" -eq 32 ] || { echo 'Replication password must be 32 hex characters' >&2; exit 1; }
 
 # Do not put the password in the SSM document, command arguments or output.
 # Account management statements must not be copied into the source binlog.

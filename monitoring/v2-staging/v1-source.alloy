@@ -20,6 +20,10 @@ prometheus.exporter.unix "v1_app" {
   procfs_path = "/host/proc"
   sysfs_path  = "/host/sys"
   rootfs_path = "/host/root"
+  enable_collectors = ["textfile"]
+  textfile {
+    directory = "/var/lib/yeodam/mysql-metrics"
+  }
 }
 
 prometheus.scrape "v1_app" {

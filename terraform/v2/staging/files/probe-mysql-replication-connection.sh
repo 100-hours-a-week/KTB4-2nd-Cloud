@@ -36,7 +36,7 @@ password=$(aws ssm get-parameter \
 case "$password" in
   *[!0-9a-fA-F]*|'') echo 'Replication password must be hexadecimal' >&2; exit 1 ;;
 esac
-[ "${#password}" -eq 64 ] || { echo 'Replication password must be 64 hex characters' >&2; exit 1; }
+[ "${#password}" -eq 32 ] || { echo 'Replication password must be 32 hex characters' >&2; exit 1; }
 printf '[client]\npassword=%s\n' "$password" >"$temp_dir/client.cnf"
 unset password
 
