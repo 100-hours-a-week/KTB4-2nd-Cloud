@@ -21,7 +21,7 @@ resource "aws_ssm_document" "mysql_replication_source_snapshot" {
   document_type = "Command"
   content = jsonencode({
     schemaVersion = "2.2"
-    description   = "Capture the V1 staging yeodam schema and replication coordinates"
+    description   = "Capture the V1 staging application schema and replication coordinates"
     mainSteps = [{
       action = "aws:runShellScript"
       name   = "captureSourceSnapshot"
@@ -44,7 +44,7 @@ resource "aws_ssm_document" "mysql_replication_initialize" {
   document_type = "Command"
   content = jsonencode({
     schemaVersion = "2.2"
-    description   = "Back up the V2 staging schema, import a V1 snapshot, then start TLS replication"
+    description   = "Back up V2 staging, replace its schema with the V1 application snapshot, then start TLS replication"
     parameters = {
       snapshotReadyKey = {
         type           = "String"
@@ -89,6 +89,26 @@ resource "aws_ssm_document" "mysql_replication_stable_relay_log" {
       inputs = {
         runCommand = [
           "bash -s <<'YEODAM_STABLE_RELAY_LOG'\n${file("${path.module}/files/ensure-mysql-stable-relay-log.sh")}\nYEODAM_STABLE_RELAY_LOG",
+        ]
+      }
+    }]
+  })
+
+  tags = local.common_tags
+}
+
+resource "aws_ssm_document" "mysql_replication_persistent_filters" {
+  name          = "yeodam-v2-staging-mysql-persistent-replication-filters"
+  document_type = "Command"
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "Keep the V1 application schema rewrite and table filter after MySQL restart"
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "ensurePersistentFilters"
+      inputs = {
+        runCommand = [
+          "bash -s <<'YEODAM_PERSISTENT_FILTERS'\n${file("${path.module}/files/ensure-mysql-replication-filters.sh")}\nYEODAM_PERSISTENT_FILTERS",
         ]
       }
     }]
