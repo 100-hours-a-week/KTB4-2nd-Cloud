@@ -15,6 +15,11 @@ server_uuid=$(sudo mysql --protocol=socket -uroot -NBe 'SELECT @@server_uuid')
   echo 'This is not the expected V1 staging source' >&2
   exit 1
 }
+source_schema=yeodam_v1_source
+table_count=$(sudo mysql --protocol=socket -uroot -NBe "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${source_schema}' AND table_type='BASE TABLE'")
+[[ "$table_count" =~ ^[0-9]+$ && "$table_count" -gt 0 ]] || {
+  echo 'The V1 application schema has no tables' >&2; exit 1;
+}
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 4)"
 key="migration/v1-source/${stamp}.sql.gz"
@@ -34,8 +39,9 @@ sha256sum <"$temp_dir/hash.fifo" >"$temp_dir/hash.out" &
 hash_pid=$!
 
 # --source-data=2 captures coordinates while --single-transaction takes the
-# InnoDB snapshot. DDL against yeodam must not run during this dump.
-sudo mysqldump --protocol=socket -uroot --databases yeodam \
+# InnoDB snapshot. DDL against the V1 application schema must not run during
+# this dump. Omit --databases so the dump can be loaded into destination yeodam.
+sudo mysqldump --protocol=socket -uroot "$source_schema" \
   --single-transaction --quick --source-data=2 --set-gtid-purged=OFF \
   --routines --events --triggers \
   | awk -v path="$temp_dir/coordinates" \
@@ -62,8 +68,8 @@ size=$(aws s3api head-object --bucket "$BACKUP_BUCKET" --key "$key" \
   exit 1
 }
 
-printf 'snapshot_key=%s\nsource_uuid=%s\nsource_file=%s\nsource_position=%s\nsha256=%s\ncompressed_bytes=%s\ncreated_at_utc=%s\n' \
-  "$key" "$server_uuid" "$source_file" "$source_position" \
+printf 'snapshot_key=%s\nsource_schema=%s\nsource_uuid=%s\nsource_file=%s\nsource_position=%s\nsha256=%s\ncompressed_bytes=%s\ncreated_at_utc=%s\n' \
+  "$key" "$source_schema" "$server_uuid" "$source_file" "$source_position" \
   "$checksum" "$size" "$stamp" >"$temp_dir/ready"
 aws s3 cp "$temp_dir/ready" "s3://${BACKUP_BUCKET}/${ready_key}" \
   --region "$region" --sse AES256 --only-show-errors
