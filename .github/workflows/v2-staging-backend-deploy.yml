@@ -1,0 +1,101 @@
+name: V2 Staging Backend Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "새 BE Digest 배포 또는 이전 Task Revision 복구"
+        required: true
+        type: choice
+        options: [deploy, rollback]
+      image_digest:
+        description: "deploy: ghcr.io/100-hours-a-week/yeodam-backend@sha256:..."
+        required: false
+        type: string
+      rollback_revision:
+        description: "rollback: 복구할 정상 BE Task Definition Revision 숫자"
+        required: false
+        type: string
+      reason:
+        description: "배포 사유"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: yeodam-v2-staging-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: staging
+
+    steps:
+      - name: Checkout Cloud main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Validate deployment input
+        env:
+          DEPLOY_ACTION: ${{ inputs.action }}
+          BACKEND_IMAGE: ${{ inputs.image_digest }}
+          ROLLBACK_REVISION: ${{ inputs.rollback_revision }}
+        run: |
+          set -Eeuo pipefail
+          bash -n scripts/deploy-v2-staging-backend.sh
+          if [[ "${DEPLOY_ACTION}" == deploy ]]; then
+            [[ -z "${ROLLBACK_REVISION}" ]]
+            [[ "${BACKEND_IMAGE}" =~ ^ghcr[.]io/100-hours-a-week/yeodam-backend@sha256:[0-9a-f]{64}$ ]]
+          elif [[ "${DEPLOY_ACTION}" == rollback ]]; then
+            [[ -z "${BACKEND_IMAGE}" ]]
+            [[ "${ROLLBACK_REVISION}" =~ ^[1-9][0-9]*$ ]]
+          else
+            exit 2
+          fi
+
+      - name: Configure staging AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_BACKEND_DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-2
+          role-session-name: yeodam-v2-staging-backend
+
+      - name: Deploy or restore backend
+        env:
+          DEPLOY_ACTION: ${{ inputs.action }}
+          BACKEND_IMAGE: ${{ inputs.image_digest }}
+          ROLLBACK_REVISION: ${{ inputs.rollback_revision }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${DEPLOY_ACTION}" == deploy ]]; then
+            bash scripts/deploy-v2-staging-backend.sh deploy "${BACKEND_IMAGE}"
+          else
+            bash scripts/deploy-v2-staging-backend.sh rollback "${ROLLBACK_REVISION}"
+          fi
+
+      - name: Write deployment summary
+        if: always()
+        env:
+          DEPLOY_ACTION: ${{ inputs.action }}
+          BACKEND_IMAGE: ${{ inputs.image_digest }}
+          ROLLBACK_REVISION: ${{ inputs.rollback_revision }}
+          DEPLOY_REASON: ${{ inputs.reason }}
+          DEPLOY_RESULT: ${{ job.status }}
+        run: |
+          {
+            echo '## V2 staging backend'
+            echo
+            echo "- Action: ${DEPLOY_ACTION}"
+            echo "- Image: ${BACKEND_IMAGE:-N/A}"
+            echo "- Rollback revision: ${ROLLBACK_REVISION:-N/A}"
+            echo "- Reason: ${DEPLOY_REASON}"
+            echo "- Result: ${DEPLOY_RESULT}"
+          } >> "${GITHUB_STEP_SUMMARY}"
