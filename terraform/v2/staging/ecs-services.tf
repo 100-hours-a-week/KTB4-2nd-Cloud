@@ -3,11 +3,16 @@ locals {
   backend_parameter_prefix = "/yeodam/v2/staging/app"
 
   backend_secret_names = toset([
-    "MYSQL_PASSWORD",
     "KAKAO_CLIENT_SECRET",
     "JWT_SECRET",
     "AI_SERVER_API_KEY",
   ])
+
+  backend_mysql_schema = var.backend_mysql_mode == "validation" ? "yeodam_validation" : "yeodam"
+  backend_mysql_user   = var.backend_mysql_mode == "validation" ? "yeodam_validation" : "yeodam_app"
+  backend_mysql_password_parameter = var.backend_mysql_mode == "validation" ? (
+    local.mysql_validation_password_parameter
+  ) : local.mysql_app_password_parameter
 
   backend_base_environment = {
     SPRING_PROFILES_ACTIVE      = "prod"
@@ -21,6 +26,8 @@ locals {
     REDIS_PORT                  = tostring(module.redis.port)
     REDIS_SSL_ENABLED           = "true"
     AUTH_SESSION_KEY_PREFIX     = "yeodam:v2:staging:auth:"
+    MYSQL_URL                   = "jdbc:mysql://${module.mysql.private_ip}:3306/${local.backend_mysql_schema}?serverTimezone=Asia/Seoul&characterEncoding=utf8"
+    MYSQL_USERNAME              = local.backend_mysql_user
   }
 }
 
@@ -133,6 +140,10 @@ resource "aws_ecs_task_definition" "backend" {
         name      = name
         valueFrom = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.backend_parameter_prefix}/${name}"
       }],
+      [{
+        name      = "MYSQL_PASSWORD"
+        valueFrom = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.backend_mysql_password_parameter}"
+      }],
       [{ name = "REDIS_PASSWORD", valueFrom = module.redis.auth_token_secret_arn }]
     )
     logConfiguration = {
@@ -147,11 +158,8 @@ resource "aws_ecs_task_definition" "backend" {
 
   lifecycle {
     precondition {
-      condition = alltrue([
-        for name in ["MYSQL_URL", "MYSQL_USERNAME", "KAKAO_CLIENT_ID"] :
-        try(length(trimspace(var.backend_environment[name])) > 0, false)
-      ])
-      error_message = "backend_environment needs MYSQL_URL, MYSQL_USERNAME and KAKAO_CLIENT_ID before a Backend task can be enabled."
+      condition     = try(length(trimspace(var.backend_environment["KAKAO_CLIENT_ID"])) > 0, false)
+      error_message = "backend_environment needs KAKAO_CLIENT_ID before a Backend task can be enabled."
     }
   }
 
