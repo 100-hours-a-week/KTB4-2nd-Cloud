@@ -10,6 +10,30 @@ output "private_app_subnet_id" {
   value = module.network.private_app_subnet_id
 }
 
+output "msk_private_subnet_ids" {
+  value = module.network.private_msk_subnet_ids
+}
+
+output "msk_secondary_route_table_id" {
+  value = module.network.private_msk_secondary_route_table_id
+}
+
+output "msk_cluster_arn" {
+  value = aws_msk_cluster.staging.arn
+}
+
+output "msk_bootstrap_brokers_sasl_iam" {
+  value = aws_msk_cluster.staging.bootstrap_brokers_sasl_iam
+}
+
+output "msk_broker_security_group_id" {
+  value = aws_security_group.msk_brokers.id
+}
+
+output "msk_broker_log_group_name" {
+  value = aws_cloudwatch_log_group.msk_brokers.name
+}
+
 output "nat_gateway_id" {
   value = module.network.nat_gateway_id
 }
