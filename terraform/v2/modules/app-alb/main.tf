@@ -51,6 +51,12 @@ resource "aws_lb" "app" {
   security_groups    = [aws_security_group.alb.id]
   subnets            = var.public_subnet_ids
 
+  access_logs {
+    bucket  = var.access_log_bucket
+    prefix  = var.access_log_prefix
+    enabled = true
+  }
+
   tags = merge(var.tags, {
     Name = "${var.name_prefix}-alb"
   })

@@ -68,6 +68,19 @@ resource "aws_s3_bucket_lifecycle_configuration" "load_test" {
   }
 
   rule {
+    id     = "expire-alb-logs-after-seven-days"
+    status = "Enabled"
+
+    filter {
+      prefix = "alb-access-logs/"
+    }
+
+    expiration {
+      days = 7
+    }
+  }
+
+  rule {
     id     = "abort-incomplete-uploads"
     status = "Enabled"
 
@@ -80,6 +93,18 @@ resource "aws_s3_bucket_lifecycle_configuration" "load_test" {
 }
 
 data "aws_iam_policy_document" "load_test_bucket" {
+  statement {
+    sid       = "AllowStagingAlbAccessLogs"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.load_test.arn}/alb-access-logs/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["logdelivery.elasticloadbalancing.amazonaws.com"]
+    }
+
+  }
+
   statement {
     sid       = "DenyInsecureTransport"
     effect    = "Deny"
