@@ -28,6 +28,16 @@ variable "hosted_zone_id" {
   type        = string
 }
 
+variable "access_log_bucket" {
+  description = "S3 bucket that receives ALB access logs"
+  type        = string
+}
+
+variable "access_log_prefix" {
+  description = "S3 prefix for ALB access logs; must not contain AWSLogs"
+  type        = string
+}
+
 variable "tags" {
   description = "Common tags applied to ALB resources"
   type        = map(string)

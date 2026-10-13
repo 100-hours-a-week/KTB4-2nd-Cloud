@@ -12,5 +12,9 @@ module "app_alb" {
   private_app_cidr  = module.network.private_app_cidr
   domain_name       = "staging.yeodam-2gether.com"
   hosted_zone_id    = data.aws_route53_zone.public.zone_id
+  access_log_bucket = aws_s3_bucket.load_test.id
+  access_log_prefix = "alb-access-logs"
   tags              = local.common_tags
+
+  depends_on = [aws_s3_bucket_policy.load_test]
 }
