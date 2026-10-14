@@ -63,34 +63,6 @@ variable "redis_node_type" {
   default     = "cache.t4g.micro"
 }
 
-variable "msk_kafka_version" {
-  description = "Supported Kafka version for the staging MSK Standard cluster"
-  type        = string
-  default     = "3.9.x"
-}
-
-variable "msk_broker_instance_type" {
-  description = "Initial staging MSK Standard broker size; compare cost and load before production sizing"
-  type        = string
-  default     = "kafka.t3.small"
-
-  validation {
-    condition     = contains(["kafka.t3.small", "kafka.m7g.large", "kafka.m5.large"], var.msk_broker_instance_type)
-    error_message = "Use a reviewed MSK Standard broker size."
-  }
-}
-
-variable "msk_storage_gib" {
-  description = "EBS storage allocated to each staging MSK broker"
-  type        = number
-  default     = 20
-
-  validation {
-    condition     = var.msk_storage_gib >= 1 && var.msk_storage_gib <= 16384 && floor(var.msk_storage_gib) == var.msk_storage_gib
-    error_message = "msk_storage_gib must be a whole number from 1 to 16384 GiB."
-  }
-}
-
 variable "v1_source_ami_id" {
   description = "Reviewed Ubuntu 24.04 x86_64 AMI for the V1 rehearsal App and Worker"
   type        = string

@@ -2,6 +2,13 @@ output "vpc_id" {
   value = module.network.vpc_id
 }
 
+output "kafka_instance_id" { value = aws_instance.kafka.id }
+output "kafka_private_ip" { value = aws_instance.kafka.private_ip }
+output "kafka_internal_endpoint" { value = "${aws_route53_record.kafka_private.fqdn}:9092" }
+output "kafka_data_volume_id" { value = aws_ebs_volume.kafka_data.id }
+output "kafka_security_group_id" { value = aws_security_group.kafka.id }
+output "ai_kafka_client_security_group_id" { value = aws_security_group.ai_kafka_clients.id }
+
 output "public_subnet_ids" {
   value = module.network.public_subnet_ids
 }
@@ -18,20 +25,9 @@ output "msk_secondary_route_table_id" {
   value = module.network.private_msk_secondary_route_table_id
 }
 
-output "msk_cluster_arn" {
-  value = aws_msk_cluster.staging.arn
-}
-
-output "msk_bootstrap_brokers_sasl_iam" {
-  value = aws_msk_cluster.staging.bootstrap_brokers_sasl_iam
-}
-
-output "msk_broker_security_group_id" {
-  value = aws_security_group.msk_brokers.id
-}
-
 output "msk_broker_log_group_name" {
-  value = aws_cloudwatch_log_group.msk_brokers.name
+  description = "Historical MSK logs retained after cluster deletion"
+  value       = aws_cloudwatch_log_group.msk_brokers.name
 }
 
 output "nat_gateway_id" {
