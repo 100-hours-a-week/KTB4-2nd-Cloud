@@ -28,6 +28,17 @@ while (($#)); do
 done
 [[ $EUID -eq 0 ]] || fail 'Run as root on the V1 staging App host.'
 [[ $route == direct || $route == proxysql ]] || usage
+# Changing the BE URL after promotion must not silently reconnect to stale V1.
+if [[ -f /var/lib/yeodam/migration-cutover/active.json ]]; then
+  python3 - <<'PY'
+import json
+from pathlib import Path
+state = json.loads(Path('/var/lib/yeodam/migration-cutover/active.json').read_text())
+if state.get('phase') != 'aborted':
+    raise SystemExit('A handoff is active or V2 may be the writer; inspect it before changing BE route')
+PY
+fi
+[[ $(mysql --protocol=socket -uroot --batch --skip-column-names -e 'SELECT @@super_read_only;') == 0 ]] || fail 'V1 source is fenced; do not reconnect Backend to it.'
 [[ $release_dir == /opt/yeodam/releases/* && -f $release_dir/app-compose.yml ]] || usage
 [[ $image_env == /etc/yeodam/* && -f $image_env ]] || usage
 [[ $(stat -c %a "$image_env") == 600 && $(stat -c %u "$image_env") == 0 ]] || fail 'Image file must be root-owned with mode 600.'

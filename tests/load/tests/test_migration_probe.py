@@ -13,6 +13,30 @@ REQUEST = '22222222-2222-4222-a222-222222222222'
 HASH = 'a' * 64
 
 class ReconciliationTest(unittest.TestCase):
+    def load_report(self, counts, plans):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name); events=[]; rows=[]; summaries=[]
+            for generator,(actual,planned) in enumerate(zip(counts,plans)):
+                gid=str(generator)
+                events.append({'source':'migration-probe','event':'run_started','runId':RUN,'generatorId':gid,'mode':'load','rate':planned,'duration':1})
+                for n in range(actual):
+                    request=f'{generator:08x}-2222-4222-a222-{n:012x}'
+                    event={'source':'migration-probe','event':'started','runId':RUN,'generatorId':gid,'requestId':request,'payloadHash':HASH}
+                    events += [event,{**event,'event':'final','outcome':'confirmed'}]
+                    rows.append(f'{RUN}\t{request}\t{HASH}\t2026-10-14\n')
+                path=root/f'summary{generator}'
+                path.write_text(json.dumps({'metrics':{'probe_started':{'values':{'count':actual}},'probe_confirmed':{'values':{'count':actual}}}})); summaries.append(path)
+            (root/'events').write_text('\n'.join(json.dumps(e) for e in events));(root/'target').write_text(''.join(rows))
+            return module.reconcile([root/'events'],root/'target',RUN,summaries)
+
+    def test_one_extra_iteration_but_no_under_delivery(self):
+        self.assertTrue(self.load_report([601],[600])['passed'])
+        self.assertFalse(self.load_report([599],[600])['passed'])
+        self.assertFalse(self.load_report([602],[600])['passed'])
+
+    def test_one_generator_extra_does_not_mask_another_under_delivery(self):
+        self.assertFalse(self.load_report([601,599],[600,600])['passed'])
+
     def report(self, outcome='confirmed', stored=True, final=True, payload=HASH, duplicate=False, metric_count=1):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)

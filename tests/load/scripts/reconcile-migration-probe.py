@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Compare complete k6 logical request records with streamed MySQL run exports."""
 import argparse
+from contextlib import ExitStack
 import gzip
 import json
 from pathlib import Path
@@ -18,10 +19,12 @@ def identity(run, request, payload, expected_run):
         raise ValueError('Invalid request identity or mixed run IDs')
 
 def reconcile(events, target, run_id, summary, source=None):
-    with tempfile.TemporaryDirectory(prefix='yeodam-reconcile-') as directory:
+    with tempfile.TemporaryDirectory(prefix='yeodam-reconcile-') as directory, ExitStack() as cleanup:
         db = sqlite3.connect(str(Path(directory) / 'rows.sqlite'))
+        cleanup.callback(db.close)
         db.executescript('CREATE TABLE requests(id TEXT PRIMARY KEY, hash TEXT, outcome TEXT); CREATE TABLE target(id TEXT PRIMARY KEY, hash TEXT); CREATE TABLE source(id TEXT PRIMARY KEY, hash TEXT);')
         plans = {}
+        starts_by_generator = {}
         for path in events:
             with text_stream(path) as stream:
                 for line in stream:
@@ -35,12 +38,19 @@ def reconcile(events, target, run_id, summary, source=None):
                     if event.get('runId') != run_id: raise ValueError('Event file contains another run')
                     if event['event'] == 'run_started':
                         if event['generatorId'] in plans: raise ValueError('Duplicate generator ID for this run')
-                        plans[event['generatorId']] = 1 if event['mode'] == 'contract' else event['rate'] * event['duration']
+                        plans[event['generatorId']] = (1 if event['mode'] == 'contract' else event['rate'] * event['duration'], event['mode'])
+                        starts_by_generator[event['generatorId']] = 0
                         continue
                     if event['event'] not in ('started', 'final'): continue
                     identity(event['runId'], event['requestId'], event['payloadHash'], run_id)
                     request = event['requestId']
                     if event['event'] == 'started':
+                        generator = event.get('generatorId')
+                        if generator is None and len(plans) == 1:
+                            generator = next(iter(plans))  # Older single-generator logs.
+                        if generator not in plans:
+                            raise ValueError('Started event has no known generator')
+                        starts_by_generator[generator] += 1
                         db.execute('INSERT INTO requests VALUES(?,?,NULL)', (request, event['payloadHash']))
                     else:
                         if event['outcome'] not in ('confirmed', 'unconfirmed', 'rejected', 'invalid_response'):
@@ -78,7 +88,7 @@ def reconcile(events, target, run_id, summary, source=None):
         summaries = summary if isinstance(summary, list) else [summary]
         metrics = [json.loads(Path(path).read_text())['metrics'] for path in summaries]
         def metric(name): return sum(m.get(name, {}).get('values', {}).get('count', 0) for m in metrics)
-        results['plannedRequests'] = sum(plans.values())
+        results['plannedRequests'] = sum(value[0] for value in plans.values())
         results['summaryStarted'] = metric('probe_started')
         results['summaryConfirmed'] = metric('probe_confirmed')
         results['summaryFinalFailures'] = metric('probe_final_failures')
@@ -90,12 +100,21 @@ def reconcile(events, target, run_id, summary, source=None):
         results['completeEventLog'] = (results['started'] == results['summaryStarted'] and
                                        results['confirmed'] == results['summaryConfirmed'] and
                                        results['finalFailures'] == results['summaryFinalFailures'])
-        results['plannedLoadCompleted'] = bool(plans) and results['plannedRequests'] == results['started'] and len(plans) == len(summaries)
+        # k6 arrival timers and duration cancellation can race at the final
+        # boundary. Permit at most one EXTRA iteration per load generator;
+        # never excuse under-delivery, dropped iterations or missing records.
+        results['generatorLoad'] = {
+            name: {'planned': planned, 'started': starts_by_generator[name],
+                   'allowedExtra': int(mode == 'load')}
+            for name, (planned, mode) in plans.items()
+        }
+        results['plannedLoadCompleted'] = bool(plans) and len(plans) == len(summaries) and all(
+            value['planned'] <= value['started'] <= value['planned'] + value['allowedExtra']
+            for value in results['generatorLoad'].values())
         results['passed'] = results['completeEventLog'] and results['plannedLoadCompleted'] and all(results[key] == 0 for key in (
             'interrupted', 'finalFailures', 'confirmedMissing', 'hashMismatch', 'unexpectedTarget', 'droppedIterations', 'failedThresholds'))
         if source:
             results['passed'] = results['passed'] and results['sourceMissingAtTarget'] == 0 and results['sourceTargetHashMismatch'] == 0
-        db.close()
         return results
 
 def main():
