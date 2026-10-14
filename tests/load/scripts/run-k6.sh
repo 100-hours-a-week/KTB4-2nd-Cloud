@@ -30,6 +30,20 @@ result_dir="${result_root%/}/${run_id}"
 mkdir -p "${result_dir}"
 
 export K6_SUMMARY_PATH="${result_dir}/summary.json"
+k6_args=(--no-color)
+if [[ "${script_path}" == scenarios/migration-write.js ]]; then
+  [[ -z "${K6_HTTP_DEBUG:-}" ]] || { echo 'Disable K6_HTTP_DEBUG to keep session credentials out of logs.' >&2; exit 2; }
+  k6_args+=(--console-output "${result_dir}/probe-events.jsonl" --log-format raw)
+  if [[ "${K6_PROBE_PROMETHEUS:-0}" == 1 ]]; then
+    export K6_PROMETHEUS_RW_SERVER_URL='http://plg.staging.yeodam.internal:9090/api/v1/write'
+    export K6_PROMETHEUS_RW_TREND_STATS='p(95),p(99)'
+    export K6_PROMETHEUS_RW_STALE_MARKERS=true
+    curl --fail --silent --show-error --max-time 5 'http://plg.staging.yeodam.internal:9090/-/ready' >/dev/null
+    k6_args+=(--out experimental-prometheus-rw)
+  elif [[ "${K6_PROBE_PROMETHEUS:-0}" != 0 ]]; then
+    echo 'K6_PROBE_PROMETHEUS must be 0 or 1.' >&2; exit 2
+  fi
+fi
 
 network_totals() {
   local direction="$1"
@@ -56,11 +70,11 @@ if [[ -x /usr/bin/time ]] && /usr/bin/time --version 2>&1 | grep -qi 'GNU time';
   /usr/bin/time \
     --verbose \
     --output="${result_dir}/runner-time.txt" \
-    k6 run --no-color "${script_path}" 2>&1 |
+    k6 run "${k6_args[@]}" "${script_path}" 2>&1 |
     tee "${result_dir}/run.log"
   k6_status="${PIPESTATUS[0]}"
 else
-  k6 run --no-color "${script_path}" 2>&1 | tee "${result_dir}/run.log"
+  k6 run "${k6_args[@]}" "${script_path}" 2>&1 | tee "${result_dir}/run.log"
   k6_status="${PIPESTATUS[0]}"
   echo "GNU time unavailable; runner-time.txt was not created." >"${result_dir}/runner-time-unavailable.txt"
 fi

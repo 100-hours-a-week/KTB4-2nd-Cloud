@@ -1,0 +1,639 @@
+{
+  "uid": "yeodam-migration-test",
+  "title": "V1 to V2 DB migration test",
+  "tags": [
+    "yeodam",
+    "staging",
+    "migration"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "refresh": "5s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "description": "Live HTTP outcomes and DB routing/replication indicators. DB loss and duplicates are confirmed by post-test ID/hash reconciliation. Select the Run UUID used in k6.",
+  "templating": {
+    "list": [
+      {
+        "name": "run",
+        "label": "Run UUID",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "staging-prometheus"
+        },
+        "query": {
+          "query": "label_values(k6_probe_started_total{kind=\"migration_probe\"}, testid)",
+          "refId": "RunQuery"
+        },
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Logical requests / confirmed / final HTTP failures",
+      "description": "HTTP confirmation counts; final failures are not automatically DB data loss. Exact data loss needs post-test request-ID reconciliation.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(last_over_time(k6_probe_started_total{kind=\"migration_probe\",testid=~\"${run:regex}\"}[$__range]))",
+          "legendFormat": "Started",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum(last_over_time(k6_probe_confirmed_total{kind=\"migration_probe\",testid=~\"${run:regex}\"}[$__range]))",
+          "legendFormat": "Confirmed",
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "expr": "sum(last_over_time(k6_probe_final_failures_total{kind=\"migration_probe\",testid=~\"${run:regex}\"}[$__range]))",
+          "legendFormat": "Final failures",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "New logical request and all HTTP attempt RPS",
+      "description": "k6 custom samples are published when the VU iteration completes; retries raise HTTP attempt RPS.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(k6_probe_started_total{kind=\"migration_probe\",testid=~\"${run:regex}\"}[30s]))",
+          "legendFormat": "Logical requests"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(k6_http_reqs_total{kind=\"migration_probe\",testid=~\"${run:regex}\",operation=\"migration_write\"}[30s]))",
+          "legendFormat": "HTTP attempts incl. retries"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "First failures / retries / final failures per second",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(k6_probe_first_failures_total{kind=\"migration_probe\",testid=~\"${run:regex}\"}[30s]))",
+          "legendFormat": "First failures"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(k6_probe_retries_total{kind=\"migration_probe\",testid=~\"${run:regex}\"}[30s]))",
+          "legendFormat": "Retries"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(k6_probe_final_failures_total{kind=\"migration_probe\",testid=~\"${run:regex}\"}[30s]))",
+          "legendFormat": "Final failures"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "End-to-end p95 / p99 including retries, per generator",
+      "description": "Cumulative per-generator k6 percentiles. Never average percentiles across generators. Prometheus converts k6 time samples from ms to seconds.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "k6_probe_end_to_end_p95{kind=\"migration_probe\",testid=~\"${run:regex}\"}",
+          "legendFormat": "{{generator}} p95"
+        },
+        {
+          "refId": "B",
+          "expr": "k6_probe_end_to_end_p99{kind=\"migration_probe\",testid=~\"${run:regex}\"}",
+          "legendFormat": "{{generator}} p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Probe response status RPS",
+      "description": "Nginx responses for the selected Run header; network failures before Nginx are visible only from k6.",
+      "datasource": {
+        "type": "loki",
+        "uid": "staging-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(status) (rate({service_name=\"v1-nginx\",stream=\"access\"} | json normalized_route=\"normalized_route\", migration_run_id=\"migration_run_id\", status=\"status\" | normalized_route=\"/api/internal/migration-write-probe\" | migration_run_id=~\"${run:regex}\" | __error__=\"\" [1m]))",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Probe Nginx p95 / p99",
+      "description": "Nginx request time for one HTTP attempt; k6 end-to-end duration includes all retries.",
+      "datasource": {
+        "type": "loki",
+        "uid": "staging-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, {service_name=\"v1-nginx\",stream=\"access\"} | json normalized_route=\"normalized_route\", migration_run_id=\"migration_run_id\", request_time=\"request_time\" | normalized_route=\"/api/internal/migration-write-probe\" | migration_run_id=~\"${run:regex}\" | unwrap request_time | __error__=\"\" [1m])",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.99, {service_name=\"v1-nginx\",stream=\"access\"} | json normalized_route=\"normalized_route\", migration_run_id=\"migration_run_id\", request_time=\"request_time\" | normalized_route=\"/api/internal/migration-write-probe\" | migration_run_id=~\"${run:regex}\" | unwrap request_time | __error__=\"\" [1m])",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Dropped iterations / active VUs",
+      "description": "Dropped iterations mean the load generator did not produce the planned load. Missing k6 data is not silently replaced with zero.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(k6_dropped_iterations_total{kind=\"migration_probe\",testid=~\"${run:regex}\"}) or (sum(k6_probe_started_total{kind=\"migration_probe\",testid=~\"${run:regex}\"}) * 0)",
+          "legendFormat": "Dropped"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(k6_vus{kind=\"migration_probe\",testid=~\"${run:regex}\"})",
+          "legendFormat": "Active VUs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "BE uses ProxySQL / default hostgroup",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_backend_uses_proxysql{job=\"v1-app-node\"}",
+          "legendFormat": "BE route: 0 direct, 1 proxy, -1 unknown",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "yeodam_proxysql_default_hostgroup{job=\"v1-app-node\"}",
+          "legendFormat": "Default hostgroup",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "ProxySQL used / free backend connections",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_proxysql_connections_used{job=\"v1-app-node\"}",
+          "legendFormat": "HG{{hostgroup}} {{server}} used"
+        },
+        {
+          "refId": "B",
+          "expr": "yeodam_proxysql_connections_free{job=\"v1-app-node\"}",
+          "legendFormat": "HG{{hostgroup}} {{server}} free"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "ProxySQL routed SQL per hostgroup",
+      "description": "SQL statements, not logical writes or HTTP requests.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(yeodam_proxysql_queries_total{job=\"v1-app-node\"}[1m])",
+          "legendFormat": "HG{{hostgroup}} {{server}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "ProxySQL active sessions without assigned backend",
+      "description": "Snapshot from processlist. This is an indicator of backend acquisition, not a complete HTTP request queue depth.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_proxysql_unassigned_active_sessions{job=\"v1-app-node\"}",
+          "legendFormat": "Unassigned active sessions"
+        },
+        {
+          "refId": "B",
+          "expr": "yeodam_proxysql_active_transactions{job=\"v1-app-node\"}",
+          "legendFormat": "Active transactions"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Oldest unassigned session state / connection delays",
+      "description": "Current command-state age, not the full query latency. Backend connection throttling is in the next panel.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_proxysql_unassigned_state_max_seconds{job=\"v1-app-node\"}",
+          "legendFormat": "Unassigned state max"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "ProxySQL delayed connections / timeouts / errors",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(yeodam_proxysql_connection_delays_total{job=\"v1-app-node\"}[1m])",
+          "legendFormat": "Delayed backend connection attempts"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(yeodam_proxysql_connect_timeouts_total{job=\"v1-app-node\"}[1m])",
+          "legendFormat": "Connection timeouts"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(yeodam_proxysql_generated_errors_total{job=\"v1-app-node\"}[1m])",
+          "legendFormat": "Proxy-generated error packets"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "MySQL replica I/O / SQL / lag",
+      "description": "Lag zero alone does not prove exact catch-up; compare the final source coordinate / GTID and row IDs before writer cutover.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_mysql_replica_io_running{job=\"v2-mysql-replica\"}",
+          "legendFormat": "I/O: 1 running"
+        },
+        {
+          "refId": "B",
+          "expr": "yeodam_mysql_replica_sql_running{job=\"v2-mysql-replica\"}",
+          "legendFormat": "SQL: 1 running"
+        },
+        {
+          "refId": "C",
+          "expr": "yeodam_mysql_replica_lag_seconds{job=\"v2-mysql-replica\"}",
+          "legendFormat": "Lag seconds"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Collection health and sample age",
+      "description": "k6 push interval 5s; Alloy scrape and MySQL position sampling currently 15s. Short outages require k6 logs and final data reconciliation.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_proxysql_probe_success{job=\"v1-app-node\"}",
+          "legendFormat": "Proxy sampler success"
+        },
+        {
+          "refId": "B",
+          "expr": "time()-yeodam_proxysql_sample_timestamp_seconds{job=\"v1-app-node\"}",
+          "legendFormat": "Proxy sample age seconds"
+        },
+        {
+          "refId": "C",
+          "expr": "time()-yeodam_mysql_replica_sample_timestamp_seconds{job=\"v2-mysql-replica\"}",
+          "legendFormat": "Replica sample age seconds"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 56
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Backend ONLINE flag",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_proxysql_backend_online{job=\"v1-app-node\"}",
+          "legendFormat": "HG{{hostgroup}} {{server}} ONLINE=1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 56
+      }
+    },
+    {
+      "id": 17,
+      "title": "Cutover phase (journal is authoritative between scrapes)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 24,
+        "h": 7
+      },
+      "description": "1 prepared, 2 gate intent, 3 gated, 4 fence intent, 5 source fenced, 6 caught up, 7 replica stopped, 8 promotion intent, 9 promoted, 10 switched, 11 aborted, 12 hold before promotion, 13 hold after promotion. Promotion possible=1 forbids V1 automatic rollback. A short phase may fall between 15s scrapes.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_cutover_phase{job=\"v1-app-node\",run_id=~\"${run:regex}\"}",
+          "legendFormat": "phase {{run_id}}"
+        },
+        {
+          "refId": "B",
+          "expr": "yeodam_cutover_promotion_possible{job=\"v1-app-node\",run_id=~\"${run:regex}\"}",
+          "legendFormat": "promotion possible {{run_id}}"
+        }
+      ]
+    }
+  ]
+}
