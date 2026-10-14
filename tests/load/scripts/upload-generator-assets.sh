@@ -60,6 +60,7 @@ COPYFILE_DISABLE=1 tar "${tar_options[@]}" \
   --exclude='tests/load/config/*.env' \
   --exclude='tests/load/fixtures/*.json' \
   --exclude='tests/load/results/*' \
+  --exclude='tests/load/private/*' \
   -czf "${bundle_path}" \
   -C "${repository_root}" \
   tests/load
