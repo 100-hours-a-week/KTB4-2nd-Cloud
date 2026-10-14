@@ -40,7 +40,8 @@ hash_pid=$!
 
 # --source-data=2 captures coordinates while --single-transaction takes the
 # InnoDB snapshot. DDL against the V1 application schema must not run during
-# this dump. Omit --databases so the dump can be loaded into destination yeodam.
+# this dump. Omit --databases so the dump can be loaded into the
+# V1-compatible schema on the destination host.
 sudo mysqldump --protocol=socket -uroot "$source_schema" \
   --single-transaction --quick --source-data=2 --set-gtid-purged=OFF \
   --routines --events --triggers \

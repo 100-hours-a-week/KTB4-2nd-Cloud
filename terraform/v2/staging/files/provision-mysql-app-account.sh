@@ -21,12 +21,12 @@ case "$password" in
 esac
 [ "${#password}" -eq 64 ] || { echo 'MYSQL_PASSWORD must be 64 hex characters' >&2; exit 1; }
 
-printf "CREATE USER IF NOT EXISTS '%s'@'%s' IDENTIFIED BY '%s';\nALTER USER '%s'@'%s' IDENTIFIED BY '%s';\nGRANT ALL PRIVILEGES ON yeodam.* TO '%s'@'%s';\n" \
+printf "CREATE USER IF NOT EXISTS '%s'@'%s' IDENTIFIED BY '%s';\nALTER USER '%s'@'%s' IDENTIFIED BY '%s';\nGRANT ALL PRIVILEGES ON yeodam_v1_source.* TO '%s'@'%s';\n" \
   "$app_user" "$app_host" "$password" \
   "$app_user" "$app_host" "$password" \
   "$app_user" "$app_host" | \
   sudo docker exec -i "$mysql_container" sh -ec \
-    'export MYSQL_PWD=$(cat /run/secrets/mysql-root-password); exec mysql -uroot yeodam'
+    'export MYSQL_PWD=$(cat /run/secrets/mysql-root-password); exec mysql -uroot'
 unset password
 
 sudo docker exec "$mysql_container" sh -ec \

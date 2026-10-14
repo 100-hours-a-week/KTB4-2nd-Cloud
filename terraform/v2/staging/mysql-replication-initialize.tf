@@ -44,7 +44,7 @@ resource "aws_ssm_document" "mysql_replication_initialize" {
   document_type = "Command"
   content = jsonencode({
     schemaVersion = "2.2"
-    description   = "Back up V2 staging, replace its schema with the V1 application snapshot, then start TLS replication"
+    description   = "Back up V2 staging, initialize its V1-compatible schema, then start TLS replication"
     parameters = {
       snapshotReadyKey = {
         type           = "String"
@@ -53,8 +53,8 @@ resource "aws_ssm_document" "mysql_replication_initialize" {
       }
       confirmDestinationReset = {
         type           = "String"
-        description    = "Explicitly confirm reset of the V2 staging yeodam schema after backup"
-        allowedPattern = "^RESET_STAGING_YEODAM_AFTER_BACKUP$"
+        description    = "Explicitly confirm reset of the V1-compatible schema after backup"
+        allowedPattern = "^RESET_STAGING_V1_COMPAT_SCHEMA_AFTER_BACKUP$"
       }
     }
     mainSteps = [{
@@ -102,12 +102,21 @@ resource "aws_ssm_document" "mysql_replication_persistent_filters" {
   document_type = "Command"
   content = jsonencode({
     schemaVersion = "2.2"
-    description   = "Keep the V1 application schema rewrite and table filter after MySQL restart"
+    description   = "Keep the V1-compatible table filter after MySQL restart"
+    parameters = {
+      confirmFilterMigration = {
+        type           = "String"
+        default        = "NO_MIGRATION"
+        allowedPattern = "^(NO_MIGRATION|MIGRATE_V1_COMPAT_FILTER_AFTER_BACKUP)$"
+      }
+    }
     mainSteps = [{
       action = "aws:runShellScript"
       name   = "ensurePersistentFilters"
       inputs = {
         runCommand = [
+          "export SOURCE_HOST='${aws_instance.v1_source_app.private_ip}'",
+          "export CONFIRM_FILTER_MIGRATION='{{ confirmFilterMigration }}'",
           "bash -s <<'YEODAM_PERSISTENT_FILTERS'\n${file("${path.module}/files/ensure-mysql-replication-filters.sh")}\nYEODAM_PERSISTENT_FILTERS",
         ]
       }
