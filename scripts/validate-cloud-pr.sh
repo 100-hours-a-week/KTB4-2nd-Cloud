@@ -7,6 +7,8 @@ python3 -m unittest discover -s tests/load/tests -p 'test_migration_probe.py'
 node --test tests/load/tests/migration-probe.test.mjs
 node --check tests/load/scenarios/migration-write.js
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_observability.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_staging_cutover.py'
+bash -n scripts/provision-staging-cutover-account.sh
 bash -n monitoring/v2-staging/install-proxysql-metrics.sh
 node --check tests/load/scenarios/migration-metrics-smoke.js
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/migration-test.json >/dev/null
