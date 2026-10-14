@@ -23,7 +23,11 @@ require_image() {
   local image_key="$1" digest_key="$2" package="$3" image digest
   image="$(image_value "${image_key}")"
   digest="$(image_value "${digest_key}")"
-  [[ "${image}" =~ ^ghcr\.io/100-hours-a-week/${package}:sha-[0-9a-f]{40}$ ]] || fail "Invalid ${image_key}."
+  if [[ "${package}" == yeodam-backend && "${image}" =~ ^ghcr\.io/100-hours-a-week/yeodam-backend:migration-probe-v1-sha-[0-9a-f]{40}$ ]]; then
+    : # BE's dedicated V1 rehearsal tag is accepted only by this staging deploy script.
+  else
+    [[ "${image}" =~ ^ghcr\.io/100-hours-a-week/${package}:sha-[0-9a-f]{40}$ ]] || fail "Invalid ${image_key}."
+  fi
   [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "Invalid ${digest_key}."
 }
 cleanup() {
@@ -58,6 +62,9 @@ done
 
 [[ "${EUID}" -eq 0 ]] || fail 'Run as root.'
 [[ "${scope}" == app || "${scope}" == worker ]] || fail 'Scope must be app or worker.'
+if [[ "${scope}" == app ]]; then
+  [[ -f "$(dirname -- "${BASH_SOURCE[0]}")/render-v1-staging-nginx.py" ]] || fail 'Staging Nginx renderer is missing.'
+fi
 [[ "${release_dir}" == /opt/yeodam/releases/* ]] || fail 'Release must be under /opt/yeodam/releases.'
 [[ -f "${image_env}" ]] || fail "Image file does not exist: ${image_env}"
 [[ "$(stat -c %a "${image_env}")" == 600 ]] || fail 'Image file mode must be 600.'
@@ -126,9 +133,9 @@ done
 
 if [[ "${scope}" == app ]]; then
   nginx_rendered="${temporary_directory}/nginx.conf"
-  sed -e "s/yeodam-2gether.com/${DOMAIN}/g" \
-      -e "s/__YEODAM_RELEASE__/${release_dir##*/}/g" \
-      "${release_dir}/nginx/yeodam.conf" > "${nginx_rendered}"
+  python3 "$(dirname -- "${BASH_SOURCE[0]}")/render-v1-staging-nginx.py" \
+    --template "${release_dir}/nginx/yeodam.conf" --output "${nginx_rendered}" \
+    --release "${release_dir##*/}"
   install -m 0644 "${nginx_rendered}" /etc/nginx/sites-available/yeodam-v1-staging
   ln -sfn /etc/nginx/sites-available/yeodam-v1-staging /etc/nginx/sites-enabled/yeodam-v1-staging
   rm -f /etc/nginx/sites-enabled/yeodam-maintenance
