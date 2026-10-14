@@ -8,7 +8,7 @@ locals {
     "AI_SERVER_API_KEY",
   ])
 
-  backend_mysql_schema = var.backend_mysql_mode == "validation" ? "yeodam_validation" : "yeodam"
+  backend_mysql_schema = var.backend_mysql_mode == "validation" ? "yeodam_validation" : "yeodam_v1_source"
   backend_mysql_user   = var.backend_mysql_mode == "validation" ? "yeodam_validation" : "yeodam_app"
   backend_mysql_password_parameter = var.backend_mysql_mode == "validation" ? (
     local.mysql_validation_password_parameter

@@ -7,7 +7,7 @@ region=ap-northeast-2
 mysql_container=yeodam-v2-mysql
 channel=v1_to_v2
 source_schema=yeodam_v1_source
-destination_schema=yeodam
+destination_schema=yeodam_v1_source
 password_parameter=/yeodam/v2/staging/replication/MYSQL_SOURCE_PASSWORD
 ca_parameter=/yeodam/v2/staging/replication/SOURCE_CA_PEM
 
@@ -20,15 +20,15 @@ ca_parameter=/yeodam/v2/staging/replication/SOURCE_CA_PEM
 [[ "${SNAPSHOT_READY_KEY:-}" =~ ^migration/v1-source/[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}\.ready$ ]] || {
   echo 'Unexpected source snapshot marker key' >&2; exit 1;
 }
-[[ "${CONFIRM_DESTINATION_RESET:-}" == RESET_STAGING_YEODAM_AFTER_BACKUP ]] || {
+[[ "${CONFIRM_DESTINATION_RESET:-}" == RESET_STAGING_V1_COMPAT_SCHEMA_AFTER_BACKUP ]] || {
   echo 'Explicit destination reset confirmation is required' >&2; exit 1;
 }
 unit=/etc/systemd/system/yeodam-mysql.service
-grep -Fq -- '--replicate-rewrite-db=v1_to_v2:yeodam_v1_source->yeodam' "$unit" || {
-  echo 'Persistent source-to-destination schema rewrite is missing' >&2; exit 1;
-}
-grep -Fq -- '--replicate-wild-do-table=v1_to_v2:yeodam.%' "$unit" || {
-  echo 'Persistent destination table filter is missing' >&2; exit 1;
+if grep -Fq -- '--replicate-rewrite-db=' "$unit"; then
+  echo 'A schema rewrite must not be configured for the V1-compatible replica' >&2; exit 1;
+fi
+grep -Fq -- '--replicate-wild-do-table=v1_to_v2:yeodam_v1_source.%' "$unit" || {
+  echo 'Persistent V1-compatible table filter is missing' >&2; exit 1;
 }
 
 temp_dir=$(mktemp -d)
@@ -128,7 +128,7 @@ live_source_uuid=$(sudo docker exec "$mysql_container" mysql \
 }
 
 # The existing destination contains rehearsal data. Keep a complete ready
-# backup before resetting yeodam; this step must succeed or nothing is reset.
+# backup before resetting only the V1-compatible schema; this step must succeed.
 destination_backup=$(sudo /usr/local/sbin/yeodam-mysql-full-backup)
 [[ "$destination_backup" == *'.ready'* ]] || {
   echo 'Destination backup did not produce a ready marker' >&2; exit 1;
@@ -189,8 +189,8 @@ for _ in $(seq 1 30); do
       && grep -Eq '^ *Replica_SQL_Running: Yes$' <<<"$status" \
       && grep -Eq '^ *Last_IO_Errno: 0$' <<<"$status" \
       && grep -Eq '^ *Last_SQL_Errno: 0$' <<<"$status" \
-      && grep -Eq '^ *Replicate_Rewrite_DB: \(yeodam_v1_source,yeodam\)$' <<<"$status" \
-      && grep -Eq '^ *Replicate_Wild_Do_Table: yeodam.%$' <<<"$status"; then
+      && grep -Eq '^ *Replicate_Rewrite_DB: *$' <<<"$status" \
+      && grep -Eq '^ *Replicate_Wild_Do_Table: yeodam_v1_source[.]%$' <<<"$status"; then
     printf '%s\n' "$status" | grep -E '^ *(Channel_Name|Source_Host|Source_Log_File|Read_Source_Log_Pos|Replica_IO_Running|Replica_SQL_Running|Seconds_Behind_Source|Last_IO_Errno|Last_SQL_Errno|Source_SSL_CA_File):'
     echo "Imported $table_count source tables; replication channel $channel is running."
     exit 0
