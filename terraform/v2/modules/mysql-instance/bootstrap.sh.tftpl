@@ -85,7 +85,7 @@ TimeoutStartSec=900
 ExecStartPre=/usr/local/sbin/yeodam-mysql-prepare-data
 ExecStartPre=/usr/local/sbin/yeodam-mysql-load-secret
 ExecStartPre=-/usr/bin/docker rm -f yeodam-v2-mysql
-ExecStart=/usr/bin/docker run --rm --name yeodam-v2-mysql --log-driver=journald --publish 3306:3306 --volume /srv/yeodam/mysql:/var/lib/mysql --volume /etc/yeodam/mysql-root-password:/run/secrets/mysql-root-password:ro --env MYSQL_ROOT_PASSWORD_FILE=/run/secrets/mysql-root-password --env MYSQL_ROOT_HOST=localhost '${image}' --log-bin=mysql-bin --relay-log=yeodam-relay-bin --relay-log-index=yeodam-relay-bin.index --relay-log-recovery=ON --replicate-rewrite-db=v1_to_v2:yeodam_v1_source->yeodam --replicate-wild-do-table=v1_to_v2:yeodam.% --binlog-expire-logs-seconds=1382400 --sync-binlog=1 --innodb-flush-log-at-trx-commit=1
+ExecStart=/usr/bin/docker run --rm --name yeodam-v2-mysql --log-driver=journald --publish 3306:3306 --volume /srv/yeodam/mysql:/var/lib/mysql --volume /etc/yeodam/mysql-root-password:/run/secrets/mysql-root-password:ro --env MYSQL_ROOT_PASSWORD_FILE=/run/secrets/mysql-root-password --env MYSQL_ROOT_HOST=localhost '${image}' --log-bin=mysql-bin --relay-log=yeodam-relay-bin --relay-log-index=yeodam-relay-bin.index --relay-log-recovery=ON --replicate-wild-do-table=v1_to_v2:yeodam_v1_source.% --binlog-expire-logs-seconds=1382400 --sync-binlog=1 --innodb-flush-log-at-trx-commit=1
 ExecStop=/usr/bin/docker stop yeodam-v2-mysql
 TimeoutStopSec=60
 

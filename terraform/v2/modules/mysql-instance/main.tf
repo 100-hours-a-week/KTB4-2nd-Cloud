@@ -179,6 +179,12 @@ resource "aws_instance" "mysql" {
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-mysql" })
 
+  # User data runs only on first launch. Changing the template must not
+  # restart a stateful database; use the checked SSM procedure for live hosts.
+  lifecycle {
+    ignore_changes = [user_data]
+  }
+
   depends_on = [
     aws_iam_role_policy_attachment.ssm,
     aws_iam_role_policy.read_root_password,
