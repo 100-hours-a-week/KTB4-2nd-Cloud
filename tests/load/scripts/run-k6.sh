@@ -34,6 +34,15 @@ k6_args=(--no-color)
 if [[ "${script_path}" == scenarios/migration-write.js ]]; then
   [[ -z "${K6_HTTP_DEBUG:-}" ]] || { echo 'Disable K6_HTTP_DEBUG to keep session credentials out of logs.' >&2; exit 2; }
   k6_args+=(--console-output "${result_dir}/probe-events.jsonl" --log-format raw)
+  if [[ "${K6_PROBE_PROMETHEUS:-0}" == 1 ]]; then
+    export K6_PROMETHEUS_RW_SERVER_URL='http://plg.staging.yeodam.internal:9090/api/v1/write'
+    export K6_PROMETHEUS_RW_TREND_STATS='p(95),p(99)'
+    export K6_PROMETHEUS_RW_STALE_MARKERS=true
+    curl --fail --silent --show-error --max-time 5 'http://plg.staging.yeodam.internal:9090/-/ready' >/dev/null
+    k6_args+=(--out experimental-prometheus-rw)
+  elif [[ "${K6_PROBE_PROMETHEUS:-0}" != 0 ]]; then
+    echo 'K6_PROBE_PROMETHEUS must be 0 or 1.' >&2; exit 2
+  fi
 fi
 
 network_totals() {

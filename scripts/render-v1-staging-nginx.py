@@ -14,12 +14,18 @@ def render(template, release):
         raise ValueError('Unexpected Nginx template; refuse a partial staging rewrite')
     content = template.replace('yeodam-2gether.com', 'v1-staging.yeodam-2gether.com').replace('__YEODAM_RELEASE__', release)
     content = content.replace('$request_id', '$yeodam_staging_request_id')
+    content = content.replace("'\"method\":\"$request_method\",'", "'\"migration_run_id\":\"$yeodam_staging_probe_run_id\",'\n      '\"method\":\"$request_method\",'")
     content = content.replace(marker, marker + f'\n    "POST:{PROBE_ROUTE}" "{PROBE_ROUTE}";')
     # All ordinary traffic retains the Nginx-generated ID. Only the staging
     # probe's valid canonical UUID is carried into BE and the access log.
     prefix = '''map "$request_method:$uri:$http_x_request_id" $yeodam_staging_request_id {
     default $request_id;
-    "~^POST:/api/internal/migration-write-probe:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$" $1;
+    "~^POST:/api/internal/migration-write-probe:(?<yeodam_valid_probe_request_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$" $yeodam_valid_probe_request_id;
+}
+
+map "$request_method:$uri:$http_x_migration_run_id" $yeodam_staging_probe_run_id {
+    default "";
+    "~^POST:/api/internal/migration-write-probe:(?<yeodam_valid_probe_run_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$" $yeodam_valid_probe_run_id;
 }
 
 '''
