@@ -40,11 +40,13 @@ const finalFailures = new Counter('probe_final_failures');
 const firstFailures = new Counter('probe_first_failures');
 const retryCount = new Counter('probe_retries');
 const committed = new Rate('probe_committed');
-const endToEnd = new Trend('probe_end_to_end_ms', true);
+const endToEnd = new Trend('probe_end_to_end', true);
 const contractPass = new Rate('probe_contract_pass');
 const accepted = http.expectedStatuses(200, 201);
 
 export const options = {
+  tags: { kind: 'migration_probe', testid: runId, generator: generatorId },
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(95)', 'p(99)'],
   scenarios: mode === 'contract' ? {
     probe_contract: { executor: 'shared-iterations', vus: 1, iterations: 1, exec: 'contract', maxDuration: '30s' },
   } : {
@@ -69,6 +71,7 @@ function params(timeout = timeoutMs, callback = accepted) {
 function send(request, timeout = timeoutMs, callback = accepted) {
   const p = params(timeout, callback);
   p.headers['X-Request-ID'] = request.requestId;
+  p.headers['X-Migration-Run-ID'] = request.runId;
   return http.post(`${baseUrl}/api/internal/migration-write-probe`, JSON.stringify(request), p);
 }
 function body(response) { try { return response.json(); } catch (_) { return null; } }
@@ -83,6 +86,7 @@ export function writeProbe() {
   if (Date.now() >= expiresAt - 10000) exec.test.abort('Session pool expired; preserve results and reconcile interrupted requests');
   const request = requestForIteration();
   const begin = Date.now();
+  firstFailures.add(0); finalFailures.add(0); retryCount.add(0);
   emit({ event: 'started', ...request, generatorId, startedAt: begin });
   started.add(1);
   let response, success = false, attempts = 0, firstStatus = 0;
