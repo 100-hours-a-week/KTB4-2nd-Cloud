@@ -48,3 +48,34 @@ resource "aws_ssm_document" "v1_source_proxysql_check" {
 
   tags = local.common_tags
 }
+
+resource "aws_ssm_document" "v1_source_backend_db_route" {
+  name          = "yeodam-v2-staging-v1-source-backend-db-route"
+  document_type = "Command"
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "Switch only the V1 staging Backend between direct V1 MySQL and ProxySQL hostgroup 10"
+    parameters = {
+      route = {
+        type          = "String"
+        allowedValues = ["direct", "proxysql"]
+      }
+      releaseDir = {
+        type           = "String"
+        allowedPattern = "^/opt/yeodam/releases/[0-9a-f]{40}$"
+      }
+    }
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "switchBackendDBRoute"
+      inputs = {
+        runCommand = [
+          "set -eu",
+          "bash -s -- --route '{{ route }}' --release-dir '{{ releaseDir }}' --image-env /etc/yeodam/v1-source-images.env <<'YEODAM_DB_ROUTE'\n${file("${path.module}/../../../scripts/switch-v1-staging-be-db-route.sh")}\nYEODAM_DB_ROUTE",
+        ]
+      }
+    }]
+  })
+
+  tags = local.common_tags
+}
