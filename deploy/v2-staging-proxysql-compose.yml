@@ -1,0 +1,29 @@
+name: yeodam-v2-staging-proxysql
+
+services:
+  proxysql:
+    image: docker.io/proxysql/proxysql:3.0.11-debian@sha256:0e95d1b7cc32f1de7923ffbf6cc4ba658874a6f6a6b7c2cdfdc6444304c13caf
+    platform: linux/amd64
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:16032:6032
+      - 127.0.0.1:16033:6033
+    volumes:
+      - /etc/yeodam/v2-staging-proxysql/proxysql.cnf:/etc/proxysql.cnf:ro
+      - /var/lib/yeodam-v2-staging-proxysql:/var/lib/proxysql
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      app-network:
+        aliases:
+          - proxysql
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  app-network:
+    name: yeodam-app-network
+    external: true
