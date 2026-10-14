@@ -2,6 +2,8 @@
 set -Eeuo pipefail
 
 bash -n scripts/*.sh tests/ci/*.sh
+python3 -m unittest discover -s tests/load/tests -p 'test_synthetic_session_pool.py'
+node --check tests/load/scenarios/synthetic-auth-smoke.js
 bash scripts/validate-image-versions.sh deploy/image-versions.env
 python3 -m json.tool monitoring/cloudwatch-agent/app.json >/dev/null
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/v1-source.json >/dev/null

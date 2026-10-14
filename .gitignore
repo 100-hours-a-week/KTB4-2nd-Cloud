@@ -35,3 +35,5 @@ terraform.rc
 !/tests/load/fixtures/*.example.json
 /tests/load/results/*
 !/tests/load/results/.gitkeep
+/tests/load/private/
+**/__pycache__/
