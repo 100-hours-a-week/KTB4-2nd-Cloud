@@ -229,5 +229,11 @@ resource "aws_instance" "load_generator" {
 
   tags = merge(local.common_tags, { Name = local.load_generator_name, Role = "load-generator", Temporary = "true" })
 
+  lifecycle {
+    # Keep automatic public IPv4 assignment at creation. A stopped instance can
+    # report no association; that must not replace the EC2 and its result disk.
+    ignore_changes = [associate_public_ip_address]
+  }
+
   depends_on = [aws_iam_role_policy_attachment.load_generator_ssm, aws_iam_role_policy.load_generator_s3]
 }
