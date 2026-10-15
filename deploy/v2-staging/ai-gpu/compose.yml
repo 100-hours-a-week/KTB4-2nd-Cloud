@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
     logging: *logging
   process-runner:
-    image: ghcr.io/100-hours-a-week/yeodam-ai-app:sha-508bc4847d74f3aad0bf2d97015b1daffce9d161@sha256:56e38d4445c6140013ec4a141aca0b86dd949c60f84b74f86809d2fd1ee65c2d
+    image: ghcr.io/100-hours-a-week/yeodam-ai-app:sha-caabb9ed7aafcad08c1f3d6087a6a93606a1f0d4@sha256:7be1420b29ef2490276310aa4dc69e3481e7c85ee87434056940bac0e765db97
     platform: linux/amd64
     container_name: yeodam-ai-process-runner
     command: ["python", "-m", "app.jobs.runner"]
