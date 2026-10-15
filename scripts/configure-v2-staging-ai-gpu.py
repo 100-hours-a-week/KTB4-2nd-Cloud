@@ -64,7 +64,7 @@ def main():
         "QDRANT_URL": "http://ai-gpu.staging.yeodam.internal:6333",
         "KAFKA_BOOTSTRAP_SERVERS": "kafka.staging.yeodam.internal:9092",
         "KAFKA_SECURITY_PROTOCOL": "PLAINTEXT",
-        "RELEASE": "508bc4847d74f3aad0bf2d97015b1daffce9d161",
+        "RELEASE": "caabb9ed7aafcad08c1f3d6087a6a93606a1f0d4",
     }
     for work in ("TRIP_CREATE", "TRIP_UPDATE", "STORY_CREATE"):
         for direction in ("REQUEST", "RESULT"):
