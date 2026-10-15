@@ -52,15 +52,7 @@ resource "aws_ssm_document" "outbox_cdc_account" {
   document_type = "Command"
   content = jsonencode({
     schemaVersion = "2.2"
-    description   = "Provision a TLS-only CDC account after the agreed Backend outbox table exists"
-    parameters = {
-      OutboxTable = {
-        type              = "String"
-        description       = "Confirmed Backend outbox table in yeodam_validation; no table is created here"
-        allowedPattern    = "^[A-Za-z][A-Za-z0-9_]{0,63}$"
-        interpolationType = "ENV_VAR"
-      }
-    }
+    description   = "Provision a TLS-only CDC account for the three confirmed Backend Outbox tables"
     mainSteps = [{
       action = "aws:runShellScript"
       name   = "provisionCdcAccount"
@@ -69,6 +61,30 @@ resource "aws_ssm_document" "outbox_cdc_account" {
           "export CDC_KAFKA_HOST='${aws_instance.kafka.private_ip}'",
           "printf '%s' '${filebase64("${path.module}/../../../scripts/provision-v2-staging-outbox-cdc.sh")}' | base64 --decode > /run/yeodam-outbox-cdc-account.sh",
           "bash /run/yeodam-outbox-cdc-account.sh",
+        ]
+      }
+    }]
+  })
+  tags = local.common_tags
+}
+
+resource "aws_ssm_document" "outbox_connector" {
+  name          = "yeodam-v2-staging-outbox-connector"
+  document_type = "Command"
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "Connect the confirmed validation Outbox tables after the initial pending-row preflight"
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "configureOutboxConnector"
+      inputs = {
+        timeoutSeconds = "600"
+        runCommand = [
+          "set -eu",
+          "export CDC_CONNECTOR_B64='${filebase64("${path.module}/../../../deploy/v2-staging/kafka/outbox-connector.json")}'",
+          "export CDC_COMPOSE_B64='${filebase64("${path.module}/../../../deploy/v2-staging/kafka/compose.yml")}'",
+          "printf '%s' '${filebase64("${path.module}/../../../scripts/configure-v2-staging-outbox-connector.py")}' | base64 --decode > /run/yeodam-outbox-connector.py",
+          "python3 /run/yeodam-outbox-connector.py",
         ]
       }
     }]
