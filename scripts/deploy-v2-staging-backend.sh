@@ -119,8 +119,9 @@ if [[ "${action}" == deploy ]]; then
     | with_entries(select(.value != null))
     | .containerDefinitions[0].image = $image
     | .containerDefinitions[0].environment = (
-        [.containerDefinitions[0].environment[]? | select(.name != "RELEASE")]
-        + [{name: "RELEASE", value: $image}]
+        [.containerDefinitions[0].environment[]? | select(.name != "RELEASE" and .name != "APP_TRIP_RESULT_LISTENER_ENABLED")]
+        + [{name: "RELEASE", value: $image},
+           {name: "APP_TRIP_RESULT_LISTENER_ENABLED", value: "true"}]
       )
   ' "${temporary_dir}/previous-definition.json" > "${temporary_dir}/candidate-definition.json"
   candidate="$(aws ecs register-task-definition --region "${region}" \
