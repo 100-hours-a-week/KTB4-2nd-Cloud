@@ -1,0 +1,51 @@
+services:
+  embedding:
+    image: vllm/vllm-openai:v0.31.0@sha256:c1c9f6fd5c109ba7f0546a59f5b2f15fb87f64c77782e90a27b648b42a8e67c3
+    platform: linux/amd64
+    container_name: yeodam-ai-embedding
+    entrypoint: ["vllm", "serve"]
+    command: ["Qwen/Qwen3-VL-Embedding-2B", "--revision", "9f2f7e710d6d81056aa5c0a4f04764fec6bb7bda", "--runner", "pooling", "--trust-remote-code", "--dtype", "bfloat16", "--max-model-len", "4096", "--served-model-name", "qwen3-vl-embedding-2b", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: /etc/yeodam/ai/embedding.env
+    ports: ["${AI_GPU_BIND_IP:?private bind IP required}:8000:8000"]
+    volumes: ["/var/cache/yeodam/huggingface:/root/.cache/huggingface"]
+    ipc: host
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 600s
+    logging: &logging
+      driver: json-file
+      options: {max-size: "20m", max-file: "3"}
+  qdrant:
+    image: qdrant/qdrant:v1.19.1@sha256:12364fe851b9f17356fc88189fc06d1b521262e04659ec7345975b00c9246a10
+    platform: linux/amd64
+    container_name: yeodam-ai-qdrant
+    ports: ["${AI_GPU_BIND_IP:?private bind IP required}:6333:6333"]
+    volumes: ["/data/qdrant/storage:/qdrant/storage"]
+    restart: unless-stopped
+    logging: *logging
+  process-runner:
+    image: ghcr.io/100-hours-a-week/yeodam-ai-app:sha-508bc4847d74f3aad0bf2d97015b1daffce9d161@sha256:56e38d4445c6140013ec4a141aca0b86dd949c60f84b74f86809d2fd1ee65c2d
+    platform: linux/amd64
+    container_name: yeodam-ai-process-runner
+    command: ["python", "-m", "app.jobs.runner"]
+    env_file: /etc/yeodam/ai/runner.env
+    init: true
+    cpus: 2.0
+    restart: unless-stopped
+    stop_grace_period: 20s
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      embedding: {condition: service_healthy}
+      qdrant: {condition: service_started}
+    logging: *logging
