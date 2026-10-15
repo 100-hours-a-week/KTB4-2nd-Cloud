@@ -16,7 +16,15 @@ locals {
   ) : local.mysql_app_password_parameter
 
   backend_base_environment = {
-    SPRING_PROFILES_ACTIVE      = "prod"
+    SPRING_PROFILES_ACTIVE        = "prod"
+    SPRING_JPA_HIBERNATE_DDL_AUTO = "validate"
+    SPRING_FLYWAY_ENABLED         = "true"
+    AI_SERVER_BASE_URL            = "http://${aws_route53_record.ai_api_private.fqdn}"
+    # Legacy constructor still requires this value; no EC2 start permission is granted.
+    AI_EC2_INSTANCE_ID          = aws_instance.ai_gpu.id
+    KAFKA_BOOTSTRAP_SERVERS     = "${aws_route53_record.kafka_private.fqdn}:9092"
+    SENTRY_ENVIRONMENT          = "staging"
+    RELEASE                     = "ec19388ba0aed51a314d6c67fb6a15e6afd62b4f"
     AWS_REGION                  = var.aws_region
     ATTACHMENT_S3_BUCKET        = module.app_storage.bucket_name
     FRONTEND_ORIGIN             = local.staging_origin
@@ -133,7 +141,7 @@ resource "aws_ecs_task_definition" "backend" {
     }
     portMappings = [{ containerPort = 8080, hostPort = 8080, protocol = "tcp" }]
     environment = [
-      for name, value in merge(var.backend_environment, local.backend_base_environment) :
+      for name, value in merge(var.backend_environment, local.backend_base_environment, local.ai_api_topics) :
       { name = name, value = value }
     ]
     secrets = concat(
@@ -238,6 +246,10 @@ resource "aws_ecs_service" "backend" {
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
   health_check_grace_period_seconds  = 120
+
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 
   tags = local.common_tags
 }

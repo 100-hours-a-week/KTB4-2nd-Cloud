@@ -118,6 +118,10 @@ if [[ "${action}" == deploy ]]; then
      ephemeralStorage, runtimePlatform, enableFaultInjection}
     | with_entries(select(.value != null))
     | .containerDefinitions[0].image = $image
+    | .containerDefinitions[0].environment = (
+        [.containerDefinitions[0].environment[]? | select(.name != "RELEASE")]
+        + [{name: "RELEASE", value: $image}]
+      )
   ' "${temporary_dir}/previous-definition.json" > "${temporary_dir}/candidate-definition.json"
   candidate="$(aws ecs register-task-definition --region "${region}" \
     --cli-input-json "file://${temporary_dir}/candidate-definition.json" \
