@@ -8,6 +8,7 @@ locals {
     "AI_SERVER_API_KEY",
   ])
 
+  backend_mysql_host   = var.backend_mysql_mode == "validation" ? aws_route53_record.mysql_validation_private.fqdn : module.mysql.private_ip
   backend_mysql_schema = var.backend_mysql_mode == "validation" ? "yeodam_validation" : "yeodam_v1_source"
   backend_mysql_user   = var.backend_mysql_mode == "validation" ? "yeodam_validation" : "yeodam_app"
   backend_mysql_password_parameter = var.backend_mysql_mode == "validation" ? (
@@ -26,7 +27,7 @@ locals {
     REDIS_PORT                  = tostring(module.redis.port)
     REDIS_SSL_ENABLED           = "true"
     AUTH_SESSION_KEY_PREFIX     = "yeodam:v2:staging:auth:"
-    MYSQL_URL                   = "jdbc:mysql://${module.mysql.private_ip}:3306/${local.backend_mysql_schema}?serverTimezone=Asia/Seoul&characterEncoding=utf8"
+    MYSQL_URL                   = "jdbc:mysql://${local.backend_mysql_host}:3306/${local.backend_mysql_schema}?serverTimezone=Asia/Seoul&characterEncoding=utf8"
     MYSQL_USERNAME              = local.backend_mysql_user
   }
 }

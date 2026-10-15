@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+# Only HTTPS egress is allowed on this private host.
+# EC2 ARM regional aliases do not present matching HTTPS certificates.
+sed -i -E '/^URIs:/ { s#http://#https://#g; s#https://[^ /]*ports.ubuntu.com/ubuntu-ports#https://ports.ubuntu.com/ubuntu-ports#g; }' /etc/apt/sources.list.d/ubuntu.sources
+apt-get update
+apt-get install --yes --no-install-recommends ca-certificates curl
+install -m 0755 -d /etc/apt/keyrings
+curl --fail --location --silent --show-error https://download.docker.com/linux/ubuntu/gpg \
+  --output /etc/apt/keyrings/docker.asc
+chmod 0644 /etc/apt/keyrings/docker.asc
+cat > /etc/apt/sources.list.d/docker.sources <<'SOURCES'
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: noble
+Components: stable
+Architectures: arm64
+Signed-By: /etc/apt/keyrings/docker.asc
+SOURCES
+apt-get update
+apt-get install --yes --no-install-recommends docker-ce docker-ce-cli containerd.io docker-compose-plugin
+systemctl enable --now docker
+
+# Resolve the separate data volume by EBS serial, not a volatile NVMe name.
+expected_serial=$(printf '%s' '${volume_id}' | tr -d '-' | tr '[:upper:]' '[:lower:]')
+device=''
+for attempt in $(seq 1 120); do
+  while read -r name serial kind; do
+    [ "$kind" = disk ] || continue
+    normalized=$(printf '%s' "$serial" | tr -d '-' | tr '[:upper:]' '[:lower:]')
+    if [ "$normalized" = "$expected_serial" ]; then
+      device="/dev/$name"
+    fi
+  done < <(lsblk -dn -o NAME,SERIAL,TYPE)
+  [ -n "$device" ] && break
+  sleep 5
+done
+[ -n "$device" ] || { echo 'MySQL validation data volume was not attached' >&2; exit 1; }
+
+# Never overwrite an existing filesystem or partition table.
+filesystem=$(blkid -o value -s TYPE "$device" || true)
+case "$filesystem" in
+  '')
+    if [ -n "$(wipefs --no-act --noheadings --output TYPE "$device")" ]; then
+      echo 'Unexpected existing signature on MySQL validation data volume' >&2
+      exit 1
+    fi
+    mkfs.ext4 "$device"
+    ;;
+  ext4) ;;
+  *) echo "Unexpected MySQL validation filesystem: $filesystem" >&2; exit 1 ;;
+esac
+uuid=$(blkid -o value -s UUID "$device")
+install -d -m 0755 /data/mysql-validation
+if ! grep -Fq "UUID=$uuid " /etc/fstab; then
+  printf 'UUID=%s /data/mysql-validation ext4 defaults 0 2\n' "$uuid" >> /etc/fstab
+fi
+mountpoint -q /data/mysql-validation || mount /data/mysql-validation
+
+apt-get install --yes --no-install-recommends unzip
+work=$(mktemp -d)
+curl --fail --location --silent --show-error https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip -o "$work/aws.zip"
+unzip -q "$work/aws.zip" -d "$work"
+"$work/aws/install" --update
+rm -rf "$work"
+install -d -m 0700 /etc/yeodam/mysql-validation
+AWS_DEFAULT_REGION='${region}' python3 - <<'PYTHON'
+import json, pathlib, re, secrets, subprocess, tempfile
+base = pathlib.Path('/etc/yeodam/mysql-validation')
+for parameter, filename, create in [('${parameter}', 'root-password', True), ('${app_parameter}', 'app-password', False)]:
+    result = subprocess.run(['aws','ssm','get-parameter','--name',parameter,'--with-decryption'],capture_output=True,text=True)
+    if result.returncode == 0:
+        value = json.loads(result.stdout)['Parameter']['Value']
+    elif create and 'ParameterNotFound' in result.stderr:
+        value = secrets.token_hex(32)
+        with tempfile.NamedTemporaryFile(mode='w',dir='/run') as request:
+            json.dump({'Name':parameter,'Type':'SecureString','Value':value},request)
+            request.flush()
+            subprocess.run(['aws','ssm','put-parameter','--cli-input-json','file://'+request.name],stdout=subprocess.DEVNULL,check=True)
+    else:
+        raise SystemExit('MySQL credential read failed; no credential changed')
+    assert re.fullmatch('[0-9a-f]{64}',value)
+    target = base / filename
+    target.write_text(value)
+    target.chmod(0o400)
+PYTHON
+image='docker.io/library/mysql:9.7.2@sha256:e2bde46db6563855d7177adb5f0b57b9dc663f5a20927a90f4259d3312068497'
+docker pull "$image"
+mysql_uid=$(docker run --rm --entrypoint id "$image" -u mysql)
+mysql_gid=$(docker run --rm --entrypoint id "$image" -g mysql)
+chown "$mysql_uid:$mysql_gid" /etc/yeodam/mysql-validation/*-password
+install -d -m 0750 -o "$mysql_uid" -g "$mysql_gid" /data/mysql-validation/data
+cat > /etc/yeodam/mysql-validation/my.cnf <<'CONFIG'
+[mysqld]
+server-id=225
+log-bin=mysql-bin
+gtid-mode=ON
+enforce-gtid-consistency=ON
+binlog-row-image=FULL
+binlog-row-metadata=FULL
+binlog-transaction-compression=OFF
+binlog-expire-logs-seconds=604800
+sync-binlog=1
+innodb-flush-log-at-trx-commit=1
+innodb-buffer-pool-size=268435456
+max-connections=100
+read-only=OFF
+super-read-only=OFF
+CONFIG
+chmod 0444 /etc/yeodam/mysql-validation/my.cnf
+cat > /etc/systemd/system/yeodam-mysql-validation.service <<'UNIT'
+[Unit]
+Description=Yeodam standalone Backend validation MySQL
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+RequiresMountsFor=/data/mysql-validation
+[Service]
+Restart=on-failure
+RestartSec=5
+ExecStartPre=/usr/bin/mountpoint -q /data/mysql-validation
+ExecStartPre=-/usr/bin/docker rm yeodam-v2-mysql
+ExecStart=/usr/bin/docker run --name yeodam-v2-mysql --memory=1536m --log-driver=journald -p 3306:3306 -v /data/mysql-validation/data:/var/lib/mysql -v /etc/yeodam/mysql-validation/root-password:/run/secrets/mysql-root-password:ro -v /etc/yeodam/mysql-validation/app-password:/run/secrets/mysql-app-password:ro -v /etc/yeodam/mysql-validation/my.cnf:/etc/mysql/conf.d/validation.cnf:ro -e MYSQL_ROOT_PASSWORD_FILE=/run/secrets/mysql-root-password -e MYSQL_ROOT_HOST=localhost -e MYSQL_DATABASE=yeodam_validation -e MYSQL_USER=yeodam_validation -e MYSQL_PASSWORD_FILE=/run/secrets/mysql-app-password IMAGE
+ExecStop=/usr/bin/docker stop -t 60 yeodam-v2-mysql
+TimeoutStopSec=90
+[Install]
+WantedBy=multi-user.target
+UNIT
+sed -i "s|IMAGE|$image|" /etc/systemd/system/yeodam-mysql-validation.service
+systemctl daemon-reload
+systemctl enable --now yeodam-mysql-validation
+for attempt in $(seq 1 120); do
+  if docker exec yeodam-v2-mysql sh -c 'MYSQL_PWD=$(cat /run/secrets/mysql-root-password) mysql -uroot -Nse "SELECT 1"' >/dev/null 2>&1; then
+    touch /var/lib/yeodam-mysql-validation-ready
+    exit 0
+  fi
+  sleep 5
+done
+echo 'MySQL validation readiness timed out' >&2
+exit 1
