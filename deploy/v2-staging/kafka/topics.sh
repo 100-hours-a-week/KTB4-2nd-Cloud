@@ -27,6 +27,9 @@ for flow in trip-create trip-update story-create; do
   for direction in request result; do
     topic="staging.yeodam.$flow.$direction"
     ensure_topic "$topic" 2 delete 604800000
+    if [[ "$direction" == request ]]; then
+      config "$topic" "message.timestamp.type=LogAppendTime"
+    fi
     ensure_topic "$topic-dlt" 2 delete 2592000000
   done
 done
