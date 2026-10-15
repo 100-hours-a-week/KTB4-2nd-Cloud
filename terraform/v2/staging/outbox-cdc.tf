@@ -5,7 +5,7 @@ locals {
 
 resource "aws_vpc_security_group_egress_rule" "kafka_validation_mysql" {
   security_group_id            = aws_security_group.kafka.id
-  referenced_security_group_id = module.mysql.security_group_id
+  referenced_security_group_id = aws_security_group.mysql_validation.id
   description                  = "Outbox CDC from Kafka Connect to staging MySQL"
   ip_protocol                  = "tcp"
   from_port                    = 3306
@@ -13,7 +13,7 @@ resource "aws_vpc_security_group_egress_rule" "kafka_validation_mysql" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "mysql_outbox_cdc" {
-  security_group_id            = module.mysql.security_group_id
+  security_group_id            = aws_security_group.mysql_validation.id
   referenced_security_group_id = aws_security_group.kafka.id
   description                  = "Outbox CDC from the private Kafka host only"
   ip_protocol                  = "tcp"
@@ -30,7 +30,7 @@ data "aws_iam_policy_document" "mysql_outbox_cdc_password" {
 
 resource "aws_iam_role_policy" "mysql_outbox_cdc_password" {
   name   = "yeodam-v2-staging-mysql-outbox-cdc-password"
-  role   = module.mysql.instance_role_name
+  role   = aws_iam_role.mysql_validation.name
   policy = data.aws_iam_policy_document.mysql_outbox_cdc_password.json
 }
 
