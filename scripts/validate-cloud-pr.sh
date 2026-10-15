@@ -84,3 +84,7 @@ assert app['backend']['logging']['driver'] == 'awslogs'
 assert worker['ai-worker']['logging']['driver'] == 'awslogs'
 print('운영 Compose 배치와 Image 참조 검증 완료')
 PY
+
+# AI Redis uses a private host address supplied during bootstrap.
+AI_REDIS_BIND_IP=10.30.10.1 docker compose -f deploy/v2-staging/ai-redis-compose.yml config --quiet
+bash -n terraform/v2/staging/ai-redis-bootstrap.sh.tftpl

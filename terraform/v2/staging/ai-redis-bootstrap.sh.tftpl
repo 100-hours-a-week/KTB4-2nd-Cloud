@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+# Only HTTPS egress is allowed on this private host.
+# EC2 ARM regional aliases do not present matching HTTPS certificates.
+sed -i -E '/^URIs:/ { s#http://#https://#g; s#https://[^ /]*ports.ubuntu.com/ubuntu-ports#https://ports.ubuntu.com/ubuntu-ports#g; }' /etc/apt/sources.list.d/ubuntu.sources
+apt-get update
+apt-get install --yes --no-install-recommends ca-certificates curl
+install -m 0755 -d /etc/apt/keyrings
+curl --fail --location --silent --show-error https://download.docker.com/linux/ubuntu/gpg \
+  --output /etc/apt/keyrings/docker.asc
+chmod 0644 /etc/apt/keyrings/docker.asc
+cat > /etc/apt/sources.list.d/docker.sources <<'SOURCES'
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: noble
+Components: stable
+Architectures: arm64
+Signed-By: /etc/apt/keyrings/docker.asc
+SOURCES
+apt-get update
+apt-get install --yes --no-install-recommends docker-ce docker-ce-cli containerd.io docker-compose-plugin
+systemctl enable --now docker
+
+# Resolve the separate data volume by EBS serial, not a volatile NVMe name.
+expected_serial=$(printf '%s' '${volume_id}' | tr -d '-' | tr '[:upper:]' '[:lower:]')
+device=''
+for attempt in $(seq 1 120); do
+  while read -r name serial kind; do
+    [ "$kind" = disk ] || continue
+    normalized=$(printf '%s' "$serial" | tr -d '-' | tr '[:upper:]' '[:lower:]')
+    if [ "$normalized" = "$expected_serial" ]; then
+      device="/dev/$name"
+    fi
+  done < <(lsblk -dn -o NAME,SERIAL,TYPE)
+  [ -n "$device" ] && break
+  sleep 5
+done
+[ -n "$device" ] || { echo 'AI Redis data volume was not attached' >&2; exit 1; }
+
+# Never overwrite an existing filesystem or partition table.
+filesystem=$(blkid -o value -s TYPE "$device" || true)
+case "$filesystem" in
+  '')
+    if [ -n "$(wipefs --no-act --noheadings --output TYPE "$device")" ]; then
+      echo 'Unexpected existing signature on AI Redis data volume' >&2
+      exit 1
+    fi
+    mkfs.ext4 "$device"
+    ;;
+  ext4) ;;
+  *) echo "Unexpected AI Redis filesystem: $filesystem" >&2; exit 1 ;;
+esac
+uuid=$(blkid -o value -s UUID "$device")
+install -d -m 0755 /data/redis
+if ! grep -Fq "UUID=$uuid " /etc/fstab; then
+  printf 'UUID=%s /data/redis ext4 defaults 0 2\n' "$uuid" >> /etc/fstab
+fi
+mountpoint -q /data/redis || mount /data/redis
+
+apt-get install --yes --no-install-recommends unzip
+work=$(mktemp -d)
+curl --fail --location --silent --show-error https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip -o "$work/aws.zip"
+unzip -q "$work/aws.zip" -d "$work"
+"$work/aws/install" --update
+rm -rf "$work"
+install -d -m 0700 /etc/yeodam/ai-redis
+install -d -m 0750 /opt/yeodam-ai-redis
+
+# AWS CLI subprocess output stays in memory: never print the URL or password.
+AWS_DEFAULT_REGION='${region}' python3 - <<'PYTHON'
+import hashlib, json, pathlib, re, secrets, subprocess, tempfile
+from urllib.parse import urlsplit
+parameter = '${parameter}'
+result = subprocess.run(['aws', 'ssm', 'get-parameter', '--name', parameter, '--with-decryption'], capture_output=True, text=True)
+if result.returncode == 0:
+    value = json.loads(result.stdout)['Parameter']['Value']
+elif 'ParameterNotFound' in result.stderr:
+    value = 'redis://:' + secrets.token_hex(32) + '@ai-redis.staging.yeodam.internal:6379/0'
+    # No overwrite: a concurrent initializer must fail rather than rotate a live password.
+    with tempfile.NamedTemporaryFile(mode='w', prefix='ai-redis-', dir='/run') as request:
+        json.dump({'Name': parameter, 'Type': 'SecureString', 'Value': value}, request)
+        request.flush()
+        created = subprocess.run(['aws', 'ssm', 'put-parameter', '--cli-input-json', 'file://' + request.name], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        if created.returncode:
+            raise SystemExit('Redis parameter creation failed; no credential was printed')
+else:
+    raise SystemExit('Redis parameter read failed; credential was not changed')
+u = urlsplit(value)
+assert u.scheme == 'redis' and u.hostname == 'ai-redis.staging.yeodam.internal' and u.port == 6379 and u.path == '/0'
+assert re.fullmatch('[0-9a-f]{64}', u.password or '')
+base = pathlib.Path('/etc/yeodam/ai-redis')
+password = base / 'password'
+password.write_text(u.password)
+password.chmod(0o400)
+acl = base / 'users.acl'
+acl.write_text('user default on #' + hashlib.sha256(u.password.encode()).hexdigest() + ' ~* &* +@all\n')
+acl.chmod(0o444)
+PYTHON
+cat > /etc/yeodam/ai-redis/redis.conf <<'CONFIG'
+bind 0.0.0.0
+protected-mode yes
+port 6379
+dir /data
+aclfile /usr/local/etc/redis/users.acl
+maxmemory 512mb
+maxmemory-policy noeviction
+appendonly yes
+appendfsync always
+CONFIG
+chmod 0444 /etc/yeodam/ai-redis/redis.conf
+cat > /opt/yeodam-ai-redis/compose.yml <<'COMPOSE'
+${compose}
+COMPOSE
+private_ip=$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
+[ -n "$private_ip" ]
+printf 'AI_REDIS_BIND_IP=%s\n' "$private_ip" > /opt/yeodam-ai-redis/.env
+cd /opt/yeodam-ai-redis
+docker compose pull
+image='redis:7.4.2@sha256:fbdbaea47b9ae4ecc2082ecdb4e1cea81e32176ffb1dcf643d422ad07427e5d9'
+redis_uid=$(docker run --rm --entrypoint id "$image" -u redis)
+redis_gid=$(docker run --rm --entrypoint id "$image" -g redis)
+install -d -m 0750 -o "$redis_uid" -g "$redis_gid" /data/redis/data
+cat > /etc/systemd/system/yeodam-ai-redis.service <<'UNIT'
+[Unit]
+Description=Yeodam staging AI Redis
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+RequiresMountsFor=/data/redis
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/yeodam-ai-redis
+ExecStartPre=/usr/bin/mountpoint -q /data/redis
+ExecStart=/usr/bin/docker compose up -d --wait --wait-timeout 90
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=120
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now yeodam-ai-redis
+printf 'AI Redis ready\n' > /var/lib/yeodam-ai-redis-ready
