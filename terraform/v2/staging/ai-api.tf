@@ -22,7 +22,7 @@ locals {
     # AI's deployment handoff values; this is a shared GPU call limit, not story concurrency.
     STORY_MAX_TOKENS        = "2048"
     GPU_GENERATION_INFLIGHT = "8"
-    RELEASE                 = "bfa24e8099b407f700c73f34851e26b2620ab304"
+    RELEASE                 = "caabb9ed7aafcad08c1f3d6087a6a93606a1f0d4"
   }
   ai_api_topics = {
     for pair in setproduct(["TRIP_CREATE", "TRIP_UPDATE", "STORY_CREATE"], ["REQUEST", "RESULT"]) :
@@ -33,7 +33,7 @@ locals {
 variable "ai_vlm_base_url" {
   description = "AI-provided RunPod OpenAI-compatible URL, including /v1"
   type        = string
-  default     = "https://5wkonmsxwup7en-8000.proxy.runpod.net/v1"
+  default     = "https://v2ird51hm3dri7-8000.proxy.runpod.net/v1"
   validation {
     condition     = startswith(var.ai_vlm_base_url, "https://") && endswith(var.ai_vlm_base_url, "/v1")
     error_message = "Use the reviewed HTTPS RunPod URL ending in /v1."
@@ -86,6 +86,7 @@ resource "aws_vpc_security_group_egress_rule" "ai_api_https" {
 }
 
 resource "aws_ecs_task_definition" "ai_api" {
+  skip_destroy             = true # Keep a healthy prior revision available during rolling updates.
   family                   = local.ai_api_name
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
@@ -99,7 +100,7 @@ resource "aws_ecs_task_definition" "ai_api" {
   }
   container_definitions = jsonencode([{
     name                  = "ai-api"
-    image                 = "ghcr.io/100-hours-a-week/yeodam-ai-app:sha-bfa24e8099b407f700c73f34851e26b2620ab304@sha256:528165481e78cdd802d713ecc830653deba3fc7f85cebcdcc0d87d2279a363d9"
+    image                 = "ghcr.io/100-hours-a-week/yeodam-ai-app:sha-caabb9ed7aafcad08c1f3d6087a6a93606a1f0d4@sha256:7be1420b29ef2490276310aa4dc69e3481e7c85ee87434056940bac0e765db97"
     essential             = true
     repositoryCredentials = { credentialsParameter = module.ecs_foundation.ghcr_credentials_secret_arn }
     portMappings          = [{ name = "http", containerPort = 8000, hostPort = 8000, protocol = "tcp" }]
