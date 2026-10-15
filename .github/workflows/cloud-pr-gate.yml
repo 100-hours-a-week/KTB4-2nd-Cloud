@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       runtime_required: ${{ steps.scope.outputs.runtime_required }}
+      v2_runtime_required: ${{ steps.scope.outputs.v2_runtime_required }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,6 +38,12 @@ jobs:
             echo 'runtime_required=true' >> "${GITHUB_OUTPUT}"
           else
             echo 'runtime_required=false' >> "${GITHUB_OUTPUT}"
+          fi
+          if git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" |
+            grep -Eq '^(deploy/v2/|tests/ci/v2/|scripts/v2-image-manifest\.py$|deploy/v2-staging/kafka/outbox-connector\.json$|\.github/workflows/cloud-pr-gate\.yml$)'; then
+            echo 'v2_runtime_required=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'v2_runtime_required=false' >> "${GITHUB_OUTPUT}"
           fi
 
       - name: Validate shell, release and Compose files
@@ -65,10 +72,41 @@ jobs:
       - name: Run isolated user-journey smoke
         run: bash tests/ci/run-integration.sh
 
+  v2-integration:
+    name: V2 image combination smoke
+    needs: validate
+    if: needs.validate.outputs.v2_runtime_required == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Log in to GHCR for private V2 images
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Run isolated V2 image journey
+        env:
+          V2_CI_RESULTS_DIRECTORY: ${{ runner.temp }}/v2-ci-results
+        run: bash tests/ci/v2/run-integration.sh
+
+      - name: Preserve V2 results and diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: v2-image-combination-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/v2-ci-results
+          retention-days: 7
+          if-no-files-found: warn
+
   cloud-ci-gate:
     name: cloud-ci-gate
     if: always()
-    needs: [validate, integration]
+    needs: [validate, integration, v2-integration]
     runs-on: ubuntu-latest
     steps:
       - name: Require validation and applicable integration
@@ -76,6 +114,8 @@ jobs:
           VALIDATE_RESULT: ${{ needs.validate.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
           RUNTIME_REQUIRED: ${{ needs.validate.outputs.runtime_required }}
+          V2_INTEGRATION_RESULT: ${{ needs.v2-integration.result }}
+          V2_RUNTIME_REQUIRED: ${{ needs.validate.outputs.v2_runtime_required }}
         run: |
           set -Eeuo pipefail
           [[ "${VALIDATE_RESULT}" == success ]] || exit 1
@@ -83,4 +123,9 @@ jobs:
             [[ "${INTEGRATION_RESULT}" == success ]] || exit 1
           else
             [[ "${INTEGRATION_RESULT}" == skipped ]] || exit 1
+          fi
+          if [[ "${V2_RUNTIME_REQUIRED}" == true ]]; then
+            [[ "${V2_INTEGRATION_RESULT}" == success ]] || exit 1
+          else
+            [[ "${V2_INTEGRATION_RESULT}" == skipped ]] || exit 1
           fi
