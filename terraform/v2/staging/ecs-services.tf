@@ -21,22 +21,24 @@ locals {
     SPRING_FLYWAY_ENABLED         = "true"
     AI_SERVER_BASE_URL            = "http://${aws_route53_record.ai_api_private.fqdn}"
     # Legacy constructor still requires this value; no EC2 start permission is granted.
-    AI_EC2_INSTANCE_ID          = aws_instance.ai_gpu.id
-    KAFKA_BOOTSTRAP_SERVERS     = "${aws_route53_record.kafka_private.fqdn}:9092"
-    SENTRY_ENVIRONMENT          = "staging"
-    RELEASE                     = "ec19388ba0aed51a314d6c67fb6a15e6afd62b4f"
-    AWS_REGION                  = var.aws_region
-    ATTACHMENT_S3_BUCKET        = module.app_storage.bucket_name
-    FRONTEND_ORIGIN             = local.staging_origin
-    FRONTEND_OAUTH_CALLBACK_URI = "${local.staging_origin}/auth/callback"
-    KAKAO_REDIRECT_URI          = "${local.staging_origin}/api/auth/kakao/callback"
-    JWT_ISSUER                  = local.staging_origin
-    REDIS_HOST                  = module.redis.primary_endpoint_address
-    REDIS_PORT                  = tostring(module.redis.port)
-    REDIS_SSL_ENABLED           = "true"
-    AUTH_SESSION_KEY_PREFIX     = "yeodam:v2:staging:auth:"
-    MYSQL_URL                   = "jdbc:mysql://${local.backend_mysql_host}:3306/${local.backend_mysql_schema}?serverTimezone=Asia/Seoul&characterEncoding=utf8"
-    MYSQL_USERNAME              = local.backend_mysql_user
+    AI_EC2_INSTANCE_ID      = aws_instance.ai_gpu.id
+    KAFKA_BOOTSTRAP_SERVERS = "${aws_route53_record.kafka_private.fqdn}:9092"
+    # prod does not define the local-only result listener switch.
+    APP_TRIP_RESULT_LISTENER_ENABLED = "true"
+    SENTRY_ENVIRONMENT               = "staging"
+    RELEASE                          = "ec19388ba0aed51a314d6c67fb6a15e6afd62b4f"
+    AWS_REGION                       = var.aws_region
+    ATTACHMENT_S3_BUCKET             = module.app_storage.bucket_name
+    FRONTEND_ORIGIN                  = local.staging_origin
+    FRONTEND_OAUTH_CALLBACK_URI      = "${local.staging_origin}/auth/callback"
+    KAKAO_REDIRECT_URI               = "${local.staging_origin}/api/auth/kakao/callback"
+    JWT_ISSUER                       = local.staging_origin
+    REDIS_HOST                       = module.redis.primary_endpoint_address
+    REDIS_PORT                       = tostring(module.redis.port)
+    REDIS_SSL_ENABLED                = "true"
+    AUTH_SESSION_KEY_PREFIX          = "yeodam:v2:staging:auth:"
+    MYSQL_URL                        = "jdbc:mysql://${local.backend_mysql_host}:3306/${local.backend_mysql_schema}?serverTimezone=Asia/Seoul&characterEncoding=utf8"
+    MYSQL_USERNAME                   = local.backend_mysql_user
   }
 }
 
