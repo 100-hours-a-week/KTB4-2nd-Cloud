@@ -103,3 +103,5 @@ PYTHON
 AI_GPU_BIND_IP=10.30.10.162 docker compose -f "${temporary_dir}/ai-gpu-compose.yml" config --quiet
 bash -n scripts/install-v2-staging-ai-gpu.sh
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/configure-v2-staging-ai-gpu.py").read_text())'
+
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/verify-v2-staging-ai-api.py").read_text())'
