@@ -243,6 +243,10 @@ resource "aws_ecs_service" "ai_api" {
   health_check_grace_period_seconds  = 180
   depends_on                         = [aws_lb_listener.ai_api, aws_iam_role_policy.ai_api_execution, aws_iam_role_policy.ai_api_photos]
   tags                               = local.common_tags
+  lifecycle {
+    # Application revisions are promoted by CD; Terraform owns the service infrastructure.
+    ignore_changes = [task_definition]
+  }
 }
 
 output "ai_api_base_url" { value = "http://${aws_route53_record.ai_api_private.fqdn}" }
