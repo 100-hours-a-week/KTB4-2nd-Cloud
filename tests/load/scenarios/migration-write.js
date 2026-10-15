@@ -18,7 +18,9 @@ const mode = __ENV.K6_PROBE_MODE || 'load';
 if (!['load', 'contract'].includes(mode)) throw new Error('Mode must be load or contract');
 const rate = positiveIntegerEnv('K6_PROBE_RATE', 10);
 const duration = positiveIntegerEnv('K6_PROBE_DURATION_SECONDS', 60);
-const preVus = positiveIntegerEnv('K6_PROBE_PREALLOCATED_VUS', 10);
+// Reserve slots for up to four seconds of waiting at the configured rate.
+// maxVUs alone cannot recover iterations dropped during VU initialization.
+const preVus = positiveIntegerEnv('K6_PROBE_PREALLOCATED_VUS', rate * 4);
 const maxVus = positiveIntegerEnv('K6_PROBE_MAX_VUS', preVus);
 const retries = Number(__ENV.K6_PROBE_MAX_RETRIES || '2');
 if (!Number.isInteger(retries) || retries < 0 || retries > 3) throw new Error('Max retries must be 0..3');

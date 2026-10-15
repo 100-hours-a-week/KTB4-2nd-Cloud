@@ -124,6 +124,8 @@ class Handoff:
         print(json.dumps({'runId':self.run_id,'phase':phase}), flush=True)
 
     def check(self):
+        reset=Path('/var/lib/yeodam/rehearsal-reset/active.json')
+        require(not reset.exists() or json.loads(reset.read_text()).get('phase')=='completed','Rehearsal reset is incomplete')
         source, target, status = self.db.identity('source'), self.db.identity('target'), self.db.status()
         require(source[0]=='1' and target[0]=='2' and source[1]!=target[1], 'Wrong source/target identities')
         require(source[2:]==['0','0'], 'V1 must be the active writer before handoff')
