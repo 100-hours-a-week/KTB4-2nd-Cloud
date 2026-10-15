@@ -88,3 +88,7 @@ PY
 # AI Redis uses a private host address supplied during bootstrap.
 AI_REDIS_BIND_IP=10.30.10.1 docker compose -f deploy/v2-staging/ai-redis-compose.yml config --quiet
 bash -n terraform/v2/staging/ai-redis-bootstrap.sh.tftpl
+
+AI_GPU_BIND_IP=10.30.10.162 docker compose -f deploy/v2-staging/ai-gpu/compose.yml config --no-env-resolution --quiet
+bash -n scripts/install-v2-staging-ai-gpu.sh
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/configure-v2-staging-ai-gpu.py").read_text())'
