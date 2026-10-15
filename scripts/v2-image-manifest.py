@@ -95,7 +95,7 @@ def verify(data):
         result = subprocess.run(
             ['docker', 'buildx', 'imagetools', 'inspect', entry['image'],
              '--format', '{{.Manifest.Digest}}'],
-            capture_output=True, text=True, check=True,
+            stdout=subprocess.PIPE, text=True, check=True,
         )
         require(result.stdout.strip() == entry['digest'], f'{name}: registry tag/digest mismatch')
         # Pull immutable content for the required platform, as the V1 image gate does.
