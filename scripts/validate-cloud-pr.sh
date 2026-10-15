@@ -89,6 +89,17 @@ PY
 AI_REDIS_BIND_IP=10.30.10.1 docker compose -f deploy/v2-staging/ai-redis-compose.yml config --quiet
 bash -n terraform/v2/staging/ai-redis-bootstrap.sh.tftpl
 
-AI_GPU_BIND_IP=10.30.10.162 docker compose -f deploy/v2-staging/ai-gpu/compose.yml config --no-env-resolution --quiet
+# Some Compose versions still require env_file paths with --no-env-resolution.
+# Validate the deployment structure using CI-only values, never host secrets.
+python3 - "${temporary_env}" "${temporary_dir}/ai-gpu-compose.yml" <<'PYTHON'
+import pathlib
+import sys
+
+compose = pathlib.Path('deploy/v2-staging/ai-gpu/compose.yml').read_text()
+for name in ('embedding', 'runner'):
+    compose = compose.replace(f'/etc/yeodam/ai/{name}.env', sys.argv[1])
+pathlib.Path(sys.argv[2]).write_text(compose)
+PYTHON
+AI_GPU_BIND_IP=10.30.10.162 docker compose -f "${temporary_dir}/ai-gpu-compose.yml" config --quiet
 bash -n scripts/install-v2-staging-ai-gpu.sh
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/configure-v2-staging-ai-gpu.py").read_text())'
