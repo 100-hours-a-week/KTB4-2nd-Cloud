@@ -139,9 +139,10 @@ variable "frontend_image" {
 }
 
 variable "backend_image" {
-  description = "Immutable GHCR backend image reference; null keeps the staging service absent until runtime dependencies are ready"
+  description = "Initial staging Backend main image pinned by digest; later images use the staging CD workflow"
   type        = string
-  default     = null
+  # BE main ec19388, Backend Image run 38703683719.
+  default = "ghcr.io/100-hours-a-week/yeodam-backend@sha256:f9ffaee66820c929ff558c4aeb22592189f24ecf02b6cde41e14f8e4278cc21b"
 
   validation {
     condition     = var.backend_image == null || can(regex("^ghcr[.]io/100-hours-a-week/yeodam-backend@sha256:[0-9a-f]{64}$", var.backend_image))
@@ -174,7 +175,7 @@ variable "backend_desired_count" {
 variable "backend_environment" {
   description = "Non-secret Backend runtime values; MySQL connection is selected by backend_mysql_mode"
   type        = map(string)
-  default     = {}
+  default     = { KAKAO_CLIENT_ID = "530a80e4805e8db54165f63384bbaca9" }
 
   validation {
     condition = length(setintersection(toset(keys(var.backend_environment)), toset([
