@@ -55,3 +55,10 @@ scrape_configs:
     static_configs:
       - targets: ["mysql-validation.staging.yeodam.internal:9104"]
         labels: {env: staging, service: mysql, db_role: validation}
+  # Server metrics only; shared AI queue lengths remain in v2-ai-shared.
+  - job_name: v2-ai-redis
+    scrape_interval: 30s
+    scrape_timeout: 12s
+    static_configs:
+      - targets: ["ai-redis.staging.yeodam.internal:9121"]
+        labels: {env: staging, service: redis, redis_role: ai}
