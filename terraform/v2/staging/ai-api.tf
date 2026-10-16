@@ -72,7 +72,10 @@ resource "aws_iam_role_policy" "ai_api_photos" {
   name = "ai-api-derived-photos"
   role = aws_iam_role.ai_api_task.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [{
-    Effect = "Allow", Action = ["s3:GetObject"], Resource = "${module.app_storage.bucket_arn}/trip-uploads/*/derived/*"
+    Effect = "Allow", Action = ["s3:GetObject"], Resource = [
+      "${module.app_storage.bucket_arn}/trip-uploads/*/derived/*",
+      "${module.app_storage.bucket_arn}/trip-additions/*/derived/*",
+    ]
   }] })
 }
 
