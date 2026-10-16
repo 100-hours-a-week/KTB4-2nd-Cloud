@@ -24,6 +24,8 @@ python3 -m json.tool monitoring/v2-staging/grafana/dashboards/ai-gpu.json >/dev/
 python3 -m unittest discover -s tests/ci -p 'test_gpu_observability.py'
 python3 -m json.tool monitoring/v2-staging/alerts.json.tftpl >/dev/null
 python3 -m unittest discover -s tests/ci -p 'test_staging_alerts.py'
+bash -n monitoring/v2-staging/install-plg-health.sh
+python3 -m unittest discover -s tests/ci -p 'test_plg_external_health.py'
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/redis.json.tftpl >/dev/null
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/mysql-validation.json >/dev/null
 bash -n monitoring/v2-staging/install-backend-discovery.sh
