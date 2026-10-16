@@ -50,6 +50,18 @@ def manifest_at(ref):
     return manifest.validate(json.loads(base64.b64decode(file['content']), object_pairs_hook=manifest.unique_object))
 
 
+def merged_pr_for_commit(commit):
+    if not re.fullmatch(r'[0-9a-f]{40}', commit):
+        raise ValueError('Invalid pushed Cloud commit')
+    prs = api(f'repos/{CLOUD}/commits/{commit}/pulls?per_page=100')
+    matches = [pr for pr in prs if pr.get('merged_at') and pr.get('merge_commit_sha') == commit
+               and pr['base']['ref'] == 'main' and pr['base']['repo']['full_name'] == CLOUD
+               and (pr['head'].get('repo') or {}).get('full_name') == CLOUD]
+    if len(matches) != 1:
+        raise ValueError('Pushed commit must identify exactly one merged Cloud-to-main PR')
+    return str(matches[0]['number'])
+
+
 def candidate(number):
     if not re.fullmatch(r'[1-9][0-9]*', str(number)):
         raise ValueError('A merged Cloud PR number is required')
@@ -175,7 +187,9 @@ def run_service(name, action, value, report_dir):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--pr', required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--pr', help='Merged PR for manual retry')
+    source.add_argument('--commit', help='Exact main push commit for automatic deployment')
     parser.add_argument('--apply', action='store_true', help='Default is read-only planning')
     args = parser.parse_args()
     report_dir = Path(os.environ.get('RELEASE_REPORT_DIR', '/private/tmp/yeodam-v2-release'))
@@ -184,7 +198,9 @@ def main():
     def save():
         (report_dir / 'release.json').write_text(json.dumps(report, indent=2) + '\n')
     save()
-    selected = candidate(args.pr)
+    selected = candidate(merged_pr_for_commit(args.commit) if args.commit else args.pr)
+    if selected is not None and args.commit and selected['cloudCommit'] != args.commit:
+        raise ValueError('Merged PR does not match the pushed commit')
     if selected is None:
         report['status'] = 'superseded'
         save()
