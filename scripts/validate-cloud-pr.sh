@@ -17,6 +17,11 @@ bash -n monitoring/v2-staging/prepare-ai-metrics-secret.sh
 bash -n monitoring/v2-staging/install-kafka-observability.sh
 bash -n monitoring/v2-staging/install-mysql-validation-metrics.sh
 bash -n monitoring/v2-staging/install-ai-redis-metrics.sh
+bash -n monitoring/v2-staging/install-ai-gpu-metrics.sh
+bash -n monitoring/v2-staging/install-gpu-discovery.sh
+GPU_PRIVATE_IP=10.30.10.162 GPU_INSTANCE_ID=i-00000000000000000 docker compose -f monitoring/v2-staging/ai-gpu-alloy-compose.yml config --quiet
+python3 -m json.tool monitoring/v2-staging/grafana/dashboards/ai-gpu.json >/dev/null
+python3 -m unittest discover -s tests/ci -p 'test_gpu_observability.py'
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/redis.json.tftpl >/dev/null
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/mysql-validation.json >/dev/null
 bash -n monitoring/v2-staging/install-backend-discovery.sh
