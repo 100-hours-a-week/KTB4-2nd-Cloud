@@ -16,7 +16,8 @@ locals {
   ) : local.mysql_app_password_parameter
 
   backend_base_environment = {
-    SPRING_PROFILES_ACTIVE        = "prod"
+    SPRING_PROFILES_ACTIVE        = "prod,internal-metrics"
+    MANAGEMENT_SERVER_ADDRESS     = "0.0.0.0"
     SPRING_JPA_HIBERNATE_DDL_AUTO = "validate"
     SPRING_FLYWAY_ENABLED         = "true"
     AI_SERVER_BASE_URL            = "http://${aws_route53_record.ai_api_private.fqdn}"
@@ -141,7 +142,10 @@ resource "aws_ecs_task_definition" "backend" {
     repositoryCredentials = {
       credentialsParameter = module.ecs_foundation.ghcr_credentials_secret_arn
     }
-    portMappings = [{ containerPort = 8080, hostPort = 8080, protocol = "tcp" }]
+    portMappings = [
+      { containerPort = 8080, hostPort = 8080, protocol = "tcp" },
+      { containerPort = 9091, hostPort = 9091, protocol = "tcp" },
+    ]
     environment = [
       for name, value in merge(var.backend_environment, local.backend_base_environment, local.ai_api_topics) :
       { name = name, value = value }

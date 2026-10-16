@@ -19,9 +19,12 @@ resource "aws_iam_role_policy" "ai_gpu_runtime" {
         Resource = module.ecs_foundation.ghcr_credentials_secret_arn
       },
       {
-        Effect   = "Allow"
-        Action   = ["s3:GetObject"]
-        Resource = "${module.app_storage.bucket_arn}/trip-uploads/*/derived/*"
+        Effect = "Allow"
+        Action = ["s3:GetObject"]
+        Resource = [
+          "${module.app_storage.bucket_arn}/trip-uploads/*/derived/*",
+          "${module.app_storage.bucket_arn}/trip-additions/*/derived/*",
+        ]
       }
     ]
   })

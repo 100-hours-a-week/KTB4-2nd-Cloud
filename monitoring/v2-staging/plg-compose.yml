@@ -13,6 +13,8 @@ services:
       - 9090:9090
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./targets:/etc/prometheus/targets:ro
+      - /etc/yeodam/plg/ai-metrics:/run/secrets/ai-metrics:ro
       - /srv/yeodam/plg/prometheus:/prometheus
     security_opt:
       - no-new-privileges:true

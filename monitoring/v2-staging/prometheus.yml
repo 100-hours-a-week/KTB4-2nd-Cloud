@@ -14,3 +14,62 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["grafana:3000"]
+  # Shared Redis snapshot: one logical target, never one series per ECS task.
+  - job_name: v2-ai-shared
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/ai-metrics/api-key
+    static_configs:
+      - targets: ["ai-api.staging.yeodam.internal:80"]
+        labels:
+          env: staging
+          service: ai-api
+          scope: shared-redis
+  - job_name: v2-kafka-lag
+    scrape_interval: 30s
+    scrape_timeout: 20s
+    static_configs:
+      - targets: ["kafka.staging.yeodam.internal:9308"]
+        labels: {env: staging, service: kafka}
+  - job_name: v2-connect
+    scrape_interval: 30s
+    scrape_timeout: 15s
+    static_configs:
+      - targets: ["kafka.staging.yeodam.internal:9404"]
+        labels: {env: staging, service: connect, cdc_source: validation-mysql}
+  # Task-local metrics: discover every RUNNING backend task, never via ALB.
+  - job_name: yeodam-backend-staging
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: /actuator/prometheus
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/backend.json"]
+        refresh_interval: 15s
+  # Dedicated functional-test DB; never the read-only migration replica.
+  - job_name: v2-mysql-validation
+    scrape_interval: 30s
+    scrape_timeout: 12s
+    static_configs:
+      - targets: ["mysql-validation.staging.yeodam.internal:9104"]
+        labels: {env: staging, service: mysql, db_role: validation}
+  # Server metrics only; shared AI queue lengths remain in v2-ai-shared.
+  - job_name: v2-ai-redis
+    scrape_interval: 30s
+    scrape_timeout: 12s
+    static_configs:
+      - targets: ["ai-redis.staging.yeodam.internal:9121"]
+        labels: {env: staging, service: redis, redis_role: ai}
+  # EC2 state labels distinguish an intentionally stopped GPU from an unreachable agent.
+  - job_name: v2-ai-gpu-agent
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/gpu.json"]
+        refresh_interval: 15s
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "alloy_build_info|prometheus_remote_storage_samples_pending|prometheus_remote_storage_samples_failed_total"
+        action: keep

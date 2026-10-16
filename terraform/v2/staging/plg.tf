@@ -55,9 +55,14 @@ data "aws_iam_policy_document" "plg" {
   }
 
   statement {
-    sid       = "ReadStagingBackendLogs"
-    actions   = ["logs:StartQuery", "logs:StopQuery", "logs:GetQueryResults", "logs:GetLogGroupFields", "logs:GetLogEvents"]
-    resources = [aws_cloudwatch_log_group.v1_source_backend.arn, module.ecs_foundation.backend_log_group_arn]
+    sid     = "ReadStagingServiceLogs"
+    actions = ["logs:StartQuery", "logs:StopQuery", "logs:GetQueryResults", "logs:GetLogGroupFields", "logs:GetLogEvents"]
+    resources = [
+      aws_cloudwatch_log_group.v1_source_backend.arn,
+      module.ecs_foundation.backend_log_group_arn,
+      "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:${module.ecs_foundation.frontend_log_group_name}",
+      aws_cloudwatch_log_group.ai_api.arn,
+    ]
   }
 
   statement {

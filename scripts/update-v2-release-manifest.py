@@ -123,7 +123,7 @@ V2에서 사용할 FE/BE/AI 이미지 조합을 갱신합니다.
 - [ ] Cloud PR Gate의 V2 이미지 통합 검증
 
 ## Precaution
-PR 병합만으로 배포되지는 않습니다. 스테이징 자동 배포 연결은 후속 작업입니다.
+통합 CI 통과 후 이 PR을 병합하면 변경된 서비스를 V2 스테이징에 자동 배포합니다.
 
 ## ✔️ Please check if the PR fulfills these requirements
 - [x] main 대상

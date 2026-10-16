@@ -25,6 +25,37 @@ def selected(changes=()):
     return {'pr': 240, 'cloudCommit': 'b'*40, 'ciRunId': 123, 'manifest': data}
 
 
+class PushCommitTests(unittest.TestCase):
+    def pr(self):
+        return {'number': 247, 'merged_at': '2026-10-16T02:10:00Z', 'merge_commit_sha': 'b'*40,
+                'base': {'ref': 'main', 'repo': {'full_name': m.CLOUD}},
+                'head': {'repo': {'full_name': m.CLOUD}}}
+
+    def test_exact_merge_commit_resolves_pr(self):
+        with patch.object(m, 'api', return_value=[self.pr()]) as api:
+            self.assertEqual(m.merged_pr_for_commit('b'*40), '247')
+            api.assert_called_once_with(f'repos/{m.CLOUD}/commits/{"b"*40}/pulls?per_page=100')
+
+    def test_unmerged_foreign_and_different_merge_commit_are_rejected(self):
+        for field, value in [('merged_at', None), ('merge_commit_sha', 'c'*40),
+                             ('head', {'repo': {'full_name': 'other/fork'}}),
+                             ('base', {'ref': 'other', 'repo': {'full_name': m.CLOUD}})]:
+            with self.subTest(field=field):
+                pr = self.pr() | {field: value}
+                with patch.object(m, 'api', return_value=[pr]), self.assertRaises(ValueError):
+                    m.merged_pr_for_commit('b'*40)
+
+    def test_missing_or_ambiguous_association_is_rejected(self):
+        for prs in [[], [self.pr(), self.pr()]]:
+            with patch.object(m, 'api', return_value=prs), self.assertRaises(ValueError):
+                m.merged_pr_for_commit('b'*40)
+
+    def test_invalid_commit_is_rejected_before_api_call(self):
+        with patch.object(m, 'api') as api, self.assertRaises(ValueError):
+            m.merged_pr_for_commit('main')
+        api.assert_not_called()
+
+
 class CandidateTests(unittest.TestCase):
     def exercise(self, run_change=None, v2='success', manifests=None):
         pr = {'merged': True, 'merge_commit_sha': 'b'*40,

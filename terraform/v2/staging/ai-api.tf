@@ -1,6 +1,6 @@
 locals {
   ai_api_name       = "yeodam-v2-staging-ai-api"
-  ai_api_parameters = ["API_KEY", "REDIS_URL", "EMBEDDING_API_KEY", "VLM_API_KEY"]
+  ai_api_parameters = ["API_KEY", "REDIS_URL", "EMBEDDING_API_KEY", "VLM_API_KEY", "VLM_BASE_URL"]
   ai_api_environment = {
     JOBS_ENV                    = "staging"
     JOBS_PROCESS_HANDLER        = "app.jobs.process_handler:run"
@@ -17,7 +17,6 @@ locals {
     QDRANT_URL                  = "http://${aws_route53_record.ai_gpu_private.fqdn}:6333"
     KAFKA_BOOTSTRAP_SERVERS     = "${aws_route53_record.kafka_private.fqdn}:9092"
     KAFKA_SECURITY_PROTOCOL     = "PLAINTEXT"
-    VLM_BASE_URL                = var.ai_vlm_base_url
     VLM_MODEL                   = "gemma-4"
     # AI's deployment handoff values; this is a shared GPU call limit, not story concurrency.
     STORY_MAX_TOKENS        = "2048"
@@ -30,14 +29,15 @@ locals {
   }
 }
 
-variable "ai_vlm_base_url" {
-  description = "AI-provided RunPod OpenAI-compatible URL, including /v1"
-  type        = string
-  default     = "https://v2ird51hm3dri7-8000.proxy.runpod.net/v1"
-  validation {
-    condition     = startswith(var.ai_vlm_base_url, "https://") && endswith(var.ai_vlm_base_url, "/v1")
-    error_message = "Use the reviewed HTTPS RunPod URL ending in /v1."
+resource "aws_ssm_parameter" "ai_vlm_base_url" {
+  name        = "/yeodam/v2/staging/ai/VLM_BASE_URL"
+  description = "RunPod URL managed by the staging URL update workflow after initial creation"
+  type        = "String"
+  value       = "https://pv3dyia853rn2t-8000.proxy.runpod.net/v1" # Initial seed only.
+  lifecycle {
+    ignore_changes = [value]
   }
+  tags = local.common_tags
 }
 
 resource "aws_cloudwatch_log_group" "ai_api" {
@@ -72,7 +72,10 @@ resource "aws_iam_role_policy" "ai_api_photos" {
   name = "ai-api-derived-photos"
   role = aws_iam_role.ai_api_task.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [{
-    Effect = "Allow", Action = ["s3:GetObject"], Resource = "${module.app_storage.bucket_arn}/trip-uploads/*/derived/*"
+    Effect = "Allow", Action = ["s3:GetObject"], Resource = [
+      "${module.app_storage.bucket_arn}/trip-uploads/*/derived/*",
+      "${module.app_storage.bucket_arn}/trip-additions/*/derived/*",
+    ]
   }] })
 }
 
