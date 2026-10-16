@@ -41,7 +41,10 @@ data "aws_iam_policy_document" "backend_photo_storage" {
       "s3:PutObjectTagging",
       "s3:DeleteObject",
     ]
-    resources = ["${module.app_storage.bucket_arn}/trip-uploads/*"]
+    resources = [
+      "${module.app_storage.bucket_arn}/trip-uploads/*",
+      "${module.app_storage.bucket_arn}/trip-additions/*",
+    ]
   }
 
   statement {
