@@ -28,3 +28,15 @@ scrape_configs:
           env: staging
           service: ai-api
           scope: shared-redis
+  - job_name: v2-kafka-lag
+    scrape_interval: 30s
+    scrape_timeout: 20s
+    static_configs:
+      - targets: ["kafka.staging.yeodam.internal:9308"]
+        labels: {env: staging, service: kafka}
+  - job_name: v2-connect
+    scrape_interval: 30s
+    scrape_timeout: 15s
+    static_configs:
+      - targets: ["kafka.staging.yeodam.internal:9404"]
+        labels: {env: staging, service: connect, cdc_source: validation-mysql}

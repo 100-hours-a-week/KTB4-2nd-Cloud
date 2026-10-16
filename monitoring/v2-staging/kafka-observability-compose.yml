@@ -1,0 +1,25 @@
+# yeodam-kafka-observability
+services:
+  connect:
+    volumes:
+      - /opt/yeodam-kafka/metrics:/opt/yeodam-metrics:ro
+    environment:
+      JAVA_TOOL_OPTIONS: -javaagent:/opt/yeodam-metrics/jmx-agent.jar=9404:/opt/yeodam-metrics/connect-jmx.yml
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0@sha256:4150e46b2e9697ac30e4be8de03ec1704b4bdc7037577b83b8d35a32be298c16
+    platform: linux/amd64
+    network_mode: host
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.25
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    command:
+      - --kafka.server=127.0.0.1:9092
+      - --group.filter=yeodam-.*
+      - --topic.filter=staging\.yeodam\..*
+      - --web.listen-address=:9308
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}
