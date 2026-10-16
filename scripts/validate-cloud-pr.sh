@@ -15,6 +15,8 @@ bash -n scripts/provision-staging-cutover-account.sh
 bash -n monitoring/v2-staging/install-proxysql-metrics.sh
 bash -n monitoring/v2-staging/prepare-ai-metrics-secret.sh
 bash -n monitoring/v2-staging/install-kafka-observability.sh
+bash -n monitoring/v2-staging/install-mysql-validation-metrics.sh
+python3 -m json.tool monitoring/v2-staging/grafana/dashboards/mysql-validation.json >/dev/null
 bash -n monitoring/v2-staging/install-backend-discovery.sh
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/backend.json >/dev/null
 python3 -m unittest discover -s tests/ci -p 'test_backend_discovery.py'

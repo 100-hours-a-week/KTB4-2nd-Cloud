@@ -48,3 +48,10 @@ scrape_configs:
     file_sd_configs:
       - files: ["/etc/prometheus/targets/backend.json"]
         refresh_interval: 15s
+  # Dedicated functional-test DB; never the read-only migration replica.
+  - job_name: v2-mysql-validation
+    scrape_interval: 30s
+    scrape_timeout: 12s
+    static_configs:
+      - targets: ["mysql-validation.staging.yeodam.internal:9104"]
+        labels: {env: staging, service: mysql, db_role: validation}
