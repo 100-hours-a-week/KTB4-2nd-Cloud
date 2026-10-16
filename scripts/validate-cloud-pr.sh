@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+python3 -m unittest discover -s tests/ci -p 'test_ci_baseline.py'
+
 bash -n scripts/*.sh tests/ci/*.sh
 bash -n deploy/v2-staging/kafka/topics.sh
 KAFKA_CLUSTER_ID=abcdefghijklmnopqrstuv docker compose -f deploy/v2-staging/kafka/compose.yml config --quiet
