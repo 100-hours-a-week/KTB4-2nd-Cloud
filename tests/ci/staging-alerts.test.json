@@ -1,0 +1,181 @@
+{
+  "evaluation_interval": "30s",
+  "tests": [
+    {
+      "name": "planned GPU stop is not an outage",
+      "interval": "30s",
+      "input_series": [
+        {
+          "series": "up{job=\"v2-ai-gpu-agent\",ec2_state=\"stopped\"}",
+          "values": "0x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "12m",
+          "alertname": "v2s-gpu-agent",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "12m",
+          "alertname": "v2s-gpu-runtime",
+          "exp_alerts": []
+        }
+      ]
+    },
+    {
+      "name": "running GPU without agent",
+      "interval": "30s",
+      "input_series": [
+        {
+          "series": "up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"}",
+          "values": "0x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "6m",
+          "alertname": "v2s-gpu-agent",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "alertname": "v2s-gpu-agent"
+              },
+              "exp_annotations": {}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cold start under ten minutes",
+      "interval": "30s",
+      "input_series": [
+        {
+          "series": "up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"}",
+          "values": "1x30"
+        },
+        {
+          "series": "yeodam_ai_endpoint_ready{job=\"v2-ai-gpu-host\",component=\"embedding\"}",
+          "values": "0x11 1x19"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "12m",
+          "alertname": "v2s-gpu-runtime",
+          "exp_alerts": []
+        }
+      ]
+    },
+    {
+      "name": "readiness failure sustained",
+      "interval": "30s",
+      "input_series": [
+        {
+          "series": "up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"}",
+          "values": "1x30"
+        },
+        {
+          "series": "yeodam_ai_endpoint_ready{job=\"v2-ai-gpu-host\",component=\"embedding\"}",
+          "values": "0x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "12m",
+          "alertname": "v2s-gpu-runtime",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "alertname": "v2s-gpu-runtime"
+              },
+              "exp_annotations": {}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "idle traffic is not HTTP success or failure",
+      "interval": "30s",
+      "input_series": [
+        {
+          "series": "http_server_requests_seconds_count{job=\"yeodam-backend-staging\",uri=\"/api/trips\",status=\"200\"}",
+          "values": "0x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "12m",
+          "alertname": "v2s-http-errors",
+          "exp_alerts": []
+        }
+      ]
+    },
+    {
+      "name": "sustained server errors",
+      "interval": "30s",
+      "input_series": [
+        {
+          "series": "http_server_requests_seconds_count{job=\"yeodam-backend-staging\",uri=\"/api/trips\",status=\"500\"}",
+          "values": "0+10x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "10m",
+          "alertname": "v2s-http-errors",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "alertname": "v2s-http-errors"
+              },
+              "exp_annotations": {}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "absent backend target is a collection outage",
+      "interval": "30s",
+      "input_series": [],
+      "alert_rule_test": [
+        {
+          "eval_time": "4m",
+          "alertname": "v2s-scrape-backend",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "alertname": "v2s-scrape-backend"
+              },
+              "exp_annotations": {}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rolling one old task down and new task up",
+      "interval": "30s",
+      "input_series": [
+        {
+          "series": "up{job=\"yeodam-backend-staging\",instance=\"old\"}",
+          "values": "0x30"
+        },
+        {
+          "series": "up{job=\"yeodam-backend-staging\",instance=\"new\"}",
+          "values": "1x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "12m",
+          "alertname": "v2s-scrape-backend",
+          "exp_alerts": []
+        }
+      ]
+    }
+  ]
+}

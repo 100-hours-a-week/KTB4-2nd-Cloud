@@ -22,6 +22,8 @@ bash -n monitoring/v2-staging/install-gpu-discovery.sh
 GPU_PRIVATE_IP=10.30.10.162 GPU_INSTANCE_ID=i-00000000000000000 docker compose -f monitoring/v2-staging/ai-gpu-alloy-compose.yml config --quiet
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/ai-gpu.json >/dev/null
 python3 -m unittest discover -s tests/ci -p 'test_gpu_observability.py'
+python3 -m json.tool monitoring/v2-staging/alerts.json.tftpl >/dev/null
+python3 -m unittest discover -s tests/ci -p 'test_staging_alerts.py'
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/redis.json.tftpl >/dev/null
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/mysql-validation.json >/dev/null
 bash -n monitoring/v2-staging/install-backend-discovery.sh
@@ -45,6 +47,8 @@ docker compose -f monitoring/v2-staging/v1-source-alloy-compose.yml config --qui
 
 temporary_dir="$(mktemp -d)"
 trap 'rm -rf -- "${temporary_dir}"' EXIT
+python3 tests/ci/render-staging-alert-test.py monitoring/v2-staging/alerts.json.tftpl "${temporary_dir}/alert-tests" tests/ci/staging-alerts.test.json
+docker run --rm --network none --entrypoint /bin/promtool -v "${temporary_dir}/alert-tests:/work:ro" -w /work prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0 test rules tests.json
 temporary_env="${temporary_dir}/ci.env"
 cat > "${temporary_env}" <<'EOF'
 MYSQL_URL=jdbc:mysql://host.docker.internal:3306/yeodam
