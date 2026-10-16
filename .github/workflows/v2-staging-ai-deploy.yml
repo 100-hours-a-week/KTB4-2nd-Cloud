@@ -26,7 +26,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: yeodam-v2-staging-ai
+  group: yeodam-v2-staging-release
+  queue: max
   cancel-in-progress: false
 
 jobs:
