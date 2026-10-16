@@ -17,3 +17,7 @@ output "replication_group_id" {
 output "security_group_id" {
   value = aws_security_group.redis.id
 }
+
+output "cache_cluster_ids" {
+  value = aws_elasticache_replication_group.redis.member_clusters
+}

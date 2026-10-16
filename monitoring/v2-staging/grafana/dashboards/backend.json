@@ -363,18 +363,47 @@
       }
     },
     {
+      "id": 14,
+      "type": "timeseries",
+      "title": "HTTP request p95",
+      "description": "Histogram p95 weighted across all backend tasks and HTTP statuses, excluding Actuator routes. Requires histogram-enabled BE image and request observations; mean is shown separately.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"yeodam-backend-staging\",uri!~\"/(api/)?actuator.*\"}[5m])))",
+          "legendFormat": "Backend p95 across tasks"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
       "id": 13,
       "type": "text",
       "title": "Scope",
       "gridPos": {
         "x": 0,
-        "y": 48,
+        "y": 56,
         "w": 24,
         "h": 6
       },
       "options": {
         "mode": "markdown",
-        "content": "V2 ECS backend only. Management9091 is separate from ALB service8080 and only PLG SG can reach it. Task discovery30s plus scrape15s introduces a normal target-switch delay. Old series may remain in a historical range after Task replacement. Service HTTP mean is not p95. Missing or NaN is not zero. Queue/GC/Hikari metrics depend on actual meter registration; not every route runs during setup."
+        "content": "V2 ECS backend only. Management9091 is separate from ALB service8080 and only PLG SG can reach it. Task discovery30s plus scrape15s introduces a normal target-switch delay. Old series may remain in a historical range after Task replacement. Service HTTP mean and histogram p95 are separate panels. p95 requires the histogram-enabled BE image and recent requests. Missing or NaN is not zero. Queue/GC/Hikari metrics depend on actual meter registration; not every route runs during setup."
       }
     }
   ]
