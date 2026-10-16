@@ -1,0 +1,898 @@
+{
+  "uid": "yeodam-v2-services",
+  "title": "V2 staging services",
+  "tags": [
+    "yeodam",
+    "staging",
+    "v2"
+  ],
+  "schemaVersion": 41,
+  "timezone": "browser",
+  "refresh": "",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Public requests / minute",
+      "description": "CloudWatch 60s period. Missing data is not zero. Response time is ALB target-header latency, not user job completion.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "RequestCount",
+          "statistic": "Sum",
+          "dimensions": {
+            "LoadBalancer": [
+              "${public_alb}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "requests / minute"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Public target response p95",
+      "description": "CloudWatch 60s period. Missing data is not zero. Response time is ALB target-header latency, not user job completion.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "TargetResponseTime",
+          "statistic": "p95",
+          "dimensions": {
+            "LoadBalancer": [
+              "${public_alb}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "target response p95"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Public ALB 5xx / minute",
+      "description": "CloudWatch 60s period. Missing data is not zero. Response time is ALB target-header latency, not user job completion.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_ELB_5XX_Count",
+          "statistic": "Sum",
+          "dimensions": {
+            "LoadBalancer": [
+              "${public_alb}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "ALB 5xx / minute"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Public target 5xx / minute",
+      "description": "CloudWatch 60s period. Missing data is not zero. Response time is ALB target-header latency, not user job completion.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_Target_5XX_Count",
+          "statistic": "Sum",
+          "dimensions": {
+            "LoadBalancer": [
+              "${public_alb}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "target 5xx / minute"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Internal AI requests / minute",
+      "description": "CloudWatch 60s period. Missing data is not zero. Response time is ALB target-header latency, not user job completion.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "RequestCount",
+          "statistic": "Sum",
+          "dimensions": {
+            "LoadBalancer": [
+              "${internal_alb}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "requests / minute"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Internal AI target response p95",
+      "description": "CloudWatch 60s period. Missing data is not zero. Response time is ALB target-header latency, not user job completion.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "TargetResponseTime",
+          "statistic": "p95",
+          "dimensions": {
+            "LoadBalancer": [
+              "${internal_alb}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "target response p95"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Internal AI ALB 5xx / minute",
+      "description": "CloudWatch 60s period. Missing data is not zero. Response time is ALB target-header latency, not user job completion.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_ELB_5XX_Count",
+          "statistic": "Sum",
+          "dimensions": {
+            "LoadBalancer": [
+              "${internal_alb}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "ALB 5xx / minute"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Internal AI target 5xx / minute",
+      "description": "CloudWatch 60s period. Missing data is not zero. Response time is ALB target-header latency, not user job completion.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_Target_5XX_Count",
+          "statistic": "Sum",
+          "dimensions": {
+            "LoadBalancer": [
+              "${internal_alb}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "target 5xx / minute"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "FE ALB target health",
+      "description": "Healthy Minimum / Unhealthy Maximum across the minute; not exact ECS running/desired task counts.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HealthyHostCount",
+          "statistic": "Minimum",
+          "dimensions": {
+            "LoadBalancer": [
+              "${public_alb}"
+            ],
+            "TargetGroup": [
+              "${frontend_tg}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "HealthyHostCount"
+        },
+        {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "UnHealthyHostCount",
+          "statistic": "Maximum",
+          "dimensions": {
+            "LoadBalancer": [
+              "${public_alb}"
+            ],
+            "TargetGroup": [
+              "${frontend_tg}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "UnHealthyHostCount"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "BE ALB target health",
+      "description": "Healthy Minimum / Unhealthy Maximum across the minute; not exact ECS running/desired task counts.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HealthyHostCount",
+          "statistic": "Minimum",
+          "dimensions": {
+            "LoadBalancer": [
+              "${public_alb}"
+            ],
+            "TargetGroup": [
+              "${backend_tg}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "HealthyHostCount"
+        },
+        {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "UnHealthyHostCount",
+          "statistic": "Maximum",
+          "dimensions": {
+            "LoadBalancer": [
+              "${public_alb}"
+            ],
+            "TargetGroup": [
+              "${backend_tg}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "UnHealthyHostCount"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "AI API ALB target health",
+      "description": "Healthy Minimum / Unhealthy Maximum across the minute; not exact ECS running/desired task counts.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HealthyHostCount",
+          "statistic": "Minimum",
+          "dimensions": {
+            "LoadBalancer": [
+              "${internal_alb}"
+            ],
+            "TargetGroup": [
+              "${ai_tg}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "HealthyHostCount"
+        },
+        {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "UnHealthyHostCount",
+          "statistic": "Maximum",
+          "dimensions": {
+            "LoadBalancer": [
+              "${internal_alb}"
+            ],
+            "TargetGroup": [
+              "${ai_tg}"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "UnHealthyHostCount"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "ECS service CPUUtilization",
+      "description": "Service average, not per-task utilization. Task-local application saturation is covered separately.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ECS",
+          "metricName": "CPUUtilization",
+          "statistic": "Average",
+          "dimensions": {
+            "ClusterName": [
+              "yeodam-v2-staging-app"
+            ],
+            "ServiceName": [
+              "yeodam-v2-staging-frontend"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "FE"
+        },
+        {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ECS",
+          "metricName": "CPUUtilization",
+          "statistic": "Average",
+          "dimensions": {
+            "ClusterName": [
+              "yeodam-v2-staging-app"
+            ],
+            "ServiceName": [
+              "yeodam-v2-staging-backend"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "BE"
+        },
+        {
+          "refId": "C",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ECS",
+          "metricName": "CPUUtilization",
+          "statistic": "Average",
+          "dimensions": {
+            "ClusterName": [
+              "yeodam-v2-staging-app"
+            ],
+            "ServiceName": [
+              "yeodam-v2-staging-ai-api"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "AI API"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "ECS service MemoryUtilization",
+      "description": "Service average, not per-task utilization. Task-local application saturation is covered separately.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ECS",
+          "metricName": "MemoryUtilization",
+          "statistic": "Average",
+          "dimensions": {
+            "ClusterName": [
+              "yeodam-v2-staging-app"
+            ],
+            "ServiceName": [
+              "yeodam-v2-staging-frontend"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "FE"
+        },
+        {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ECS",
+          "metricName": "MemoryUtilization",
+          "statistic": "Average",
+          "dimensions": {
+            "ClusterName": [
+              "yeodam-v2-staging-app"
+            ],
+            "ServiceName": [
+              "yeodam-v2-staging-backend"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "BE"
+        },
+        {
+          "refId": "C",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ECS",
+          "metricName": "MemoryUtilization",
+          "statistic": "Average",
+          "dimensions": {
+            "ClusterName": [
+              "yeodam-v2-staging-app"
+            ],
+            "ServiceName": [
+              "yeodam-v2-staging-ai-api"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "AI API"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "text",
+      "title": "Reading this dashboard",
+      "gridPos": {
+        "x": 12,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "V2 staging only. CloudWatch metrics can arrive late. Missing/error is not zero. ALB target health is not ECS desired/running count. HTTP 200 polling does not prove trip completion. Logs below use CloudWatch Logs Insights; refresh only when needed (query charges). App saturation, queue and completion metrics are added in later tasks. Grafana access remains through SSM."
+      }
+    },
+    {
+      "id": 15,
+      "type": "logs",
+      "title": "FE logs",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "${region}",
+          "expression": "fields @timestamp, @message, @logStream | sort @timestamp desc | limit 100",
+          "logGroupNames": [
+            "${frontend_log}"
+          ],
+          "logGroups": [
+            {
+              "name": "${frontend_log}",
+              "arn": "${frontend_log_arn}",
+              "accountId": "${account_id}"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true,
+        "enableLogDetails": true
+      }
+    },
+    {
+      "id": 16,
+      "type": "logs",
+      "title": "BE logs",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 65,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "${region}",
+          "expression": "fields @timestamp, @message, @logStream | sort @timestamp desc | limit 100",
+          "logGroupNames": [
+            "${backend_log}"
+          ],
+          "logGroups": [
+            {
+              "name": "${backend_log}",
+              "arn": "${backend_log_arn}",
+              "accountId": "${account_id}"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true,
+        "enableLogDetails": true
+      }
+    },
+    {
+      "id": 17,
+      "type": "logs",
+      "title": "AI API logs",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "staging-cloudwatch"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 74,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "${region}",
+          "expression": "fields @timestamp, @message, @logStream | sort @timestamp desc | limit 100",
+          "logGroupNames": [
+            "${ai_log}"
+          ],
+          "logGroups": [
+            {
+              "name": "${ai_log}",
+              "arn": "${ai_log_arn}",
+              "accountId": "${account_id}"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true,
+        "enableLogDetails": true
+      }
+    }
+  ]
+}
