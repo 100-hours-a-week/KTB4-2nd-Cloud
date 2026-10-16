@@ -1,0 +1,381 @@
+{
+  "uid": "yeodam-v2-backend",
+  "title": "V2 backend internals",
+  "schemaVersion": 41,
+  "tags": [
+    "yeodam",
+    "staging",
+    "backend"
+  ],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Management scrape per task",
+      "description": "Each RUNNING desired backend task is scraped directly. up=1 is not end-to-end service completion.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"yeodam-backend-staging\"}",
+          "legendFormat": "{{instance}} {{task_id}} {{lane}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Target discovery age",
+      "description": "Refreshed every30s. High age means discovery stalled even if old targets still answer.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - prometheus_sd_file_mtime_seconds{filename=\"/etc/prometheus/targets/backend.json\"}",
+          "legendFormat": "{{instance}} {{task_id}} {{lane}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "No discovered backend target",
+      "description": "1 means no target series; do not treat absent metrics as zero load.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "absent(up{job=\"yeodam-backend-staging\"})",
+          "legendFormat": "{{instance}} {{task_id}} {{lane}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "HTTP requests / second",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance,task_id) (rate(http_server_requests_seconds_count{job=\"yeodam-backend-staging\"}[5m]))",
+          "legendFormat": "{{instance}} {{task_id}} {{lane}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "HTTP 5xx / second",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance,task_id) (rate(http_server_requests_seconds_count{job=\"yeodam-backend-staging\",status=~\"5..\"}[5m]))",
+          "legendFormat": "{{instance}} {{task_id}} {{lane}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "HTTP mean duration",
+      "description": "Mean, not p95. No requests can produce NaN; histogram availability must be confirmed separately.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance,task_id) (rate(http_server_requests_seconds_sum{job=\"yeodam-backend-staging\"}[5m])) / sum by(instance,task_id) (rate(http_server_requests_seconds_count{job=\"yeodam-backend-staging\"}[5m]))",
+          "legendFormat": "{{instance}} {{task_id}} {{lane}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Hikari active connections",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hikaricp_connections_active{job=\"yeodam-backend-staging\"}",
+          "legendFormat": "{{instance}} {{task_id}} {{lane}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Hikari pending connections",
+      "description": "Connection acquisition wait is not proof of DB CPU saturation.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "hikaricp_connections_pending{job=\"yeodam-backend-staging\"}",
+          "legendFormat": "{{instance}} {{task_id}} {{lane}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Hikari connection timeouts / second",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(hikaricp_connections_timeout_total{job=\"yeodam-backend-staging\"}[5m])",
+          "legendFormat": "{{instance}} {{task_id}} {{lane}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "JVM memory used",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance,task_id) (jvm_memory_used_bytes{job=\"yeodam-backend-staging\"})",
+          "legendFormat": "{{instance}} {{task_id}} {{lane}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "GC pause seconds / second",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance,task_id) (rate(jvm_gc_pause_seconds_sum{job=\"yeodam-backend-staging\"}[5m]))",
+          "legendFormat": "{{instance}} {{task_id}} {{lane}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Derivative pending photos",
+      "description": "Application lane queue, not GPU or Kafka lag.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_trip_derivative_pending_photos{job=\"yeodam-backend-staging\"}",
+          "legendFormat": "{{instance}} {{task_id}} {{lane}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "text",
+      "title": "Scope",
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "V2 ECS backend only. Management9091 is separate from ALB service8080 and only PLG SG can reach it. Task discovery30s plus scrape15s introduces a normal target-switch delay. Old series may remain in a historical range after Task replacement. Service HTTP mean is not p95. Missing or NaN is not zero. Queue/GC/Hikari metrics depend on actual meter registration; not every route runs during setup."
+      }
+    }
+  ]
+}
