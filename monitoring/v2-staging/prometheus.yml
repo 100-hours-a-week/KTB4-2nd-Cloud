@@ -62,3 +62,14 @@ scrape_configs:
     static_configs:
       - targets: ["ai-redis.staging.yeodam.internal:9121"]
         labels: {env: staging, service: redis, redis_role: ai}
+  # EC2 state labels distinguish an intentionally stopped GPU from an unreachable agent.
+  - job_name: v2-ai-gpu-agent
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/gpu.json"]
+        refresh_interval: 15s
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "alloy_build_info|prometheus_remote_storage_samples_pending|prometheus_remote_storage_samples_failed_total"
+        action: keep
