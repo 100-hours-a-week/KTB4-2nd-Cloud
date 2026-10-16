@@ -13,6 +13,8 @@ python3 -m unittest discover -s tests/load/tests -p 'test_staging_cutover.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_rehearsal_reset.py'
 bash -n scripts/provision-staging-cutover-account.sh
 bash -n monitoring/v2-staging/install-proxysql-metrics.sh
+bash -n monitoring/v2-staging/prepare-ai-metrics-secret.sh
+python3 -m json.tool monitoring/v2-staging/grafana/dashboards/ai-jobs.json >/dev/null
 node --check tests/load/scenarios/migration-metrics-smoke.js
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/migration-test.json >/dev/null
 node --check tests/load/scenarios/synthetic-auth-smoke.js
