@@ -1,0 +1,265 @@
+{
+  "uid": "yeodam-v2-ai-jobs",
+  "title": "V2 AI jobs",
+  "schemaVersion": 41,
+  "tags": [
+    "yeodam",
+    "staging",
+    "ai"
+  ],
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "AI metrics collection available",
+      "description": "1=successful authenticated scrape. Not a GPU or end-to-end health check.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"v2-ai-shared\"}",
+          "legendFormat": "{{operation}} {{outcome}} {{phase}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "AI shared job counts",
+      "description": "One Redis snapshot through internal ALB. queued_process / queued_story / running / pending_result; pending_result is not BE persistence confirmation.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_ai_jobs{job=\"v2-ai-shared\"}",
+          "legendFormat": "{{operation}} {{outcome}} {{phase}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Completed / failed / canceled operations per minute",
+      "description": "Terminal operations only. In-progress jobs are excluded; this is not user journey completion rate.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(operation,outcome) (rate(yeodam_ai_operation_duration_seconds_count{job=\"v2-ai-shared\",phase=\"total\"}[5m])) * 60",
+          "legendFormat": "{{operation}} {{outcome}} {{phase}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "AI total duration p95",
+      "description": "Histograms from terminal jobs or parse/search observations. No observations can produce no data/NaN. Total begins at AI job creation, not browser upload.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by(le,operation,outcome) (rate(yeodam_ai_operation_duration_seconds_bucket{job=\"v2-ai-shared\",phase=\"total\"}[5m])))",
+          "legendFormat": "{{operation}} {{outcome}} {{phase}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "AI queue duration p95",
+      "description": "Histograms from terminal jobs or parse/search observations. No observations can produce no data/NaN. Total begins at AI job creation, not browser upload.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by(le,operation,outcome) (rate(yeodam_ai_operation_duration_seconds_bucket{job=\"v2-ai-shared\",phase=\"queue\"}[5m])))",
+          "legendFormat": "{{operation}} {{outcome}} {{phase}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "AI execution duration p95",
+      "description": "Histograms from terminal jobs or parse/search observations. No observations can produce no data/NaN. Total begins at AI job creation, not browser upload.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by(le,operation,outcome) (rate(yeodam_ai_operation_duration_seconds_bucket{job=\"v2-ai-shared\",phase=\"execution\"}[5m])))",
+          "legendFormat": "{{operation}} {{outcome}} {{phase}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "AI request duration p95",
+      "description": "Histograms from terminal jobs or parse/search observations. No observations can produce no data/NaN. Total begins at AI job creation, not browser upload.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by(le,operation,outcome) (rate(yeodam_ai_operation_duration_seconds_bucket{job=\"v2-ai-shared\",phase=\"request\"}[5m])))",
+          "legendFormat": "{{operation}} {{outcome}} {{phase}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Processed photos per minute",
+      "description": "classified/unclassified counts; not model accuracy.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(result) (rate(yeodam_ai_photos_total{job=\"v2-ai-shared\"}[5m])) * 60",
+          "legendFormat": "{{operation}} {{outcome}} {{phase}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "text",
+      "title": "Scope and diagnosis",
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Shared Redis data is scraped once through internal ALB. Do not sum duplicate per-task copies. up=1 proves metrics/Redis path only; it does not prove GPU/RunPod or result persistence. AI terminal success is separate from BE trip completion. Queue gauge covers waiting jobs; pending_result covers AI pending results. No samples is not zero duration. Use V2 staging services logs for the same time range. GPU is not started for metrics collection."
+      }
+    }
+  ]
+}
