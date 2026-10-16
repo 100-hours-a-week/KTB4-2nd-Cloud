@@ -113,3 +113,5 @@ python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/verify-v2-stagin
 python3 -m unittest discover -s tests/ci -p 'test_v2_ai_deploy.py'
 
 python3 -m unittest discover -s tests/ci -p 'test_v2_release_event.py'
+
+python3 -m unittest discover -s tests/ci -p 'test_v2_staging_release.py'
