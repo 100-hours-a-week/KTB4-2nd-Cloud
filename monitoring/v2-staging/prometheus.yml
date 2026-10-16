@@ -40,3 +40,11 @@ scrape_configs:
     static_configs:
       - targets: ["kafka.staging.yeodam.internal:9404"]
         labels: {env: staging, service: connect, cdc_source: validation-mysql}
+  # Task-local metrics: discover every RUNNING backend task, never via ALB.
+  - job_name: yeodam-backend-staging
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: /actuator/prometheus
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/backend.json"]
+        refresh_interval: 15s

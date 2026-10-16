@@ -38,7 +38,7 @@ if [[ "$scope" == server ]]; then
 
   bash "$source_dir/prepare-ai-metrics-secret.sh"
 
-  install -d -m 0755 /opt/yeodam/plg
+  install -d -m 0755 /opt/yeodam/plg /opt/yeodam/plg/targets
   cp -a "$source_dir/plg-compose.yml" "$source_dir/prometheus.yml" "$source_dir/loki.yml" /opt/yeodam/plg/
   cp -a "$source_dir/grafana" /opt/yeodam/plg/
   cd /opt/yeodam/plg

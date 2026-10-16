@@ -108,9 +108,14 @@ if [[ "${action}" == deploy ]]; then
     echo 'Deploy requires a yeodam-backend GHCR SHA256 digest reference.' >&2
     exit 2
   }
+  aws ecs describe-task-definition --region "${region}" --task-definition "${family}" \
+    --query taskDefinition --output json > "${temporary_dir}/template-definition.json"
   jq -e --arg family "${family}" \
-    '.family == $family and ([.containerDefinitions[].name] == ["backend"])' \
-    "${temporary_dir}/previous-definition.json" >/dev/null
+    '.status == "ACTIVE" and .family == $family and ([.containerDefinitions[].name] == ["backend"])' \
+    "${temporary_dir}/template-definition.json" >/dev/null
+  jq -e --slurpfile previous "${temporary_dir}/previous-definition.json" \
+    '.taskRoleArn == $previous[0].taskRoleArn and .executionRoleArn == $previous[0].executionRoleArn' \
+    "${temporary_dir}/template-definition.json" >/dev/null
   jq --arg image "${value}" '
     {family, taskRoleArn, executionRoleArn, networkMode, containerDefinitions,
      volumes, placementConstraints, requiresCompatibilities, cpu, memory,
@@ -123,7 +128,7 @@ if [[ "${action}" == deploy ]]; then
         + [{name: "RELEASE", value: $image},
            {name: "APP_TRIP_RESULT_LISTENER_ENABLED", value: "true"}]
       )
-  ' "${temporary_dir}/previous-definition.json" > "${temporary_dir}/candidate-definition.json"
+  ' "${temporary_dir}/template-definition.json" > "${temporary_dir}/candidate-definition.json"
   candidate="$(aws ecs register-task-definition --region "${region}" \
     --cli-input-json "file://${temporary_dir}/candidate-definition.json" \
     --query 'taskDefinition.taskDefinitionArn' --output text)"
