@@ -1,9 +1,8 @@
 name: V2 Staging Manifest Deployment
 
 on:
-  pull_request:
+  push:
     branches: [main]
-    types: [closed]
     paths: ['deploy/v2/image-manifest.json']
   workflow_dispatch:
     inputs:
@@ -19,6 +18,7 @@ on:
 permissions:
   contents: read
   actions: read
+  pull-requests: read
   id-token: write
 
 concurrency:
@@ -30,7 +30,7 @@ jobs:
   deploy:
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true)
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: staging
@@ -52,9 +52,16 @@ jobs:
       - name: Verify and promote the merged manifest
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_PR: ${{ github.event.pull_request.number || inputs.pull_request_number }}
+          RELEASE_PR: ${{ inputs.pull_request_number }}
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
           RELEASE_REPORT_DIR: ${{ runner.temp }}/v2-staging-release
-        run: python3 scripts/deploy-v2-staging-release.py --pr "$RELEASE_PR" --apply
+        run: |
+          if [[ "$RELEASE_EVENT" == "push" ]]; then
+            python3 scripts/deploy-v2-staging-release.py --commit "$RELEASE_COMMIT" --apply
+          else
+            python3 scripts/deploy-v2-staging-release.py --pr "$RELEASE_PR" --apply
+          fi
 
       - name: Preserve release and recovery identifiers
         if: always()
@@ -68,7 +75,7 @@ jobs:
       - name: Write release summary
         if: always()
         env:
-          RELEASE_REASON: ${{ inputs.reason || github.event.pull_request.html_url }}
+          RELEASE_REASON: ${{ inputs.reason || github.sha }}
         run: |
           {
             echo '## V2 staging release'
