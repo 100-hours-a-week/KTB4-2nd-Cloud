@@ -1,0 +1,107 @@
+name: V2 Staging AI Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "AI API와 정리 실행기 배포 또는 이전 API Revision 기준 복구"
+        required: true
+        type: choice
+        options: [deploy, rollback]
+      image_digest:
+        description: "deploy: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:..."
+        required: false
+        type: string
+      rollback_revision:
+        description: "rollback: 복구할 정상 AI API Task Revision 숫자 (실행기도 같은 이미지로 복구)"
+        required: false
+        type: string
+      reason:
+        description: "배포 사유"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: yeodam-v2-staging-release
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: staging
+    steps:
+      - name: Checkout Cloud main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Validate deployment input
+        env:
+          ACTION: ${{ inputs.action }}
+          IMAGE: ${{ inputs.image_digest }}
+          REVISION: ${{ inputs.rollback_revision }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "$ACTION" == deploy ]]; then
+            [[ -z "$REVISION" && "$IMAGE" =~ ^ghcr[.]io/100-hours-a-week/yeodam-ai-app@sha256:[0-9a-f]{64}$ ]]
+          else
+            [[ "$ACTION" == rollback && -z "$IMAGE" && "$REVISION" =~ ^[1-9][0-9]*$ ]]
+          fi
+
+      - name: Configure staging AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_AI_DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-2
+          role-duration-seconds: 3600
+          role-session-name: yeodam-v2-staging-ai
+
+      - name: Deploy or restore AI pair
+        env:
+          ACTION: ${{ inputs.action }}
+          IMAGE: ${{ inputs.image_digest }}
+          REVISION: ${{ inputs.rollback_revision }}
+          AI_DEPLOY_REPORT: ${{ runner.temp }}/ai-deployment.json
+        run: |
+          set -Eeuo pipefail
+          if [[ "$ACTION" == deploy ]]; then
+            python3 scripts/deploy-v2-staging-ai.py deploy "$IMAGE"
+          else
+            python3 scripts/deploy-v2-staging-ai.py rollback "$REVISION"
+          fi
+
+      - name: Preserve deployment result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: v2-ai-deployment-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ai-deployment.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Write deployment summary
+        if: always()
+        env:
+          REASON: ${{ inputs.reason }}
+          ACTION: ${{ inputs.action }}
+          RESULT: ${{ job.status }}
+        run: |
+          {
+            echo '## V2 staging AI'
+            echo "- Action: $ACTION"
+            echo "- Reason: $REASON"
+            echo "- Result: $RESULT"
+            if [[ -f "$RUNNER_TEMP/ai-deployment.json" ]]; then
+              echo '```json'
+              cat "$RUNNER_TEMP/ai-deployment.json"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

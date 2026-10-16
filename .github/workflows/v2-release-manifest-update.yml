@@ -1,0 +1,40 @@
+name: Update V2 Release Image Manifest
+
+on:
+  repository_dispatch:
+    types: [v2-image-published]
+
+permissions:
+  contents: read
+  packages: read
+
+# Do not put distinct publishers in a single replaceable pending group.
+# Concurrent deliveries are reconciled with non-force Git pushes and retries.
+jobs:
+  update-manifest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check release token
+        env:
+          RELEASE_TOKEN: ${{ secrets.CLOUD_RELEASE_TOKEN }}
+        run: '[[ -n "$RELEASE_TOKEN" ]]'
+
+      - name: Checkout Cloud main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.CLOUD_RELEASE_TOKEN }}
+
+      - name: Log in to GHCR for V2 metadata verification
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Verify publishing Run and update candidate PR
+        env:
+          GH_TOKEN: ${{ secrets.CLOUD_RELEASE_TOKEN }}
+        run: python3 scripts/update-v2-release-manifest.py

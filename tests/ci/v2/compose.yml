@@ -1,0 +1,259 @@
+x-aws: &aws
+  AWS_REGION: ap-northeast-2
+  AWS_DEFAULT_REGION: ap-northeast-2
+  AWS_ACCESS_KEY_ID: ci-only
+  AWS_SECRET_ACCESS_KEY: ci-only
+  AWS_EC2_METADATA_DISABLED: "true"
+  AWS_ENDPOINT_URL_S3: http://s3:4566
+
+x-topics: &topics
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  KAFKA_TRIP_CREATE_REQUEST_TOPIC: ci.yeodam.trip-create.request
+  KAFKA_TRIP_CREATE_RESULT_TOPIC: ci.yeodam.trip-create.result
+  KAFKA_TRIP_UPDATE_REQUEST_TOPIC: ci.yeodam.trip-update.request
+  KAFKA_TRIP_UPDATE_RESULT_TOPIC: ci.yeodam.trip-update.result
+  KAFKA_STORY_CREATE_REQUEST_TOPIC: ci.yeodam.story-create.request
+  KAFKA_STORY_CREATE_RESULT_TOPIC: ci.yeodam.story-create.result
+
+x-ai: &ai
+  <<: [*aws, *topics]
+  API_KEY: ci-api-only
+  REDIS_URL: redis://:ci-ai-only@redis-ai:6379/0
+  JOBS_ENV: ci
+  JOBS_FAKE_PIPELINE: "false"
+  FAKE_PIPELINE: "false"
+  JOBS_PROCESS_HANDLER: app.jobs.process_handler:run
+  JOBS_STORY_HANDLER: app.story.handler:run
+  JOBS_POLL_SEC: "0.1"
+  JOBS_HEARTBEAT_SEC: "1"
+  JOBS_TIMEOUT_SEC: "180"
+  JOBS_SHUTDOWN_GRACE_SEC: "1"
+  SEARCH_ENABLED: "false"
+  IMAGE_SOURCE: s3
+  S3_BUCKET: yeodam-v2-ci
+  EMBED_MODEL: qwen3-vl-embedding-2b
+  EMBEDDING_BASE_URL: http://models:8000/v1
+  EMBEDDING_SERVED_MODEL_NAME: ci-qwen
+  EMBEDDING_API_KEY: ci-embedding-only
+  QDRANT_URL: http://qdrant:6333
+  VLM_BASE_URL: http://models:8000/v1
+  VLM_MODEL: ci-vlm
+  VLM_API_KEY: ci-vlm-only
+  OMP_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+
+services:
+  mysql:
+    image: mysql:9.7.2
+    command: ["--server-id=239", "--log-bin=mysql-bin", "--binlog-format=ROW", "--binlog-row-image=FULL", "--gtid-mode=ON", "--enforce-gtid-consistency=ON", "--innodb-buffer-pool-size=134217728", "--max-connections=60"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ci-root-only
+      MYSQL_DATABASE: yeodam_v2_ci
+      MYSQL_USER: yeodam
+      MYSQL_PASSWORD: ci-app-only
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD-SHELL, "mysqladmin ping -h 127.0.0.1 -uroot -pci-root-only --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  redis-auth:
+    image: redis:7.4.2-alpine
+    command: [redis-server, --requirepass, ci-auth-only, --save, ""]
+    mem_limit: 96m
+    healthcheck:
+      test: [CMD, redis-cli, -a, ci-auth-only, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis-ai:
+    image: redis:7.4.2-alpine
+    command: [redis-server, --requirepass, ci-ai-only, --appendonly, "yes", --appendfsync, always, --save, ""]
+    mem_limit: 128m
+    healthcheck:
+      test: [CMD, redis-cli, -a, ci-ai-only, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  s3:
+    image: localstack/localstack:4.9.0
+    environment:
+      SERVICES: s3
+      AWS_DEFAULT_REGION: ap-northeast-2
+    mem_limit: 640m
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  kafka:
+    image: apache/kafka:4.1.2@sha256:d50ab7b5df612b3c303f9d8afe8fee59626a5de798addfd626fe1924e3205965
+    platform: linux/amd64
+    environment:
+      CLUSTER_ID: abcdefghijklmnopqrstuv
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://127.0.0.1:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@127.0.0.1:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_MIN_INSYNC_REPLICAS: "1"
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx384m
+    mem_limit: 768m
+    healthcheck:
+      test: [CMD-SHELL, "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null"]
+      interval: 10s
+      timeout: 15s
+      retries: 40
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.1@sha256:12364fe851b9f17356fc88189fc06d1b521262e04659ec7345975b00c9246a10
+    platform: linux/amd64
+    mem_limit: 384m
+
+  models:
+    image: ${V2_AI_APP_IMAGE:?V2 Manifest image required}
+    platform: linux/amd64
+    command: [python, /ci/upstream.py]
+    volumes: ["./upstream.py:/ci/upstream.py:ro"]
+    mem_limit: 128m
+
+  ai-api:
+    image: ${V2_AI_APP_IMAGE:?V2 Manifest image required}
+    platform: linux/amd64
+    environment: *ai
+    mem_limit: 512m
+    depends_on:
+      redis-ai: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+
+  process-runner:
+    image: ${V2_AI_APP_IMAGE:?V2 Manifest image required}
+    platform: linux/amd64
+    command: [python, -m, app.jobs.runner]
+    environment: *ai
+    mem_limit: 1g
+    depends_on:
+      ai-api: {condition: service_healthy}
+
+  backend:
+    image: ${V2_BACKEND_IMAGE:?V2 Manifest image required}
+    platform: linux/amd64
+    environment:
+      <<: [*aws, *topics]
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_FLYWAY_ENABLED: "true"
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx512m -XX:ActiveProcessorCount=2
+      MYSQL_URL: jdbc:mysql://mysql:3306/yeodam_v2_ci?serverTimezone=Asia/Seoul&characterEncoding=utf8
+      MYSQL_USERNAME: yeodam
+      MYSQL_PASSWORD: ci-app-only
+      REDIS_HOST: redis-auth
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ci-auth-only
+      REDIS_SSL_ENABLED: "false"
+      AUTH_SESSION_KEY_PREFIX: "yeodam:ci:auth:"
+      ATTACHMENT_S3_BUCKET: yeodam-v2-ci
+      ATTACHMENT_S3_ENDPOINT: http://s3:4566
+      ATTACHMENT_S3_PATH_STYLE: "true"
+      APP_TRIP_RESULT_LISTENER_ENABLED: "true"
+      SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET: earliest
+      AI_SERVER_BASE_URL: http://ai-api:8000
+      AI_SERVER_API_KEY: ci-api-only
+      AI_EC2_INSTANCE_ID: i-ci-only
+      JWT_SECRET: ci-only-secret-key-with-at-least-32-bytes
+      JWT_ISSUER: http://backend:8080
+      FRONTEND_ORIGIN: http://frontend:3000
+      FRONTEND_OAUTH_CALLBACK_URI: http://frontend:3000/auth/callback
+      KAKAO_CLIENT_ID: ci-only
+      KAKAO_CLIENT_SECRET: ci-only
+      KAKAO_REDIRECT_URI: http://backend:8080/api/auth/kakao/callback
+      DATA_GO_KR_LEGAL_DISTRICT_API_URL: http://models:8000/places
+    mem_limit: 1g
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis-auth: {condition: service_healthy}
+      ai-api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, "curl --fail --silent http://localhost:8080/api/actuator/health >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 60
+
+  frontend:
+    image: ${V2_FRONTEND_IMAGE:?V2 Manifest image required}
+    platform: linux/amd64
+    environment:
+      SERVER_API_BASE_URL: http://backend:8080/api
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+
+  connect:
+    image: quay.io/debezium/connect:3.4.3.Final@sha256:bad9e9cba46851b6d26cbf4c807630f709897b8b4b3e64fb5f2fbc26e1eec0b0
+    platform: linux/amd64
+    environment:
+      ENABLE_DEBEZIUM_SCRIPTING: "true"
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: cloud-v2-ci
+      CONFIG_STORAGE_TOPIC: ci.connect-configs
+      OFFSET_STORAGE_TOPIC: ci.connect-offsets
+      STATUS_STORAGE_TOPIC: ci.connect-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_OFFSET_STORAGE_PARTITIONS: "1"
+      CONNECT_OFFSET_FLUSH_INTERVAL_MS: "1000"
+      KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_LISTENERS: http://0.0.0.0:8083
+      ADVERTISED_HOST_NAME: connect
+      REST_HOST_NAME: 0.0.0.0
+      HOST_NAME: connect
+      CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY: All
+      HEAP_OPTS: -Xms128m -Xmx512m
+    volumes:
+      - ${V2_CI_RUNTIME:?CI temp directory required}/cdc-libs:/kafka/connect/debezium-connector-mysql/cloud-cdc-libs:ro
+    mem_limit: 1536m
+    healthcheck:
+      test: [CMD-SHELL, "curl --fail --silent http://localhost:8083/connectors >/dev/null"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+
+  driver:
+    image: ${V2_AI_APP_IMAGE:?V2 Manifest image required}
+    platform: linux/amd64
+    entrypoint: [python]
+    environment:
+      <<: *aws
+      RESULTS_DIR: /results
+    volumes:
+      - ./:/ci:ro
+      - ../../../deploy/v2-staging/kafka/outbox-connector.json:/ci-connector.json:ro
+      - ${V2_CI_RESULTS_DIRECTORY:?CI results directory required}:/results
+    mem_limit: 512m
+    profiles: [tools]
+
+networks:
+  default:
+    internal: true
