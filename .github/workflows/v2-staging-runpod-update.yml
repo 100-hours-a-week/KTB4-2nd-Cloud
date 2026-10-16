@@ -1,0 +1,80 @@
+name: V2 Staging RunPod URL Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "새 RunPod URL (https://<pod-id>-8000.proxy.runpod.net/v1)"
+        required: true
+        type: string
+      reason:
+        description: "변경 사유"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: yeodam-v2-staging-release
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: staging
+    steps:
+      - name: Checkout Cloud main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Validate URL
+        env:
+          RUNPOD_URL: ${{ inputs.url }}
+        run: |
+          python3 - "$RUNPOD_URL" <<'PY'
+          import re, sys
+          if not re.fullmatch(r'https://[a-z0-9]+-8000\.proxy\.runpod\.net/v1', sys.argv[1]):
+              raise SystemExit('RunPod URL 형식을 확인해 주세요.')
+          PY
+      - name: Configure staging AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_RUNPOD_UPDATE_ROLE_ARN }}
+          aws-region: ap-northeast-2
+          role-duration-seconds: 3600
+          role-session-name: yeodam-v2-staging-runpod
+      - name: Verify RunPod and update AI API
+        env:
+          RUNPOD_URL: ${{ inputs.url }}
+          RUNPOD_UPDATE_REPORT: ${{ runner.temp }}/runpod-update.json
+        run: python3 scripts/update-v2-staging-runpod.py "$RUNPOD_URL"
+      - name: Preserve update result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: runpod-update-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/runpod-update.json
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Write update summary
+        if: always()
+        env:
+          REASON: ${{ inputs.reason }}
+          RESULT: ${{ job.status }}
+        run: |
+          {
+            echo '## V2 staging RunPod URL'
+            echo "- Reason: $REASON"
+            echo "- Result: $RESULT"
+            if [[ -f "$RUNNER_TEMP/runpod-update.json" ]]; then
+              echo '```json'
+              cat "$RUNNER_TEMP/runpod-update.json"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
