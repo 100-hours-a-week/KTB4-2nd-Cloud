@@ -33,7 +33,7 @@ locals {
 variable "ai_vlm_base_url" {
   description = "AI-provided RunPod OpenAI-compatible URL, including /v1"
   type        = string
-  default     = "https://v2ird51hm3dri7-8000.proxy.runpod.net/v1"
+  default     = "https://pv3dyia853rn2t-8000.proxy.runpod.net/v1"
   validation {
     condition     = startswith(var.ai_vlm_base_url, "https://") && endswith(var.ai_vlm_base_url, "/v1")
     error_message = "Use the reviewed HTTPS RunPod URL ending in /v1."
