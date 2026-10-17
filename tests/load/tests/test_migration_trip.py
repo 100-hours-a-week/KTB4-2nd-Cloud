@@ -11,6 +11,11 @@ spec = importlib.util.spec_from_file_location('migration_trip_reconcile', script
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
+attest_script = Path(__file__).parents[1] / 'scripts' / 'attest-migration-trip.py'
+attest_spec = importlib.util.spec_from_file_location('migration_trip_attest', attest_script)
+attest_module = importlib.util.module_from_spec(attest_spec)
+attest_spec.loader.exec_module(attest_module)
+
 RUN = '6b942bca-39b9-40c7-8af4-8c098e2c3262'
 TRIP = 't2e3617d34'
 ROW = ('1000005\t707\tt2e3617d34\t2025-01-01\t2025-01-03\tPROCESSING\t'
@@ -69,15 +74,16 @@ class MigrationTripReconcileTest(unittest.TestCase):
         self.assertFalse(result['passed'])
         self.assertEqual(result['final'], 0)
 
-    def test_full_10_rps_plan_requires_all_1200_events_and_no_drops(self):
+    def check_full_plan(self, rate):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
             events, source, target, summary = (folder / name for name in
                                                ('events.jsonl', 'source.tsv.gz', 'target.tsv.gz', 'summary.json'))
             lines = [{'source': 'migration-trip-create', 'event': 'run_started', 'runId': RUN,
-                      'mode': 'load', 'rate': 10, 'duration': 120}]
+                      'mode': 'load', 'rate': rate, 'duration': 120}]
             rows = []
-            for index in range(1200):
+            planned = rate * 120
+            for index in range(planned):
                 name = 't' + format(index, '09x')
                 trip_id = 1000005 + index
                 request = {'tripName': name, 'startDate': '2025-01-01',
@@ -95,14 +101,42 @@ class MigrationTripReconcileTest(unittest.TestCase):
             for path in (source, target):
                 with gzip.open(path, 'wt') as stream:
                     stream.writelines(rows)
-            metrics = {'trip_create_started': {'values': {'count': 1200}},
+            metrics = {'trip_create_started': {'values': {'count': planned}},
                        'trip_create_final_failures': {'values': {'count': 0}},
                        'dropped_iterations': {'values': {'count': 0}}}
             summary.write_text(json.dumps({'metrics': metrics}))
-            self.assertTrue(module.reconcile(events, source, target, RUN, summary=summary)['passed'])
+            report = module.reconcile(events, source, target, RUN, summary=summary, expected_rate=rate)
+            self.assertTrue(report['passed'])
+            self.assertEqual(report['plannedRequests'], planned)
+            if rate == 30:
+                event_attestation = attest_module.attest_events(events, RUN)
+                source_attestation = attest_module.attest_rows(source, RUN)
+                target_attestation = attest_module.attest_rows(target, RUN)
+                self.assertEqual(event_attestation['projectionSha256'], source_attestation['projectionSha256'])
+                self.assertEqual(source_attestation['fullRowsSha256'], target_attestation['fullRowsSha256'])
+                pre_switch = folder / 'pre-switch.tsv.gz'
+                with gzip.open(pre_switch, 'wt') as stream:
+                    stream.writelines(rows[:planned // 2])
+                source_prefix = attest_module.attest_rows(pre_switch, RUN)
+                target_prefix = attest_module.attest_rows(target, RUN, source_prefix['maxTripId'])
+                self.assertEqual(source_prefix['trips'], target_prefix['trips'])
+                self.assertEqual(source_prefix['fullRowsSha256'], target_prefix['fullRowsSha256'])
+                failed_lines = list(lines)
+                failed_lines[2] = {**failed_lines[2], 'status': 500, 'outcome': 'unconfirmed'}
+                events.write_text(''.join(json.dumps(line) + '\n' for line in failed_lines))
+                with self.assertRaises(ValueError):
+                    attest_module.attest_events(events, RUN)
+                events.write_text(''.join(json.dumps(line) + '\n' for line in lines))
             metrics['dropped_iterations']['values']['count'] = 1
             summary.write_text(json.dumps({'metrics': metrics}))
-            self.assertFalse(module.reconcile(events, source, target, RUN, summary=summary)['passed'])
+            self.assertFalse(module.reconcile(events, source, target, RUN, summary=summary,
+                                              expected_rate=rate)['passed'])
+
+    def test_full_10_rps_plan_requires_all_1200_events_and_no_drops(self):
+        self.check_full_plan(10)
+
+    def test_full_30_rps_plan_requires_all_3600_events_and_no_drops(self):
+        self.check_full_plan(30)
 
 
 if __name__ == '__main__':

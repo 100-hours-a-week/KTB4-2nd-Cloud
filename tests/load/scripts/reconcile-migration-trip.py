@@ -78,9 +78,11 @@ def validate_rows(rows, request, user_id):
     return True, next(iter(trip_ids))
 
 
-def reconcile(events, source, target, run_id, mode='baseline', summary=None):
+def reconcile(events, source, target, run_id, mode='baseline', summary=None, expected_rate=10):
     if mode not in ('baseline', 'cutover'):
         raise ValueError('Mode must be baseline or cutover')
+    if expected_rate not in (10, 30):
+        raise ValueError('Expected rate must be 10 or 30 RPS')
     started, final, plan = read_events(events, run_id)
     source_rows, target_rows = read_rows(source), read_rows(target)
     results = []
@@ -117,8 +119,8 @@ def reconcile(events, source, target, run_id, mode='baseline', summary=None):
     report['passed'] = bool(results) and not unexpected and len(final) == len(started) and all(row['passed'] for row in results)
     if summary is not None:
         metrics = json.loads(summary.read_text(encoding='utf-8'))['metrics']
-        if not plan or plan.get('mode') != 'load' or plan.get('rate') != 10 or plan.get('duration') != 120:
-            raise ValueError('Expected one 10 RPS / 120s trip load plan')
+        if not plan or plan.get('mode') != 'load' or plan.get('rate') != expected_rate or plan.get('duration') != 120:
+            raise ValueError(f'Expected one {expected_rate} RPS / 120s trip load plan')
         report['plannedRequests'] = plan['rate'] * plan['duration']
         report['summaryStarted'] = metrics.get('trip_create_started', {}).get('values', {}).get('count', 0)
         report['summaryFinalFailures'] = metrics.get('trip_create_final_failures', {}).get('values', {}).get('count', 0)
@@ -138,7 +140,9 @@ def main():
     parser.add_argument('--target', required=True, type=Path)
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--mode', choices=('baseline', 'cutover'), default='baseline')
-    parser.add_argument('--summary', type=Path, help='k6 summary.json; required for a 10 RPS load result')
+    parser.add_argument('--summary', type=Path, help='k6 summary.json; required for a load result')
+    parser.add_argument('--expected-rate', type=int, choices=(10, 30), default=10,
+                        help='Expected load rate; 10 RPS by default for earlier runs')
     parser.add_argument('--require-target-only', action='store_true', help='Require at least one post-switch Target-only trip')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
@@ -146,7 +150,8 @@ def main():
         raise ValueError('Use a canonical run UUID')
     if args.require_target_only and args.mode != 'cutover':
         raise ValueError('Target-only requirement applies only to cutover mode')
-    report = reconcile(args.events, args.source, args.target, args.run_id, args.mode, args.summary)
+    report = reconcile(args.events, args.source, args.target, args.run_id, args.mode, args.summary,
+                       args.expected_rate)
     if args.require_target_only and report['targetOnlyRequests'] == 0:
         report['passed'] = False
     if args.output:
