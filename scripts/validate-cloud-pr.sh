@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/ci -p 'test_ci_baseline.py'
 
 bash -n scripts/*.sh tests/ci/*.sh
