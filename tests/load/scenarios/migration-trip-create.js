@@ -19,8 +19,9 @@ const rate = positiveIntegerEnv('K6_TRIP_RATE', 10);
 const duration = positiveIntegerEnv('K6_TRIP_DURATION_SECONDS', 120);
 const preVus = positiveIntegerEnv('K6_TRIP_PREALLOCATED_VUS', 40);
 const maxVus = positiveIntegerEnv('K6_TRIP_MAX_VUS', preVus);
-if (mode === 'load' && (rate !== 10 || duration !== 120 || maxVus < preVus || preVus < 40)) {
-  throw new Error('This issue permits only 10 RPS for 120s with at least 40 preallocated VUs');
+if (mode === 'load' && (![10, 30].includes(rate) || duration !== 120 ||
+    maxVus < preVus || preVus < rate * 4)) {
+  throw new Error('Trip load requires 10 or 30 RPS for 120s and at least rate × 4 preallocated VUs');
 }
 const pool = new SharedArray('existing-user-session-pool', () => {
   const value = JSON.parse(open(requiredEnv('K6_SESSION_POOL_FILE')));
