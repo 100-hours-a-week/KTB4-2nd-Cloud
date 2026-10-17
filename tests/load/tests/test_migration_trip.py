@@ -1,7 +1,9 @@
 import importlib.util
 import gzip
 import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -137,6 +139,58 @@ class MigrationTripReconcileTest(unittest.TestCase):
 
     def test_full_30_rps_plan_requires_all_3600_events_and_no_drops(self):
         self.check_full_plan(30)
+
+    def test_incomplete_100_rps_keeps_ambiguous_requests_for_host_hash_comparison(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            events, source, target = (folder / name for name in ('events.jsonl', 'source.tsv.gz', 'target.tsv.gz'))
+            lines = [{'source': 'migration-trip-create', 'event': 'run_started', 'runId': RUN,
+                      'mode': 'load', 'rate': 100, 'duration': 120}]
+            rows = []
+            for index in range(2):
+                name = f'tpartial{index}'
+                request = {'tripName': name, 'startDate': '2025-01-01',
+                           'endDate': '2025-01-03', 'regionCodes': ['50110']}
+                lines.append({'source': 'migration-trip-create', 'event': 'started', 'runId': RUN,
+                              'userId': 707, 'tripName': name, 'request': request})
+                rows.append(f'{1000005 + index}\t707\t{name}\t2025-01-01\t2025-01-03\tPROCESSING\t'
+                            f'{1000005 + index}\t50110\tECA09CECA3BC\t33.49953424\t126.53117109\n')
+            lines.append({'source': 'migration-trip-create', 'event': 'final', 'runId': RUN,
+                          'userId': 707, 'tripName': 'tpartial0', 'status': 0,
+                          'tripId': None, 'outcome': 'unconfirmed'})
+            events.write_text(''.join(json.dumps(line) + '\n' for line in lines))
+            for path in (source, target):
+                with gzip.open(path, 'wt') as stream:
+                    stream.writelines(rows)
+            with self.assertRaises(ValueError):
+                attest_module.attest_events(events, RUN, expected_rate=100)
+            event_result = attest_module.attest_events(events, RUN, expected_rate=100, allow_incomplete=True)
+            source_result = attest_module.attest_rows(source, RUN)
+            target_result = attest_module.attest_rows(target, RUN)
+            self.assertEqual((event_result['trips'], event_result['final'], event_result['confirmed'],
+                              event_result['unconfirmed'], event_result['missingFinal']), (2, 1, 0, 1, 1))
+            self.assertIsNone(event_result['projectionSha256'])
+            self.assertEqual(event_result['requestProjectionSha256'], source_result['requestProjectionSha256'])
+            self.assertEqual(source_result['fullRowsSha256'], target_result['fullRowsSha256'])
+            self.assertFalse(module.reconcile(events, source, target, RUN, expected_rate=100)['passed'])
+
+    def test_trip_runner_bounds_terminal_output_and_preserves_exit_status(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            fake_k6 = folder / 'k6'
+            fake_k6.write_text('#!/bin/sh\nif [ "$1" = version ]; then echo "k6 v2.3.0"; exit 0; fi\n'
+                               'i=0; while [ "$i" -lt 100 ]; do echo "Request Failed $i"; i=$((i+1)); done\n'
+                               'exit 17\n')
+            fake_k6.chmod(0o755)
+            load_root = Path(__file__).parents[1]
+            env = dict(os.environ, PATH=f'{folder}:{os.environ["PATH"]}', K6_RESULTS_DIRECTORY=str(folder / 'results'))
+            run = subprocess.run(['bash', 'scripts/run-k6.sh', 'scenarios/migration-trip-create.js'],
+                                 cwd=load_root, env=env, text=True, capture_output=True, check=False)
+            self.assertEqual(run.returncode, 17)
+            self.assertLess(run.stdout.count('Request Failed'), 30)
+            result_dir = next((folder / 'results').iterdir())
+            self.assertEqual((result_dir / 'run.log').read_text().count('Request Failed'), 100)
+            self.assertIn('exit_code=17', (result_dir / 'execution.txt').read_text())
 
 
 if __name__ == '__main__':
