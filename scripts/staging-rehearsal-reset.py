@@ -75,6 +75,15 @@ def load_source_module():
     m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
     return m.Database('10.30.10.28')
 
+def protect_target_for_initialize(db,manifest):
+    # Fence first so a failed validation cannot leave the destination writable.
+    db.query('target','SET SESSION lock_wait_timeout=5; SET PERSIST read_only=ON; SET PERSIST super_read_only=ON;',timeout=10)
+    target=db.identity('target')
+    require(target[1]==manifest.get('targetUuid') and target[2:]==['1','1'],'Target identity or fence changed before initialization')
+    require(db.query('target','SELECT @@GLOBAL.gtid_executed;')==manifest.get('gtid'),'Target changed after preserved snapshot')
+    require(db.query('target','SELECT COUNT(*) FROM information_schema.innodb_trx;')=='0','Target has active transactions')
+    require(db.query('target',"SELECT VARIABLE_VALUE FROM performance_schema.persisted_variables WHERE VARIABLE_NAME='super_read_only';")=='ON','Target restart fence is not persisted')
+
 def save(path,state):
     fd,tmp=tempfile.mkstemp(dir=path.parent)
     with os.fdopen(fd,'w') as f: json.dump(state,f,indent=2);f.flush();os.fsync(f.fileno())
@@ -169,9 +178,11 @@ def execute(args):
                 state['phase']='source_restored';save(checkpoint,state)
             elif args.action=='allow-target-initialize':
                 require(state.get('phase')=='source_restored' and db.identity('source')[2:]==['1','1'],'Restore Source before rebuilding replica')
-                # The existing guarded initialize document makes a full backup
-                # before replacing only the compatible schema. BE stays stopped.
-                db.query('target','SET PERSIST super_read_only=OFF; SET PERSIST read_only=OFF;')
+                # The initialize document backs up the destination before replacing
+                # the compatible schema, and requires the destination to be fenced.
+                # Reassert the fence on every resume, including checkpoints written
+                # by the older reset script that opened the target at this step.
+                protect_target_for_initialize(db,state.get('manifest',{}))
             elif args.action=='resume-source':
                 require(state.get('phase') in ('source_restored','resume_intent','completed'),'Source restore not verified')
                 if state.get('phase')=='completed':print(json.dumps({'action':args.action,'phase':'completed'}));return
