@@ -1,4 +1,5 @@
 import importlib.util
+import gzip
 import json
 from pathlib import Path
 import tempfile
@@ -17,7 +18,8 @@ ROW = ('1000005\t707\tt2e3617d34\t2025-01-01\t2025-01-03\tPROCESSING\t'
 
 
 class MigrationTripReconcileTest(unittest.TestCase):
-    def run_case(self, status=201, outcome='confirmed', source=ROW, target=ROW, trip_id=1000005):
+    def run_case(self, status=201, outcome='confirmed', source=ROW, target=ROW, trip_id=1000005,
+                 mode='baseline', include_final=True):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
             events = folder / 'events.jsonl'
@@ -28,14 +30,15 @@ class MigrationTripReconcileTest(unittest.TestCase):
             lines = [
                 {'source': 'migration-trip-create', 'event': 'started', 'runId': RUN,
                  'userId': 707, 'tripName': TRIP, 'request': request},
-                {'source': 'migration-trip-create', 'event': 'final', 'runId': RUN,
-                 'userId': 707, 'tripName': TRIP, 'status': status,
-                 'tripId': trip_id, 'outcome': outcome},
             ]
+            if include_final:
+                lines.append({'source': 'migration-trip-create', 'event': 'final', 'runId': RUN,
+                              'userId': 707, 'tripName': TRIP, 'status': status,
+                              'tripId': trip_id, 'outcome': outcome})
             events.write_text(''.join(json.dumps(line) + '\n' for line in lines))
             source_path.write_text(source)
             target_path.write_text(target)
-            return module.reconcile(events, source_path, target_path, RUN)
+            return module.reconcile(events, source_path, target_path, RUN, mode)
 
     def test_confirmed_request_must_match_both_tables_on_both_databases(self):
         report = self.run_case()
@@ -53,6 +56,53 @@ class MigrationTripReconcileTest(unittest.TestCase):
         report = self.run_case(source=duplicate, target=duplicate)
         self.assertFalse(report['passed'])
         self.assertEqual(report['requests'][0]['source'], 'region_mismatch')
+
+    def test_cutover_accepts_confirmed_target_only_trip_but_baseline_does_not(self):
+        result = self.run_case(source='', mode='cutover')
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['targetOnlyRequests'], 1)
+        self.assertEqual(result['requests'][0]['classification'], 'confirmed_on_target')
+        self.assertFalse(self.run_case(source='', mode='baseline')['passed'])
+
+    def test_interrupted_request_is_kept_as_failure(self):
+        result = self.run_case(include_final=False)
+        self.assertFalse(result['passed'])
+        self.assertEqual(result['final'], 0)
+
+    def test_full_10_rps_plan_requires_all_1200_events_and_no_drops(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            events, source, target, summary = (folder / name for name in
+                                               ('events.jsonl', 'source.tsv.gz', 'target.tsv.gz', 'summary.json'))
+            lines = [{'source': 'migration-trip-create', 'event': 'run_started', 'runId': RUN,
+                      'mode': 'load', 'rate': 10, 'duration': 120}]
+            rows = []
+            for index in range(1200):
+                name = 't' + format(index, '09x')
+                trip_id = 1000005 + index
+                request = {'tripName': name, 'startDate': '2025-01-01',
+                           'endDate': '2025-01-03', 'regionCodes': ['50110']}
+                lines.extend((
+                    {'source': 'migration-trip-create', 'event': 'started', 'runId': RUN,
+                     'userId': 707, 'tripName': name, 'request': request},
+                    {'source': 'migration-trip-create', 'event': 'final', 'runId': RUN,
+                     'userId': 707, 'tripName': name, 'status': 201,
+                     'tripId': trip_id, 'outcome': 'confirmed'},
+                ))
+                rows.append(f'{trip_id}\t707\t{name}\t2025-01-01\t2025-01-03\tPROCESSING\t'
+                            f'{trip_id}\t50110\tECA09CECA3BC\t33.49953424\t126.53117109\n')
+            events.write_text(''.join(json.dumps(line) + '\n' for line in lines))
+            for path in (source, target):
+                with gzip.open(path, 'wt') as stream:
+                    stream.writelines(rows)
+            metrics = {'trip_create_started': {'values': {'count': 1200}},
+                       'trip_create_final_failures': {'values': {'count': 0}},
+                       'dropped_iterations': {'values': {'count': 0}}}
+            summary.write_text(json.dumps({'metrics': metrics}))
+            self.assertTrue(module.reconcile(events, source, target, RUN, summary=summary)['passed'])
+            metrics['dropped_iterations']['values']['count'] = 1
+            summary.write_text(json.dumps({'metrics': metrics}))
+            self.assertFalse(module.reconcile(events, source, target, RUN, summary=summary)['passed'])
 
 
 if __name__ == '__main__':
