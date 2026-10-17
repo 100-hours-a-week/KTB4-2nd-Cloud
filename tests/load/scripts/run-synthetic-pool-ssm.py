@@ -38,14 +38,17 @@ def canonical_uuid(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("prepare", "cleanup"))
+    parser.add_argument("action", choices=("prepare", "cleanup", "prepare-existing", "cleanup-existing"))
     parser.add_argument("--instance-id", required=True)
     parser.add_argument("--run-id", required=True, type=canonical_uuid)
     parser.add_argument("--count", type=int, default=100)
+    parser.add_argument("--dataset-id", type=canonical_uuid)
     parser.add_argument("--profile", default="yeodam-admin")
     args = parser.parse_args()
     if not args.instance_id.startswith("i-") or not 1 <= args.count <= 1000:
         raise ValueError("Invalid instance ID or count")
+    if args.action.endswith("existing") and not args.dataset_id:
+        raise ValueError("Existing-user actions require --dataset-id")
     identity = aws(args.profile, "sts", "get-caller-identity")
     if identity["Account"] != ACCOUNT:
         raise RuntimeError("Refusing to use a different AWS account")
@@ -66,12 +69,16 @@ def main():
                 "printf '%s' '" + base64.b64encode(transfer).decode("ascii") + "' | base64 -d > " + REMOTE_TRANSFER,
                 "chmod 0700 " + REMOTE_SCRIPT + " " + REMOTE_TRANSFER]
     run = f"python3 {REMOTE_SCRIPT} {args.action} --run-id {args.run_id} --output {output}"
-    if args.action == "prepare":
+    if args.action in ("prepare", "prepare-existing"):
         run += f" --count {args.count}"
+    if args.action.endswith("existing"):
+        run += f" --dataset-id {args.dataset_id}"
     commands.append(run)
     request = {
         "InstanceIds": [args.instance_id], "DocumentName": "AWS-RunShellScript",
-        "Parameters": {"commands": commands}, "Comment": "#195 V1 staging synthetic sessions",
+        "Parameters": {"commands": commands},
+        "Comment": "#286 V1 staging existing-user sessions" if args.action.endswith("existing")
+                   else "#195 V1 staging synthetic sessions",
     }
     with tempfile.NamedTemporaryFile(mode="w", prefix="yeodam-pool-ssm-", suffix=".json") as temporary:
         json.dump(request, temporary)

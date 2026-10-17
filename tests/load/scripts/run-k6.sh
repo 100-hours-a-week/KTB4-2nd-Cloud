@@ -31,10 +31,12 @@ mkdir -p "${result_dir}"
 
 export K6_SUMMARY_PATH="${result_dir}/summary.json"
 k6_args=(--no-color)
-if [[ "${script_path}" == scenarios/migration-write.js ]]; then
+if [[ "${script_path}" == scenarios/migration-write.js || "${script_path}" == scenarios/migration-trip-create.js ]]; then
   [[ -z "${K6_HTTP_DEBUG:-}" ]] || { echo 'Disable K6_HTTP_DEBUG to keep session credentials out of logs.' >&2; exit 2; }
-  k6_args+=(--console-output "${result_dir}/probe-events.jsonl" --log-format raw)
-  if [[ "${K6_PROBE_PROMETHEUS:-0}" == 1 ]]; then
+  event_name="probe-events.jsonl"
+  [[ "${script_path}" != scenarios/migration-trip-create.js ]] || event_name="trip-events.jsonl"
+  k6_args+=(--console-output "${result_dir}/${event_name}" --log-format raw)
+  if [[ "${script_path}" == scenarios/migration-write.js && "${K6_PROBE_PROMETHEUS:-0}" == 1 ]]; then
     export K6_PROMETHEUS_RW_SERVER_URL='http://plg.staging.yeodam.internal:9090/api/v1/write'
     export K6_PROMETHEUS_RW_TREND_STATS='p(95),p(99)'
     export K6_PROMETHEUS_RW_STALE_MARKERS=true
