@@ -34,3 +34,5 @@ done
 docker stop --time 5 "$name-gate" >/dev/null
 [[ "$(docker inspect --format '{{.State.ExitCode}}' "$name-gate")" == 0 ]]
 echo "request-cutover PID1 graceful stop: passed"
+
+bash "$root/tests/ci/check-request-cutover-staging.sh" "$image"

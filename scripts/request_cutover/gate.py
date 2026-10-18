@@ -55,6 +55,8 @@ class Gate:
         previous = json.loads(path.read_text())
         if previous['run_id'] != self.config['run_id'] or previous['config_hash'] != self.identity:
             raise ValueError('journal belongs to a different run/configuration')
+        if self.config.get('environment') == 'staging-preparation' and previous['phase'] != 'V1':
+            raise ValueError('preparation profile cannot resume committed V2 authority')
         self.phase = previous['phase']  # COMMIT is durable before any V2 dispatch.
         self.reason = 'recovered_committed' if self.phase == 'V2' else 'recovered_precommit'
 
@@ -104,6 +106,8 @@ class Gate:
         self.changed.notify_all()
 
     async def begin(self):
+        if self.config.get('environment') == 'staging-preparation':
+            raise ValueError('preparation profile cannot HOLD or import authentication')
         async with self.changed:
             if self.phase != 'V1':
                 raise ValueError('begin requires V1 state')
