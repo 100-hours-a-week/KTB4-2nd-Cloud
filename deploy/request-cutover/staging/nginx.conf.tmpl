@@ -1,0 +1,61 @@
+# Candidate only: replace the reviewed V1 staging vhost after DB-test handoff.
+# Run @@RUN_ID@@ / Cloud @@RELEASE@@. Never include alongside the original vhost.
+# Preserve only this rehearsal's bounded API IDs; other traffic gets a generated ID.
+map "$request_method:$uri:$http_x_request_id" $yeodam_cutover_request_id {
+    default $request_id;
+    "~^(?:GET:/api/users/me|POST:/api/trips):@@RUN_ID@@_[0-9]{1,8}$" $http_x_request_id;
+}
+map $uri $yeodam_cutover_route {
+    default "other";
+    ~^/api/auth/ "/api/auth/*";
+    ~^/api/trips(?:/|$) "/api/trips/*";
+    ~^/api/ "/api/*";
+    ~^/_next/ "/_next/*";
+}
+log_format yeodam_cutover_json escape=json
+    '{"source":"yeodam-cutover-nginx","run_id":"@@RUN_ID@@",'
+    '"request_id":"$yeodam_cutover_request_id","method":"$request_method",'
+    '"route":"$yeodam_cutover_route","status":$status,'
+    '"request_time":$request_time,"upstream_status":"$upstream_status"}';
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @@PUBLIC_HOST@@;
+    if ($host != @@PUBLIC_HOST@@) { return 421; }
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 308 https://@@PUBLIC_HOST@@$request_uri; }
+    access_log /var/log/nginx/yeodam-request-cutover.json yeodam_cutover_json;
+}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name @@PUBLIC_HOST@@;
+    if ($host != @@PUBLIC_HOST@@) { return 421; }
+    ssl_certificate @@CERTIFICATE@@;
+    ssl_certificate_key @@CERTIFICATE_KEY@@;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 150m;
+    proxy_http_version 1.1;
+    proxy_set_header Host @@PUBLIC_HOST@@;
+    proxy_set_header Connection "";
+    proxy_set_header Upgrade "";
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host @@PUBLIC_HOST@@;
+    proxy_set_header X-Forwarded-Port 443;
+    proxy_set_header X-Request-ID $yeodam_cutover_request_id;
+    proxy_next_upstream off;
+    proxy_redirect off;
+    proxy_intercept_errors off;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+    access_log /var/log/nginx/yeodam-request-cutover.json yeodam_cutover_json;
+    location /api/trips {
+        proxy_pass http://127.0.0.1:19091;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+    location / { proxy_pass http://127.0.0.1:19091; }
+}

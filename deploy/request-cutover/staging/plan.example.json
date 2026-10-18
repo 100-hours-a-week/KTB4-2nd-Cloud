@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging-preparation",
+  "run_id": "11111111-1111-4111-a111-111111111111",
+  "account_id": "483175530259",
+  "region": "ap-northeast-2",
+  "source": {
+    "instance_id": "i-05d320e3a87200d5a",
+    "private_ip": "10.30.0.174",
+    "vpc_id": "vpc-0d84786e134e32933",
+    "public_host": "v1-staging.yeodam-2gether.com",
+    "web_origin": "http://127.0.0.1:3000",
+    "api_origin": "http://127.0.0.1:8080"
+  },
+  "target": {
+    "cluster": "yeodam-v2-staging-app",
+    "service": "yeodam-v2-staging-backend",
+    "alb_dns_name": "yeodam-v2-staging-alb-1866428186.ap-northeast-2.elb.amazonaws.com",
+    "tls_name": "staging.yeodam-2gether.com"
+  },
+  "tls": {
+    "certificate": "/etc/letsencrypt/live/v1-staging.yeodam-2gether.com/fullchain.pem",
+    "certificate_key": "/etc/letsencrypt/live/v1-staging.yeodam-2gether.com/privkey.pem",
+    "ca_bundle": "/etc/ssl/certs/ca-certificates.crt"
+  },
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 16033,
+    "target_host": "10.30.10.28",
+    "target_port": 3306,
+    "database": "yeodam_v1_source",
+    "user": "yeodam_app",
+    "password_env": "CUTOVER_MYSQL_PASSWORD",
+    "expected_uuid": null,
+    "source_timezone": "UTC"
+  },
+  "redis": {
+    "host": "master.yeodam-v2-staging-redis.mzwqmx.apn2.cache.amazonaws.com",
+    "port": 6379,
+    "db": 0,
+    "tls": true,
+    "prefix": "yeodam:cutover:11111111-1111-4111-a111-111111111111:",
+    "password_env": "CUTOVER_REDIS_PASSWORD"
+  },
+  "handoff": {
+    "db_tests_complete": false,
+    "evidence": null
+  }
+}
