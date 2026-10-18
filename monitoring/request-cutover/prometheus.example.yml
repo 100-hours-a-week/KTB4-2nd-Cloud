@@ -1,0 +1,9 @@
+# Merge only into the dedicated rehearsal collector after checking target ownership.
+# No live PLG configuration is modified by this file.
+scrape_configs:
+  - job_name: yeodam-request-auth-cutover
+    scrape_interval: 1s
+    static_configs:
+      - targets: ["127.0.0.1:19092"]
+        labels:
+          environment: isolated-staging

@@ -5,6 +5,8 @@ python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/ci -p 'test_ci_baseline.py'
 python3 -m unittest discover -s tests/ci -p 'test_request_path_bridge.py'
 bash tests/ci/check-request-path-bridge.sh
+bash tests/ci/check-request-cutover.sh
+node --check tests/load/scenarios/request-auth-cutover.js
 
 bash -n scripts/*.sh tests/ci/*.sh
 bash -n deploy/v2-staging/kafka/topics.sh
