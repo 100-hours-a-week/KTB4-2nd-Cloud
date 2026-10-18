@@ -118,6 +118,12 @@ class SyntheticSessionPoolTest(unittest.TestCase):
                 self.assertEqual(pool["mode"], "existing")
                 self.assertEqual(pool["sessions"][0]["userId"], 42)
                 self.assertEqual(pool["sessions"][0]["csrfToken"], "csrf-value")
+                refresh_token = pool["sessions"][0]["refreshToken"]
+                self.assertTrue(refresh_token)
+                self.assertTrue(any(
+                    "'" + module.hashlib.sha256(refresh_token.encode()).hexdigest() + "'" in sql
+                    for sql in statements if sql.startswith("INSERT INTO login_sessions")
+                ))
                 self.assertEqual(output.stat().st_mode & 0o777, 0o600)
                 with self.assertRaisesRegex(RuntimeError, "cleanup-existing"):
                     module.cleanup(SimpleNamespace(run_id=run_id, output=str(output)))
