@@ -1,0 +1,83 @@
+# Generated HTTP-context include. Not a replacement for nginx.conf.
+# Environment: staging / Cloud release: @@RELEASE@@
+# Readiness: @@READINESS@@. Rendering does not deploy or prove compatibility.
+
+map $uri $yeodam_bridge_route {
+    default "other";
+    / "/";
+    ~^/api/auth/ "/api/auth/*";
+    ~^/api/trips(?:/|$) "/api/trips/*";
+    ~^/api/ "/api/*";
+    ~^/_next/ "/_next/*";
+}
+
+# No raw URI/query, Cookie, Authorization, request body or client IP.
+log_format yeodam_bridge_json escape=json
+    '{"timestamp":"$time_iso8601","request_id":"$request_id",'
+    '"method":"$request_method","normalized_route":"$yeodam_bridge_route",'
+    '"status":$status,"request_time":$request_time,'
+    '"upstream_status":"$upstream_status","upstream_addr":"$upstream_addr",'
+    '"upstream_response_time":"$upstream_response_time",'
+    '"path":"nginx-to-v2-alb","release":"@@RELEASE@@"}';
+
+server {
+    listen 80;
+    server_name @@PUBLIC_HOST@@;
+    if ($host != @@PUBLIC_HOST@@) { return 421; }
+    # Retain the existing certificate renewal route when reviewing installation.
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 308 https://@@PUBLIC_HOST@@$request_uri; }
+    access_log /var/log/nginx/yeodam-bridge-access.json yeodam_bridge_json;
+}
+
+server {
+    listen 443 ssl;
+    server_name @@PUBLIC_HOST@@;
+    if ($host != @@PUBLIC_HOST@@) { return 421; }
+    ssl_certificate @@CERTIFICATE@@;
+    ssl_certificate_key @@CERTIFICATE_KEY@@;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Variable proxy_pass resolves the ALB again, rather than pinning its IPs.
+    resolver @@DNS_RESOLVERS@@ valid=30s ipv6=off;
+    resolver_timeout 5s;
+    set $yeodam_bridge_alb @@ALB_DNS_NAME@@;
+    proxy_ssl_server_name on;
+    proxy_ssl_name @@UPSTREAM_TLS_NAME@@;
+    proxy_ssl_trusted_certificate @@UPSTREAM_CA_BUNDLE@@;
+    proxy_ssl_verify on;
+    proxy_ssl_verify_depth 3;
+    proxy_ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size @@MAX_BODY_MEGABYTES@@m;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Upgrade "";
+    proxy_set_header Host @@PUBLIC_HOST@@;
+    proxy_set_header X-Real-IP $remote_addr;
+    # This include assumes direct client ingress, not another trusted proxy.
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Host @@PUBLIC_HOST@@;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Port 443;
+    proxy_set_header X-Request-ID $request_id;
+    proxy_pass_request_headers on;
+    proxy_pass_request_body on;
+    proxy_request_buffering on;
+    proxy_next_upstream off;
+    proxy_intercept_errors off;
+    proxy_redirect off;
+    proxy_connect_timeout @@CONNECT_TIMEOUT_SECONDS@@s;
+    proxy_send_timeout @@SEND_TIMEOUT_SECONDS@@s;
+    proxy_read_timeout @@READ_TIMEOUT_SECONDS@@s;
+    access_log /var/log/nginx/yeodam-bridge-access.json yeodam_bridge_json;
+
+    location /api/trips {
+        proxy_pass https://$yeodam_bridge_alb$request_uri;
+        proxy_read_timeout @@TRIP_TIMEOUT_SECONDS@@s;
+        proxy_send_timeout @@TRIP_TIMEOUT_SECONDS@@s;
+    }
+    location / {
+        proxy_pass https://$yeodam_bridge_alb$request_uri;
+    }
+}

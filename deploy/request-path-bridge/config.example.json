@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "public_host": "cutover-staging.yeodam-2gether.com",
+  "alb_dns_name": "example-staging-123.ap-northeast-2.elb.amazonaws.com",
+  "upstream_tls_name": "staging.yeodam-2gether.com",
+  "dns_resolvers": ["169.254.169.253"],
+  "certificate": "/etc/yeodam/request-cutover/tls/fullchain.pem",
+  "certificate_key": "/etc/yeodam/request-cutover/tls/privkey.pem",
+  "upstream_ca_bundle": "/etc/ssl/certs/ca-certificates.crt",
+  "max_body_megabytes": 150,
+  "connect_timeout_seconds": 5,
+  "send_timeout_seconds": 60,
+  "read_timeout_seconds": 60,
+  "trip_timeout_seconds": 600,
+  "readiness": {
+    "writer_and_schema": null,
+    "session_csrf_refresh": null,
+    "legacy_upload_and_assets": null,
+    "pending_jobs": null,
+    "host_tls_oauth": null,
+    "rollback_with_current_writer": null
+  }
+}
