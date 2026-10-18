@@ -128,6 +128,7 @@ export default function () {
   console.log(JSON.stringify({ source: 'migration-trip-create', event: 'started', runId,
     iteration, userId: session.userId, tripName, request }));
   started.add(1);
+  const requestStartedAt = Date.now();
   const response = http.post(`${baseUrl}/api/trips`, JSON.stringify(request), {
     cookies: { accessToken: { value: session.accessToken },
       CSRF_CONTEXT: { value: session.csrfContext } },
@@ -143,7 +144,8 @@ export default function () {
   finalFailures.add(ok ? 0 : 1);
   console.log(JSON.stringify({ source: 'migration-trip-create', event: 'final', runId,
     iteration, userId: session.userId, tripName, status: response.status, tripId: data?.tripId ?? null,
-    outcome: ok ? 'confirmed' : response.status === 0 ? 'unconfirmed' : 'not_confirmed' }));
+    outcome: ok ? 'confirmed' : response.status === 0 ? 'unconfirmed' : 'not_confirmed',
+    elapsedMs: Date.now() - requestStartedAt, httpDurationMs: response.timings?.duration ?? null }));
   if ([400, 401, 403, 409].includes(response.status)) {
     exec.test.abort(`Trip request contract/auth failed with ${response.status}; reconcile recorded requests`);
   }
