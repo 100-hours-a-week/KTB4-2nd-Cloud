@@ -14,7 +14,10 @@ if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(runId
 }
 const datasetId = requiredEnv('K6_TRIP_DATASET_ID');
 const mode = __ENV.K6_TRIP_MODE || 'contract';
-if (!['contract', 'load', 'live'].includes(mode)) throw new Error('Trip mode must be contract, load or live');
+if (!['contract', 'load', 'live', 'original'].includes(mode)) {
+  throw new Error('Trip mode must be contract, load, live or original');
+}
+const longRun = mode === 'live' || mode === 'original';
 const rate = positiveIntegerEnv('K6_TRIP_RATE', 10);
 const duration = positiveIntegerEnv('K6_TRIP_DURATION_SECONDS', 120);
 const preVus = positiveIntegerEnv('K6_TRIP_PREALLOCATED_VUS', 40);
@@ -26,6 +29,9 @@ if (mode === 'load' && (![10, 30, 100].includes(rate) || duration !== 120 ||
 if (mode === 'live' && (rate !== 10 || duration !== 2700 || preVus !== 40 || maxVus !== 40)) {
   throw new Error('CDC live run requires 10 RPS for 2700s and 40 fixed VUs');
 }
+if (mode === 'original' && (rate !== 10 || duration !== 2100 || preVus !== 40 || maxVus !== 40)) {
+  throw new Error('CDC original run requires 10 RPS for 2100s and 40 fixed VUs');
+}
 const pool = new SharedArray('existing-user-session-pool', () => {
   const value = JSON.parse(open(requiredEnv('K6_SESSION_POOL_FILE')));
   return [{ version: value.version, mode: value.mode, runId: value.runId,
@@ -34,17 +40,17 @@ const pool = new SharedArray('existing-user-session-pool', () => {
 const expiry = Date.parse(pool[0].expiresAt);
 if (pool[0].version !== 1 || pool[0].mode !== 'existing' || pool[0].runId !== runId ||
     pool[0].datasetId !== datasetId || pool[0].baseUrl !== baseUrl || pool.length < 2 ||
-    !Number.isFinite(expiry) || expiry <= Date.now() + (mode === 'live' ? 180000 :
+    !Number.isFinite(expiry) || expiry <= Date.now() + (longRun ? 180000 :
       mode === 'load' ? duration * 1000 + 90000 : 90000)) {
   throw new Error('Existing-user pool identity, credentials, or remaining lifetime is invalid');
 }
-if (mode === 'live' && pool.length - 1 < maxVus) {
+if (longRun && pool.length - 1 < maxVus) {
   throw new Error('CDC live run requires a distinct refreshable session per VU');
 }
 for (let index = 1; index < pool.length; index += 1) {
   const session = pool[index];
   if (!Number.isInteger(session.userId) || !session.accessToken || !session.csrfToken ||
-      !session.csrfContext || (mode === 'live' && !session.refreshToken)) {
+      !session.csrfContext || (longRun && !session.refreshToken)) {
     throw new Error('Existing-user pool has an invalid session');
   }
 }
@@ -79,7 +85,7 @@ export function setup() {
 }
 
 function currentSession() {
-  if (mode !== 'live') return pool[1 + ((__VU - 1) % (pool.length - 1))];
+  if (!longRun) return pool[1 + ((__VU - 1) % (pool.length - 1))];
   if (liveSession === null) liveSession = { ...pool[__VU] };
   if (Date.now() < liveExpiry - 120000) return liveSession;
   const refreshed = http.post(`${baseUrl}/api/auth/token/refresh`, null, {
@@ -107,7 +113,7 @@ function currentSession() {
 }
 
 export default function () {
-  if (mode !== 'live' && Date.now() >= expiry - 10000) {
+  if (!longRun && Date.now() >= expiry - 10000) {
     exec.test.abort('Session pool expired; preserve events and reconcile');
   }
   const iteration = exec.scenario.iterationInTest;

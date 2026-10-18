@@ -5,18 +5,22 @@ import base64
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import time
 import urllib.error
 import urllib.request
 
 BASE = 'http://127.0.0.1:8083'
-PREFIX = 'staging.yeodam.migration.b1.live313'
-SOURCE = 'yeodam-migration-b1-live313-source'
+CASE = os.environ.get('CDC_LIVE_CASE', '313')
+if CASE not in ('313', '318'):
+    raise RuntimeError('unsupported CDC live case')
+PREFIX = f'staging.yeodam.migration.b1.live{CASE}'
+SOURCE = f'yeodam-migration-b1-live{CASE}-source'
 BROKER = 'yeodam-v2-staging-kafka-kafka-1'
 TABLES = ('users', 'trips', 'trip_regions')
 ORDERED_TOPIC = PREFIX + '.ordered-records'
-FULL_SINK_PREFIX = 'yeodam-migration-b1-live313-sink-'
+FULL_SINK_PREFIX = f'yeodam-migration-b1-live{CASE}-sink-'
 
 
 def api(path, value=None, method=None):
@@ -164,7 +168,7 @@ def register(kind):
             data['transforms'] = 'route'
             data['transforms.route.type'] = 'io.debezium.transforms.ByLogicalTableRouter'
             data['transforms.route.topic.regex'] = (
-                r'^staging\.yeodam\.migration\.b1\.live313\.yeodam_v1_source\.'
+                rf'^{re.escape(PREFIX)}\.yeodam_v1_source\.'
                 r'(users|trips|trip_regions)$')
             data['transforms.route.topic.replacement'] = ORDERED_TOPIC
             # This full topic is append-only; table-specific Struct keys stay intact.
@@ -221,8 +225,8 @@ def register(kind):
 
 def status():
     names = api('/connectors')
-    for name in [SOURCE] + [f'yeodam-migration-b1-live313-sink-{table}' for table in TABLES] + [
-            'yeodam-migration-b1-live313-sink-ordered']:
+    for name in [SOURCE] + [FULL_SINK_PREFIX + table for table in TABLES] + [
+            FULL_SINK_PREFIX + 'ordered']:
         if name in names:
             for attempt in range(10):
                 try:
@@ -344,6 +348,9 @@ def main():
                                          'pause-legacy-trip_regions',
                                          'status'))
     phase = parser.parse_args().phase
+    if CASE == '318' and phase not in ('topics', 'initial-source', 'sink-users',
+                                       'sink-trips', 'sink-trip_regions', 'status'):
+        raise RuntimeError('case 318 keeps the original route and does not pause or recover')
     if os.geteuid() != 0:
         raise RuntimeError('run as root on Kafka host')
     if phase == 'topics':
