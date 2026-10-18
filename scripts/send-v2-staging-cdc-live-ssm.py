@@ -45,6 +45,14 @@ ORIGINAL_PHASES = ('destination', 'topics', 'initial-source', 'sink-users',
                    'auth-refresh-smoke', 'generator-deploy')
 ORIGINAL_SERVER_IDS = {'318': '5405', '32210': '5406', '32230': '5407',
                        '322100': '5408'}
+FIXED_SERVER_IDS = {'323': '5409'}
+SERVER_IDS = {**ORIGINAL_SERVER_IDS, **FIXED_SERVER_IDS}
+FIXED_PHASES = ('destination', 'topics', 'initial-source', 'ordered-sink', 'status',
+                'attest-source', 'attest-destination', 'trip-check-source',
+                'trip-check-destination', 'trip-count-source',
+                'trip-count-destination', 'trip-export-source',
+                'trip-export-destination', 'trip-attest-source',
+                'trip-attest-destination', 'auth-refresh-smoke', 'generator-deploy')
 
 
 def append_file(commands, path, source, case='313'):
@@ -56,7 +64,7 @@ def append_file(commands, path, source, case='313'):
             if content.count(old) != 1:
                 raise RuntimeError('unexpected #313 server ID contract')
             content = content.replace(old, ('"database.server.id": "' +
-                                            ORIGINAL_SERVER_IDS[case] + '"').encode())
+                                            SERVER_IDS[case] + '"').encode())
     encoded = base64.b64encode(content).decode('ascii')
     commands.append(f": > {path}.b64")
     for start in range(0, len(encoded), 1000):
@@ -66,7 +74,9 @@ def append_file(commands, path, source, case='313'):
 
 
 def command_for(phase, run_id=None, case='313'):
-    if case not in ('313', *ORIGINAL_SERVER_IDS) or (case != '313' and phase not in ORIGINAL_PHASES):
+    if (case not in ('313', *SERVER_IDS) or
+            (case in ORIGINAL_SERVER_IDS and phase not in ORIGINAL_PHASES) or
+            (case in FIXED_SERVER_IDS and phase not in FIXED_PHASES)):
         raise ValueError('case or phase is outside the fixed CDC experiment contract')
     commands = ['set -eu', 'umask 077']
     if case != '313':
@@ -154,7 +164,7 @@ def main():
     parser.add_argument('--region', default='ap-northeast-2')
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--run-id')
-    parser.add_argument('--case', choices=('313', *ORIGINAL_SERVER_IDS), default='313')
+    parser.add_argument('--case', choices=('313', *SERVER_IDS), default='313')
     args = parser.parse_args()
     instance, commands = command_for(args.phase, args.run_id, args.case)
     if args.dry_run:

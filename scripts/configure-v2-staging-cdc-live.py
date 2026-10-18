@@ -14,7 +14,8 @@ import urllib.request
 BASE = 'http://127.0.0.1:8083'
 CASE = os.environ.get('CDC_LIVE_CASE', '313')
 ORIGINAL_CASES = ('318', '32210', '32230', '322100')
-if CASE not in ('313', *ORIGINAL_CASES):
+FIXED_CASES = ('323',)
+if CASE not in ('313', *ORIGINAL_CASES, *FIXED_CASES):
     raise RuntimeError('unsupported CDC live case')
 PREFIX = f'staging.yeodam.migration.b1.live{CASE}'
 SOURCE = f'yeodam-migration-b1-live{CASE}-source'
@@ -121,6 +122,19 @@ def ensure_ordered_topic():
         print('EXISTING_TOPIC', ORDERED_TOPIC, flush=True)
 
 
+def configure_ordered_route(data):
+    data['transforms'] = 'route'
+    data['transforms.route.type'] = 'io.debezium.transforms.ByLogicalTableRouter'
+    data['transforms.route.topic.regex'] = (
+        rf'^{re.escape(PREFIX)}\.yeodam_v1_source\.'
+        r'(users|trips|trip_regions)$')
+    data['transforms.route.topic.replacement'] = ORDERED_TOPIC
+    data['transforms.route.key.enforce.uniqueness'] = 'false'
+    data['producer.override.acks'] = 'all'
+    data['producer.override.enable.idempotence'] = 'true'
+    data['producer.override.max.in.flight.requests.per.connection'] = '1'
+
+
 def existing_credential(kind):
     directory = Path('/etc/yeodam/kafka/cdc')
     if not directory.is_dir():
@@ -157,6 +171,11 @@ def register(kind):
         if kind == 'initial-source':
             if any(topic_end(topic) != 0 for topic in topic_names()):
                 raise RuntimeError('full topics already have records; inspect before creating source')
+            if CASE in FIXED_CASES:
+                if (ORDERED_TOPIC not in set(kafka('--list').splitlines()) or
+                        topic_end(ORDERED_TOPIC) != 0):
+                    raise RuntimeError('fixed ordered topic must exist and be empty before source')
+                configure_ordered_route(data)
         if kind == 'ordered-source':
             if name not in api('/connectors'):
                 raise RuntimeError('initial source is missing')
@@ -166,24 +185,18 @@ def register(kind):
             if any(api('/connectors/' + FULL_SINK_PREFIX + table + '/status')
                    ['connector']['state'] != 'PAUSED' for table in TABLES):
                 raise RuntimeError('drain and pause all three snapshot sinks first')
-            data['transforms'] = 'route'
-            data['transforms.route.type'] = 'io.debezium.transforms.ByLogicalTableRouter'
-            data['transforms.route.topic.regex'] = (
-                rf'^{re.escape(PREFIX)}\.yeodam_v1_source\.'
-                r'(users|trips|trip_regions)$')
-            data['transforms.route.topic.replacement'] = ORDERED_TOPIC
             # This full topic is append-only; table-specific Struct keys stay intact.
-            data['transforms.route.key.enforce.uniqueness'] = 'false'
-            data['producer.override.acks'] = 'all'
-            data['producer.override.enable.idempotence'] = 'true'
-            data['producer.override.max.in.flight.requests.per.connection'] = '1'
+            configure_ordered_route(data)
     else:
         if kind == 'ordered-sink':
-            for table in TABLES:
-                old = FULL_SINK_PREFIX + table
-                if api('/connectors/' + old + '/status')['connector']['state'] != 'PAUSED':
-                    raise RuntimeError('pause every table-specific sink before ordered-sink')
-            if api('/connectors/' + SOURCE + '/config').get('transforms') != 'route':
+            if CASE not in FIXED_CASES:
+                for table in TABLES:
+                    old = FULL_SINK_PREFIX + table
+                    if api('/connectors/' + old + '/status')['connector']['state'] != 'PAUSED':
+                        raise RuntimeError('pause every table-specific sink before ordered-sink')
+            source_config = api('/connectors/' + SOURCE + '/config')
+            if (source_config.get('transforms') != 'route' or
+                    source_config.get('transforms.route.topic.replacement') != ORDERED_TOPIC):
                 raise RuntimeError('source is not routed to the ordered topic')
             name = FULL_SINK_PREFIX + 'ordered'
             if name in api('/connectors'):
@@ -352,10 +365,14 @@ def main():
     if CASE in ORIGINAL_CASES and phase not in ('topics', 'initial-source', 'sink-users',
                                                 'sink-trips', 'sink-trip_regions', 'status'):
         raise RuntimeError('original case keeps table topics and does not pause or recover')
+    if CASE in FIXED_CASES and phase not in ('topics', 'initial-source', 'ordered-sink', 'status'):
+        raise RuntimeError('fixed case routes snapshot and binlog to one topic from the start')
     if os.geteuid() != 0:
         raise RuntimeError('run as root on Kafka host')
     if phase == 'topics':
         ensure_topics()
+        if CASE in FIXED_CASES:
+            ensure_ordered_topic()
     elif phase == 'ordered-topic':
         ensure_ordered_topic()
     elif phase == 'pause-legacy-sinks':
