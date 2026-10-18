@@ -18,6 +18,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--sequence', type=int, default=0)
+    parser.add_argument('--name-prefix', choices=('b304', 'b309'), default='b304')
     args = parser.parse_args()
     if str(UUID(args.run_id)) != args.run_id:
         raise ValueError('canonical run ID required')
@@ -30,11 +31,13 @@ def main():
     if pool.get('mode') != 'existing' or pool.get('runId') != args.run_id or len(pool.get('sessions', [])) != 1:
         raise ValueError('unexpected session pool')
     expiry = datetime.fromisoformat(pool['expiresAt'])
-    if expiry <= datetime.now(timezone.utc):
-        raise ValueError('session expired')
+    remaining_seconds = (expiry - datetime.now(timezone.utc)).total_seconds()
+    if remaining_seconds <= 120:
+        raise ValueError('session expires too soon')
+    print(f'API_SESSION_REMAINING_SECONDS {int(remaining_seconds)}', flush=True)
     session = pool['sessions'][0]
     name_key = args.run_id if args.sequence == 0 else args.run_id + ':' + str(args.sequence)
-    trip_name = 'b304' + hashlib.sha256(name_key.encode()).hexdigest()[:6]
+    trip_name = args.name_prefix + hashlib.sha256(name_key.encode()).hexdigest()[:6]
     payload = {'tripName': trip_name, 'startDate': '2025-01-01',
                'endDate': '2025-01-03', 'regionCodes': ['50110']}
     request = Request(BASE_URL + '/api/trips',
