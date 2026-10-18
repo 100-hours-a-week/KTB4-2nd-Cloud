@@ -42,17 +42,20 @@ ORIGINAL_PHASES = ('destination', 'topics', 'initial-source', 'sink-users',
                    'trip-export-source', 'trip-export-destination',
                    'trip-attest-source', 'trip-attest-destination',
                    'auth-refresh-smoke', 'generator-deploy')
+ORIGINAL_SERVER_IDS = {'318': '5405', '32210': '5406', '32230': '5407',
+                       '322100': '5408'}
 
 
 def append_file(commands, path, source, case='313'):
     content = source.read_bytes()
-    if case == '318':
-        content = content.replace(b'live313', b'live318')
+    if case != '313':
+        content = content.replace(b'live313', f'live{case}'.encode())
         if source == SOURCE_CONFIG:
             old = b'"database.server.id": "5404"'
             if content.count(old) != 1:
                 raise RuntimeError('unexpected #313 server ID contract')
-            content = content.replace(old, b'"database.server.id": "5405"')
+            content = content.replace(old, ('"database.server.id": "' +
+                                            ORIGINAL_SERVER_IDS[case] + '"').encode())
     encoded = base64.b64encode(content).decode('ascii')
     commands.append(f": > {path}.b64")
     for start in range(0, len(encoded), 1000):
@@ -62,17 +65,17 @@ def append_file(commands, path, source, case='313'):
 
 
 def command_for(phase, run_id=None, case='313'):
-    if case not in ('313', '318') or (case == '318' and phase not in ORIGINAL_PHASES):
+    if case not in ('313', *ORIGINAL_SERVER_IDS) or (case != '313' and phase not in ORIGINAL_PHASES):
         raise ValueError('case or phase is outside the fixed CDC experiment contract')
     commands = ['set -eu', 'umask 077']
-    if case == '318':
-        commands.append('export CDC_LIVE_CASE=318')
+    if case != '313':
+        commands.append(f'export CDC_LIVE_CASE={case}')
 
     def transfer(path, source):
         append_file(commands, path, source, case)
 
     def result(instance):
-        if case == '318':
+        if case != '313':
             # Base64 chunks are opaque; rewrite their destination path only.
             rendered = []
             for line in commands:
@@ -80,9 +83,9 @@ def command_for(phase, run_id=None, case='313'):
                     payload, separator, destination = line.partition(' >> ')
                     if not separator:
                         raise RuntimeError('unexpected encoded transfer command')
-                    rendered.append(payload + separator + destination.replace('live313', 'live318'))
+                    rendered.append(payload + separator + destination.replace('live313', f'live{case}'))
                 else:
-                    rendered.append(line.replace('live313', 'live318'))
+                    rendered.append(line.replace('live313', f'live{case}'))
             return instance, rendered
         return instance, commands
 
@@ -148,7 +151,7 @@ def main():
     parser.add_argument('--region', default='ap-northeast-2')
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--run-id')
-    parser.add_argument('--case', choices=('313', '318'), default='313')
+    parser.add_argument('--case', choices=('313', *ORIGINAL_SERVER_IDS), default='313')
     args = parser.parse_args()
     instance, commands = command_for(args.phase, args.run_id, args.case)
     if args.dry_run:

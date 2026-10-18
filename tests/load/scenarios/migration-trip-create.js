@@ -29,8 +29,10 @@ if (mode === 'load' && (![10, 30, 100].includes(rate) || duration !== 120 ||
 if (mode === 'live' && (rate !== 10 || duration !== 2700 || preVus !== 40 || maxVus !== 40)) {
   throw new Error('CDC live run requires 10 RPS for 2700s and 40 fixed VUs');
 }
-if (mode === 'original' && (rate !== 10 || duration !== 2100 || preVus !== 40 || maxVus !== 40)) {
-  throw new Error('CDC original run requires 10 RPS for 2100s and 40 fixed VUs');
+const originalVus = { 10: 40, 30: 120, 100: 800 };
+if (mode === 'original' && (duration !== 2100 || preVus !== originalVus[rate] ||
+    maxVus !== originalVus[rate])) {
+  throw new Error('CDC original run requires 10/30/100 RPS for 2100s with fixed 40/120/800 VUs');
 }
 const pool = new SharedArray('existing-user-session-pool', () => {
   const value = JSON.parse(open(requiredEnv('K6_SESSION_POOL_FILE')));
@@ -72,9 +74,9 @@ export const options = {
       preAllocatedVUs: preVus, maxVUs: maxVus, gracefulStop: '30s' },
   },
   thresholds: mode === 'contract' ? { trip_create_confirmed: ['rate==1'] } : {
-    trip_create_confirmed: rate === 100
+    trip_create_confirmed: rate === 100 && mode !== 'original'
       ? [{ threshold: 'rate==1', abortOnFail: true, delayAbortEval: '10s' }] : ['rate==1'],
-    dropped_iterations: rate === 100
+    dropped_iterations: rate === 100 && mode !== 'original'
       ? [{ threshold: 'count==0', abortOnFail: true, delayAbortEval: '10s' }] : ['count==0'],
   },
 };

@@ -13,7 +13,8 @@ import urllib.request
 
 BASE = 'http://127.0.0.1:8083'
 CASE = os.environ.get('CDC_LIVE_CASE', '313')
-if CASE not in ('313', '318'):
+ORIGINAL_CASES = ('318', '32210', '32230', '322100')
+if CASE not in ('313', *ORIGINAL_CASES):
     raise RuntimeError('unsupported CDC live case')
 PREFIX = f'staging.yeodam.migration.b1.live{CASE}'
 SOURCE = f'yeodam-migration-b1-live{CASE}-source'
@@ -348,9 +349,9 @@ def main():
                                          'pause-legacy-trip_regions',
                                          'status'))
     phase = parser.parse_args().phase
-    if CASE == '318' and phase not in ('topics', 'initial-source', 'sink-users',
-                                       'sink-trips', 'sink-trip_regions', 'status'):
-        raise RuntimeError('case 318 keeps the original route and does not pause or recover')
+    if CASE in ORIGINAL_CASES and phase not in ('topics', 'initial-source', 'sink-users',
+                                                'sink-trips', 'sink-trip_regions', 'status'):
+        raise RuntimeError('original case keeps table topics and does not pause or recover')
     if os.geteuid() != 0:
         raise RuntimeError('run as root on Kafka host')
     if phase == 'topics':

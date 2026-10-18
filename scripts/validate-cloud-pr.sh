@@ -14,6 +14,7 @@ KAFKA_CLUSTER_ID=abcdefghijklmnopqrstuv docker compose -f deploy/v2-staging/kafk
 python3 -m unittest discover -s tests/load/tests -p 'test_synthetic_session_pool.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_probe.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_trip.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_cdc_322_contract.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_defense.py'
 node --test tests/load/tests/nginx-defense.test.mjs
 node --check tests/load/scenarios/nginx-request-repeat.js
