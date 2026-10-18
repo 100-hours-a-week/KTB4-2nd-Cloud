@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/ci -p 'test_ci_baseline.py'
 
 bash -n scripts/*.sh tests/ci/*.sh
@@ -8,11 +9,16 @@ bash -n deploy/v2-staging/kafka/topics.sh
 KAFKA_CLUSTER_ID=abcdefghijklmnopqrstuv docker compose -f deploy/v2-staging/kafka/compose.yml config --quiet
 python3 -m unittest discover -s tests/load/tests -p 'test_synthetic_session_pool.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_probe.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_migration_trip.py'
 node --test tests/load/tests/migration-probe.test.mjs
 node --check tests/load/scenarios/migration-write.js
+node --check tests/load/scenarios/migration-trip-create.js
+bash -n tests/load/scripts/run-k6.sh
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_observability.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_staging_cutover.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_rehearsal_reset.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_migration_seed.py'
+bash -n terraform/v2/staging/files/initialize-mysql-replica.sh
 bash -n scripts/provision-staging-cutover-account.sh
 bash -n monitoring/v2-staging/install-proxysql-metrics.sh
 bash -n monitoring/v2-staging/prepare-ai-metrics-secret.sh

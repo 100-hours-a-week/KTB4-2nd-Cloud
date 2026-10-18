@@ -31,10 +31,12 @@ mkdir -p "${result_dir}"
 
 export K6_SUMMARY_PATH="${result_dir}/summary.json"
 k6_args=(--no-color)
-if [[ "${script_path}" == scenarios/migration-write.js ]]; then
+if [[ "${script_path}" == scenarios/migration-write.js || "${script_path}" == scenarios/migration-trip-create.js ]]; then
   [[ -z "${K6_HTTP_DEBUG:-}" ]] || { echo 'Disable K6_HTTP_DEBUG to keep session credentials out of logs.' >&2; exit 2; }
-  k6_args+=(--console-output "${result_dir}/probe-events.jsonl" --log-format raw)
-  if [[ "${K6_PROBE_PROMETHEUS:-0}" == 1 ]]; then
+  event_name="probe-events.jsonl"
+  [[ "${script_path}" != scenarios/migration-trip-create.js ]] || event_name="trip-events.jsonl"
+  k6_args+=(--console-output "${result_dir}/${event_name}" --log-format raw)
+  if [[ "${script_path}" == scenarios/migration-write.js && "${K6_PROBE_PROMETHEUS:-0}" == 1 ]]; then
     export K6_PROMETHEUS_RW_SERVER_URL='http://plg.staging.yeodam.internal:9090/api/v1/write'
     export K6_PROMETHEUS_RW_TREND_STATS='p(95),p(99)'
     export K6_PROMETHEUS_RW_STALE_MARKERS=true
@@ -67,15 +69,26 @@ network_tx_before="$(network_totals tx)"
 
 set +e
 if [[ -x /usr/bin/time ]] && /usr/bin/time --version 2>&1 | grep -qi 'GNU time'; then
-  /usr/bin/time \
-    --verbose \
-    --output="${result_dir}/runner-time.txt" \
-    k6 run "${k6_args[@]}" "${script_path}" 2>&1 |
-    tee "${result_dir}/run.log"
-  k6_status="${PIPESTATUS[0]}"
+  if [[ "${script_path}" == scenarios/migration-trip-create.js ]]; then
+    /usr/bin/time --verbose --output="${result_dir}/runner-time.txt" \
+      k6 run "${k6_args[@]}" "${script_path}" >"${result_dir}/run.log" 2>&1
+    k6_status="$?"
+  else
+    /usr/bin/time \
+      --verbose \
+      --output="${result_dir}/runner-time.txt" \
+      k6 run "${k6_args[@]}" "${script_path}" 2>&1 |
+      tee "${result_dir}/run.log"
+    k6_status="${PIPESTATUS[0]}"
+  fi
 else
-  k6 run "${k6_args[@]}" "${script_path}" 2>&1 | tee "${result_dir}/run.log"
-  k6_status="${PIPESTATUS[0]}"
+  if [[ "${script_path}" == scenarios/migration-trip-create.js ]]; then
+    k6 run "${k6_args[@]}" "${script_path}" >"${result_dir}/run.log" 2>&1
+    k6_status="$?"
+  else
+    k6 run "${k6_args[@]}" "${script_path}" 2>&1 | tee "${result_dir}/run.log"
+    k6_status="${PIPESTATUS[0]}"
+  fi
   echo "GNU time unavailable; runner-time.txt was not created." >"${result_dir}/runner-time-unavailable.txt"
 fi
 set -e
@@ -94,4 +107,8 @@ printf '%s\n' \
   "exit_code=${k6_status}" >"${result_dir}/execution.txt"
 
 echo "Result directory: ${result_dir}"
+if [[ "${script_path}" == scenarios/migration-trip-create.js ]]; then
+  echo "k6 output saved to ${result_dir}/run.log (last 25 lines):"
+  tail -n 25 "${result_dir}/run.log"
+fi
 exit "${k6_status}"

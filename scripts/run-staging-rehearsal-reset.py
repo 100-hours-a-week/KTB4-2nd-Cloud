@@ -52,10 +52,11 @@ def main():
     # Install before every resumed run; operational data is kept in host checkpoints.
     for instance in NAMES:
         dispatch(args.profile,instance,["printf '%s' '"+encoded+"' | base64 -d > /usr/local/sbin/yeodam-staging-rehearsal-reset",'chmod 0750 /usr/local/sbin/yeodam-staging-rehearsal-reset'])
-    def stage(name,instance,extra=''):
-        if name in state['done']:return
+    def stage(name,instance,extra='',always=False):
+        if name in state['done'] and not always:return
         output=dispatch(args.profile,instance,[f'python3 /usr/local/sbin/yeodam-staging-rehearsal-reset {name} --reset-id {args.reset_id} --previous-run {args.previous_run}'+extra])
-        print(output,flush=True);checkpoint(name)
+        print(output,flush=True)
+        if name not in state['done']:checkpoint(name)
     stage('pause',SOURCE)
     stage('snapshot-target',TARGET)
     stage('restore-source',SOURCE)
@@ -64,8 +65,8 @@ def main():
         line=next(v for v in output.splitlines() if v.startswith('Source snapshot ready: '))
         state['readyKey']=line.split('s3://yeodam-v2-staging-mysql-backup-483175530259-ap-northeast-2/')[1]
         print(output,flush=True);checkpoint('source-snapshot')
-    stage('allow-target-initialize',SOURCE)
     if 'initialize-replica' not in state['done']:
+        stage('allow-target-initialize',SOURCE,always=True)
         output=dispatch(args.profile,TARGET,[],document='yeodam-v2-staging-mysql-initialize-replica',parameters={'snapshotReadyKey':[state['readyKey']],'confirmDestinationReset':['RESET_STAGING_V1_COMPAT_SCHEMA_AFTER_BACKUP']})
         print(output,flush=True);checkpoint('initialize-replica')
     # Always reverify before opening the writer, including resumed execution.

@@ -27,5 +27,24 @@ class ResetSafetyTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'dump';data=b'rows'*100000;path.write_bytes(data)
             self.assertEqual(reset.sha_file(path),hashlib.sha256(data).hexdigest())
+    def test_initialize_refences_destination_before_validating_snapshot(self):
+        class DB:
+            def __init__(self,gtid):self.gtid=gtid;self.calls=[]
+            def identity(self,role):
+                self.calls.append(('identity',role));return ['2','target','1','1']
+            def query(self,role,sql,**kwargs):
+                self.calls.append(('query',sql))
+                if 'gtid_executed' in sql:return self.gtid
+                if 'innodb_trx' in sql:return '0'
+                if 'persisted_variables' in sql:return 'ON'
+                return ''
+        expected={'targetUuid':'target','gtid':'snapshot-gtid'}
+        db=DB('snapshot-gtid')
+        reset.protect_target_for_initialize(db,expected)
+        self.assertIn('SET PERSIST super_read_only=ON',db.calls[0][1])
+        db=DB('unexpected-write')
+        with self.assertRaisesRegex(RuntimeError,'changed after preserved snapshot'):
+            reset.protect_target_for_initialize(db,expected)
+        self.assertIn('SET PERSIST super_read_only=ON',db.calls[0][1])
 
 if __name__=='__main__':unittest.main()
