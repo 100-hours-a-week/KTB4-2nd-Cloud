@@ -81,8 +81,8 @@ def validate_rows(rows, request, user_id):
 def reconcile(events, source, target, run_id, mode='baseline', summary=None, expected_rate=10):
     if mode not in ('baseline', 'cutover'):
         raise ValueError('Mode must be baseline or cutover')
-    if expected_rate not in (10, 30):
-        raise ValueError('Expected rate must be 10 or 30 RPS')
+    if expected_rate not in (10, 30, 100):
+        raise ValueError('Expected rate must be 10, 30 or 100 RPS')
     started, final, plan = read_events(events, run_id)
     source_rows, target_rows = read_rows(source), read_rows(target)
     results = []
@@ -117,6 +117,9 @@ def reconcile(events, source, target, run_id, mode='baseline', summary=None, exp
               'committedWithoutConfirmedHttp': sum(row['classification'] == 'committed_without_confirmed_http' for row in results),
               'requests': results}
     report['passed'] = bool(results) and not unexpected and len(final) == len(started) and all(row['passed'] for row in results)
+    if plan is not None and summary is None:
+        report['passed'] = False
+        report['summaryMissing'] = True
     if summary is not None:
         metrics = json.loads(summary.read_text(encoding='utf-8'))['metrics']
         if not plan or plan.get('mode') != 'load' or plan.get('rate') != expected_rate or plan.get('duration') != 120:
@@ -141,7 +144,7 @@ def main():
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--mode', choices=('baseline', 'cutover'), default='baseline')
     parser.add_argument('--summary', type=Path, help='k6 summary.json; required for a load result')
-    parser.add_argument('--expected-rate', type=int, choices=(10, 30), default=10,
+    parser.add_argument('--expected-rate', type=int, choices=(10, 30, 100), default=10,
                         help='Expected load rate; 10 RPS by default for earlier runs')
     parser.add_argument('--require-target-only', action='store_true', help='Require at least one post-switch Target-only trip')
     parser.add_argument('--output', type=Path)

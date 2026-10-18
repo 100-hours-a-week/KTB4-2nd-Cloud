@@ -21,7 +21,7 @@ def digest(items):
     return value.hexdigest()
 
 
-def attest_events(path, run_id):
+def attest_events(path, run_id, expected_rate=30, allow_incomplete=False):
     started, final = {}, {}
     plan = None
     for line in path.read_text(encoding='utf-8').splitlines():
@@ -41,33 +41,43 @@ def attest_events(path, run_id):
         if key in selected:
             raise ValueError('Duplicate request event')
         selected[key] = event
-    if not plan or plan.get('mode') != 'load' or plan.get('rate') != 30 or plan.get('duration') != 120:
-        raise ValueError('Expected one 30 RPS / 120s plan')
-    if len(started) not in (3600, 3601) or set(started) != set(final):
+    if not plan or plan.get('mode') != 'load' or plan.get('rate') != expected_rate or plan.get('duration') != 120:
+        raise ValueError(f'Expected one {expected_rate} RPS / 120s plan')
+    if not started or len(started) > expected_rate * 120 + 1 or set(final) - set(started):
         raise ValueError('Incomplete request events')
-    projected = []
+    if not allow_incomplete and (len(started) < expected_rate * 120 or set(started) != set(final)):
+        raise ValueError('Incomplete request events')
+    projected, request_projected = [], []
     trip_ids = set()
     for key, first in started.items():
-        last = final[key]
-        trip_id = last.get('tripId')
-        if last.get('outcome') != 'confirmed' or last.get('status') != 201 or not isinstance(trip_id, int):
-            raise ValueError('Unconfirmed HTTP response')
-        if trip_id in trip_ids:
-            raise ValueError('Duplicate response trip ID')
-        trip_ids.add(trip_id)
         request = first['request']
         codes = request['regionCodes']
         if request['tripName'] != key[1] or not codes or len(codes) != len(set(codes)):
             raise ValueError('Invalid request regions')
+        last = final.get(key)
+        confirmed = last is not None and last.get('outcome') == 'confirmed' and last.get('status') == 201 \
+            and isinstance(last.get('tripId'), int)
+        if not allow_incomplete and not confirmed:
+            raise ValueError('Unconfirmed HTTP response')
+        if confirmed:
+            trip_id = last['tripId']
+            if trip_id in trip_ids:
+                raise ValueError('Duplicate response trip ID')
+            trip_ids.add(trip_id)
         for code in codes:
-            projected.append((str(trip_id), str(key[0]), key[1], request['startDate'],
-                              request['endDate'], 'PROCESSING', str(code)))
+            request_projected.append((str(key[0]), key[1], request['startDate'],
+                                      request['endDate'], 'PROCESSING', str(code)))
+            if confirmed:
+                projected.append((str(trip_id),) + request_projected[-1])
     return {'runId': run_id, 'kind': 'events', 'trips': len(started),
-            'regions': len(projected), 'projectionSha256': digest(projected)}
+            'regions': len(request_projected), 'final': len(final), 'confirmed': len(trip_ids),
+            'unconfirmed': len(final) - len(trip_ids), 'missingFinal': len(started) - len(final),
+            'requestProjectionSha256': digest(request_projected),
+            'projectionSha256': digest(projected) if len(trip_ids) == len(started) else None}
 
 
-def attest_rows(path, run_id, max_trip_id=None):
-    rows, projected, groups = [], [], {}
+def attest_rows(path, run_id, max_trip_id=None, allow_empty=False):
+    rows, projected, request_projected, groups = [], [], [], {}
     with gzip.open(path, 'rt', encoding='utf-8') as stream:
         for line in stream:
             fields = line.rstrip('\n').split('\t')
@@ -89,10 +99,13 @@ def attest_rows(path, run_id, max_trip_id=None):
             group['codes'].add(row['regionCode'])
             rows.append(tuple(fields))
             projected.append(tuple(row[field] for field in FIELDS[:6]) + (row['regionCode'],))
-    if not rows or any(len(group['tripIds']) != 1 for group in groups.values()):
+            request_projected.append(tuple(row[field] for field in FIELDS[1:6]) + (row['regionCode'],))
+    if (not rows and not allow_empty) or any(len(group['tripIds']) != 1 for group in groups.values()):
         raise ValueError('Missing rows or duplicate trip')
     return {'runId': run_id, 'kind': 'rows', 'trips': len(groups), 'regions': len(rows),
-            'minTripId': min(int(row[0]) for row in rows), 'maxTripId': max(int(row[0]) for row in rows),
+            'minTripId': min((int(row[0]) for row in rows), default=None),
+            'maxTripId': max((int(row[0]) for row in rows), default=None),
+            'requestProjectionSha256': digest(request_projected),
             'projectionSha256': digest(projected), 'fullRowsSha256': digest(rows)}
 
 
@@ -102,8 +115,12 @@ def main():
     parser.add_argument('--path', type=Path, required=True)
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--max-trip-id', type=int, help='For comparing the pre-switch Source prefix on Target')
+    parser.add_argument('--expected-rate', type=int, choices=(10, 30, 100), default=30)
+    parser.add_argument('--allow-incomplete', action='store_true',
+                        help='Keep aggregate evidence for a stopped or failed run; never implies a passed load')
     args = parser.parse_args()
-    report = attest_events(args.path, args.run_id) if args.kind == 'events' else attest_rows(args.path, args.run_id, args.max_trip_id)
+    report = (attest_events(args.path, args.run_id, args.expected_rate, args.allow_incomplete)
+              if args.kind == 'events' else attest_rows(args.path, args.run_id, args.max_trip_id, args.allow_incomplete))
     print(json.dumps(report, sort_keys=True))
 
 
