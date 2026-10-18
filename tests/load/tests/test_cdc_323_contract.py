@@ -71,6 +71,11 @@ class Cdc323ContractTest(unittest.TestCase):
                 SENDER.command_for(phase, case='323')
         for phase in ('topics', 'initial-source', 'ordered-sink', 'status'):
             SENDER.command_for(phase, case='323')
+        instance, commands = SENDER.command_for('ordered-audit', case='323')
+        self.assertEqual(instance, SENDER.KAFKA)
+        self.assertTrue(any('ordered-audit.py' in line for line in commands))
+        with self.assertRaises(ValueError):
+            SENDER.command_for('ordered-audit', case='313')
 
 
 if __name__ == '__main__':

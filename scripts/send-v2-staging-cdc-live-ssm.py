@@ -22,6 +22,7 @@ REFRESH_SMOKE = ROOT / 'tests/load/scripts/check-v1-refresh-session.py'
 TRIP_SCENARIO = ROOT / 'tests/load/scenarios/migration-trip-create.js'
 TRIP_RUNNER = ROOT / 'tests/load/scripts/run-k6.sh'
 TRIP_ATTEST = ROOT / 'tests/load/scripts/attest-migration-trip.py'
+ORDERED_AUDIT = ROOT / 'scripts/audit-v2-staging-cdc-ordered-events.py'
 SOURCE_CONFIG = ROOT / 'deploy/v2-staging/kafka/cdc-live313-source.json'
 SINK_CONFIG = ROOT / 'deploy/v2-staging/kafka/cdc-live313-sink.json'
 DDL = ROOT / 'deploy/v2-staging/kafka/cdc-live313-destination.sql'
@@ -35,7 +36,7 @@ PHASES = ('destination', 'topics', 'initial-source', 'sink-users', 'sink-trips',
           'trip-count-source', 'trip-count-destination',
           'trip-export-source', 'trip-export-destination',
           'trip-attest-source', 'trip-attest-destination',
-          'auth-refresh-smoke', 'generator-deploy')
+          'auth-refresh-smoke', 'generator-deploy', 'ordered-audit')
 ORIGINAL_PHASES = ('destination', 'topics', 'initial-source', 'sink-users',
                    'sink-trips', 'sink-trip_regions', 'status', 'attest-source',
                    'attest-destination', 'trip-check-source', 'trip-check-destination',
@@ -48,6 +49,7 @@ ORIGINAL_SERVER_IDS = {'318': '5405', '32210': '5406', '32230': '5407',
 FIXED_SERVER_IDS = {'323': '5409'}
 SERVER_IDS = {**ORIGINAL_SERVER_IDS, **FIXED_SERVER_IDS}
 FIXED_PHASES = ('destination', 'topics', 'initial-source', 'ordered-sink', 'status',
+                'ordered-audit',
                 'attest-source', 'attest-destination', 'trip-check-source',
                 'trip-check-destination', 'trip-count-source',
                 'trip-count-destination', 'trip-export-source',
@@ -76,7 +78,8 @@ def append_file(commands, path, source, case='313'):
 def command_for(phase, run_id=None, case='313'):
     if (case not in ('313', *SERVER_IDS) or
             (case in ORIGINAL_SERVER_IDS and phase not in ORIGINAL_PHASES) or
-            (case in FIXED_SERVER_IDS and phase not in FIXED_PHASES)):
+            (case in FIXED_SERVER_IDS and phase not in FIXED_PHASES) or
+            (phase == 'ordered-audit' and case != '323')):
         raise ValueError('case or phase is outside the fixed CDC experiment contract')
     commands = ['set -eu', 'umask 077']
     if case != '313':
@@ -147,6 +150,11 @@ def command_for(phase, run_id=None, case='313'):
         transfer('/run/yeodam-cdc-live313-refresh-smoke.py', REFRESH_SMOKE)
         commands.append(f'python3 /run/yeodam-cdc-live313-refresh-smoke.py --run-id {run_id}')
         return result(SOURCE_DB)
+
+    if phase == 'ordered-audit':
+        transfer('/run/yeodam-cdc-live323-ordered-audit.py', ORDERED_AUDIT)
+        commands.append('python3 /run/yeodam-cdc-live323-ordered-audit.py')
+        return result(KAFKA)
 
     transfer('/run/yeodam-cdc-live313.py', CONNECTOR)
     transfer('/run/yeodam-cdc-live313-source.json', SOURCE_CONFIG)
