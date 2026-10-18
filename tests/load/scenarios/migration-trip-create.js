@@ -14,7 +14,7 @@ if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(runId
 }
 const datasetId = requiredEnv('K6_TRIP_DATASET_ID');
 const mode = __ENV.K6_TRIP_MODE || 'contract';
-if (!['contract', 'load'].includes(mode)) throw new Error('Trip mode must be contract or load');
+if (!['contract', 'load', 'live'].includes(mode)) throw new Error('Trip mode must be contract, load or live');
 const rate = positiveIntegerEnv('K6_TRIP_RATE', 10);
 const duration = positiveIntegerEnv('K6_TRIP_DURATION_SECONDS', 120);
 const preVus = positiveIntegerEnv('K6_TRIP_PREALLOCATED_VUS', 40);
@@ -22,6 +22,9 @@ const maxVus = positiveIntegerEnv('K6_TRIP_MAX_VUS', preVus);
 if (mode === 'load' && (![10, 30, 100].includes(rate) || duration !== 120 ||
     maxVus < preVus || preVus < rate * 4)) {
   throw new Error('Trip load requires 10, 30 or 100 RPS for 120s and at least rate × 4 preallocated VUs');
+}
+if (mode === 'live' && (rate !== 10 || duration !== 2700 || preVus !== 40 || maxVus !== 40)) {
+  throw new Error('CDC live run requires 10 RPS for 2700s and 40 fixed VUs');
 }
 const pool = new SharedArray('existing-user-session-pool', () => {
   const value = JSON.parse(open(requiredEnv('K6_SESSION_POOL_FILE')));
@@ -31,12 +34,17 @@ const pool = new SharedArray('existing-user-session-pool', () => {
 const expiry = Date.parse(pool[0].expiresAt);
 if (pool[0].version !== 1 || pool[0].mode !== 'existing' || pool[0].runId !== runId ||
     pool[0].datasetId !== datasetId || pool[0].baseUrl !== baseUrl || pool.length < 2 ||
-    !Number.isFinite(expiry) || expiry <= Date.now() + (mode === 'load' ? duration * 1000 : 0) + 90000) {
+    !Number.isFinite(expiry) || expiry <= Date.now() + (mode === 'live' ? 180000 :
+      mode === 'load' ? duration * 1000 + 90000 : 90000)) {
   throw new Error('Existing-user pool identity, credentials, or remaining lifetime is invalid');
+}
+if (mode === 'live' && pool.length - 1 < maxVus) {
+  throw new Error('CDC live run requires a distinct refreshable session per VU');
 }
 for (let index = 1; index < pool.length; index += 1) {
   const session = pool[index];
-  if (!Number.isInteger(session.userId) || !session.accessToken || !session.csrfToken || !session.csrfContext) {
+  if (!Number.isInteger(session.userId) || !session.accessToken || !session.csrfToken ||
+      !session.csrfContext || (mode === 'live' && !session.refreshToken)) {
     throw new Error('Existing-user pool has an invalid session');
   }
 }
@@ -44,6 +52,10 @@ for (let index = 1; index < pool.length; index += 1) {
 const confirmed = new Rate('trip_create_confirmed');
 const started = new Counter('trip_create_started');
 const finalFailures = new Counter('trip_create_final_failures');
+const authRefreshes = new Counter('trip_auth_refreshes');
+const authRefreshFailures = new Counter('trip_auth_refresh_failures');
+let liveSession = null; // k6 gives each VU its own copy across iterations.
+let liveExpiry = expiry;
 export const options = {
   tags: { kind: mode === 'contract' ? 'migration_trip_contract' : 'migration_trip_load', testid: runId },
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(95)', 'p(99)'],
@@ -66,10 +78,40 @@ export function setup() {
     mode, rate, duration, sessionCount: pool.length - 1, preVus, maxVus }));
 }
 
+function currentSession() {
+  if (mode !== 'live') return pool[1 + ((__VU - 1) % (pool.length - 1))];
+  if (liveSession === null) liveSession = { ...pool[__VU] };
+  if (Date.now() < liveExpiry - 120000) return liveSession;
+  const refreshed = http.post(`${baseUrl}/api/auth/token/refresh`, null, {
+    cookies: { refreshToken: { value: liveSession.refreshToken },
+      CSRF_CONTEXT: { value: liveSession.csrfContext } },
+    headers: { 'X-CSRF-TOKEN': liveSession.csrfToken },
+    responseCallback: http.expectedStatuses(200), timeout: '10s', redirects: 0,
+    tags: { operation: 'auth_refresh' },
+  });
+  const accessToken = refreshed.cookies?.accessToken?.[0]?.value;
+  const refreshToken = refreshed.cookies?.refreshToken?.[0]?.value;
+  if (refreshed.status !== 200 || !accessToken || !refreshToken) {
+    authRefreshFailures.add(1);
+    console.log(JSON.stringify({ source: 'migration-trip-create', event: 'auth_refresh_failed', runId,
+      vu: __VU, status: refreshed.status }));
+    exec.test.abort('Real auth refresh failed; preserve events and reconcile');
+  }
+  liveSession.accessToken = accessToken;
+  liveSession.refreshToken = refreshToken;
+  liveExpiry = Date.now() + 1800000;
+  authRefreshes.add(1);
+  console.log(JSON.stringify({ source: 'migration-trip-create', event: 'auth_refreshed', runId,
+    vu: __VU, status: refreshed.status }));
+  return liveSession;
+}
+
 export default function () {
-  if (Date.now() >= expiry - 10000) exec.test.abort('Session pool expired; preserve events and reconcile');
+  if (mode !== 'live' && Date.now() >= expiry - 10000) {
+    exec.test.abort('Session pool expired; preserve events and reconcile');
+  }
   const iteration = exec.scenario.iterationInTest;
-  const session = pool[1 + ((__VU - 1) % (pool.length - 1))];
+  const session = currentSession();
   // The run prefix separates experiments; the base36 suffix is injective within this run.
   const suffix = iteration.toString(36).padStart(4, '0');
   if (suffix.length !== 4) exec.test.abort('Trip name space exhausted');
