@@ -20,6 +20,7 @@ ATTEST = ROOT / 'scripts/attest-v2-staging-cdc-live.py'
 TRIP_DB = ROOT / 'tests/load/scripts/cdc-live-trip-db.py'
 REFRESH_SMOKE = ROOT / 'tests/load/scripts/check-v1-refresh-session.py'
 TRIP_SCENARIO = ROOT / 'tests/load/scenarios/migration-trip-create.js'
+TRIP_RUNNER = ROOT / 'tests/load/scripts/run-k6.sh'
 TRIP_ATTEST = ROOT / 'tests/load/scripts/attest-migration-trip.py'
 SOURCE_CONFIG = ROOT / 'deploy/v2-staging/kafka/cdc-live313-source.json'
 SINK_CONFIG = ROOT / 'deploy/v2-staging/kafka/cdc-live313-sink.json'
@@ -93,11 +94,13 @@ def command_for(phase, run_id=None, case='313'):
         base = '/opt/yeodam-load/source/tests/load'
         for filename, source in (
             ('scenarios/migration-trip-create.js', TRIP_SCENARIO),
+            ('scripts/run-k6.sh', TRIP_RUNNER),
             ('scripts/attest-migration-trip.py', TRIP_ATTEST),
         ):
             temporary = '/run/yeodam-cdc-live313-' + Path(filename).name
             transfer(temporary, source)
-            commands.append(f'install -o ubuntu -g ubuntu -m 0644 {temporary} {base}/{filename}')
+            mode = '0755' if filename == 'scripts/run-k6.sh' else '0644'
+            commands.append(f'install -o ubuntu -g ubuntu -m {mode} {temporary} {base}/{filename}')
             commands.append(f'sha256sum {base}/{filename}')
         return result(GENERATOR)
     if phase == 'destination':

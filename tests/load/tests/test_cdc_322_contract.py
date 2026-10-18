@@ -53,6 +53,12 @@ class Cdc322ContractTest(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         SENDER.command_for(phase, case=case)
 
+    def test_generator_deploy_includes_native_summary_runner(self):
+        instance, commands = SENDER.command_for('generator-deploy', case='32210')
+        self.assertEqual(instance, SENDER.GENERATOR)
+        self.assertTrue(any('install -o ubuntu -g ubuntu -m 0755' in line and
+                            '/scripts/run-k6.sh' in line for line in commands))
+
 
 if __name__ == '__main__':
     unittest.main()
