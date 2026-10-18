@@ -46,6 +46,12 @@ server {
 (folder / 'payload').write_bytes(b'x' * 32768)
 (folder / 'nginx.conf').write_text('events {}\nhttp { include /work/bridge.conf;\n' + fixture + '}\n')
 PY
+# Linux bind mounts preserve mktemp's 0700 directory mode. The unprivileged
+# Nginx worker must traverse /work and read this synthetic static response.
+# Keep the ephemeral TLS private key restricted to the root master process.
+chmod 0755 "${bridge_check_dir}"
+chmod 0644 "${bridge_check_dir}/payload"
+chmod 0600 "${bridge_check_dir}/key.pem"
 python3 scripts/render-request-path-bridge.py render \
   --config "${bridge_check_dir}/config.json" \
   --release 1111111111111111111111111111111111111111 \

@@ -30,6 +30,8 @@ bash tests/ci/check-request-path-bridge.sh
 
 모의 Upstream은 컨테이너의 loopback에 있고 같은 이름의 named upstream으로 ALB DNS 조회를 대체한다. **따라서 실제 DNS 재해석·ALB·업무 POST 본문 저장·세션·비동기 작업 보존을 검증한 것은 아니다.** 실제 배포할 Nginx 버전도 실행 전에 따로 확인한다. 이미지가 캐시에 없으면 Docker가 이미지를 내려받는다.
 
+Linux bind mount에서는 `mktemp` 디렉터리의 0700 권한도 컨테이너에 유지된다. 시험 스크립트는 비특권 Nginx Worker가 정적 payload를 읽도록 **시험 디렉터리만 0755, 합성 payload만 0644**로 지정한다. 임시 TLS 개인 키는 0600으로 유지한다. 실제 서버 파일의 권한은 변경하지 않는다.
+
 개별 설정을 확인하려면:
 
 ```bash
