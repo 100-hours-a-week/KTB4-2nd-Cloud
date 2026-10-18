@@ -207,3 +207,52 @@ output "mysql_cdc_test_private_hostname" { value = aws_route53_record.mysql_cdc_
 output "mysql_cdc_test_root_parameter_name" { value = local.mysql_cdc_root_parameter }
 output "mysql_cdc_test_sink_parameter_name" { value = local.mysql_cdc_sink_parameter }
 output "mysql_cdc_test_source_parameter_name" { value = local.mysql_cdc_source_password_parameter }
+
+resource "aws_ssm_document" "mysql_cdc_pilot304_destination" {
+  name          = "yeodam-v2-staging-cdc-pilot304-destination"
+  document_type = "Command"
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "Create three preverified B1 pilot tables on the dedicated destination only"
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "preparePilotDestination"
+      inputs = {
+        runCommand = [
+          "export CDC_PILOT_DDL_B64='${filebase64("${path.module}/../../../deploy/v2-staging/kafka/cdc-pilot304-destination.sql")}'",
+          "printf '%s' '${filebase64("${path.module}/../../../scripts/prepare-v2-staging-cdc-pilot-destination.sh")}' | base64 --decode > /run/yeodam-cdc-pilot304-destination.sh",
+          "bash /run/yeodam-cdc-pilot304-destination.sh",
+        ]
+      }
+    }]
+  })
+  tags = local.common_tags
+}
+
+resource "aws_ssm_document" "mysql_cdc_pilot304_connector" {
+  name          = "yeodam-v2-staging-cdc-pilot304-connector"
+  document_type = "Command"
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "Create isolated B1 pilot topics and register one source or one FK-ordered sink"
+    parameters = {
+      Phase = {
+        type          = "String"
+        allowedValues = ["topics", "initial-source", "sink-users", "sink-trips", "sink-trip_regions", "ordered-topic", "pause-legacy-sinks", "ordered-source", "ordered-sink", "status"]
+      }
+    }
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "configurePilotConnector"
+      inputs = {
+        runCommand = [
+          "export CDC_PILOT_SOURCE_B64='${filebase64("${path.module}/../../../deploy/v2-staging/kafka/cdc-pilot304-source.json")}'",
+          "export CDC_PILOT_SINK_B64='${filebase64("${path.module}/../../../deploy/v2-staging/kafka/cdc-pilot304-sink.json")}'",
+          "printf '%s' '${filebase64("${path.module}/../../../scripts/configure-v2-staging-cdc-pilot.py")}' | base64 --decode > /run/yeodam-cdc-pilot304.py",
+          "python3 /run/yeodam-cdc-pilot304.py '{{ Phase }}'",
+        ]
+      }
+    }]
+  })
+  tags = local.common_tags
+}

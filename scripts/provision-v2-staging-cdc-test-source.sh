@@ -25,7 +25,7 @@ host = os.environ['CDC_KAFKA_HOST']
 query = ("SET SESSION sql_log_bin=0; "
          "CREATE USER IF NOT EXISTS 'yeodam_cdc_test'@'%s' IDENTIFIED BY '%s' REQUIRE SSL; "
          "ALTER USER 'yeodam_cdc_test'@'%s' IDENTIFIED BY '%s' REQUIRE SSL; "
-         "GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'yeodam_cdc_test'@'%s'; " %
+         "GRANT REPLICATION SLAVE, REPLICATION CLIENT, RELOAD, SHOW DATABASES ON *.* TO 'yeodam_cdc_test'@'%s'; " %
          (host,password,host,password,host))
 for table in ('users','trips','trip_regions'):
     query += "GRANT SELECT ON yeodam_v1_source.%s TO 'yeodam_cdc_test'@'%s'; " % (table,host)
