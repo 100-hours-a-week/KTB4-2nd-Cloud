@@ -1,0 +1,17 @@
+{
+  "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
+  "tasks.max": "1",
+  "connection.url": "jdbc:mysql://mysql-cdc-test.staging.yeodam.internal:3306/yeodam_cdc?sslMode=REQUIRED",
+  "connection.username": "yeodam_cdc_sink",
+  "connection.password": "${file:/run/yeodam-cdc/b1-sink.properties:password}",
+  "insert.mode": "upsert",
+  "delete.enabled": "true",
+  "primary.key.mode": "record_key",
+  "schema.evolution": "none",
+  "collection.name.format": "${source.table}",
+  "errors.tolerance": "none",
+  "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "key.converter.schemas.enable": "true",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "true"
+}
