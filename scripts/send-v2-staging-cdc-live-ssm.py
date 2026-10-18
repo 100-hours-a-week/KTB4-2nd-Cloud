@@ -35,10 +35,25 @@ PHASES = ('destination', 'topics', 'initial-source', 'sink-users', 'sink-trips',
           'trip-export-source', 'trip-export-destination',
           'trip-attest-source', 'trip-attest-destination',
           'auth-refresh-smoke', 'generator-deploy')
+ORIGINAL_PHASES = ('destination', 'topics', 'initial-source', 'sink-users',
+                   'sink-trips', 'sink-trip_regions', 'status', 'attest-source',
+                   'attest-destination', 'trip-check-source', 'trip-check-destination',
+                   'trip-count-source', 'trip-count-destination',
+                   'trip-export-source', 'trip-export-destination',
+                   'trip-attest-source', 'trip-attest-destination',
+                   'auth-refresh-smoke', 'generator-deploy')
 
 
-def append_file(commands, path, source):
-    encoded = base64.b64encode(source.read_bytes()).decode('ascii')
+def append_file(commands, path, source, case='313'):
+    content = source.read_bytes()
+    if case == '318':
+        content = content.replace(b'live313', b'live318')
+        if source == SOURCE_CONFIG:
+            old = b'"database.server.id": "5404"'
+            if content.count(old) != 1:
+                raise RuntimeError('unexpected #313 server ID contract')
+            content = content.replace(old, b'"database.server.id": "5405"')
+    encoded = base64.b64encode(content).decode('ascii')
     commands.append(f": > {path}.b64")
     for start in range(0, len(encoded), 1000):
         commands.append(f"printf '%s' '{encoded[start:start + 1000]}' >> {path}.b64")
@@ -46,8 +61,31 @@ def append_file(commands, path, source):
     commands.append(f'rm {path}.b64')
 
 
-def command_for(phase, run_id=None):
+def command_for(phase, run_id=None, case='313'):
+    if case not in ('313', '318') or (case == '318' and phase not in ORIGINAL_PHASES):
+        raise ValueError('case or phase is outside the fixed CDC experiment contract')
     commands = ['set -eu', 'umask 077']
+    if case == '318':
+        commands.append('export CDC_LIVE_CASE=318')
+
+    def transfer(path, source):
+        append_file(commands, path, source, case)
+
+    def result(instance):
+        if case == '318':
+            # Base64 chunks are opaque; rewrite their destination path only.
+            rendered = []
+            for line in commands:
+                if line.startswith("printf '%s' '"):
+                    payload, separator, destination = line.partition(' >> ')
+                    if not separator:
+                        raise RuntimeError('unexpected encoded transfer command')
+                    rendered.append(payload + separator + destination.replace('live313', 'live318'))
+                else:
+                    rendered.append(line.replace('live313', 'live318'))
+            return instance, rendered
+        return instance, commands
+
     if phase == 'generator-deploy':
         base = '/opt/yeodam-load/source/tests/load'
         for filename, source in (
@@ -55,52 +93,52 @@ def command_for(phase, run_id=None):
             ('scripts/attest-migration-trip.py', TRIP_ATTEST),
         ):
             temporary = '/run/yeodam-cdc-live313-' + Path(filename).name
-            append_file(commands, temporary, source)
+            transfer(temporary, source)
             commands.append(f'install -o ubuntu -g ubuntu -m 0644 {temporary} {base}/{filename}')
             commands.append(f'sha256sum {base}/{filename}')
-        return GENERATOR, commands
+        return result(GENERATOR)
     if phase == 'destination':
-        append_file(commands, '/run/yeodam-cdc-live313-destination.sh', PREPARE)
-        append_file(commands, '/run/yeodam-cdc-live313-destination.sql.b64data', DDL)
+        transfer('/run/yeodam-cdc-live313-destination.sh', PREPARE)
+        transfer('/run/yeodam-cdc-live313-destination.sql.b64data', DDL)
         commands.append('export CDC_LIVE_DDL_B64="$(base64 -w0 /run/yeodam-cdc-live313-destination.sql.b64data)"')
         commands.append('bash /run/yeodam-cdc-live313-destination.sh')
-        return DESTINATION, commands
+        return result(DESTINATION)
 
     if phase.startswith('attest-'):
         role = phase.removeprefix('attest-')
-        append_file(commands, '/run/yeodam-cdc-live313-attest.py', ATTEST)
+        transfer('/run/yeodam-cdc-live313-attest.py', ATTEST)
         commands.append(f'python3 /run/yeodam-cdc-live313-attest.py {role}')
-        return (SOURCE_DB if role == 'source' else DESTINATION), commands
+        return result(SOURCE_DB if role == 'source' else DESTINATION)
 
     if phase.startswith('trip-'):
         if not run_id or str(UUID(run_id)) != run_id:
             raise ValueError('trip phase requires a canonical run ID')
         _, action, role = phase.split('-')
         if action == 'attest':
-            append_file(commands, '/run/yeodam-cdc-live313-trip-attest.py', TRIP_ATTEST)
+            transfer('/run/yeodam-cdc-live313-trip-attest.py', TRIP_ATTEST)
             commands.append('python3 /run/yeodam-cdc-live313-trip-attest.py '
                             f'--kind rows --run-id {run_id} '
                             f'--path /run/yeodam-migration-trip/{run_id}.{role}.tsv.gz')
-            return (SOURCE_DB if role == 'source' else DESTINATION), commands
-        append_file(commands, '/run/yeodam-cdc-live313-trip-db.py', TRIP_DB)
+            return result(SOURCE_DB if role == 'source' else DESTINATION)
+        transfer('/run/yeodam-cdc-live313-trip-db.py', TRIP_DB)
         commands.append(f'python3 /run/yeodam-cdc-live313-trip-db.py {action} '
                         f'--role {role} --run-id {run_id}')
-        return (SOURCE_DB if role == 'source' else DESTINATION), commands
+        return result(SOURCE_DB if role == 'source' else DESTINATION)
 
     if phase == 'auth-refresh-smoke':
         if not run_id or str(UUID(run_id)) != run_id:
             raise ValueError('auth refresh smoke requires a canonical run ID')
-        append_file(commands, '/run/yeodam-cdc-live313-refresh-smoke.py', REFRESH_SMOKE)
+        transfer('/run/yeodam-cdc-live313-refresh-smoke.py', REFRESH_SMOKE)
         commands.append(f'python3 /run/yeodam-cdc-live313-refresh-smoke.py --run-id {run_id}')
-        return SOURCE_DB, commands
+        return result(SOURCE_DB)
 
-    append_file(commands, '/run/yeodam-cdc-live313.py', CONNECTOR)
-    append_file(commands, '/run/yeodam-cdc-live313-source.json', SOURCE_CONFIG)
-    append_file(commands, '/run/yeodam-cdc-live313-sink.json', SINK_CONFIG)
+    transfer('/run/yeodam-cdc-live313.py', CONNECTOR)
+    transfer('/run/yeodam-cdc-live313-source.json', SOURCE_CONFIG)
+    transfer('/run/yeodam-cdc-live313-sink.json', SINK_CONFIG)
     commands.append('export CDC_LIVE_SOURCE_B64="$(base64 -w0 /run/yeodam-cdc-live313-source.json)"')
     commands.append('export CDC_LIVE_SINK_B64="$(base64 -w0 /run/yeodam-cdc-live313-sink.json)"')
     commands.append(f'python3 /run/yeodam-cdc-live313.py {phase}')
-    return KAFKA, commands
+    return result(KAFKA)
 
 
 def main():
@@ -110,13 +148,14 @@ def main():
     parser.add_argument('--region', default='ap-northeast-2')
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--run-id')
+    parser.add_argument('--case', choices=('313', '318'), default='313')
     args = parser.parse_args()
-    instance, commands = command_for(args.phase, args.run_id)
+    instance, commands = command_for(args.phase, args.run_id, args.case)
     if args.dry_run:
         print(args.phase, instance, 'command_lines', len(commands),
               'max_line_bytes', max(len(command.encode()) for command in commands))
         return
-    with tempfile.NamedTemporaryFile(mode='w', prefix='yeodam-cdc-live313-',
+    with tempfile.NamedTemporaryFile(mode='w', prefix=f'yeodam-cdc-live{args.case}-',
                                      suffix='.json', delete=False) as stream:
         path = Path(stream.name)
         path.chmod(0o600)
