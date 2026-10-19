@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+# Only HTTPS egress is allowed on this private host.
+sed -i '/^URIs:/ s#http://#https://#g' /etc/apt/sources.list.d/ubuntu.sources
+apt-get update
+apt-get install --yes --no-install-recommends ca-certificates curl
+install -m 0755 -d /etc/apt/keyrings
+curl --fail --location --silent --show-error https://download.docker.com/linux/ubuntu/gpg \
+  --output /etc/apt/keyrings/docker.asc
+chmod 0644 /etc/apt/keyrings/docker.asc
+cat > /etc/apt/sources.list.d/docker.sources <<'SOURCES'
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: noble
+Components: stable
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/docker.asc
+SOURCES
+apt-get update
+apt-get install --yes --no-install-recommends docker-ce docker-ce-cli containerd.io docker-compose-plugin
+systemctl enable --now docker
+
+# Resolve the separate data volume by EBS serial, not a volatile NVMe name.
+expected_serial=$(printf '%s' '${volume_id}' | tr -d '-' | tr '[:upper:]' '[:lower:]')
+device=''
+for attempt in $(seq 1 120); do
+  while read -r name serial kind; do
+    [ "$kind" = disk ] || continue
+    normalized=$(printf '%s' "$serial" | tr -d '-' | tr '[:upper:]' '[:lower:]')
+    if [ "$normalized" = "$expected_serial" ]; then
+      device="/dev/$name"
+    fi
+  done < <(lsblk -dn -o NAME,SERIAL,TYPE)
+  [ -n "$device" ] && break
+  sleep 5
+done
+[ -n "$device" ] || { echo 'Kafka data volume was not attached' >&2; exit 1; }
+
+# Never overwrite an existing filesystem or partition table.
+filesystem=$(blkid -o value -s TYPE "$device" || true)
+case "$filesystem" in
+  '')
+    if [ -n "$(wipefs --no-act --noheadings --output TYPE "$device")" ]; then
+      echo 'Unexpected existing signature on Kafka data volume' >&2
+      exit 1
+    fi
+    mkfs.ext4 "$device"
+    ;;
+  ext4) ;;
+  *) echo "Unexpected Kafka filesystem: $filesystem" >&2; exit 1 ;;
+esac
+uuid=$(blkid -o value -s UUID "$device")
+install -d -m 0755 /data/kafka
+if ! grep -Fq "UUID=$uuid " /etc/fstab; then
+  printf 'UUID=%s /data/kafka ext4 defaults 0 2\n' "$uuid" >> /etc/fstab
+fi
+mountpoint -q /data/kafka || mount /data/kafka
+install -d -m 0750 /opt/yeodam-kafka
+install -d -m 0700 /etc/yeodam/kafka
+printf 'Kafka host ready; broker and Connect deployment is a separate step.\n' \
+  > /var/lib/yeodam-kafka-host-ready
