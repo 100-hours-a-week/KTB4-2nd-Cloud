@@ -1,0 +1,471 @@
+[
+  {
+    "uid": "v2p-scrape-backend",
+    "title": "Metrics unavailable: backend",
+    "expr": "(1 - clamp_max(sum(up{job=\"yeodam-backend-production\"}), 1)) or vector(1)",
+    "hold": "3m",
+    "service": "backend",
+    "summary": "수집 가능한 대상이 없습니다. 서비스 장애와 수집 경로 장애를 구분해 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-services",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-scrape-ai-api",
+    "title": "Metrics unavailable: ai-api",
+    "expr": "(1 - clamp_max(sum(up{job=\"v2-ai-shared\"}), 1)) or vector(1)",
+    "hold": "3m",
+    "service": "ai-api",
+    "summary": "수집 가능한 대상이 없습니다. 서비스 장애와 수집 경로 장애를 구분해 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-services",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-scrape-mysql",
+    "title": "Metrics unavailable: mysql",
+    "expr": "(1 - clamp_max(sum(up{job=\"v2-mysql-production\"}), 1)) or vector(1)",
+    "hold": "3m",
+    "service": "mysql",
+    "summary": "수집 가능한 대상이 없습니다. 서비스 장애와 수집 경로 장애를 구분해 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-services",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-scrape-ai-redis",
+    "title": "Metrics unavailable: ai-redis",
+    "expr": "(1 - clamp_max(sum(up{job=\"v2-ai-redis\"}), 1)) or vector(1)",
+    "hold": "3m",
+    "service": "ai-redis",
+    "summary": "수집 가능한 대상이 없습니다. 서비스 장애와 수집 경로 장애를 구분해 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-services",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-scrape-kafka",
+    "title": "Metrics unavailable: kafka",
+    "expr": "(1 - clamp_max(sum(up{job=\"v2-kafka-lag\"}), 1)) or vector(1)",
+    "hold": "3m",
+    "service": "kafka",
+    "summary": "수집 가능한 대상이 없습니다. 서비스 장애와 수집 경로 장애를 구분해 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-services",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-scrape-connect",
+    "title": "Metrics unavailable: connect",
+    "expr": "(1 - clamp_max(sum(up{job=\"v2-connect\"}), 1)) or vector(1)",
+    "hold": "3m",
+    "service": "connect",
+    "summary": "수집 가능한 대상이 없습니다. 서비스 장애와 수집 경로 장애를 구분해 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-services",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-http-errors",
+    "title": "BE 5xx ratio",
+    "expr": "(((sum(increase(http_server_requests_seconds_count{job=\"yeodam-backend-production\",uri!~\"/(api/)?actuator.*\",status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(increase(http_server_requests_seconds_count{job=\"yeodam-backend-production\",uri!~\"/(api/)?actuator.*\"}[5m])), 1)) >= bool 0.05) * (sum(increase(http_server_requests_seconds_count{job=\"yeodam-backend-production\",uri!~\"/(api/)?actuator.*\"}[5m])) >= bool 20) or vector(0)",
+    "hold": "3m",
+    "service": "backend",
+    "summary": "최근5분 요청20건 이상에서 5xx 비율5% 이상. Actuator 제외.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-backend",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-http-p95",
+    "title": "BE HTTP p95",
+    "expr": "(histogram_quantile(0.95, sum by(le) (rate(http_server_requests_seconds_bucket{job=\"yeodam-backend-production\",uri!~\"/(api/)?actuator.*\"}[5m]))) > bool 2) * (sum(increase(http_server_requests_seconds_count{job=\"yeodam-backend-production\",uri!~\"/(api/)?actuator.*\"}[5m])) >= bool 20) or vector(0)",
+    "hold": "5m",
+    "service": "backend",
+    "summary": "최근5분 요청20건 이상에서 p95가2초 초과. 초기 운영 기준이며 SLO 확정값이 아닙니다.",
+    "severity": "warning",
+    "dashboard": "yeodam-v2-backend",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-hikari",
+    "title": "BE DB connection wait",
+    "expr": "max(hikaricp_connections_pending{job=\"yeodam-backend-production\"}) > bool 0",
+    "hold": "5m",
+    "service": "backend",
+    "summary": "Hikari 연결 대기가5분 이상 지속됩니다. DB 잠금과 Task 자원을 함께 확인하세요.",
+    "severity": "warning",
+    "dashboard": "yeodam-v2-backend",
+    "comparator": "gt",
+    "threshold": 0,
+    "noDataState": "NoData"
+  },
+  {
+    "uid": "v2p-mysql",
+    "title": "MySQL connection unavailable",
+    "expr": "min(mysql_up{job=\"v2-mysql-production\"}) < bool 1",
+    "hold": "2m",
+    "service": "mysql",
+    "summary": "Exporter는 응답하지만 MySQL 연결에 실패합니다.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-mysql-production",
+    "comparator": "gt",
+    "threshold": 0,
+    "noDataState": "NoData"
+  },
+  {
+    "uid": "v2p-redis",
+    "title": "AI Redis connection unavailable",
+    "expr": "min(redis_up{job=\"v2-ai-redis\"}) < bool 1",
+    "hold": "2m",
+    "service": "ai-redis",
+    "summary": "Exporter는 응답하지만 AI Redis 연결에 실패합니다.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-redis",
+    "comparator": "gt",
+    "threshold": 0,
+    "noDataState": "NoData"
+  },
+  {
+    "uid": "v2p-redis-aof",
+    "title": "AI Redis AOF unhealthy",
+    "expr": "min({__name__=~\"redis_aof_enabled|redis_aof_last_write_status|redis_aof_last_bgrewrite_status\",job=\"v2-ai-redis\"}) < bool 1",
+    "hold": "2m",
+    "service": "ai-redis",
+    "summary": "AOF 비활성 또는 최근 쓰기/재작성 실패입니다.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-redis",
+    "comparator": "gt",
+    "threshold": 0,
+    "noDataState": "NoData"
+  },
+  {
+    "uid": "v2p-redis-memory",
+    "title": "AI Redis memory pressure",
+    "expr": "max(redis_memory_used_bytes{job=\"v2-ai-redis\"} / redis_memory_max_bytes{job=\"v2-ai-redis\"}) > bool 0.85",
+    "hold": "10m",
+    "service": "ai-redis",
+    "summary": "Redis maxmemory 대비85% 이상이10분 지속됩니다. noeviction 상태와 쓰기 오류를 확인하세요.",
+    "severity": "warning",
+    "dashboard": "yeodam-v2-redis",
+    "comparator": "gt",
+    "threshold": 0,
+    "noDataState": "NoData"
+  },
+  {
+    "uid": "v2p-cdc",
+    "title": "Outbox CDC not running",
+    "expr": "(1 - clamp_max(sum(yeodam_connect_task_state{job=\"v2-connect\",connector=\"yeodam-production-outbox\",state=~\"(?i)running\"}),1)) or vector(1)",
+    "hold": "3m",
+    "service": "connect",
+    "summary": "Outbox Connector의 RUNNING task가 없습니다. Connect 상태와 DB 접속을 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-kafka-cdc",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-ai-stalled",
+    "title": "AI work has no terminal progress",
+    "expr": "((sum(yeodam_ai_jobs{job=\"v2-ai-shared\",state=~\"queued_process|queued_story|running|pending_result\"}) > bool 0) * ((sum(increase(yeodam_ai_operation_duration_seconds_count{job=\"v2-ai-shared\",phase=\"total\"}[10m])) or vector(0)) == bool 0) or vector(0)) * scalar(max(up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} * 0 + 1) or vector(0))",
+    "hold": "5m",
+    "service": "ai-api",
+    "summary": "작업이 남아 있고 최근10분 종료 처리 진전이 없습니다. 최소5분 지속 후 알림. GPU 계획 중지는 제외하며 BE 저장 완료를 의미하지 않습니다.",
+    "severity": "warning",
+    "dashboard": "yeodam-v2-ai-jobs",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-discovery-backend",
+    "title": "Target discovery stale: backend",
+    "expr": "(max(time() - prometheus_sd_file_mtime_seconds{filename=\"/etc/prometheus/targets/backend.json\"}) > bool 90) or vector(1)",
+    "hold": "3m",
+    "service": "observability",
+    "summary": "AWS 대상 탐색이90초 이상 갱신되지 않았거나 파일이 없습니다. 마지막 대상의 up만 믿지 마세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-services",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-discovery-gpu",
+    "title": "Target discovery stale: gpu",
+    "expr": "(max(time() - prometheus_sd_file_mtime_seconds{filename=\"/etc/prometheus/targets/gpu.json\"}) > bool 90) or vector(1)",
+    "hold": "3m",
+    "service": "observability",
+    "summary": "AWS 대상 탐색이90초 이상 갱신되지 않았거나 파일이 없습니다. 마지막 대상의 up만 믿지 마세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-services",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-gpu-agent",
+    "title": "Running GPU agent unavailable",
+    "expr": "vector(scalar(max(up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} * 0 + 1) or vector(0)) * (1 - scalar(max(up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"}) or vector(0))))",
+    "hold": "5m",
+    "service": "ai-gpu",
+    "summary": "AWS running 상태에서 GPU 관측기가5분 이상 응답하지 않습니다. 기동 과정과 보안 그룹을 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-ai-gpu",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-gpu-sample",
+    "title": "GPU host sample stale",
+    "expr": "((max(time() - yeodam_gpu_sample_timestamp_seconds{job=\"v2-ai-gpu-host\"}) > bool 90) or vector(1)) * scalar(max(up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"}) or vector(0))",
+    "hold": "3m",
+    "service": "ai-gpu",
+    "summary": "관측기는 응답하지만 NVIDIA/컨테이너 샘플이90초 이상 갱신되지 않습니다.",
+    "severity": "warning",
+    "dashboard": "yeodam-v2-ai-gpu",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-gpu-runtime",
+    "title": "AI GPU runtime unhealthy",
+    "expr": "((min({__name__=~\"yeodam_gpu_smi_success|yeodam_ai_container_inspect_success|yeodam_ai_container_running|yeodam_ai_endpoint_ready|yeodam_ai_filesystem_mounted\",job=\"v2-ai-gpu-host\"}) < bool 1) or vector(1)) * scalar(max(up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"}) or vector(0))",
+    "hold": "10m",
+    "service": "ai-gpu",
+    "summary": "GPU 또는 AI 컨테이너/readiness 오류가10분 지속됩니다. 모델 cold start와 샘플 freshness를 함께 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-ai-gpu",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-gpu-disk",
+    "title": "GPU filesystem free space low",
+    "expr": "((min(yeodam_ai_filesystem_available_bytes{job=\"v2-ai-gpu-host\",mountpoint=~\"/|/data/qdrant\"}) < bool 3221225472) or vector(0)) * scalar(max(up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"}) or vector(0))",
+    "hold": "5m",
+    "service": "ai-gpu",
+    "summary": "GPU 루트 또는 Qdrant 볼륨의 여유가3GiB 미만입니다. 파일 삭제 전 용도를 확인하세요.",
+    "severity": "warning",
+    "dashboard": "yeodam-v2-ai-gpu",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-alb-frontend",
+    "title": "No healthy ALB target: frontend",
+    "hold": "3m",
+    "service": "frontend",
+    "summary": "정상 ALB Target이3분 이상 없습니다. Rolling 교체 중 잠깐의 변동과 구분합니다.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-services",
+    "comparator": "lt",
+    "threshold": 1,
+    "cloudwatch": {
+      "refId": "A",
+      "queryMode": "Metrics",
+      "metricQueryType": 0,
+      "metricEditorMode": 0,
+      "region": "${region}",
+      "namespace": "AWS/ApplicationELB",
+      "metricName": "HealthyHostCount",
+      "statistic": "Maximum",
+      "dimensions": {
+        "LoadBalancer": [
+          "${public_alb}"
+        ],
+        "TargetGroup": [
+          "${frontend_tg}"
+        ]
+      },
+      "matchExact": true,
+      "period": "60",
+      "id": "",
+      "expression": "",
+      "label": "HealthyHostCount"
+    },
+    "noDataState": "NoData"
+  },
+  {
+    "uid": "v2p-alb-backend",
+    "title": "No healthy ALB target: backend",
+    "hold": "3m",
+    "service": "backend",
+    "summary": "정상 ALB Target이3분 이상 없습니다. Rolling 교체 중 잠깐의 변동과 구분합니다.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-services",
+    "comparator": "lt",
+    "threshold": 1,
+    "cloudwatch": {
+      "refId": "A",
+      "queryMode": "Metrics",
+      "metricQueryType": 0,
+      "metricEditorMode": 0,
+      "region": "${region}",
+      "namespace": "AWS/ApplicationELB",
+      "metricName": "HealthyHostCount",
+      "statistic": "Maximum",
+      "dimensions": {
+        "LoadBalancer": [
+          "${public_alb}"
+        ],
+        "TargetGroup": [
+          "${backend_tg}"
+        ]
+      },
+      "matchExact": true,
+      "period": "60",
+      "id": "",
+      "expression": "",
+      "label": "HealthyHostCount"
+    },
+    "noDataState": "NoData"
+  },
+  {
+    "uid": "v2p-alb-ai-api",
+    "title": "No healthy ALB target: ai-api",
+    "hold": "3m",
+    "service": "ai-api",
+    "summary": "정상 ALB Target이3분 이상 없습니다. Rolling 교체 중 잠깐의 변동과 구분합니다.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-services",
+    "comparator": "lt",
+    "threshold": 1,
+    "cloudwatch": {
+      "refId": "A",
+      "queryMode": "Metrics",
+      "metricQueryType": 0,
+      "metricEditorMode": 0,
+      "region": "${region}",
+      "namespace": "AWS/ApplicationELB",
+      "metricName": "HealthyHostCount",
+      "statistic": "Maximum",
+      "dimensions": {
+        "LoadBalancer": [
+          "${internal_alb}"
+        ],
+        "TargetGroup": [
+          "${ai_tg}"
+        ]
+      },
+      "matchExact": true,
+      "period": "60",
+      "id": "",
+      "expression": "",
+      "label": "HealthyHostCount"
+    },
+    "noDataState": "NoData"
+  },
+  {
+    "uid": "v2p-connector-missing",
+    "title": "Expected Outbox connector missing or stopped",
+    "expr": "((1 - clamp_max(min(yeodam_connect_expected_connector_running), 1)) or vector(1)) + ((1 - clamp_max(min(yeodam_connect_expected_tasks_running), 1)) or vector(1))",
+    "hold": "1m",
+    "service": "connect",
+    "summary": "Connect 서버 healthy와 별개로 필수 Outbox Connector를 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-production-pipeline",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-outbox-stuck",
+    "title": "Unpublished Outbox oldest age",
+    "expr": "max(yeodam_outbox_oldest_pending_seconds)",
+    "hold": "1m",
+    "service": "outbox",
+    "summary": "발행되지 않은 작업이 120초 이상 대기 중입니다. Connector·CDC·receipt를 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-production-pipeline",
+    "comparator": "gt",
+    "threshold": 120
+  },
+  {
+    "uid": "v2p-observer-failed",
+    "title": "Outbox / Connect observation failed",
+    "expr": "(1-min(yeodam_observer_success)) or vector(1)",
+    "hold": "2m",
+    "service": "observability",
+    "summary": "고정 읽기 전용 Collector 자체의 실패와 업무 정상 여부를 구분하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-production-pipeline",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-disk-low",
+    "title": "Host filesystem free below 15%",
+    "expr": "max(1 - node_filesystem_avail_bytes{job=\"v2-hosts\",fstype!~\"tmpfs|overlay|squashfs\"}/node_filesystem_size_bytes{job=\"v2-hosts\",fstype!~\"tmpfs|overlay|squashfs\"})",
+    "hold": "5m",
+    "service": "host",
+    "summary": "데이터 볼륨과 루트의 여유 공간을 확인하세요. 자동 삭제하지 않습니다.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-production-pipeline",
+    "comparator": "gt",
+    "threshold": 0.85
+  },
+  {
+    "uid": "v2p-memory-high",
+    "title": "Host memory use above 90%",
+    "expr": "max(1-node_memory_MemAvailable_bytes{job=\"v2-hosts\"}/node_memory_MemTotal_bytes{job=\"v2-hosts\"})",
+    "hold": "5m",
+    "service": "host",
+    "summary": "호스트 메모리 압박이 작업 실행과 수집에 미치는 영향을 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-production-pipeline",
+    "comparator": "gt",
+    "threshold": 0.9
+  },
+  {
+    "uid": "v2p-target-discovery-stale",
+    "title": "Backend target discovery stale",
+    "expr": "(time()-max(yeodam_backend_discovery_timestamp_seconds)) or vector(9999)",
+    "hold": "2m",
+    "service": "observability",
+    "summary": "Task 교체 뒤 오래된 주소가 유지되는지 탐색 타이머와 ECS 권한을 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-production-pipeline",
+    "comparator": "gt",
+    "threshold": 120
+  },
+  {
+    "uid": "v2p-host-logs-stale",
+    "title": "EC2 log forwarding stale",
+    "expr": "max((time()-yeodam_host_log_ship_timestamp_seconds{service!=\"ai-gpu\"}) or ((time()-yeodam_host_log_ship_timestamp_seconds{service=\"ai-gpu\"}) and on() (max(up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"}) == 1)))",
+    "hold": "3m",
+    "service": "observability",
+    "summary": "Host 로그 전달 타이머·Loki·네트워크를 확인하세요.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-production-pipeline",
+    "comparator": "gt",
+    "threshold": 120
+  },
+  {
+    "uid": "v2p-dlt-records",
+    "title": "New DLT records",
+    "expr": "sum(clamp_min(delta(kafka_topic_partition_current_offset{job=\"v2-kafka-lag\",topic=~\".*-dlt\"}[5m]),0))",
+    "hold": "0s",
+    "service": "kafka",
+    "summary": "DLT 이벤트 로그의 원인과 업무 반영 여부를 확인하세요. Offset을 자동 Reset하지 않습니다.",
+    "severity": "critical",
+    "dashboard": "yeodam-v2-production-pipeline",
+    "comparator": "gt",
+    "threshold": 0
+  },
+  {
+    "uid": "v2p-result-apply-stuck",
+    "title": "AI result waiting for Backend persistence",
+    "expr": "max(yeodam_result_apply_oldest_seconds)",
+    "hold": "1m",
+    "service": "backend",
+    "severity": "critical",
+    "summary": "AI 결과가 도착했지만 BE DB 반영이 120초 이상 지연됩니다. result_apply 재시도·DB 오류 로그를 확인하세요.",
+    "dashboard": "yeodam-v2-production-pipeline",
+    "threshold": 120
+  }
+]

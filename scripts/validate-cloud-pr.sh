@@ -4,6 +4,17 @@ set -Eeuo pipefail
 python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
+python3 -m unittest discover -s tests/ci -p 'test_production_observability.py'
+python3 -c 'import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path("monitoring/v2-production").glob("*.py")]'
+for production_script in monitoring/v2-production/*.sh; do bash -n "$production_script"; done
+production_alert_test_dir="$(mktemp -d)"
+python3 tests/ci/render_production_alert_tests.py "$production_alert_test_dir"
+# Synthetic fixtures contain no secrets; the image runs as an unprivileged user.
+chmod 0755 "$production_alert_test_dir"
+chmod 0644 "$production_alert_test_dir/rules.json" "$production_alert_test_dir/tests.json"
+docker run --rm --entrypoint promtool -v "$production_alert_test_dir:/tests:ro" prom/prometheus:v3.14.0 test rules /tests/tests.json
+rm -rf "$production_alert_test_dir"
+docker compose -f monitoring/v2-production/plg-compose.yml config --quiet
 python3 -m unittest discover -s tests/ci -p 'test_production_outbox.py'
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/configure-v2-production-outbox-connector.py").read_text())'
 python3 -m unittest discover -s tests/ci -p 'test_production_qdrant_host.py'

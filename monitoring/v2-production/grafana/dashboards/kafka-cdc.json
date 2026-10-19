@@ -1,0 +1,324 @@
+{
+  "uid": "yeodam-v2-kafka-cdc",
+  "title": "V2 Kafka and CDC",
+  "schemaVersion": 41,
+  "tags": [
+    "yeodam",
+    "production",
+    "kafka",
+    "cdc"
+  ],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Collection available",
+      "description": "Exporter scrape health, not business completion.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=~\"v2-kafka-lag|v2-connect\"}",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Kafka committed-offset lag",
+      "description": "Messages, not seconds. Committed offsets only; work may remain in AI Redis after consumption. Unknown negative values excluded.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(consumergroup,topic) (kafka_consumergroup_lag{job=\"v2-kafka-lag\"} >= 0)",
+          "legendFormat": "{{consumergroup}} {{topic}} {{connector}} {{task}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Consumer group members",
+      "description": "Actual yeodam-* groups; no fixed assumption about group count.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "kafka_consumergroup_members{job=\"v2-kafka-lag\"}",
+          "legendFormat": "{{consumergroup}} {{topic}} {{connector}} {{task}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Partitions without committed offsets",
+      "description": "Unknown/uncommitted offsets are not lag=0; absent series may also mean no group exists yet.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "kafka_consumergroup_current_offset{job=\"v2-kafka-lag\"} < 0",
+          "legendFormat": "{{consumergroup}} {{topic}} {{connector}} {{task}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Connect connector state",
+      "description": "State value=1 indicates reported state. Missing metrics is not RUNNING.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_connect_connector_state{job=\"v2-connect\"}",
+          "legendFormat": "{{consumergroup}} {{topic}} {{connector}} {{task}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Connect task state",
+      "description": "Connector RUNNING alone does not prove task RUNNING.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_connect_task_state{job=\"v2-connect\"}",
+          "legendFormat": "{{consumergroup}} {{topic}} {{connector}} {{task}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Debezium connected to MySQL",
+      "description": "Connection state only; no new source event is required.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_debezium_connected{job=\"v2-connect\"}",
+          "legendFormat": "{{consumergroup}} {{topic}} {{connector}} {{task}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Debezium last-event source lag",
+      "description": "Last change event timestamp to processing time; affected by clock skew. Idle does not measure age of pending outbox rows or end-to-end completion.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_debezium_source_lag_seconds{job=\"v2-connect\"}",
+          "legendFormat": "{{consumergroup}} {{topic}} {{connector}} {{task}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Debezium queue occupied ratio",
+      "description": "Internal Debezium hand-off queue, not Kafka lag or AI queue.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - yeodam_debezium_queue_remaining{job=\"v2-connect\"} / yeodam_debezium_queue_capacity{job=\"v2-connect\"})",
+          "legendFormat": "{{consumergroup}} {{topic}} {{connector}} {{task}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Debezium source events seen / second",
+      "description": "Source events seen, not necessarily published after filtering/SMT or acknowledged by BE. Counter resets on restart.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(yeodam_debezium_events_seen_total{job=\"v2-connect\"}[5m])",
+          "legendFormat": "{{consumergroup}} {{topic}} {{connector}} {{task}} {{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "text",
+      "title": "Interpretation",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "V2 production only. Follow source DB \u2192 Debezium queue \u2192 Kafka committed offsets \u2192 AI Redis queue \u2192 BE persistence. Lag 0 and Connector RUNNING do not prove user completion. Missing/negative offsets and stopped collectors are not zero. Metrics have no request IDs or payloads. Kafka broker is not restarted for collection; Connect requires one restart to load the Java agent. No failure injection or new user job is performed by this setup."
+      }
+    }
+  ]
+}

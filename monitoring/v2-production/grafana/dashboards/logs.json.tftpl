@@ -1,0 +1,138 @@
+{
+  "uid": "yeodam-v2-production-logs",
+  "title": "V2 production request and job logs",
+  "schemaVersion": 41,
+  "tags": [
+    "yeodam",
+    "production"
+  ],
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "textbox",
+        "name": "needle",
+        "label": "request_id / execution_id / trip_id / error",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "logs",
+      "title": "backend logs: request / trip / execution",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "production-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "ap-northeast-2",
+          "logGroups": [
+            {
+              "name": "/yeodam/v2/production/backend",
+              "arn": "${backend_log_arn}"
+            }
+          ],
+          "expression": "fields @timestamp, level, event, request_id, trip_id, execution_id, job_id, duration_ms, failure_stage, error_code, release, message, stack_trace, @message | filter @message like /$${needle:regex}/ | sort @timestamp desc | limit 200"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 9
+      }
+    },
+    {
+      "id": 2,
+      "type": "logs",
+      "title": "ai-api logs: request / trip / execution",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "production-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "ap-northeast-2",
+          "logGroups": [
+            {
+              "name": "/yeodam/v2/production/ai-api",
+              "arn": "${ai_api_log_arn}"
+            }
+          ],
+          "expression": "fields @timestamp, level, event, request_id, trip_id, execution_id, job_id, duration_ms, failure_stage, error_code, release, message, stack_trace, @message | filter @message like /$${needle:regex}/ | sort @timestamp desc | limit 200"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 9
+      }
+    },
+    {
+      "id": 3,
+      "type": "logs",
+      "title": "frontend logs: request / trip / execution",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "production-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Logs",
+          "region": "ap-northeast-2",
+          "logGroups": [
+            {
+              "name": "/yeodam/v2/production/frontend",
+              "arn": "${frontend_log_arn}"
+            }
+          ],
+          "expression": "fields @timestamp, level, event, request_id, trip_id, execution_id, job_id, duration_ms, failure_stage, error_code, release, message, stack_trace, @message | filter @message like /$${needle:regex}/ | sort @timestamp desc | limit 200"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 9
+      }
+    },
+    {
+      "id": 4,
+      "type": "logs",
+      "title": "EC2 runner / model / Qdrant / Kafka / DB logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "production-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{env=\"production\"} |~ \"$${needle:regex}\"",
+          "maxLines": 200
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 10
+      }
+    }
+  ]
+}
