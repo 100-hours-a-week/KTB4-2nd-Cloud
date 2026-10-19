@@ -196,6 +196,14 @@ def execute(args):
                 # wrapper from a root-only target snapshot before resume.
                 proof=json.loads(base64.b64decode(args.target_proof))
                 require(proof['resetId']==args.reset_id and proof['checks']==expected and proof['uuid']==db.identity('target')[1],'Target data mismatch')
+                if args.stop_replica_before_resume:
+                    # The next rehearsal snapshots while Source is receiving writes.
+                    # Do not let this old channel execute those GTIDs before its
+                    # schema is replaced by the new dump.
+                    db.query('target',"STOP REPLICA FOR CHANNEL 'v1_to_v2';")
+                    stopped=db.status()
+                    require(stopped['Replica_IO_Running']=='No' and stopped['Replica_SQL_Running']=='No',
+                            'Existing replica did not stop before Source reopened')
                 state['phase']='resume_intent';save(checkpoint,state)
                 db.query('proxy',"DELETE FROM mysql_query_rules WHERE rule_id=2050; LOAD MYSQL QUERY RULES TO RUNTIME; SAVE MYSQL QUERY RULES TO DISK; UPDATE mysql_users SET default_hostgroup=10 WHERE username='yeodam_app'; LOAD MYSQL USERS TO RUNTIME; SAVE MYSQL USERS TO DISK; UPDATE mysql_servers SET status='ONLINE' WHERE hostgroup_id=10; UPDATE mysql_servers SET status='OFFLINE_SOFT' WHERE hostgroup_id=20; LOAD MYSQL SERVERS TO RUNTIME; SAVE MYSQL SERVERS TO DISK;")
                 query('source','SET PERSIST super_read_only=OFF; SET PERSIST read_only=OFF;')
@@ -219,6 +227,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('action',choices=('pause','snapshot-target','restore-source','allow-target-initialize','resume-source','verify-target'))
     p.add_argument('--reset-id',required=True);p.add_argument('--previous-run',required=True);p.add_argument('--target-proof',default='')
+    p.add_argument('--stop-replica-before-resume',action='store_true')
     args=p.parse_args()
     if args.action=='verify-target':
         require(os.geteuid()==0 and identity('target')[0]=='2' and '10.30.10.28' in run(['hostname','-I']).split(),'Verify only the staging replica')

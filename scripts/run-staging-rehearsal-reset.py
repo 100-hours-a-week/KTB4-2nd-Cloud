@@ -72,7 +72,7 @@ def main():
     # Always reverify before opening the writer, including resumed execution.
     proof=dispatch(args.profile,TARGET,[f'python3 /usr/local/sbin/yeodam-staging-rehearsal-reset verify-target --reset-id {args.reset_id} --previous-run {args.previous_run}'])
     obj=json.loads(proof); (directory/'target-proof.json').write_text(json.dumps(obj,indent=2))
-    stage('resume-source',SOURCE,' --target-proof '+base64.b64encode(proof.encode()).decode())
+    stage('resume-source',SOURCE,' --target-proof '+base64.b64encode(proof.encode()).decode()+' --stop-replica-before-resume')
     print('Reset completed. Check BE health and prepare fresh sessions before user-run k6.',flush=True)
 
 if __name__=='__main__':
