@@ -1,0 +1,86 @@
+name: yeodam-v2-production-kafka
+services:
+  kafka:
+    image: apache/kafka:4.1.2@sha256:d50ab7b5df612b3c303f9d8afe8fee59626a5de798addfd626fe1924e3205965
+    platform: linux/amd64
+    network_mode: host
+    restart: unless-stopped
+    mem_limit: 1536m
+    stop_grace_period: 60s
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - /data/kafka:/var/lib/kafka/data
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:?Persistent KRaft cluster ID is required}
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://127.0.0.1:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka.production.yeodam.internal:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@127.0.0.1:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_MIN_INSYNC_REPLICAS: "1"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx1g
+    healthcheck:
+      # TCP liveness avoids spawning a JVM every 30s. Installer/client probes check Kafka metadata.
+      test: [CMD, bash, -ec, 'exec 3<>/dev/tcp/127.0.0.1/9092; exec 3<&-; exec 3>&-']
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 90s
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+  connect:
+    image: quay.io/debezium/connect:3.4.3.Final@sha256:bad9e9cba46851b6d26cbf4c807630f709897b8b4b3e64fb5f2fbc26e1eec0b0
+    platform: linux/amd64
+    network_mode: host
+    restart: unless-stopped
+    mem_limit: 1536m
+    stop_grace_period: 60s
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      kafka: {condition: service_healthy}
+    volumes:
+      - /etc/yeodam/kafka/cdc:/run/yeodam-cdc:ro
+    environment:
+      CONNECT_PLUGIN_PATH: /kafka/connect
+      ENABLE_DEBEZIUM_SCRIPTING: "false"
+      CONNECT_CONFIG_PROVIDERS: file
+      CONNECT_CONFIG_PROVIDERS_FILE_CLASS: org.apache.kafka.common.config.provider.FileConfigProvider
+      BOOTSTRAP_SERVERS: kafka.production.yeodam.internal:9092
+      GROUP_ID: connect-prod
+      CONFIG_STORAGE_TOPIC: prod.connect-configs
+      OFFSET_STORAGE_TOPIC: prod.connect-offsets
+      STATUS_STORAGE_TOPIC: prod.connect-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_OFFSET_STORAGE_PARTITIONS: "5"
+      CONNECT_STATUS_STORAGE_PARTITIONS: "1"
+      KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_LISTENERS: http://127.0.0.1:8083
+      ADVERTISED_HOST_NAME: 127.0.0.1
+      REST_HOST_NAME: 127.0.0.1
+      HOST_NAME: 127.0.0.1
+      SHUTDOWN_TIMEOUT: "60000"
+      CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY: All
+      HEAP_OPTS: -Xms512m -Xmx1g
+    healthcheck:
+      test: [CMD-SHELL, 'curl --fail --silent http://127.0.0.1:8083/connectors >/dev/null']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}

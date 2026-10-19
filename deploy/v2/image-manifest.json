@@ -3,23 +3,23 @@
   "components": {
     "frontend": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-FE",
-      "sourceSha": "f6a52fbb8609d2667852239154b4942465f9e60b",
-      "image": "ghcr.io/100-hours-a-week/yeodam-frontend:sha-f6a52fbb8609d2667852239154b4942465f9e60b",
-      "digest": "sha256:712ef54e97577a0d534f857a13a5d0f08121049ba70bd73f7d9b3e9483903406",
+      "sourceSha": "5a8b34f716b076a0cb53dc89d754bac26a54d1af",
+      "image": "ghcr.io/100-hours-a-week/yeodam-frontend:sha-5a8b34f716b076a0cb53dc89d754bac26a54d1af",
+      "digest": "sha256:ce669adbea2ec85dc54a3c141883b89ba13a5ece0b188404dc95acdd7a87e34a",
       "platform": "linux/amd64"
     },
     "backend": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
-      "sourceSha": "32bf4a42cc63959c0db88ff5b5d617b9f8d96933",
-      "image": "ghcr.io/100-hours-a-week/yeodam-backend:sha-32bf4a42cc63959c0db88ff5b5d617b9f8d96933",
-      "digest": "sha256:ab5d9b5e924894bf9b4dd71174277671cab241c73a9afde4a8d1e8fe789637c1",
+      "sourceSha": "557aad6f426df73907dfbace2202ef463532b397",
+      "image": "ghcr.io/100-hours-a-week/yeodam-backend:sha-557aad6f426df73907dfbace2202ef463532b397",
+      "digest": "sha256:f62306bac94122aace7986008caad168b3cccaededa91bfdd322d026583246cc",
       "platform": "linux/amd64"
     },
     "ai-app": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-AI",
-      "sourceSha": "be3dd2411047d01c199c821bda49991c4733fd95",
-      "image": "ghcr.io/100-hours-a-week/yeodam-ai-app:sha-be3dd2411047d01c199c821bda49991c4733fd95",
-      "digest": "sha256:a0a3183a991b657ccff849b159b7ef56fff7115d2079488dfbfe7786ee02717a",
+      "sourceSha": "ba5627bec7607a8c7080c7b20aa779aadcc6ef55",
+      "image": "ghcr.io/100-hours-a-week/yeodam-ai-app:sha-ba5627bec7607a8c7080c7b20aa779aadcc6ef55",
+      "digest": "sha256:708b7de7dad377c725f5592d299f9d2388dd0554ee7d4291a32c2b4d399f80f8",
       "platform": "linux/amd64"
     }
   }
