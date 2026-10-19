@@ -13,6 +13,7 @@
 | MySQL | 별도 Private `t4g.medium`, Root 30GiB·데이터 gp3 120GiB, MySQL9.7.2, 새 빈 `yeodam` DB |
 | 인증 Redis | 별도 ElastiCache `cache.t4g.micro`, Redis7.1 Single-AZ, TLS/AUTH·저장 암호화·noeviction |
 | Kafka | 별도 Private `t3.medium`, 데이터 gp3 100GiB, 단일 KRaft Broker와 Connect, 운영 Topic 분리 |
+| AI Redis | 별도 Private `t4g.small`, Redis7.4.2, Root16GiB·데이터10GiB, AOF always·noeviction |
 | State | 기존 State 버킷의 `yeodam/v2/production/terraform.tfstate` |
 
 기존 V1 자원은 루트 `terraform/` State가 소유한다. 이 디렉터리로 import하거나 루트에서 V1 자원을 제거하지 않는다. 새 Private Route Table에는 별도 S3 Endpoint를 연결하므로 V1 Endpoint의 Association도 바꾸지 않는다. V1 Public에 NAT ENI를 추가하지만 해당 서브넷의 기존 기본 경로는 그대로 IGW다.
@@ -154,3 +155,43 @@ aws ssm send-command --profile yeodam-admin --region ap-northeast-2 \
 접속 검증 스크립트 `deploy/v2-production/kafka/verify-client.sh`는 운영 Private Subnet의 일회성 Fargate에서 사용한다. `KAFKA_CLIENT_ROLE=backend|ai`, `KAFKA_TEST_RUN_ID=<32자리 소문자 hex UUID>`를 주고 해당 역할 SG만 붙여 각각 실행한다. 공식 Kafka 이미지에서 Metadata→고유 시험 Topic 생성→1건 발행/소비→내용 비교→Topic 삭제를 확인한다. 시험 Topic 이름은 `prod.cloud.preflight.<ID>`이고 업무 Consumer Group을 읽거나 초기화하지 않는다. Task 종료와 Definition 해제까지 확인하며 이 결과를 실제 BE/AI 업무 처리나 부하 검증으로 해석하지 않는다.
 
 AI Kafka Client SG는 운영 VPC 내 통신 경계만 준비했다. 기존 GPU의 VPC 연결·Qdrant 데이터 분리·정리 실행기 공유를 설정한 것은 아니다. GPU와 기존 운영 V1의 DB·인증·공개 DNS는 이 작업에서 변경하지 않는다.
+
+
+## #332 운영 AI Redis
+
+AI 작업 상태와 내부 대기열은 인증 Redis와 별도 EC2에서 보관한다. 스테이징에서 검증한 Redis7.4.2 Digest·ARM64 Compose를 그대로 사용하고 URL/Parameter/데이터 볼륨/네트워크만 운영 전용으로 분리한다. 기존 공유 예정 GPU의 네트워크나 실행기는 이 작업에서 연결하지 않는다.
+
+| 항목 | 운영 값 |
+| --- | --- |
+| 내부 주소 | `ai-redis.production.yeodam.internal:6379` |
+| 인증 URL Parameter | `/yeodam/v2/production/ai/REDIS_URL` (SecureString) |
+| EC2/EBS | t4g.small, Root16GiB·별도 암호화 gp3 데이터10GiB |
+| Redis | maxmemory512MB, noeviction, appendonly yes, appendfsync always |
+| 접속 | 운영 AI Client SG만6379 허용, 공인IP/SSH 없음, SSM 관리 |
+
+생성한 EC2의 cloud-init이 Docker·EBS 마운트·Redis를 준비한다. Bootstrap은 EBS Serial을 확인하고 기존 파일시스템을 덮어쓰지 않는다. 비밀번호는 호스트에서 생성하고 Parameter가 있으면 값을 보존하며 overwrite하지 않는다. URL/비밀번호는 Terraform State와 명령 출력에 넣지 않는다. 기존 값의 Host·형식이 맞지 않거나 조회가 실패하면 재발급 대신 중단한다.
+
+Compose는 `/opt/yeodam-ai-redis/compose.yml`, ACL·설정·비밀번호 파일은 `/etc/yeodam/ai-redis/`, 데이터는 `/data/redis/data`다. Docker 포트는 호스트 사설 IP에만 게시한다. `yeodam-ai-redis.service`는 데이터 마운트와 Docker에 의존한다. EC2 종료 방지와 데이터 EBS prevent_destroy를 사용하며, user_data 변경만으로 stateful EC2를 자동 교체하지 않는다. Bootstrap 파일 수정은 이미 실행된 호스트에 자동 반영되지 않으므로 기존 호스트의 동작을 확인한 뒤 별도 적용 절차를 정한다.
+
+Cloud 저장소 루트에서 대상 ID만 조회한다. Parameter URL 값을 터미널에 출력하지 않는다.
+
+```bash
+ai_redis_instance=$(terraform -chdir=terraform/v2/production output -raw ai_redis_instance_id)
+aws ssm start-session --profile yeodam-admin --region ap-northeast-2 \
+  --target "$ai_redis_instance"
+```
+
+접속한 새 AI Redis EC2에서 다음을 확인한다.
+
+```bash
+sudo cloud-init status
+sudo systemctl is-active yeodam-ai-redis
+sudo mountpoint /data/redis
+sudo docker inspect --format '{{.State.Health.Status}}' yeodam-ai-redis
+```
+
+기대값은 cloud-init done, active, mounted, healthy다. 기동 실패 시 `sudo tail -n 60 /var/log/cloud-init-output.log`와 해당 컨테이너 로그를 읽는다. 비밀번호/URL 파일의 내용을 출력하거나 DB/AOF 파일을 삭제해서 기동하지 않는다.
+
+`files/verify-ai-redis.py`는 일회성 Fargate 검증용이다. 허용 모드에는 실행 역할이 Parameter를 `REDIS_URL` Secret으로 주입하고 `PROBE_RUN_ID`(32자리 hex)와 `EXPECTED_REDIS_IP`를 전달한다. 새 호스트에서 만든 같은 ID의 `cloud:preflight:332:<ID>` 임시 키를 컨테이너 재시작 후 조회하고, 미인증 거절·AUTH·읽기쓰기·시험 키 삭제를 확인한다. 비허용 모드는 인증값 없이 DNS의 실제 목적지를 확인한 다음 TCP Timeout만 차단 성공으로 판정한다. DNS 실패/Connection Refused를 보안 그룹 차단 성공으로 간주하지 않는다. 검증 역할과 Task Definition은 종료 후 정리한다.
+
+Redis URL은 사설망의 AUTH 접속이며 TLS 구성이 아니다. AOF always와 데이터 EBS 보존은 단일 호스트의 데이터 기록 설정이다. 이번 확인은 새 컨테이너 재시작에 한정하며 EC2/EBS 장애나 별도 복구·고가용성 시험이 아니다. 실제 AI API/정리 실행기 연결과 공유 GPU 접근 경계는 후속 작업이다.
