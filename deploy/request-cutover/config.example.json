@@ -1,0 +1,25 @@
+{
+  "environment": "isolated-staging",
+  "run_id": "11111111-1111-4111-a111-111111111111",
+  "public_host": "cutover-staging.yeodam-2gether.com",
+  "source_timezone": "UTC",
+  "v1_api": "http://v1-backend:8080",
+  "v1_web": "http://v1-frontend:3000",
+  "v2_origin": "http://v2-ingress:8080",
+  "socket": "/run/yeodam-cutover/control.sock",
+  "journal": "/run/yeodam-cutover/journal.json",
+  "hold_seconds": 5,
+  "max_waiters": 1000,
+  "max_wait_bytes": 67108864,
+  "mysql": {
+    "host": "mysql",
+    "database": "yeodam_cutover_311",
+    "user": "root",
+    "password_env": "CUTOVER_MYSQL_PASSWORD"
+  },
+  "redis": {
+    "host": "redis",
+    "prefix": "yeodam:cutover:11111111-1111-4111-a111-111111111111:",
+    "password_env": "CUTOVER_REDIS_PASSWORD"
+  }
+}
