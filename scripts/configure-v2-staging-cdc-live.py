@@ -15,7 +15,7 @@ BASE = 'http://127.0.0.1:8083'
 CASE = os.environ.get('CDC_LIVE_CASE', '313')
 ORIGINAL_CASES = ('318', '32210', '32230', '322100')
 FIXED_CASES = ('323',)
-BULK_CASES = ('331', '331r', '331s')
+BULK_CASES = ('331', '331r', '331s', '336')
 REPLAY_BATCH_SIZES = {'324replay': '500', '324replay1000': '1000'}
 REPLAY_CASES = tuple(REPLAY_BATCH_SIZES)
 REPLAY_TOPIC = 'staging.yeodam.migration.b1.live323.ordered-records'
@@ -58,10 +58,16 @@ def topic_end(name):
                              '/opt/kafka/bin/kafka-get-offsets.sh', '--bootstrap-server',
                              '127.0.0.1:9092', '--topic', name, '--time', '-1'],
                             check=True, capture_output=True, text=True).stdout.strip()
-    fields = output.split(':')
-    if len(fields) != 3 or fields[:2] != [name, '0']:
-        raise RuntimeError('unexpected topic offset format: ' + name)
-    return int(fields[2])
+    offsets = {}
+    for line in output.splitlines():
+        fields = line.split(':')
+        if len(fields) != 3 or fields[0] != name:
+            raise RuntimeError('unexpected topic offset format: ' + name)
+        offsets[int(fields[1])] = int(fields[2])
+    expected = set(range(8 if CASE == '336' and name == ORDERED_TOPIC else 1))
+    if set(offsets) != expected:
+        raise RuntimeError('unexpected topic partitions: ' + name)
+    return sum(offsets.values())
 
 
 def sink_lag(name, topic):
@@ -72,17 +78,22 @@ def sink_lag(name, topic):
                              '--describe', '--group', group],
                             check=True, capture_output=True, text=True).stdout
     rows = [line.split() for line in output.splitlines() if line.startswith(group + ' ')]
-    if len(rows) != 1 or rows[0][1:3] != [topic, '0']:
-        raise RuntimeError('unexpected consumer group state: ' + group)
-    try:
-        current, end, lag = map(int, rows[0][3:6])
-    except ValueError as exc:
-        raise RuntimeError('consumer group has no committed offset yet: ' + group) from exc
-    # The producer keeps writing during this run. A second end-offset query can
-    # already be ahead of the consumer-group snapshot, so compare one snapshot.
-    if end - current != lag:
-        raise RuntimeError('consumer lag fields disagree: ' + group)
-    return current, end, lag
+    expected = set(range(8 if CASE == '336' and topic == ORDERED_TOPIC else 1))
+    if {int(row[2]) for row in rows if len(row) >= 6 and row[1] == topic} != expected:
+        raise RuntimeError('unexpected consumer group partitions: ' + group)
+    totals = [0, 0, 0]
+    for row in rows:
+        if row[1] != topic:
+            raise RuntimeError('unexpected consumer group topic: ' + group)
+        try:
+            current, end, lag = map(int, row[3:6])
+        except ValueError as exc:
+            raise RuntimeError('consumer group has no committed offset yet: ' + group) from exc
+        if end - current != lag:
+            raise RuntimeError('consumer lag fields disagree: ' + group)
+        for index, value in enumerate((current, end, lag)):
+            totals[index] += value
+    return tuple(totals)
 
 
 def topic_names():
@@ -117,25 +128,37 @@ def ensure_topics():
 
 def ensure_ordered_topic():
     if ORDERED_TOPIC not in set(kafka('--list').splitlines()):
-        kafka('--create', '--topic', ORDERED_TOPIC, '--partitions', '1',
+        kafka('--create', '--topic', ORDERED_TOPIC,
+              '--partitions', '8' if CASE == '336' else '1',
               '--replication-factor', '1', '--config', 'cleanup.policy=delete',
               '--config', 'retention.ms=604800000')
         print('CREATED_TOPIC', ORDERED_TOPIC, flush=True)
     else:
         description = kafka('--describe', '--topic', ORDERED_TOPIC)
-        if 'PartitionCount: 1' not in description or 'ReplicationFactor: 1' not in description:
+        partitions = '8' if CASE == '336' else '1'
+        if ('PartitionCount: ' + partitions not in description or
+                'ReplicationFactor: 1' not in description):
             raise RuntimeError('unexpected ordered topic shape')
         print('EXISTING_TOPIC', ORDERED_TOPIC, flush=True)
 
 
 def configure_ordered_route(data):
-    data['transforms'] = 'route'
+    data['transforms'] = 'route,partition' if CASE == '336' else 'route'
     data['transforms.route.type'] = 'io.debezium.transforms.ByLogicalTableRouter'
     data['transforms.route.topic.regex'] = (
         rf'^{re.escape(PREFIX)}\.yeodam_v1_source\.'
         r'(users|trips|trip_regions)$')
     data['transforms.route.topic.replacement'] = ORDERED_TOPIC
     data['transforms.route.key.enforce.uniqueness'] = 'false'
+    if CASE == '336':
+        # Both trip and region rows carry trip_id. Kafka order is preserved
+        # within each trip shard while eight JDBC tasks can apply independently.
+        # New users have no trip_id; the #336 API workload must emit zero user
+        # changes, checked by the topic audit before any cutover claim.
+        data['transforms.partition.type'] = 'io.debezium.transforms.partitions.PartitionRouting'
+        data['transforms.partition.partition.payload.fields'] = 'change.trip_id'
+        data['transforms.partition.partition.topic.num'] = '8'
+        data['transforms.partition.partition.hash.function'] = 'murmur'
     data['producer.override.acks'] = 'all'
     data['producer.override.enable.idempotence'] = 'true'
     data['producer.override.max.in.flight.requests.per.connection'] = '1'
@@ -249,7 +272,7 @@ def register(kind):
                     # A fresh logical name/empty topic is mandatory. A restart
                     # must recover its own offset, never start from current tail.
                     if data.get('database.server.id') != {'331': '5412', '331r': '5413',
-                                                          '331s': '5414'}[CASE]:
+                                                          '331s': '5414', '336': '5415'}[CASE]:
                         raise RuntimeError('unexpected bulk CDC server ID')
         if kind == 'ordered-source':
             if name not in api('/connectors'):
@@ -270,7 +293,8 @@ def register(kind):
                     if api('/connectors/' + old + '/status')['connector']['state'] != 'PAUSED':
                         raise RuntimeError('pause every table-specific sink before ordered-sink')
             source_config = api('/connectors/' + SOURCE + '/config')
-            if (source_config.get('transforms') != 'route' or
+            expected_transforms = 'route,partition' if CASE == '336' else 'route'
+            if (source_config.get('transforms') != expected_transforms or
                     source_config.get('transforms.route.topic.replacement') != ORDERED_TOPIC):
                 raise RuntimeError('source is not routed to the ordered topic')
             if CASE in BULK_CASES:
@@ -281,9 +305,11 @@ def register(kind):
             data['topics'] = ORDERED_TOPIC
             # live331s isolates the FK failure observed with 500-record
             # cross-table batches. This proves order, not 100 RPS capacity.
-            bulk_batch = '1' if CASE == '331s' else '500'
+            bulk_batch = '1' if CASE in ('331s', '336') else '500'
             data['batch.size'] = bulk_batch if CASE in BULK_CASES else '1'
             data['consumer.override.max.poll.records'] = bulk_batch if CASE in BULK_CASES else '1'
+            if CASE == '336':
+                data['tasks.max'] = '8'
             if CASE in BULK_CASES:
                 bulk_import_receipt()
                 data['use.reduction.buffer'] = 'false'

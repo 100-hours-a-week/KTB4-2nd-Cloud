@@ -32,6 +32,7 @@ python3 -m unittest discover -s tests/load/tests -p 'test_cdc_323_contract.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_cdc_323_ordered_audit.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_cdc_324_replay_contract.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_cdc_331_bulk_contract.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_cdc_336_shards_contract.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_defense.py'
 node --test tests/load/tests/nginx-defense.test.mjs
 node --check tests/load/scenarios/nginx-request-repeat.js
