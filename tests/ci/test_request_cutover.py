@@ -268,6 +268,9 @@ class Barrier(unittest.IsolatedAsyncioTestCase):
         def db_check():
             sequence.append('db_check')
 
+        def redis_preflight(_config):
+            sequence.append('redis_ping')
+
         def db_switch():
             sequence.append('db_switch')
             journal.write_text(json.dumps({'runId': self.config['run_id'],
@@ -283,12 +286,32 @@ class Barrier(unittest.IsolatedAsyncioTestCase):
                 patch.object(control, 'database', return_value=MagicMock()), \
                 patch.object(control, 'checks'), \
                 patch.object(control, 'transfer', auth_transfer), \
+                patch.object(control, 'redis_ready', redis_preflight), \
                 patch.object(control, 'healthy', new_callable=AsyncMock):
             result = await _a_cutover(self.config, db_check, db_switch)
         self.assertEqual(result['phase'], 'V2')
+        self.assertLess(sequence.index('redis_ping'), sequence.index('db_check'))
+        self.assertLess(sequence.index('redis_ping'), sequence.index('begin'))
         self.assertLess(sequence.index('auth_snapshot'), sequence.index('seal'))
         self.assertLess(sequence.index('seal'), sequence.index('db_switch'))
         self.assertLess(sequence.index('db_switch'), sequence.index('commit'))
+
+    async def test_a_controller_redis_timeout_never_starts_hold(self):
+        from request_cutover.control import _a_cutover
+        from unittest.mock import MagicMock, AsyncMock
+        import request_cutover.control as control
+        self.gate.config.update(require_seal=True)
+        db_check = MagicMock()
+        with patch.object(control, 'admin', new_callable=AsyncMock, return_value=self.gate.status()) as admin, \
+                patch.object(control, 'database', return_value=MagicMock()), \
+                patch.object(control, 'checks'), \
+                patch.object(control, 'redis_ready', side_effect=TimeoutError), \
+                patch.object(control, 'healthy', new_callable=AsyncMock):
+            with self.assertRaises(TimeoutError):
+                await _a_cutover(self.config, db_check, MagicMock())
+        self.assertEqual(self.gate.phase, 'V1')
+        self.assertEqual(admin.await_count, 1)
+        db_check.assert_not_called()
 
     async def test_capacity_aborts_instead_of_rejecting_request(self):
         self.gate.config['max_wait_bytes'] = 1

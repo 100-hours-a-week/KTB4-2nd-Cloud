@@ -46,6 +46,12 @@ def redis_client(config):
         socket_connect_timeout=1, ssl=c.get('tls', False))
 
 
+def redis_ready(config):
+    """Fail before HTTP HOLD when the Source cannot reach the target auth store."""
+    if not redis_client(config).ping():
+        raise ValueError('authentication Redis is not ready')
+
+
 def checks(connection, config):
     with connection.cursor() as cursor:
         cursor.execute('SELECT DATABASE() AS db, @@read_only AS ro, @@super_read_only AS sro')
@@ -148,6 +154,7 @@ async def _a_cutover(config, db_check, db_cutover):
     with database(config) as db:
         checks(db, config)
     await healthy(config)
+    await asyncio.to_thread(redis_ready, config)
     await asyncio.to_thread(db_check)
     hold = await admin(config, 'begin', {})
     token = hold['hold_token']
@@ -250,6 +257,7 @@ def main():
             with database(config) as db:
                 result = checks(db, config)
             asyncio.run(healthy(config))
+            redis_ready(config)
             a_db_command(config, 'check')
             result.update(asyncio.run(admin(config)))
         elif args.command == 'cutover':
