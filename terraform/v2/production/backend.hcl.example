@@ -1,0 +1,2 @@
+# Same state bucket as V1; a different key is fixed in backend.tf.
+bucket = "yeodam-v1-tfstate-483175530259-ap-northeast-2-an"
