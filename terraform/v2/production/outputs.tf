@@ -54,7 +54,7 @@ output "task_execution_role_arn" {
 }
 
 output "ghcr_credentials_secret_arn" {
-  description = "Secret metadata only; no credential value has been registered"
+  description = "Secret metadata only; credential values are managed outside Terraform"
   value       = module.ecs_foundation.ghcr_credentials_secret_arn
 }
 

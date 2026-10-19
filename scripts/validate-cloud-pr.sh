@@ -6,7 +6,10 @@ python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_qdrant_host.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_ai_runner.py'
+python3 -m unittest discover -s tests/ci -p 'test_production_ai_parameters.py'
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/install-v2-production-ai-runner.py").read_text())'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/seed-v2-production-ai-parameters.py").read_text())'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/verify-v2-production-ai-api.py").read_text())'
 bash -n scripts/install-v2-production-qdrant.sh
 AI_GPU_BIND_IP=10.30.10.162 docker compose -f deploy/v2-production/qdrant/compose.yml config --quiet
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("deploy/v2-production/qdrant/verify-client.py").read_text())'

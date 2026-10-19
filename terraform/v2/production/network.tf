@@ -68,3 +68,17 @@ resource "aws_vpc_endpoint" "s3" {
   route_table_ids   = [aws_route_table.private_app.id]
   tags              = { Name = "${local.name_prefix}-s3-endpoint" }
 }
+
+# Internal AI ALB requires a second AZ. Tasks stay in private_app (2a).
+resource "aws_subnet" "private_ai_alb_secondary" {
+  vpc_id                  = data.aws_vpc.production.id
+  cidr_block              = "10.20.11.0/24"
+  availability_zone       = "ap-northeast-2c"
+  map_public_ip_on_launch = false
+  tags                    = { Name = "${local.name_prefix}-private-ai-alb-secondary", Tier = "private" }
+}
+
+resource "aws_route_table_association" "private_ai_alb_secondary" {
+  subnet_id      = aws_subnet.private_ai_alb_secondary.id
+  route_table_id = aws_route_table.private_app.id
+}
