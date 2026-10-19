@@ -195,3 +195,276 @@ sudo docker inspect --format '{{.State.Health.Status}}' yeodam-ai-redis
 `files/verify-ai-redis.py`는 일회성 Fargate 검증용이다. 허용 모드에는 실행 역할이 Parameter를 `REDIS_URL` Secret으로 주입하고 `PROBE_RUN_ID`(32자리 hex)와 `EXPECTED_REDIS_IP`를 전달한다. 새 호스트에서 만든 같은 ID의 `cloud:preflight:332:<ID>` 임시 키를 컨테이너 재시작 후 조회하고, 미인증 거절·AUTH·읽기쓰기·시험 키 삭제를 확인한다. 비허용 모드는 인증값 없이 DNS의 실제 목적지를 확인한 다음 TCP Timeout만 차단 성공으로 판정한다. DNS 실패/Connection Refused를 보안 그룹 차단 성공으로 간주하지 않는다. 검증 역할과 Task Definition은 종료 후 정리한다.
 
 Redis URL은 사설망의 AUTH 접속이며 TLS 구성이 아니다. AOF always와 데이터 EBS 보존은 단일 호스트의 데이터 기록 설정이다. 이번 확인은 새 컨테이너 재시작에 한정하며 EC2/EBS 장애나 별도 복구·고가용성 시험이 아니다. 실제 AI API/정리 실행기 연결과 공유 GPU 접근 경계는 후속 작업이다.
+
+
+## #337 공유 GPU와 운영 Qdrant
+
+GPU EC2는 기존 스테이징 VPC에 그대로 둔다. Production State는 기존 GPU·EBS를 가져와 관리하지 않고, 새 Peering/Route/보안 규칙/운영 DNS/운영 Qdrant SSM 문서만 소유한다. 기존 스테이징 이미지·Compose·컨테이너3개는 그대로 유지한다.
+
+| 연결 | 주소/범위 |
+| --- | --- |
+| 운영 임베딩 | `http://ai-gpu.production.yeodam.internal:8000/v1` |
+| 운영 Qdrant | `http://ai-gpu.production.yeodam.internal:6335` |
+| 기존 스테이징 | 기존 `ai-gpu.staging.yeodam.internal`의8000/6333 유지 |
+| 운영 Route | 운영 Private RT→기존 GPU IP/32→Peering |
+| 반환 Route | 기존 GPU Private RT→운영 Private10.20.10.0/24→Peering |
+| 접근 | 운영 AI SG만8000/6335, 기존 스테이징 AI SG는8000/6333 |
+
+Peering은 같은 Account/Region의 두 VPC를 연결한다. 인터넷 공개 포트·V1 공개 Route·기본 NAT 경로·서브넷 Association은 바꾸지 않는다. 교차 환경 Qdrant 포트는 허용하지 않는다. 새 Route와 보안 규칙은 별도 Terraform 리소스여서 staging이 소유한 Route Table/SG 자체를 import하거나 재생성하지 않는다. 운영 Private Hosted Zone의 A Record가 기존 GPU 사설 IP를 가리키며 스테이징 DNS를 수정하지 않는다.
+
+운영 Qdrant는 스테이징과 같은1.19.1 Digest를 사용한다. 기존 `/data/qdrant/storage`와 달리 `/data/qdrant/production/storage`를 마운트하며 별도 Compose Project/컨테이너/서비스로 실행한다. 컨테이너 내부6333을 호스트 사설IP6335에만 게시한다. EBS20GiB 자체는 공동 사용하며 새 볼륨이나 GPU를 만들지 않는다. 임베딩 모델은 기존 한 개를 공유한다.
+
+Cloud 저장소 루트에서 다음을 실행한다. 새 SSM 문서는 정확한 GPU Instance ID·EBS Serial·마운트와 설치 마커를 확인한다. 다른 호스트/볼륨이나 기존 미확인 데이터가 있으면 중단하며 포맷·재귀 삭제·기존 스테이징 경로 chown은 하지 않는다.
+
+```bash
+gpu_instance=$(terraform -chdir=terraform/v2/production output -raw shared_gpu_instance_id)
+aws ssm send-command --profile yeodam-admin --region ap-northeast-2 \
+  --instance-ids "$gpu_instance" \
+  --document-name yeodam-v2-production-qdrant-runtime \
+  --query Command.CommandId --output text
+```
+
+Command ID로 `get-command-invocation`을 조회해 Success와 `Production Qdrant ready`를 확인한다. 준비 판정은 실제 `/readyz`200이며 실행 중인 PID만으로 판정하지 않는다. 실패하면 새 production 컨테이너와 `/opt/yeodam-production-qdrant/compose.yml`만 확인하고 기존 스테이징 Compose를 재배포하거나 GPU를 재부팅하지 않는다.
+
+설치 위치는 `/opt/yeodam-production-qdrant`, 서비스는 `yeodam-production-qdrant.service`, 컨테이너는 `yeodam-ai-qdrant-production`이다. 기존 `yeodam-ai-gpu.service`와 별개다. `deploy/v2-production/qdrant/verify-client.py`는 각 환경의 AI SG를 붙인 일회성 Fargate에서 자기 환경의8000/Qdrant readiness와 반대 환경 Qdrant TCP Timeout을 확인한다. DNS 실패나 Connection Refused를 격리 성공으로 세지 않는다. 데이터 검증은 고유 시험 컬렉션에 같은 Point ID를 서로 다른 값으로 쓰고 조회·삭제하는 범위로 수행한다.
+
+이 작업 뒤에는 기존 스테이징3개와 운영 Qdrant1개로 총4개 컨테이너다. 운영 정리 실행기는 운영 AI 배포 때 추가하며, 현재 스테이징 실행기의 Redis나 S3 설정은 바꾸지 않는다. 기존 GPU가 running인 상태를 그대로 유지한다. GPU의 배포·중지는 양쪽 환경에 영향을 주며, 컨테이너/데이터 경로 분리를 CPU·GPU·EBS 용량이나 장애 영역 분리로 해석하지 않는다. 이 작업은 기존 GPU 배포 워크플로우나 전원 정책을 변경하지 않는다.
+
+
+## #343 운영 정리 실행기
+
+기존 공유 GPU에 `yeodam-ai-process-runner-production`만 추가한다. 별도 Compose Project `yeodam-v2-production-ai-runner`, `/opt/yeodam-production-runner`, `/etc/yeodam/production-ai/runner.env`와 `yeodam-production-runner.service`를 사용한다. 실행은 `python -m app.jobs.runner`, CPU 상한2개이며 GPU Device Request는 없다. 이미지는 검증된 Cloud V2 Manifest의 ai-app Digest를 사용한다. 기존 staging runner나 모델/Qdrant 이미지를 갱신하는 도구가 아니다.
+
+환경은 `JOBS_ENV=production`, 운영 AI Redis URL Parameter와 운영 Qdrant6335를 사용한다. 임베딩8000과 API Key는 기존 모델 한 개를 공유하므로 embedding credential은 기존 staging Parameter를 조회하되 수정하지 않는다. 운영 `API_KEY`는 없을 때만 호스트에서 생성하며 기존 값은 보존한다. 값을 Terraform State·SSM 명령 출력·로그에 쓰지 않는다. 운영 API 배포에서도 동일한 `/yeodam/v2/production/ai/API_KEY`를 조회해야 한다.
+
+운영 사진은 기존 `yeodam-v1-app-data-483175530259-ap-northeast-2` 버킷을 유지한다. 버킷 자체는 V1 State 소유이며 새 버킷/정책으로 대체하지 않는다. 호스트 역할에는 `trip-uploads/*/derived/*`와 `trip-additions/*/derived/*`의 GetObject만 추가한다. 기존 사진 객체를 옮기거나 원본 읽기·쓰기 권한을 늘리지 않는다. 검증용 고유 derived 객체는 관리자 계정이 만들고 컨테이너에서 읽은 뒤 해당 Version ID만 삭제한다.
+
+운영 Private Hosted Zone을 기존 GPU의 staging VPC에도 연결해 운영 Redis/GPU DNS를 조회한다. 이는 zone의 주소를 해석하도록 하는 연결이며 모든 운영 서비스의 네트워크 접근을 허용하는 변경은 아니다. Peering Route는 #337을 재사용하고 새 SG 규칙은 GPU↔운영 AI Redis6379 두 개뿐이다. process runner는 Redis에서 작업을 가져오므로 GPU의 운영 Kafka9092 접근을 이번에 추가하지 않는다. Topic 변수는 prod Prefix지만 실제 Kafka 소비·발행은 후속 AI API 역할이다.
+
+설치 SSM은 `yeodam-v2-production-ai-runner-runtime`이다. 정확한 GPU/데이터 EBS·이미지 Digest·Redis 목적지를 검증하고, 미확인 컨테이너 이름 충돌은 거절한다. 임베딩·운영 Qdrant가 준비된 뒤 새 실행기만 기동하며 systemd의 기동 전에도 같은 준비 확인을 수행한다. systemd에서 기존 staging 서비스나 Docker를 재시작하지 않는다.
+
+```bash
+# Cloud 저장소 루트, 검토한 운영 Terraform 적용 후 실행
+aws ssm send-command --profile yeodam-admin --region ap-northeast-2 \
+  --instance-ids i-05e1ad9dd96dba4ae \
+  --document-name yeodam-v2-production-ai-runner-runtime \
+  --query Command.CommandId --output text
+```
+
+반환한 Command ID의 `get-command-invocation`이 Success이고 새 runner의 실제 Redis PING/모델 health/Qdrant readiness가 통과해야 한다. 실패하면 새 production 서비스/컨테이너와 해당 명령의 상태만 조사한다. 상태가 불명확하면 다른 설치를 겹쳐 실행하지 않는다. Env 파일·Docker 전체 inspect·SecretString을 출력하지 않는다. 운영 업무 작업을 테스트용으로 큐에 넣지 않는다.
+
+공유 GPU는 staging CD 완료 후 자동 중지하지 않는다. 코드에서 stop 호출을 제거했고 기존 release 역할에도 해당 GPU의 StopInstances만 명시적Deny한다. StartInstances와 관리자 수동 운영 권한을 막는 정책은 아니다. GPU 비용은 실행 중 계속 발생하며 운영·staging이 모두 의존하므로 종료는 양쪽 작업 상태를 확인한 별도 운영 행위다.
+
+동일 EC2/역할을 사용하는 실행기이므로 서로 다른 환경 설정·Redis/Qdrant 저장소를 사용하는 분리다. 컨테이너별 IAM 신뢰 경계나 CPU/GPU/EBS 장애 영역 분리로 주장하지 않는다. 공유 모델 변경·호스트 중지는 양 환경에 영향을 주며 동시 처리량·실제 여행 생성 E2E는 별도 검증이다. 이번 작업에서 운영 FE/BE/API나 공개 요청 경로를 배포·전환하지 않는다.
+
+## #347 운영 AI API 사전 배포
+
+운영 AI API는 기존 운영 ECS Cluster에 Fargate 0.5 vCPU/1GiB, 1 Task로 시작한다. Cloud Manifest의 AI Digest를 정리 실행기와 함께 사용한다. 기본 명령은 이미지의 `uvicorn app.v2_main:create_app --factory`다. 모델과 Qdrant를 이 컨테이너에 설치하지 않는다.
+
+| 경로 | 설정 |
+| --- | --- |
+| BE → AI | `http://ai-api.production.yeodam.internal` → 내부 ALB80 → Task8000 |
+| Task 위치 | 기존 운영 Private2a `10.20.10.0/24`, Public IP 없음 |
+| ALB 위치 | Private2a + 새 Private2c `10.20.11.0/24` |
+| Redis / Kafka | 운영 전용 주소, `JOBS_ENV=production`, Topic `prod.yeodam.*` |
+| 임베딩 / Qdrant | 기존 공유 GPU8000/v1 / 운영 전용6335 |
+| 로그 | `/yeodam/v2/production/ai-api`, 보존30일 |
+
+ALB의80은 운영 BE SG만, Task의8000은 ALB SG만 허용한다. AI Task에는 기존 운영 AI Kafka Client SG를 붙여 Kafka9092/Redis6379/공유 GPU8000·6335/외부 HTTPS443만 사용한다. 두 번째 Private Subnet은 기존 Private RT를 재사용하며 새 NAT를 만들지 않는다. Task는 GPU 반환 Route가 있는2a에 유지하므로 ALB가2AZ라는 사실을 Task나 NAT의 고가용성으로 해석하지 않는다.
+
+실행 역할은 지정한 Parameter5개·운영 GHCR Secret·자기 로그 그룹만 조회한다. Task 역할은 기존 운영 버킷의 `trip-uploads/*/derived/*`, `trip-additions/*/derived/*` GetObject만 가진다. 원본 읽기/객체 쓰기/DB 접속은 추가하지 않는다. 운영 API Key와 Redis URL은 #343/#332의 기존 Parameter를 사용하고 임베딩 Key는 같은 모델 서버의 기존 staging Parameter를 읽기만 한다.
+
+### 최초 Parameter 등록과 적용
+
+Cloud 작업 브랜치의 저장소 루트에서 실행한다. 아래 스크립트는 계정483175530259/서울에 한정하고, 운영 API_KEY/REDIS_URL과 공유 임베딩 Key가 이미 있는지 확인한다. RunPod의 현재 staging URL·Key 두 개를 운영 경로로 처음 한 번 복사한다. 기존 운영 쌍이 있으면 보존하며 한쪽만 있으면 중단한다. 값은 stdout/argv/State에 출력하지 않고0600 임시 요청 파일을 삭제한다. 두 Parameter의 등록은 원자적이지 않으므로 부분 실패 시 자동 덮어쓰기로 복구하지 않는다.
+
+```bash
+AWS_PROFILE=yeodam-admin python3 scripts/seed-v2-production-ai-parameters.py
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production fmt -check
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production validate
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production plan -out=/private/tmp/production-ai.plan
+# 계정·생성/변경/삭제 및 기존 V1/DB 비변경을 검토한 뒤 같은 Plan 적용
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production apply /private/tmp/production-ai.plan
+```
+
+등록 경로는 `/yeodam/v2/production/ai/VLM_BASE_URL`(String), `/yeodam/v2/production/ai/VLM_API_KEY`(SecureString)다. 모델은 확인한 staging 설정과 같은 `gemma-4`이며 주소는 코드에 고정하지 않는다. 이후 RunPod 변경 시 운영 Parameter를 따로 갱신하고 AI Service의 새 배포가 필요하다. staging URL 갱신용 Actions가 운영 값을 함께 수정하는 구성은 아니다. 키를 CLI 문자열이나 채팅에 넣지 않는다.
+
+```bash
+aws ecs describe-services --profile yeodam-admin --region ap-northeast-2 \
+  --cluster yeodam-v2-production-app --services yeodam-v2-production-ai-api \
+  --query 'services[].{desired:desiredCount,running:runningCount,pending:pendingCount,deployments:deployments[].rolloutState}'
+# Parameter 변경 뒤 같은 이미지로 재기동해야 할 때만 실행
+aws ecs update-service --profile yeodam-admin --region ap-northeast-2 \
+  --cluster yeodam-v2-production-app --service yeodam-v2-production-ai-api \
+  --force-new-deployment --query 'service.serviceName' --output text
+```
+
+헬스는 `/health`200으로 Redis/Kafka/스토리 실행 루프 상태를 확인한다. 실제 이미지 Pull/IAM/SSM 실패는 ECS stoppedReason과 로그를 구분해서 본다. Target Group의 healthy와 실제 인증 요청은 별도로 확인한다. Rolling은 min100/max200, Circuit Breaker Rollback, ALB deregistration30초, Task stopTimeout120초다. 이 값만으로 실행 중 스토리의 완료나 무손실 교체를 검증했다고 주장하지 않는다. 이미지의 shutdown/drain 처리와 실제 작업 시험은 별도다.
+
+`scripts/verify-v2-production-ai-api.py`는 같은 이미지/Task Role의 일회성 Fargate에서 실행하는 검증 도구다. 허용 시험은 BE SG와 AI Client SG를 함께 붙여 내부 ALB health, 미인증401/인증 metrics200, Redis AUTH, Qdrant readiness, 임베딩·RunPod `/models`와 고유 S3 fixture의 presigned GET을 확인한다. 모델 생성·Kafka 메시지 발행·여행 작업 제출은 하지 않는다. `PROBE_RUN_ID` UUID에 해당하는 `trip-uploads/cloud-preflight-347-<UUID>/derived/read-probe.txt`를 관리자가 만들고 정확한 Version ID만 삭제한다. 비허용 시험은 AI Client SG만 붙이고 `PROBE_MODE=deny`로 DNS 해석 뒤 ALB80 Timeout을 확인한다. DNS 실패/Connection Refused는 SG 차단 성공으로 판정하지 않는다. 예외에는 서명 URL이 포함될 수 있어 타입만 출력한다.
+
+운영 FE/BE 배포·공개 DNS 전환·V1 DB/인증 이전·Outbox Connector 등록은 이 작업에 포함하지 않는다. production AI API는 운영 Kafka/Redis에만 연결하며, staging 서비스나 DB 리허설 Kafka·Consumer Group·Offset을 변경하지 않는다. 운영 AI API/runner의 업무 E2E와 처리량은 사전 배포 헬스 검증과 구분한다. 신규 Service의 자동 배포/복구 CD 연결 역시 후속 운영 배포 작업에서 다룬다.
+
+#347 최초 적용에서는18개 생성·기존 변경/삭제0개였고 후속 전체 Plan은 No changes였다. Service1 Task/rollout COMPLETED, ALB healthy와 위 허용·차단 probe의 종료코드0을 확인했다. fixture Version/DeleteMarker0, GPU 기존6개 컨테이너/boot ID와 공개 DNS·운영 Kafka 업무 offset0/Connector[] 전후 동일을 확인했다. 실제 업무 E2E는 수행하지 않았다.
+
+## #350 운영 BE 사전 배포
+
+운영 BE는 V2 Manifest의 backend Digest로 Fargate 1vCPU/2GiB, 1 Task를 기동한다. 기존 Private2a와 BE SG를 사용하고 Public IP를 부여하지 않는다. 기존 운영 ALB의 `/api/*` Rule과 BE Target Group8080에 연결한다. 공개 A/AAAA를 바꾸지 않으므로 일반 사용자는 계속 V1 Nginx로 접속한다. ALB의 별도 DNS는 사전 점검용으로 접근할 수 있으므로, DNS 미전환을 외부 접근 차단과 같은 의미로 쓰지 않는다.
+
+MySQL은 #327에서 새로 만든 `mysql-predeploy.production.yeodam.internal:3306/yeodam`, `yeodam_app` 계정이다. 기존 V1 DB 주소·계정으로 연결하지 않는다. 첫 기동 전 Instance ID·서버 UUID·테이블0/복제채널0·read_only/super_read_only0을 확인한 뒤 새 서버의 빈 스키마에만 Flyway를 실행했다. JPA는 validate로 두고 DDL을 만들지 않는다. 이번 기동은 승인 Manifest의 V1~V25 Migration 범위이며 BE 원격 main의 더 최신 코드와 혼동하지 않는다. V1 데이터 복사·지속 복제·Writer 전환을 수행하는 작업이 아니다. 본 데이터 이전 전에는 검증 앱 중지와 사전 배포 스키마 보존/정리를 별도 확인한다.
+
+| 항목 | 운영 값 |
+| --- | --- |
+| Profile | `prod,internal-metrics` |
+| Redis | 운영 ElastiCache, TLS/AUTH, `yeodam:v2:production:auth:` Prefix |
+| AI | `http://ai-api.production.yeodam.internal`, 운영 AI의 기존 API_KEY 공유 |
+| Kafka | `kafka.production.yeodam.internal:9092`, 6개 `prod.yeodam.*` Topic |
+| Consumer Group | `prod.yeodam-trip-results`, `prod.yeodam-story-results`, `prod.yeodam-outbox-receipts` |
+| 브라우저 Origin / JWT Issuer | `https://yeodam-2gether.com` |
+| Kakao Callback | `https://yeodam-2gether.com/api/auth/kakao/callback` |
+| FE Callback | `https://yeodam-2gether.com/auth/callback` |
+| 관리 포트 | 9091, 공개 ALB 연결/SG 인바운드 없음 |
+
+JWT Secret·Kakao ID/Secret은 실제 V1 컨테이너에서 현재 Parameter와 일치하는지 값 출력 없이 확인했다. `seed-v2-production-backend-parameters.py`는 이를 운영 V2 namespace로 최초 복사하며 기존 값과 다르면 중단한다. 지역 카탈로그 API URL/Key/Timeout도 같은 방식으로 복사한다. AI Key는 복제하지 않고 운영 AI Parameter를 직접 참조한다. SSM 값과 Redis AUTH는 Task 실행 역할로 주입하고 State·argv·stdout에 비밀값을 쓰지 않는다. Sentry DSN은 기존 V1 Parameter에 없어 이번에 임의 발급/등록하지 않았으며 이미지 기본값인 비활성 상태다.
+
+```bash
+# Cloud #350 작업 브랜치 저장소 루트
+AWS_PROFILE=yeodam-admin python3 scripts/seed-v2-production-backend-parameters.py
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production fmt -check
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production validate
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production plan -out=/private/tmp/production-backend.plan
+# 기존 V1/DB/AI 서비스 교체·삭제가 없는지 검토한 뒤 저장 Plan 적용
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production apply /private/tmp/production-backend.plan
+```
+
+실행 역할은 지정한 Parameter와 기존 GHCR/Redis Secret·BE 로그에만 접근한다. 별도 Task Role은 운영 사진 버킷의 `trip-uploads/*`, `trip-additions/*`의 Get/Put/Tag/Delete와 `trip-downloads/*`의 Get/Put/Tag, Bucket Location을 허용한다. EC2 Start/Stop이나 MySQL 관리 Secret은 주지 않는다. `AI_EC2_INSTANCE_ID`는 기존 생성자의 필수 설정이며 공유 GPU를 BE가 제어하도록 허용한 것이 아니다.
+
+애플리케이션 Worker/정리 Scheduler는 새 DB만 조회한다. S3 전체를 스캔해 기존 사진을 정리하는 설정을 추가하지 않았다. 기동 전 운영 Kafka 업무 파티션 end offset0/Connect[]를 확인했으며 Consumer는 운영 Topic만 사용한다. 새 운영 Outbox Connector 등록과 실제 여행 메시지 발행은 이번 사전 배포 검증에 포함하지 않는다. 기존 DB 시험 Kafka/Group/Offset이나 staging 설정을 변경하지 않는다.
+
+### DNS를 바꾸지 않고 API 확인
+
+로컬 터미널에서 실행한다. `--connect-to`는 해당 요청의 목적지만 ALB로 바꾸고 URL의 Host/SNI와 인증서 검증은 운영 도메인 그대로 유지한다. 인증서 검증을 끄는 `-k`를 사용하지 않는다. 일반 브라우저 DNS나 다른 사용자의 연결에는 영향을 주지 않는다.
+
+```bash
+curl --fail --silent --show-error --connect-timeout 10 --max-time 25 \
+  --connect-to yeodam-2gether.com:443:yeodam-v2-production-alb-491165947.ap-northeast-2.elb.amazonaws.com:443 \
+  https://yeodam-2gether.com/api/actuator/health
+```
+
+기대값은 HTTP200, JSON `status=UP`다. 첫 기동 중에는 Task가 RUNNING이어도 Spring/Flyway/Tomcat이 준비되지 않아502가 날 수 있으므로 단순 PID/RUNNING을 배포 정상으로 보지 않는다. ECS rollout COMPLETED와 Target Group healthy를 함께 확인한다. 로그는 `/yeodam/v2/production/backend`이며 Secret/Cookie/Authorization이나 전체 컨테이너 Env를 출력하지 않는다.
+
+```bash
+aws ecs describe-services --profile yeodam-admin --region ap-northeast-2 \
+  --cluster yeodam-v2-production-app --services yeodam-v2-production-backend \
+  --query 'services[].{desired:desiredCount,running:runningCount,pending:pendingCount,deployments:deployments[].rolloutState}'
+```
+
+`scripts/verify-v2-production-backend.py`는 기존 Python AI 이미지를 쓰는 일회성 Fargate에서 BE의 Task Role·실행 역할·SG·환경/Secret을 동일하게 적용하는 의존성 probe다. 실제 BE 컨테이너 이미지를 바꾸거나 Java 앱 안에서 실행하는 도구가 아니다. 새 ALB로 TCP 연결하되 운영 Host/SNI를 유지해 health200·인증 없는 users/me401·공개 metrics차단·CORS를 확인한다. Kakao authorize302의 Callback/Client ID/Secure·HttpOnly Cookie를 검사하지만 Provider Redirect를 따라가거나 계정 로그인을 수행하지 않는다. BE가 저장한 고유 OAuth State를 운영 Redis TLS로 확인하고 그 정확한 키만 finally에서 삭제한다. 추가 로그인 세션·사용자·여행을 만들지 않는다.
+
+같은 probe에서 BE→AI 공통 Key의 metrics200, Group 없는 Kafka 메타데이터 조회로6 Topic, BE Task Role의 고유 S3 fixture presignedGET을 확인한다. Kafka 업무 메시지·Offset commit·AI 추론은 없다. S3 fixture는 `trip-uploads/cloud-preflight-350-<PROBE_RUN_ID>/derived/read-probe.txt` 하나만 만들고 정확한 Version ID를 삭제한다. Probe Task 종료코드와 임시 Task Definition 비활성화를 확인한다.
+
+JWT Key/Issuer를 같게 준비한 것은 기존 로그인 세션 이행 완료를 뜻하지 않는다. 운영 V1의 DB 세션/진행 작업을 옮기거나 Redis 인증 상태를 이행하지 않았다. V1/V2 요청 경로·실사용 로그인 연속성·전체 여행 생성·Outbox 발행·배포 중 Drain·처리량은 이후 전환 검증 범위다. 이번에는 운영 CD/모니터링 자동 연결도 추가하지 않는다.
+
+#350 적용 결과는6개 생성·기존 변경/삭제0개였고 후속 전체 Plan은 No changes였다. BE1Task/rollout COMPLETED, ALB healthy와 health200을 확인했다. 신규 MySQL에는 Flyway25/25 성공·테이블29·복제채널0, 기본 system 사용자1·여행/TripCreationOutbox0이었다. MySQL9.7이 Flyway의 자체 최신 검증9.4보다 새 버전이라는 WARN은 남아 있으며, 이번 적용 성공을 장기 호환 보장으로 해석하지 않는다.
+
+첫 probe는 같은 출처 OPTIONS에도 Allow-Origin 헤더가 필수라고 가정해 KeyError로 중단됐다. 앱 설정을 바꾸지 않고 같은 출처 OPTIONS200과 비허용 Origin403으로 시험 조건을 구분한 뒤 전체 검증이 통과했다. 수정된 probe의 종료코드는0, OAuth 시험 키 제거·S3 fixture Version/DeleteMarker0·임시 Task Definition 비활성화를 확인했다. V1 컨테이너와 공개 DNS·운영 Kafka 업무 end offset0/Connector[]는 전후 동일했다.
+
+작업 중 승인 Manifest가 갱신되면 먼저 이미지의 설정·Migration 차이를 확인한다. Terraform은 새 Task Revision을 등록하지만 Service의 task_definition은 CD 소유로 ignore하므로 Apply만으로 기존 Service의 이미지가 바뀌지는 않는다. 검토한 Revision을 의도적으로 배포할 때 다음처럼 정확한 ARN을 지정한다. 이 명령은 운영 BE만 갱신하며 공개 DNS를 바꾸지 않는다.
+
+```bash
+backend_revision=$(AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production output -raw backend_task_definition_arn)
+aws ecs update-service --profile yeodam-admin --region ap-northeast-2 \
+  --cluster yeodam-v2-production-app --service yeodam-v2-production-backend \
+  --task-definition "$backend_revision" --query 'service.taskDefinition' --output text
+```
+
+작업 중 PR349에서 승인된 BE39540ce/Digest63a68ffe…를 반영해 최종 Service를 Revision2로 배포했다. 스키마·설정·Dockerfile 차이는 없고 프로필 사진 처리 변경이었다. 새 Task에서도 Flyway25개 검증/추가 Migration 없음, ALB healthy/rollout COMPLETED와 위 probe 전체 통과·종료코드0을 확인했다. 이전 a1a41549/Revision1의 검증 기록은 중간 결과로 분리하고 이전 Revision은 복구용 ACTIVE로 보존했다. 최종 전체 Terraform Plan은 No changes다.
+
+## #352 운영 FE 사전 배포
+
+FE는 승인 V2 Manifest의 frontend Digest로 Fargate0.5vCPU/1GiB, 1 Task를 시작한다. 기존 Private2a/NAT·GHCR Secret·FE 로그 그룹과 실행 역할을 사용한다. 별도 Task Role·앱 Secret·내부 ALB·Cloud Map·DNS override는 추가하지 않는다. FE SG의 인바운드는 기존 운영 ALB SG→3000만, 아웃바운드는 HTTPS443만 허용한다. Task Public IP는 없다.
+
+서버 API 주소는 `SERVER_API_BASE_URL=https://yeodam-2gether.com/api`다. 승인된 FE source5a8b34f의 serverApiClient가 이 런타임 값을 읽고 브라우저는 상대 `/api` 경로를 사용하는 것을 확인했다. 지도 JS Key는 이미지 빌드 시 포함되는 값이므로 이번에 런타임 Secret으로 새로 주입하거나 이미지를 다시 만들지 않는다.
+
+ALB의 기본 화면 경로는 FE Target Group3000, `/api/*`는 기존 BE Target Group8080으로 연결된다. `/api/health`만 우선순위10의 FE 헬스 Rule을 사용한다. 이 경로는 source의 정적 `{status:ok}` 응답이며 BE 호출이나 로그인·SSR 여정을 실행하지 않는다. Task 내부 헬스도 Node fetch로 이 경로만 조회한다. ECS 런타임 호스트명으로 수신 주소가 바뀌지 않도록 `HOSTNAME=0.0.0.0`을 Task 환경에 명시한다.
+
+사용자와 합의한 사전 배포 범위는 이미지·환경 설정·ECS/ALB 헬스 확인이다. 스테이징에서 검증한 화면·SSR·로그인·FE/BE 연동 시험을 반복하지 않는다. 공개 DNS는 계속 V1을 가리키므로 도메인 전환 전 이 FE로 실제 서비스 사용을 시작하지 않는다. SSR 요청을 V2로 강제로 보내기 위한 임시 내부 경로나 광범위한 DNS 변경도 만들지 않는다. DB·인증·진행 작업·DNS TTL을 포함한 실제 전환 경계는 기존 전환 계획을 따른다.
+
+```bash
+# Cloud #352 작업 브랜치 저장소 루트
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production fmt -check
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production validate
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production plan -out=/private/tmp/production-frontend.plan
+# 대상 계정/Region과 기존 리소스 변경·삭제가 없는지 검토한 뒤 적용
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production apply /private/tmp/production-frontend.plan
+```
+
+ECS의 Running과 실제 준비 완료를 구분한다. Service rollout COMPLETED, Container HEALTHY, FE Target Group healthy를 확인한다. 실패 시 해당 Task의 stoppedReason과 `/yeodam/v2/production/frontend` 로그를 확인하며 임의로 기존 V1이나 BE/AI 서비스를 재시작하지 않는다.
+
+```bash
+aws ecs describe-services --profile yeodam-admin --region ap-northeast-2 \
+  --cluster yeodam-v2-production-app --services yeodam-v2-production-frontend \
+  --query 'services[].{desired:desiredCount,running:runningCount,pending:pendingCount,deployments:deployments[].rolloutState}'
+# FE 헬스만 확인. 공개 DNS·브라우저 설정은 변경하지 않음.
+curl --fail --silent --show-error --connect-timeout 10 --max-time 25 \
+  --connect-to yeodam-2gether.com:443:yeodam-v2-production-alb-491165947.ap-northeast-2.elb.amazonaws.com:443 \
+  https://yeodam-2gether.com/api/health
+```
+
+curl은 기대 상태200/본문`status:ok`만 확인한다. URL Host/SNI의 운영 인증서 검증을 유지하고 `-k`는 사용하지 않는다. 여기서 사용하는 요청별 `--connect-to`는 임시 앱 내부 경로나 전역 DNS override를 구성하는 것이 아니다. 새 페이지·정적 자산·사용자 API를 탐색하지 않는다. 이미지 갱신/복구용 운영 CD와 다중 Task/오토스케일링 정책을 이 첫 사전 배포 작업에서 추가하지 않는다.
+
+첫 적용은 FE Service도 생성하지만 이후 Task Definition 변경은 자동 배포되지 않는다. `task_definition`은 CD 관리 대상으로 무시하므로, 검토한 FE Revision을 배포할 때만 다음 명령을 사용한다. 이전 Revision은 `skip_destroy`로 보존한다.
+
+```bash
+frontend_revision=$(AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production output -raw frontend_task_definition_arn)
+aws ecs update-service --profile yeodam-admin --region ap-northeast-2 \
+  --cluster yeodam-v2-production-app --service yeodam-v2-production-frontend \
+  --task-definition "$frontend_revision" --query 'service.taskDefinition' --output text
+```
+
+## #355 운영 V2 수동 CD
+
+운영 앱의 이미지는 GitHub Actions **V2 Production Manifest Deployment**로 갱신한다. 이 Workflow는 수동 실행만 지원하며 `production` Environment 승인과 main 브랜치 제한을 사용한다. DNS, DB 이전, 인증 이행, GPU 전원이나 모델 배포를 실행하지 않는다.
+
+1. **V2 Staging Manifest Deployment**의 성공한 Run을 연다. 주소 `/actions/runs/숫자`의 숫자를 복사한다. PR 번호나 Commit SHA가 아니다.
+2. Cloud Actions의 **V2 Production Manifest Deployment → Run workflow**, Branch `main`, action `deploy`, `staging_run_id`와 배포 사유를 입력한다.
+3. `production` 승인 화면에서 Run 번호와 변경 사항을 확인하고 승인한다.
+4. Summary와 Artifact의 `release.json`에서 `healthy`, 변경 Component와 실제 Revision을 확인한다.
+5. 명시적 복구는 action `rollback`, `staging_run_id`는 비워 두고 사유를 입력한다. 이전 성공 조합이 없으면 중단한다.
+
+Environment 변수 `AWS_V2_PRODUCTION_RELEASE_DEPLOY_ROLE_ARN`에는 Terraform의 `production_release_deploy_role_arn`을 등록한다. Secret 값은 Actions로 전달하지 않는다. 기존 V1 운영 배포와 V2 스테이징 배포 변수는 변경하지 않는다.
+
+후보는 스테이징 Run의 Workflow 경로·main·동일 저장소·성공 상태, 최신 attempt Artifact, `healthy` 보고서, 병합 PR과 정확한 Manifest, 성공한 V2 통합 CI까지 대조한다. 임의 Tag나 최신 main의 이미지로 대체하지 않는다. 스테이징 Artifact는 7일 보존이므로 만료된 Run의 새 승격은 거절한다. 이미 운영에서 성공한 조합은 독립된 Parameter 기록을 사용해 복구하므로 스테이징 Artifact 만료 때문에 복구가 막히지는 않는다.
+
+실행 중인 운영 Task Definition을 복제하고 이미지와 RELEASE만 변경한다. DB 주소·Redis·Secret 참조·권한·포트·헬스·로그 설정은 그대로이며 전후 설정 Hash도 대조한다. 수동 복구 역시 과거 Task의 오래된 DB 주소로 돌아가지 않고 현재 운영 설정에 이전 이미지를 넣는다. Task 설정을 바꾸는 Terraform Apply나 다른 수동 배포를 같은 시간에 겹치지 않는다.
+
+배포 순서는 AI API와 운영 CPU 정리 실행기 → BE → FE다. 변경 없는 이미지는 재배포하지 않는다. ECS rollout 완료, 현재 Revision의 실제 컨테이너 HEALTHY와 ALB Target을 확인한다. 공개 도메인으로 헬스를 확인하면 아직 V1을 검사할 수 있으므로 사용하지 않는다. CPU 정리 실행기는 production 전용 Compose에서 `process-runner`만 `--no-deps`로 갱신하고 모델·Qdrant·스테이징 실행기를 재시작하지 않는다. GPU가 꺼져 있으면 실행기 검증이 실패하므로 운영자가 기존 공유 호스트 운영 절차로 기동한 뒤 재시도한다. 이 CD에는 GPU 전원 권한이 없다.
+
+운영 상태는 `/yeodam/v2/production/deploy/last-success`, `previous-success`, `active`의 Standard String Parameter에 비밀 없이 기록한다. 처음 실행할 때는 현재 앱 이미지 조합이 선택한 스테이징 성공 조합과 같아야 하며, 이를 기준선으로 기록한다. 스테이징용 Parameter는 쓰지 않는다.
+
+운영 Terraform의 앱·runner 이미지도 `last-success`의 Manifest를 우선 참조한다. 기록이 없는 최초 부트스트랩에서만 저장소 Manifest를 사용한다. 따라서 새 staging Manifest를 병합해도 운영 이미지가 자동으로 따라가지 않는다. 이 경로에는 비밀 없는 배포 기록만 저장한다.
+
+배포가 실패하면 시도한 Component를 역순으로 직전 Revision에 복구한다. 해당 배포 직전 설정을 쓰므로 이 복구에서도 DB 주소가 바뀌지 않는다. 마지막 성공 기록과 현재 이미지가 다르거나 active가 미완료 상태이면 새 배포를 거절한다. SSM Timeout·취소처럼 원격 실행 종료가 불확실하면 경쟁하는 실행기 복구를 시작하지 않고 `recovery_required`로 멈춘다. SSM Command 상태와 실제 컨테이너를 확인한 뒤 복구 판단을 해야 하며 Parameter만 임의로 지우지 않는다. 앱은 정상인데 성공 기록 저장이 실패한 경우에도 자동으로 이미지를 되돌리지 않는다.
+
+미확정 상태를 조사할 때는 먼저 Artifact의 `failure`와 Command ID, 아래의 active 기록을 확인한다. 명령이 종료됐는지 확인한 뒤 같은 운영 runner 문서의 `Action=inspect`를 사용한다. 호스트 잠금이 남아 있으면 이 검사도 실패하므로 다른 deploy를 겹치지 않는다. ECS/runner가 LAST의 이미지·설정과 모두 일치하는지 확인한 후 배포 기록을 정합하게 복구한다. 불일치한 상태에서 active만 지우거나 성공 상태로 덮어쓰지 않는다.
+
+```bash
+aws ssm get-parameter --profile yeodam-admin --region ap-northeast-2 \
+  --name /yeodam/v2/production/deploy/active --query Parameter.Value --output text
+aws ssm get-command-invocation --profile yeodam-admin --region ap-northeast-2 \
+  --command-id COMMAND_ID_FROM_REPORT --instance-id i-05e1ad9dd96dba4ae \
+  --query '{status:Status,details:StatusDetails,responseCode:ResponseCode}'
+```
+
+AI API와 CPU 정리 실행기는 순차 교체되므로 두 런타임의 버전이 잠시 다를 수 있다. AI 변경 승인 전 진행 중 작업과 새 작업 접수를 확인하고, 기존 AI 배포 계약의 작업 종료·재처리 절차를 따른다. 이번 헬스 검증으로 진행 중 작업의 무손실 종료나 Worker Drain을 검증했다고 주장하지 않는다.
+
+이 복구는 **이미지 복구**다. BE Flyway가 적용한 스키마나 새 코드가 쓴 업무 데이터까지 되돌리지 않는다. BE 배포 승인 전 이전 이미지와 DB 변경의 호환성을 확인해야 한다. 이번 CD 구성은 운영 DB·요청 경로 마이그레이션 성공을 의미하지 않는다.
+
+로컬에서 쓰기 없이 같은 검사를 확인하려면 Cloud 저장소 루트에서 실행한다.
+
+```bash
+AWS_PROFILE=yeodam-admin RELEASE_REPORT_DIR=/private/tmp/v2-production-plan \
+  python3 scripts/deploy-v2-production-release.py deploy --staging-run SUCCESSFUL_RUN_ID
+```
+
+`status=planned`와 Component 목록이 예상과 같은지 확인한다. `--apply`를 붙이면 실제 배포다. CI/스테이징 근거가 없거나, 현재 운영 상태가 불안정하거나, 이미지 수동 변경이 있으면 중단 메시지의 원인을 먼저 확인한다. `release.json`은 Snapshot Hash와 식별자만 포함하며 원본 Terraform Plan/State 또는 Secret을 Artifact에 넣지 않는다.

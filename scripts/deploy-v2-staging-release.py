@@ -304,18 +304,10 @@ def main():
             save()
             raise
     finally:
-        if started_gpu and not unknown_runner:
-            # Normal stop request only. No waiter, forced stop, or RunPod action.
-            try:
-                aws('ec2', 'stop-instances', '--instance-ids', ai.INSTANCE)
-                report['gpuCleanup'] = 'stop_requested'
-            except Exception as error:
-                report['gpuCleanup'] = 'stop_request_failed'
-                report['gpuCleanupError'] = str(error)
-                save()
-                raise
-        elif started_gpu:
-            report['gpuCleanup'] = 'left_running_for_recovery'
+        if started_gpu:
+            # The GPU now also hosts the production process runner and Qdrant.
+            # Staging CD must not stop either environment's shared host.
+            report['gpuCleanup'] = 'left_running_for_recovery' if unknown_runner else 'shared_gpu_left_running'
         else:
             report['gpuCleanup'] = 'original_state_preserved'
         save()

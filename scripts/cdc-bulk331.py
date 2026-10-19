@@ -18,7 +18,7 @@ from uuid import UUID
 
 BUCKET = 'yeodam-v2-staging-mysql-backup-483175530259-ap-northeast-2'
 CASE = os.environ.get('CDC_LIVE_CASE', '331')
-if CASE not in ('331', '331r', '331s'):
+if CASE not in ('331', '331r', '331s', '336'):
     raise RuntimeError('unsupported CDC Bulk case')
 SCHEMA = 'yeodam_cdc_live' + CASE
 SOURCE_SCHEMA = 'yeodam_v1_source'

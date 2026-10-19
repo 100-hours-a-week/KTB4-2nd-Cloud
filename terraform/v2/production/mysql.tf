@@ -66,6 +66,9 @@ resource "aws_route53_zone" "production_private" {
   vpc {
     vpc_id = data.aws_vpc.production.id
   }
+  vpc {
+    vpc_id = data.aws_vpc.shared_gpu.id
+  }
   tags = local.common_tags
 }
 

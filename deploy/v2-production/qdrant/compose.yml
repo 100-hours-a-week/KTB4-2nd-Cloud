@@ -1,0 +1,12 @@
+name: yeodam-v2-production-qdrant
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.19.1@sha256:12364fe851b9f17356fc88189fc06d1b521262e04659ec7345975b00c9246a10
+    platform: linux/amd64
+    container_name: yeodam-ai-qdrant-production
+    ports: ["${AI_GPU_BIND_IP:?private bind IP required}:6335:6333"]
+    volumes: ["/data/qdrant/production/storage:/qdrant/storage"]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: {max-size: "20m", max-file: "3"}

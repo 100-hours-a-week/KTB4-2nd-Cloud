@@ -7,4 +7,4 @@ module "ecs_foundation" {
   tags               = local.common_tags
 }
 
-# No Task Definition, ECS Service or application secret value is created here.
+# Service resources live in their own files; credentials are populated outside state.

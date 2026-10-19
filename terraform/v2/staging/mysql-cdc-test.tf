@@ -180,7 +180,7 @@ resource "aws_ebs_volume" "mysql_cdc_test_data" {
 
 resource "aws_instance" "mysql_cdc_test" {
   ami                         = var.mysql_ami_id
-  instance_type               = "t4g.medium"
+  instance_type               = "t4g.xlarge"
   subnet_id                   = module.network.private_app_subnet_id
   vpc_security_group_ids      = [aws_security_group.mysql_cdc_test.id]
   iam_instance_profile        = aws_iam_instance_profile.mysql_cdc_test.name

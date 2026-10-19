@@ -20,4 +20,4 @@ module "app_alb" {
 }
 
 # The module creates only ACM-validation CNAMEs, not the production A/AAAA Alias.
-# Target groups remain empty: no application is started or exposed by this root.
+# FE/BE attach through their service files; public DNS still sends users to V1.

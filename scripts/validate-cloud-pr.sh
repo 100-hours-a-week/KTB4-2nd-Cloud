@@ -4,6 +4,17 @@ set -Eeuo pipefail
 python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
+python3 -m unittest discover -s tests/ci -p 'test_production_qdrant_host.py'
+python3 -m unittest discover -s tests/ci -p 'test_production_ai_runner.py'
+python3 -m unittest discover -s tests/ci -p 'test_production_ai_parameters.py'
+python3 -m unittest discover -s tests/ci -p 'test_production_backend_parameters.py'
+python3 -c 'import ast,pathlib; [ast.parse(pathlib.Path(p).read_text()) for p in ["scripts/seed-v2-production-backend-parameters.py", "scripts/verify-v2-production-backend.py"]]'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/install-v2-production-ai-runner.py").read_text())'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/seed-v2-production-ai-parameters.py").read_text())'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/verify-v2-production-ai-api.py").read_text())'
+bash -n scripts/install-v2-production-qdrant.sh
+AI_GPU_BIND_IP=10.30.10.162 docker compose -f deploy/v2-production/qdrant/compose.yml config --quiet
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("deploy/v2-production/qdrant/verify-client.py").read_text())'
 bash -n terraform/v2/production/ai-redis-bootstrap.sh.tftpl
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("terraform/v2/production/files/verify-ai-redis.py").read_text())'
 AI_REDIS_BIND_IP=10.20.10.10 docker compose -f deploy/v2-production/ai-redis-compose.yml config --quiet
@@ -28,6 +39,7 @@ python3 -m unittest discover -s tests/load/tests -p 'test_cdc_323_contract.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_cdc_323_ordered_audit.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_cdc_324_replay_contract.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_cdc_331_bulk_contract.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_cdc_336_shards_contract.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_defense.py'
 node --test tests/load/tests/nginx-defense.test.mjs
 node --check tests/load/scenarios/nginx-request-repeat.js
@@ -147,7 +159,7 @@ bash -n terraform/v2/staging/ai-redis-bootstrap.sh.tftpl
 
 # Some Compose versions still require env_file paths with --no-env-resolution.
 # Validate the deployment structure using CI-only values, never host secrets.
-python3 - "${temporary_env}" "${temporary_dir}/ai-gpu-compose.yml" <<'PYTHON'
+python3 - "${temporary_env}" "${temporary_dir}/ai-gpu-compose.yml" "${temporary_dir}/production-runner-compose.yml" <<'PYTHON'
 import pathlib
 import sys
 
@@ -155,8 +167,12 @@ compose = pathlib.Path('deploy/v2-staging/ai-gpu/compose.yml').read_text()
 for name in ('embedding', 'runner'):
     compose = compose.replace(f'/etc/yeodam/ai/{name}.env', sys.argv[1])
 pathlib.Path(sys.argv[2]).write_text(compose)
+production = pathlib.Path('deploy/v2-production/ai-runner/compose.yml').read_text()
+production = production.replace('/etc/yeodam/production-ai/runner.env', sys.argv[1])
+pathlib.Path(sys.argv[3]).write_text(production)
 PYTHON
 AI_GPU_BIND_IP=10.30.10.162 docker compose -f "${temporary_dir}/ai-gpu-compose.yml" config --quiet
+PRODUCTION_RUNNER_IMAGE=ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:0000000000000000000000000000000000000000000000000000000000000000 docker compose -f "${temporary_dir}/production-runner-compose.yml" config --quiet
 bash -n scripts/install-v2-staging-ai-gpu.sh
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/configure-v2-staging-ai-gpu.py").read_text())'
 
@@ -167,3 +183,5 @@ python3 -m unittest discover -s tests/ci -p 'test_v2_ai_deploy.py'
 python3 -m unittest discover -s tests/ci -p 'test_v2_release_event.py'
 
 python3 -m unittest discover -s tests/ci -p 'test_v2_staging_release.py'
+
+python3 -m unittest discover -s tests/ci -p 'test_v2_production_release.py'
