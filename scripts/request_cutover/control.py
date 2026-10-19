@@ -76,9 +76,11 @@ def checks(connection, config):
 
 
 def transfer(config):
+    started = time.monotonic()
     with database(config) as db:
         ready = checks(db, config)
         rows, source_now = snapshot(db)
+    snapshot_done = time.monotonic()
     redis = redis_client(config)
     seconds, micros = redis.time()
     now = int(seconds * 1000 + micros / 1000)
@@ -86,10 +88,19 @@ def transfer(config):
         raise ValueError('source/Redis clock or source timezone mismatch')
     entries = project(rows, config['redis']['prefix'], config['source_timezone'], now,
                       'migration-' + config['run_id'])
+    project_done = time.monotonic()
     replace_inactive(redis, entries, config['redis']['prefix'])
+    replace_done = time.monotonic()
     seconds, micros = redis.time()
     check_at = int(seconds * 1000 + micros / 1000)
     verified = verify(redis, entries, config['redis']['prefix'], check_at)
+    verified_at = time.monotonic()
+    print(json.dumps({'event': 'auth_transfer_timing', 'keys': verified['keys'],
+        'snapshot_ms': round((snapshot_done - started) * 1000),
+        'project_ms': round((project_done - snapshot_done) * 1000),
+        'replace_ms': round((replace_done - project_done) * 1000),
+        'verify_ms': round((verified_at - replace_done) * 1000),
+        'total_ms': round((verified_at - started) * 1000)}), flush=True)
     live = {k: v for k, v in entries.items() if v.expires > check_at}
     return {**ready, 'keys': verified['keys'], 'source_fingerprint': fingerprint(live),
             'target_fingerprint': verified['fingerprint']}
