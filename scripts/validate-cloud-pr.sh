@@ -5,6 +5,9 @@ python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_qdrant_host.py'
+python3 -m unittest discover -s tests/ci -p 'test_production_ai_runner.py'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/install-v2-production-ai-runner.py").read_text())'
+PRODUCTION_RUNNER_IMAGE=ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:0000000000000000000000000000000000000000000000000000000000000000 docker compose -f deploy/v2-production/ai-runner/compose.yml config --no-env-resolution --quiet
 bash -n scripts/install-v2-production-qdrant.sh
 AI_GPU_BIND_IP=10.30.10.162 docker compose -f deploy/v2-production/qdrant/compose.yml config --quiet
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("deploy/v2-production/qdrant/verify-client.py").read_text())'

@@ -138,10 +138,10 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual([x[:2] for x in calls],[('frontend','deploy')])
         self.assertEqual([v for k,v in writes if k==m.LAST][0]['runnerVerifiedAt'],'earlier')
 
-    def test_ai_release_starts_only_stopped_aws_gpu_then_requests_stop(self):
+    def test_ai_release_starts_stopped_gpu_and_preserves_shared_host(self):
         report,writes,calls,power,checks=self.exercise(['ai-app'])
-        self.assertEqual([x[:2] for x in power],[('ec2','start-instances'),('ec2','stop-instances')])
-        self.assertEqual(report['gpuCleanup'],'stop_requested')
+        self.assertEqual([x[:2] for x in power],[('ec2','start-instances')])
+        self.assertEqual(report['gpuCleanup'],'shared_gpu_left_running')
         self.assertEqual(checks,2)
 
     def test_originally_running_gpu_is_preserved(self):
@@ -161,6 +161,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertFalse(any(k==m.LAST for k,v in writes))
         self.assertEqual([x[:2] for x in calls],[('ai-app','deploy'),('backend','deploy'),('frontend','deploy'),
                                              ('frontend','rollback'),('backend','rollback'),('ai-app','rollback')])
+        self.assertFalse(any(x[:2] == ('ec2','stop-instances') for x in power))
 
     def test_unknown_ssm_result_never_competes_or_stops_recovery_gpu(self):
         report,writes,calls,power,checks=self.exercise(['ai-app'],fail='ai-app',unknown=True)
