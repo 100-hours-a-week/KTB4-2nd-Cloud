@@ -55,7 +55,7 @@ resource "aws_vpc_security_group_egress_rule" "http_packages" {
 
 resource "aws_secretsmanager_secret" "root_password" {
   name        = "${var.name_prefix}/mysql-root-password"
-  description = "Root password for the V2 staging MySQL instance; value is set outside Terraform"
+  description = "Root password for the V2 ${var.tags.Environment} MySQL instance; value is set outside Terraform"
   tags        = var.tags
 }
 
@@ -114,7 +114,7 @@ data "aws_iam_policy_document" "mysql_backup" {
     condition {
       test     = "StringEquals"
       variable = "cloudwatch:namespace"
-      values   = ["Yeodam/V2/Staging/MySQL"]
+      values   = [var.backup_metric_namespace]
     }
   }
 }
@@ -167,14 +167,18 @@ resource "aws_instance" "mysql" {
   }
 
   user_data = templatefile("${path.module}/bootstrap.sh.tftpl", {
-    volume_id                 = aws_ebs_volume.data.id
-    secret_arn                = aws_secretsmanager_secret.root_password.arn
-    aws_region                = var.aws_region
-    image                     = var.mysql_image
-    backup_bucket             = var.backup_bucket_name
-    full_backup_script_b64    = filebase64("${path.module}/files/full-backup.sh")
-    binlog_shipper_script_b64 = filebase64("${path.module}/files/ship-binlogs.sh")
-    binlog_lag_script_b64     = filebase64("${path.module}/files/measure-binlog-lag.sh")
+    volume_id                   = aws_ebs_volume.data.id
+    secret_arn                  = aws_secretsmanager_secret.root_password.arn
+    aws_region                  = var.aws_region
+    image                       = var.mysql_image
+    backup_bucket               = var.backup_bucket_name
+    full_backup_script_b64      = filebase64("${path.module}/files/full-backup.sh")
+    binlog_shipper_script_b64   = filebase64("${path.module}/files/ship-binlogs.sh")
+    binlog_lag_script_b64       = base64encode(replace(file("${path.module}/files/measure-binlog-lag.sh"), "Yeodam/V2/Staging/MySQL", var.backup_metric_namespace))
+    initial_database_argument   = var.initial_database == null ? "" : "--env MYSQL_DATABASE=${var.initial_database} "
+    replication_filter_argument = var.replication_filter_schema == null ? "" : "--replicate-wild-do-table=v1_to_v2:${var.replication_filter_schema}.% "
+    additional_mysql_arguments  = length(var.additional_mysql_arguments) == 0 ? "" : " ${join(" ", var.additional_mysql_arguments)}"
+    package_mirror_setup        = var.use_https_package_mirrors ? "sed -i -E '/^URIs:/ { s#http://#https://#g; s#https://[^ /]*ports.ubuntu.com/ubuntu-ports#https://ports.ubuntu.com/ubuntu-ports#g; }' /etc/apt/sources.list.d/ubuntu.sources\n" : ""
   })
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-mysql" })
