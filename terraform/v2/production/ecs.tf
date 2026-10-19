@@ -7,4 +7,4 @@ module "ecs_foundation" {
   tags               = local.common_tags
 }
 
-# AI service resources live in ai-api.tf; foundation credentials are populated outside state.
+# Service resources live in their own files; credentials are populated outside state.
