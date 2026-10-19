@@ -1,5 +1,5 @@
 locals {
-  production_frontend_manifest = jsondecode(file("${path.module}/../../../deploy/v2/image-manifest.json")).components.frontend
+  production_frontend_manifest = local.production_release_manifest.components.frontend
   production_frontend_image    = "ghcr.io/100-hours-a-week/yeodam-frontend@${local.production_frontend_manifest.digest}"
 }
 

@@ -421,3 +421,50 @@ aws ecs update-service --profile yeodam-admin --region ap-northeast-2 \
   --cluster yeodam-v2-production-app --service yeodam-v2-production-frontend \
   --task-definition "$frontend_revision" --query 'service.taskDefinition' --output text
 ```
+
+## #355 운영 V2 수동 CD
+
+운영 앱의 이미지는 GitHub Actions **V2 Production Manifest Deployment**로 갱신한다. 이 Workflow는 수동 실행만 지원하며 `production` Environment 승인과 main 브랜치 제한을 사용한다. DNS, DB 이전, 인증 이행, GPU 전원이나 모델 배포를 실행하지 않는다.
+
+1. **V2 Staging Manifest Deployment**의 성공한 Run을 연다. 주소 `/actions/runs/숫자`의 숫자를 복사한다. PR 번호나 Commit SHA가 아니다.
+2. Cloud Actions의 **V2 Production Manifest Deployment → Run workflow**, Branch `main`, action `deploy`, `staging_run_id`와 배포 사유를 입력한다.
+3. `production` 승인 화면에서 Run 번호와 변경 사항을 확인하고 승인한다.
+4. Summary와 Artifact의 `release.json`에서 `healthy`, 변경 Component와 실제 Revision을 확인한다.
+5. 명시적 복구는 action `rollback`, `staging_run_id`는 비워 두고 사유를 입력한다. 이전 성공 조합이 없으면 중단한다.
+
+Environment 변수 `AWS_V2_PRODUCTION_RELEASE_DEPLOY_ROLE_ARN`에는 Terraform의 `production_release_deploy_role_arn`을 등록한다. Secret 값은 Actions로 전달하지 않는다. 기존 V1 운영 배포와 V2 스테이징 배포 변수는 변경하지 않는다.
+
+후보는 스테이징 Run의 Workflow 경로·main·동일 저장소·성공 상태, 최신 attempt Artifact, `healthy` 보고서, 병합 PR과 정확한 Manifest, 성공한 V2 통합 CI까지 대조한다. 임의 Tag나 최신 main의 이미지로 대체하지 않는다. 스테이징 Artifact는 7일 보존이므로 만료된 Run의 새 승격은 거절한다. 이미 운영에서 성공한 조합은 독립된 Parameter 기록을 사용해 복구하므로 스테이징 Artifact 만료 때문에 복구가 막히지는 않는다.
+
+실행 중인 운영 Task Definition을 복제하고 이미지와 RELEASE만 변경한다. DB 주소·Redis·Secret 참조·권한·포트·헬스·로그 설정은 그대로이며 전후 설정 Hash도 대조한다. 수동 복구 역시 과거 Task의 오래된 DB 주소로 돌아가지 않고 현재 운영 설정에 이전 이미지를 넣는다. Task 설정을 바꾸는 Terraform Apply나 다른 수동 배포를 같은 시간에 겹치지 않는다.
+
+배포 순서는 AI API와 운영 CPU 정리 실행기 → BE → FE다. 변경 없는 이미지는 재배포하지 않는다. ECS rollout 완료, 현재 Revision의 실제 컨테이너 HEALTHY와 ALB Target을 확인한다. 공개 도메인으로 헬스를 확인하면 아직 V1을 검사할 수 있으므로 사용하지 않는다. CPU 정리 실행기는 production 전용 Compose에서 `process-runner`만 `--no-deps`로 갱신하고 모델·Qdrant·스테이징 실행기를 재시작하지 않는다. GPU가 꺼져 있으면 실행기 검증이 실패하므로 운영자가 기존 공유 호스트 운영 절차로 기동한 뒤 재시도한다. 이 CD에는 GPU 전원 권한이 없다.
+
+운영 상태는 `/yeodam/v2/production/deploy/last-success`, `previous-success`, `active`의 Standard String Parameter에 비밀 없이 기록한다. 처음 실행할 때는 현재 앱 이미지 조합이 선택한 스테이징 성공 조합과 같아야 하며, 이를 기준선으로 기록한다. 스테이징용 Parameter는 쓰지 않는다.
+
+운영 Terraform의 앱·runner 이미지도 `last-success`의 Manifest를 우선 참조한다. 기록이 없는 최초 부트스트랩에서만 저장소 Manifest를 사용한다. 따라서 새 staging Manifest를 병합해도 운영 이미지가 자동으로 따라가지 않는다. 이 경로에는 비밀 없는 배포 기록만 저장한다.
+
+배포가 실패하면 시도한 Component를 역순으로 직전 Revision에 복구한다. 해당 배포 직전 설정을 쓰므로 이 복구에서도 DB 주소가 바뀌지 않는다. 마지막 성공 기록과 현재 이미지가 다르거나 active가 미완료 상태이면 새 배포를 거절한다. SSM Timeout·취소처럼 원격 실행 종료가 불확실하면 경쟁하는 실행기 복구를 시작하지 않고 `recovery_required`로 멈춘다. SSM Command 상태와 실제 컨테이너를 확인한 뒤 복구 판단을 해야 하며 Parameter만 임의로 지우지 않는다. 앱은 정상인데 성공 기록 저장이 실패한 경우에도 자동으로 이미지를 되돌리지 않는다.
+
+미확정 상태를 조사할 때는 먼저 Artifact의 `failure`와 Command ID, 아래의 active 기록을 확인한다. 명령이 종료됐는지 확인한 뒤 같은 운영 runner 문서의 `Action=inspect`를 사용한다. 호스트 잠금이 남아 있으면 이 검사도 실패하므로 다른 deploy를 겹치지 않는다. ECS/runner가 LAST의 이미지·설정과 모두 일치하는지 확인한 후 배포 기록을 정합하게 복구한다. 불일치한 상태에서 active만 지우거나 성공 상태로 덮어쓰지 않는다.
+
+```bash
+aws ssm get-parameter --profile yeodam-admin --region ap-northeast-2 \
+  --name /yeodam/v2/production/deploy/active --query Parameter.Value --output text
+aws ssm get-command-invocation --profile yeodam-admin --region ap-northeast-2 \
+  --command-id COMMAND_ID_FROM_REPORT --instance-id i-05e1ad9dd96dba4ae \
+  --query '{status:Status,details:StatusDetails,responseCode:ResponseCode}'
+```
+
+AI API와 CPU 정리 실행기는 순차 교체되므로 두 런타임의 버전이 잠시 다를 수 있다. AI 변경 승인 전 진행 중 작업과 새 작업 접수를 확인하고, 기존 AI 배포 계약의 작업 종료·재처리 절차를 따른다. 이번 헬스 검증으로 진행 중 작업의 무손실 종료나 Worker Drain을 검증했다고 주장하지 않는다.
+
+이 복구는 **이미지 복구**다. BE Flyway가 적용한 스키마나 새 코드가 쓴 업무 데이터까지 되돌리지 않는다. BE 배포 승인 전 이전 이미지와 DB 변경의 호환성을 확인해야 한다. 이번 CD 구성은 운영 DB·요청 경로 마이그레이션 성공을 의미하지 않는다.
+
+로컬에서 쓰기 없이 같은 검사를 확인하려면 Cloud 저장소 루트에서 실행한다.
+
+```bash
+AWS_PROFILE=yeodam-admin RELEASE_REPORT_DIR=/private/tmp/v2-production-plan \
+  python3 scripts/deploy-v2-production-release.py deploy --staging-run SUCCESSFUL_RUN_ID
+```
+
+`status=planned`와 Component 목록이 예상과 같은지 확인한다. `--apply`를 붙이면 실제 배포다. CI/스테이징 근거가 없거나, 현재 운영 상태가 불안정하거나, 이미지 수동 변경이 있으면 중단 메시지의 원인을 먼저 확인한다. `release.json`은 Snapshot Hash와 식별자만 포함하며 원본 Terraform Plan/State 또는 Secret을 Artifact에 넣지 않는다.

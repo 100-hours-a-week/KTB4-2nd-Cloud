@@ -1,5 +1,5 @@
 locals {
-  production_ai_manifest          = jsondecode(file("${path.module}/../../../deploy/v2/image-manifest.json")).components["ai-app"]
+  production_ai_manifest          = local.production_release_manifest.components["ai-app"]
   production_runner_image         = "ghcr.io/100-hours-a-week/yeodam-ai-app@${local.production_ai_manifest.digest}"
   production_ai_api_key_parameter = "/yeodam/v2/production/ai/API_KEY"
 }
