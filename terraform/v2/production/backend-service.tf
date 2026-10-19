@@ -1,5 +1,5 @@
 locals {
-  production_backend_manifest = jsondecode(file("${path.module}/../../../deploy/v2/image-manifest.json")).components.backend
+  production_backend_manifest = local.production_release_manifest.components.backend
   production_backend_image    = "ghcr.io/100-hours-a-week/yeodam-backend@${local.production_backend_manifest.digest}"
   backend_origin              = "https://yeodam-2gether.com"
   backend_parameters = {

@@ -1,0 +1,89 @@
+name: V2 Production Manifest Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "검증된 스테이징 조합 배포 또는 직전 운영 성공 조합 복구"
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+        required: true
+      staging_run_id:
+        description: "deploy: 성공한 V2 Staging Manifest Deployment Run 번호 / rollback: 비워 둠"
+        type: string
+        required: false
+      reason:
+        description: "운영 배포 또는 복구 사유"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  id-token: write
+
+concurrency:
+  group: yeodam-v2-production-release
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: production
+    steps:
+      - name: Checkout the approved workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Configure production-only deployment credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_V2_PRODUCTION_RELEASE_DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-2
+          role-duration-seconds: 7200
+          role-session-name: yeodam-v2-production-release
+
+      - name: Promote or recover the production image combination
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ACTION: ${{ inputs.action }}
+          STAGING_RUN: ${{ inputs.staging_run_id }}
+          RELEASE_REPORT_DIR: ${{ runner.temp }}/v2-production-release
+        run: |
+          if [[ "$RELEASE_ACTION" == "deploy" ]]; then
+            python3 scripts/deploy-v2-production-release.py deploy --staging-run "$STAGING_RUN" --apply
+          else
+            [[ -z "$STAGING_RUN" ]] || { echo 'rollback에서는 staging_run_id를 비워 주세요.' >&2; exit 2; }
+            python3 scripts/deploy-v2-production-release.py rollback --apply
+          fi
+
+      - name: Preserve deployment and recovery evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: v2-production-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/v2-production-release/*.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Write production release summary
+        if: always()
+        env:
+          RELEASE_REASON: ${{ inputs.reason }}
+        run: |
+          {
+            echo '## V2 production release'
+            echo "- Reason: $RELEASE_REASON"
+            if [[ -f "$RUNNER_TEMP/v2-production-release/release.json" ]]; then
+              echo '```json'
+              cat "$RUNNER_TEMP/v2-production-release/release.json"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
