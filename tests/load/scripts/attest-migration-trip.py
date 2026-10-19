@@ -21,8 +21,10 @@ def digest(items):
     return value.hexdigest()
 
 
-def attest_events(path, run_id, expected_rate=30, allow_incomplete=False):
+def attest_events(path, run_id, expected_rate=30, allow_incomplete=False,
+                  expected_duration=120, expected_mode='load'):
     started, final = {}, {}
+    refreshes = refresh_failures = 0
     plan = None
     for line in path.read_text(encoding='utf-8').splitlines():
         event = json.loads(line[line.index('{'):])
@@ -34,6 +36,12 @@ def attest_events(path, run_id, expected_rate=30, allow_incomplete=False):
                 raise ValueError('Duplicate plan')
             plan = event
             continue
+        if kind == 'auth_refreshed':
+            refreshes += 1
+            continue
+        if kind == 'auth_refresh_failed':
+            refresh_failures += 1
+            continue
         if kind not in ('started', 'final'):
             raise ValueError('Unexpected event kind')
         key = (event['userId'], event['tripName'])
@@ -41,11 +49,13 @@ def attest_events(path, run_id, expected_rate=30, allow_incomplete=False):
         if key in selected:
             raise ValueError('Duplicate request event')
         selected[key] = event
-    if not plan or plan.get('mode') != 'load' or plan.get('rate') != expected_rate or plan.get('duration') != 120:
-        raise ValueError(f'Expected one {expected_rate} RPS / 120s plan')
-    if not started or len(started) > expected_rate * 120 + 1 or set(final) - set(started):
+    if (not plan or plan.get('mode') != expected_mode or plan.get('rate') != expected_rate or
+            plan.get('duration') != expected_duration):
+        raise ValueError(f'Expected one {expected_rate} RPS / {expected_duration}s {expected_mode} plan')
+    if not started or len(started) > expected_rate * expected_duration + 1 or set(final) - set(started):
         raise ValueError('Incomplete request events')
-    if not allow_incomplete and (len(started) < expected_rate * 120 or set(started) != set(final)):
+    if not allow_incomplete and (len(started) < expected_rate * expected_duration or
+                                 set(started) != set(final) or refresh_failures):
         raise ValueError('Incomplete request events')
     projected, request_projected = [], []
     trip_ids = set()
@@ -72,6 +82,7 @@ def attest_events(path, run_id, expected_rate=30, allow_incomplete=False):
     return {'runId': run_id, 'kind': 'events', 'trips': len(started),
             'regions': len(request_projected), 'final': len(final), 'confirmed': len(trip_ids),
             'unconfirmed': len(final) - len(trip_ids), 'missingFinal': len(started) - len(final),
+            'authRefreshes': refreshes, 'authRefreshFailures': refresh_failures,
             'requestProjectionSha256': digest(request_projected),
             'projectionSha256': digest(projected) if len(trip_ids) == len(started) else None}
 
@@ -116,10 +127,13 @@ def main():
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--max-trip-id', type=int, help='For comparing the pre-switch Source prefix on Target')
     parser.add_argument('--expected-rate', type=int, choices=(10, 30, 100), default=30)
+    parser.add_argument('--expected-duration', type=int, default=120)
+    parser.add_argument('--expected-mode', choices=('load', 'live', 'original'), default='load')
     parser.add_argument('--allow-incomplete', action='store_true',
                         help='Keep aggregate evidence for a stopped or failed run; never implies a passed load')
     args = parser.parse_args()
-    report = (attest_events(args.path, args.run_id, args.expected_rate, args.allow_incomplete)
+    report = (attest_events(args.path, args.run_id, args.expected_rate, args.allow_incomplete,
+                            args.expected_duration, args.expected_mode)
               if args.kind == 'events' else attest_rows(args.path, args.run_id, args.max_trip_id, args.allow_incomplete))
     print(json.dumps(report, sort_keys=True))
 

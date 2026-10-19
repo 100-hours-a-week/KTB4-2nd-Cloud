@@ -3,6 +3,10 @@ set -Eeuo pipefail
 
 python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/ci -p 'test_ci_baseline.py'
+python3 -m unittest discover -s tests/ci -p 'test_request_path_bridge.py'
+bash tests/ci/check-request-path-bridge.sh
+bash tests/ci/check-request-cutover.sh
+node --check tests/load/scenarios/request-auth-cutover.js
 
 bash -n scripts/*.sh tests/ci/*.sh
 bash -n deploy/v2-staging/kafka/topics.sh
@@ -10,6 +14,9 @@ KAFKA_CLUSTER_ID=abcdefghijklmnopqrstuv docker compose -f deploy/v2-staging/kafk
 python3 -m unittest discover -s tests/load/tests -p 'test_synthetic_session_pool.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_probe.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_trip.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_defense.py'
+node --test tests/load/tests/nginx-defense.test.mjs
+node --check tests/load/scenarios/nginx-request-repeat.js
 node --test tests/load/tests/migration-probe.test.mjs
 node --check tests/load/scenarios/migration-write.js
 node --check tests/load/scenarios/migration-trip-create.js

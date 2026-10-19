@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+# Private instance: packages and image are fetched over HTTPS via staging NAT.
+sed -i -E '/^URIs:/ { s#http://#https://#g; s#https://[^ /]*ports.ubuntu.com/ubuntu-ports#https://ports.ubuntu.com/ubuntu-ports#g; }' /etc/apt/sources.list.d/ubuntu.sources
+apt-get update
+apt-get install --yes --no-install-recommends ca-certificates curl unzip
+install -m 0755 -d /etc/apt/keyrings
+curl --fail --location --silent --show-error https://download.docker.com/linux/ubuntu/gpg --output /etc/apt/keyrings/docker.asc
+chmod 0644 /etc/apt/keyrings/docker.asc
+cat > /etc/apt/sources.list.d/docker.sources <<'SOURCES'
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: noble
+Components: stable
+Architectures: arm64
+Signed-By: /etc/apt/keyrings/docker.asc
+SOURCES
+apt-get update
+apt-get install --yes --no-install-recommends docker-ce docker-ce-cli containerd.io docker-compose-plugin
+systemctl enable --now docker
+
+# Mount only the EBS volume named in Terraform. Never erase an existing volume.
+expected_serial=$(printf '%s' '${volume_id}' | tr -d '-' | tr '[:upper:]' '[:lower:]')
+device=''
+for attempt in $(seq 1 120); do
+  while read -r name serial kind; do
+    [ "$kind" = disk ] || continue
+    normalized=$(printf '%s' "$serial" | tr -d '-' | tr '[:upper:]' '[:lower:]')
+    if [ "$normalized" = "$expected_serial" ]; then device="/dev/$name"; fi
+  done < <(lsblk -dn -o NAME,SERIAL,TYPE)
+  [ -n "$device" ] && break
+  sleep 5
+done
+[ -n "$device" ] || { echo 'B1 MySQL data volume was not attached' >&2; exit 1; }
+filesystem=$(blkid -o value -s TYPE "$device" || true)
+case "$filesystem" in
+  '')
+    if [ -n "$(wipefs --no-act --noheadings --output TYPE "$device")" ]; then
+      echo 'Unexpected existing signature on B1 MySQL data volume' >&2; exit 1
+    fi
+    mkfs.ext4 "$device"
+    ;;
+  ext4) ;;
+  *) echo "Unexpected B1 MySQL filesystem: $filesystem" >&2; exit 1 ;;
+esac
+uuid=$(blkid -o value -s UUID "$device")
+install -d -m 0755 /data/mysql-cdc-test
+if ! grep -Fq "UUID=$uuid " /etc/fstab; then
+  printf 'UUID=%s /data/mysql-cdc-test ext4 defaults 0 2\n' "$uuid" >> /etc/fstab
+fi
+mountpoint -q /data/mysql-cdc-test || mount /data/mysql-cdc-test
+
+work=$(mktemp -d)
+curl --fail --location --silent --show-error https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip -o "$work/aws.zip"
+unzip -q "$work/aws.zip" -d "$work"
+"$work/aws/install" --update
+rm -rf "$work"
+install -d -m 0700 /etc/yeodam/mysql-cdc-test
+AWS_DEFAULT_REGION='${region}' python3 - <<'PYTHON'
+import json, pathlib, re, secrets, subprocess, tempfile
+base = pathlib.Path('/etc/yeodam/mysql-cdc-test')
+for parameter, filename in [('${root_parameter}', 'root-password'), ('${sink_parameter}', 'sink-password')]:
+    result = subprocess.run(['aws','ssm','get-parameter','--name',parameter,'--with-decryption'],capture_output=True,text=True)
+    if result.returncode == 0:
+        value = json.loads(result.stdout)['Parameter']['Value']
+    elif 'ParameterNotFound' in result.stderr:
+        value = secrets.token_hex(16)
+        with tempfile.NamedTemporaryFile(mode='w',dir='/run') as request:
+            json.dump({'Name':parameter,'Type':'SecureString','Value':value},request)
+            request.flush()
+            subprocess.run(['aws','ssm','put-parameter','--cli-input-json','file://'+request.name],stdout=subprocess.DEVNULL,check=True)
+    else:
+        raise SystemExit('B1 MySQL credential read failed; no credential changed')
+    assert re.fullmatch('[0-9a-f]{32}',value)
+    target = base / filename
+    target.write_text(value)
+    target.chmod(0o400)
+PYTHON
+image='docker.io/library/mysql:9.7.2@sha256:e2bde46db6563855d7177adb5f0b57b9dc663f5a20927a90f4259d3312068497'
+docker pull "$image"
+mysql_uid=$(docker run --rm --entrypoint id "$image" -u mysql)
+mysql_gid=$(docker run --rm --entrypoint id "$image" -g mysql)
+chown "$mysql_uid:$mysql_gid" /etc/yeodam/mysql-cdc-test/*-password
+install -d -m 0750 -o "$mysql_uid" -g "$mysql_gid" /data/mysql-cdc-test/data
+cat > /etc/yeodam/mysql-cdc-test/my.cnf <<'CONFIG'
+[mysqld]
+server-id=300
+log-bin=mysql-bin
+gtid-mode=ON
+enforce-gtid-consistency=ON
+binlog-row-image=FULL
+binlog-expire-logs-seconds=604800
+sync-binlog=1
+innodb-flush-log-at-trx-commit=1
+innodb-buffer-pool-size=1073741824
+max-connections=100
+read-only=OFF
+super-read-only=OFF
+CONFIG
+chmod 0444 /etc/yeodam/mysql-cdc-test/my.cnf
+cat > /etc/systemd/system/yeodam-mysql-cdc-test.service <<'UNIT'
+[Unit]
+Description=Yeodam dedicated B1 CDC destination MySQL
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+RequiresMountsFor=/data/mysql-cdc-test
+[Service]
+Restart=on-failure
+RestartSec=5
+ExecStartPre=/usr/bin/mountpoint -q /data/mysql-cdc-test
+ExecStartPre=-/usr/bin/docker rm yeodam-mysql-cdc-test
+ExecStart=/usr/bin/docker run --name yeodam-mysql-cdc-test --memory=3072m --log-driver=journald -p 3306:3306 -v /data/mysql-cdc-test/data:/var/lib/mysql -v /etc/yeodam/mysql-cdc-test/root-password:/run/secrets/mysql-root-password:ro -v /etc/yeodam/mysql-cdc-test/my.cnf:/etc/mysql/conf.d/cdc-test.cnf:ro -e MYSQL_ROOT_PASSWORD_FILE=/run/secrets/mysql-root-password -e MYSQL_ROOT_HOST=localhost IMAGE
+ExecStop=/usr/bin/docker stop -t 60 yeodam-mysql-cdc-test
+TimeoutStopSec=90
+[Install]
+WantedBy=multi-user.target
+UNIT
+sed -i "s|IMAGE|$image|" /etc/systemd/system/yeodam-mysql-cdc-test.service
+systemctl daemon-reload
+systemctl enable --now yeodam-mysql-cdc-test
+for attempt in $(seq 1 120); do
+  if docker exec yeodam-mysql-cdc-test sh -c 'MYSQL_PWD=$(cat /run/secrets/mysql-root-password) mysql -uroot -Nse "SELECT 1"' >/dev/null 2>&1; then break; fi
+  sleep 5
+done
+docker exec yeodam-mysql-cdc-test sh -c 'MYSQL_PWD=$(cat /run/secrets/mysql-root-password) mysql -uroot -Nse "SELECT 1"' >/dev/null
+
+# One restricted writer for the later JDBC Sink pilot; no connector is started here.
+AWS_DEFAULT_REGION='${region}' python3 - <<'PYTHON'
+import pathlib, subprocess
+password = pathlib.Path('/etc/yeodam/mysql-cdc-test/sink-password').read_text()
+host = '${kafka_host}'
+assert password.isalnum() and len(password) == 32
+assert host.startswith('10.30.10.')
+query = ("SET SESSION sql_log_bin=0; CREATE DATABASE IF NOT EXISTS yeodam_cdc; "
+         "CREATE USER IF NOT EXISTS 'yeodam_cdc_sink'@'%s' IDENTIFIED BY '%s' REQUIRE SSL; "
+         "ALTER USER 'yeodam_cdc_sink'@'%s' IDENTIFIED BY '%s' REQUIRE SSL; "
+         "GRANT SELECT, INSERT, UPDATE, DELETE ON yeodam_cdc.* TO 'yeodam_cdc_sink'@'%s';" %
+         (host, password, host, password, host))
+result = subprocess.run(['docker','exec','-i','yeodam-mysql-cdc-test','sh','-ec',
+    'export MYSQL_PWD=$(cat /run/secrets/mysql-root-password); exec mysql -uroot'],
+    input=query,text=True,capture_output=True)
+if result.returncode: raise SystemExit('B1 sink account provisioning failed; credentials were not printed')
+PYTHON
+# Publish only the public CA certificate. Future Sink must verify this CA.
+docker exec yeodam-mysql-cdc-test cat /var/lib/mysql/ca.pem > /run/yeodam-cdc-test-ca.pem
+aws ssm put-parameter --region '${region}' --name '${ca_parameter}' --type String \
+  --value file:///run/yeodam-cdc-test-ca.pem --overwrite --query Version --output text >/dev/null
+rm -f /run/yeodam-cdc-test-ca.pem
+touch /var/lib/yeodam-mysql-cdc-test-ready

@@ -76,6 +76,27 @@ class MigrationTripReconcileTest(unittest.TestCase):
         self.assertFalse(result['passed'])
         self.assertEqual(result['final'], 0)
 
+    def test_live_attestation_separates_auth_refresh_from_trip_requests(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / 'events.jsonl'
+            records = [
+                {'source': 'migration-trip-create', 'event': 'run_started', 'runId': RUN,
+                 'mode': 'live', 'rate': 10, 'duration': 2700},
+                {'source': 'migration-trip-create', 'event': 'auth_refreshed', 'runId': RUN,
+                 'vu': 1, 'status': 200},
+                {'source': 'migration-trip-create', 'event': 'started', 'runId': RUN,
+                 'userId': 707, 'tripName': TRIP,
+                 'request': {'tripName': TRIP, 'startDate': '2025-01-01',
+                             'endDate': '2025-01-03', 'regionCodes': ['50110']}},
+                {'source': 'migration-trip-create', 'event': 'final', 'runId': RUN,
+                 'userId': 707, 'tripName': TRIP, 'status': 201,
+                 'tripId': 1000005, 'outcome': 'confirmed'},
+            ]
+            events.write_text(''.join(json.dumps(row) + '\n' for row in records))
+            result = attest_module.attest_events(events, RUN, 10, True, 2700, 'live')
+            self.assertEqual((result['trips'], result['authRefreshes'],
+                              result['authRefreshFailures']), (1, 1, 0))
+
     def check_full_plan(self, rate):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)

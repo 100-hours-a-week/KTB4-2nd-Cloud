@@ -152,14 +152,18 @@ def prepare_existing(args):
                 raise RuntimeError("Expected exactly one preloaded user at seed index " + str(index))
             user_id = int(rows[0])
             sid = str(uuid4())
-            refresh_hash = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
+            # Keep the real refresh credential in the private pool so a long
+            # migration run can rotate through the deployed auth endpoint.
+            refresh_token = secrets.token_urlsafe(32)
+            refresh_hash = hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
             now = datetime.now(timezone.utc)
             if first_issued_at is None:
                 first_issued_at = now
             token = access_token(user_id, sid, secret, issuer, now)
             # Persist the SID before inserting it; a later failure is cleanable.
             sessions.append({"userId": user_id, "seedIndex": index, "sid": sid,
-                             "accessToken": token, "csrfContext": sid, "csrfToken": None})
+                             "accessToken": token, "refreshToken": refresh_token,
+                             "csrfContext": sid, "csrfToken": None})
             save_existing_pool(output, args.run_id, args.dataset_id, first_issued_at, sessions)
             run_mysql("INSERT INTO login_sessions (sid,user_id,refresh_token_hash,expires_at) VALUES ("
                       + sql_literal(sid) + "," + str(user_id) + "," + sql_literal(refresh_hash)

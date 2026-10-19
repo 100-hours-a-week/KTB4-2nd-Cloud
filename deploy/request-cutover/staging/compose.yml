@@ -1,0 +1,29 @@
+# Existing Linux source host only; start is explicit, no automatic restart.
+services:
+  gate:
+    image: ${CUTOVER_GATE_IMAGE:?verified immutable image ID required}
+    network_mode: host
+    command: [--config, /config/gate.json, --bind, 127.0.0.1, --port, "19091"]
+    restart: "no"
+    stop_signal: SIGINT
+    stop_grace_period: 620s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+    mem_limit: 256m
+    volumes:
+      - ${CUTOVER_CONFIG_DIR:?private config required}:/config:ro
+      - ${CUTOVER_STATE_DIR:?private run state required}:/run/yeodam-cutover
+  metrics:
+    image: ${CUTOVER_GATE_IMAGE}
+    network_mode: host
+    entrypoint: [python, -m, request_cutover.exporter]
+    command: [--socket, /run/yeodam-cutover/control.sock, --bind, 127.0.0.1]
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 96m
+    volumes:
+      - ${CUTOVER_STATE_DIR}:/run/yeodam-cutover:ro

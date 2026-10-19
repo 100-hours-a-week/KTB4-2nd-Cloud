@@ -1,0 +1,177 @@
+# Disposable stack, never overlay the shared staging Compose/project.
+x-backend: &backend
+  platform: linux/amd64
+  mem_limit: 1200m
+  environment: &backend-env
+    SPRING_PROFILES_ACTIVE: prod
+    JAVA_TOOL_OPTIONS: -Xms128m -Xmx640m
+    MYSQL_URL: jdbc:mysql://mysql:3306/yeodam_cutover_311?serverTimezone=UTC&characterEncoding=utf8
+    MYSQL_USERNAME: root
+    MYSQL_PASSWORD: ${CUTOVER_MYSQL_PASSWORD:?private runtime env required}
+    JWT_SECRET: ${CUTOVER_JWT_SECRET:?private runtime env required}
+    JWT_ISSUER: https://yeodam-2gether.com
+    FRONTEND_ORIGIN: https://yeodam-2gether.com
+    FRONTEND_OAUTH_CALLBACK_URI: https://yeodam-2gether.com/auth/callback
+    KAKAO_CLIENT_ID: isolated-fixture
+    KAKAO_CLIENT_SECRET: isolated-fixture
+    KAKAO_REDIRECT_URI: https://yeodam-2gether.com/api/auth/kakao/callback
+    AWS_REGION: ap-northeast-2
+    AWS_DEFAULT_REGION: ap-northeast-2
+    AWS_ACCESS_KEY_ID: isolated-fixture
+    AWS_SECRET_ACCESS_KEY: isolated-fixture
+    AWS_EC2_METADATA_DISABLED: "true"
+    AWS_ENDPOINT_URL_EC2: http://ec2-stub:5000
+    ATTACHMENT_S3_BUCKET: yeodam-cutover-fixture
+    ATTACHMENT_S3_ENDPOINT: http://s3:4566
+    ATTACHMENT_S3_PATH_STYLE: "true"
+    AI_SERVER_BASE_URL: http://ec2-stub:5000
+    AI_SERVER_API_KEY: isolated-fixture
+    AI_EC2_INSTANCE_ID: i-isolated-only
+    DATA_GO_KR_LEGAL_DISTRICT_API_URL: http://ec2-stub:5000/places
+    REDIS_HOST: redis
+    REDIS_PASSWORD: ${CUTOVER_REDIS_PASSWORD:?private runtime env required}
+    AUTH_SESSION_KEY_PREFIX: ${CUTOVER_AUTH_PREFIX:?run-specific prefix required}
+    SPRING_KAFKA_LISTENER_AUTO_STARTUP: "false"
+    KAFKA_TRIP_RESULT_LISTENER_ENABLED: "false"
+    APP_TRIP_RESULT_LISTENER_ENABLED: "false"
+    STORY_RESULT_LISTENER_ENABLED: "false"
+    STORY_STATUS_POLLING_ENABLED: "false"
+    APP_OUTBOX_RECEIPT_LISTENER_ENABLED: "false"
+    SPRING_KAFKA_BOOTSTRAP_SERVERS: ec2-stub:9092
+    SENTRY_DSN: ""
+  healthcheck:
+    test: [CMD-SHELL, "curl --fail --silent http://localhost:8080/api/actuator/health >/dev/null"]
+    interval: 5s
+    timeout: 5s
+    retries: 50
+  depends_on:
+    mysql: {condition: service_healthy}
+    redis: {condition: service_healthy}
+
+services:
+  mysql:
+    image: mysql:9.7.2
+    mem_limit: 1g
+    command: [--innodb-buffer-pool-size=134217728, --max-connections=80]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${CUTOVER_MYSQL_PASSWORD}
+      MYSQL_DATABASE: yeodam_cutover_311
+    volumes: [mysql-data:/var/lib/mysql]
+    healthcheck:
+      test: [CMD-SHELL, "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -uroot --silent"]
+      interval: 3s
+      timeout: 5s
+      retries: 60
+
+  redis:
+    image: redis:7.4.2-alpine
+    mem_limit: 128m
+    environment:
+      REDISCLI_AUTH: ${CUTOVER_REDIS_PASSWORD}
+    command: [redis-server, --requirepass, "${CUTOVER_REDIS_PASSWORD}", --appendonly, "yes", --appendfsync, always]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  ec2-stub:
+    image: python:3.12-slim
+    command: [python, /ci/ec2-stub.py]
+    volumes: ["../../tests/ci/ec2-stub.py:/ci/ec2-stub.py:ro"]
+    mem_limit: 96m
+
+  s3:
+    image: localstack/localstack:4.9.0
+    environment: {SERVICES: s3, AWS_DEFAULT_REGION: ap-northeast-2}
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:4566/_localstack/health]
+      interval: 3s
+      timeout: 2s
+      retries: 30
+
+  v1-backend:
+    <<: *backend
+    image: ${CUTOVER_V1_BE_IMAGE:?locked production digest required}
+
+  v2-backend:
+    <<: *backend
+    image: ${CUTOVER_V2_BE_IMAGE:?locked V2 digest required}
+
+  v1-frontend:
+    image: ${CUTOVER_V1_FE_IMAGE:?locked production digest required}
+    platform: linux/amd64
+    mem_limit: 512m
+    profiles: [browser]
+    environment:
+      NODE_EXTRA_CA_CERTS: /tls/server.crt
+    volumes: ["${CUTOVER_RUNTIME}/tls/server.crt:/tls/server.crt:ro"]
+
+  v2-frontend:
+    image: ${CUTOVER_V2_FE_IMAGE:?locked V2 digest required}
+    platform: linux/amd64
+    mem_limit: 512m
+    profiles: [browser]
+    environment:
+      SERVER_API_BASE_URL: https://yeodam-2gether.com/api
+      NODE_EXTRA_CA_CERTS: /tls/server.crt
+    volumes: ["${CUTOVER_RUNTIME}/tls/server.crt:/tls/server.crt:ro"]
+
+  v2-ingress:
+    image: nginx:1.24.0-alpine
+    volumes:
+      - ./v2-ingress.conf:/etc/nginx/nginx.conf:ro
+      - ${CUTOVER_RUNTIME}/tls:/tls:ro
+    ports: ["${CUTOVER_BIND_IP:-127.0.0.1}:19444:443"]
+    mem_limit: 64m
+    depends_on: [v2-backend]
+
+  gate:
+    stop_signal: SIGINT
+    build:
+      context: ../..
+      dockerfile: deploy/request-cutover/Dockerfile
+    command: [--config, /private/config.json, --bind, 0.0.0.0, --port, "19091"]
+    environment:
+      CUTOVER_MYSQL_PASSWORD: ${CUTOVER_MYSQL_PASSWORD}
+      CUTOVER_REDIS_PASSWORD: ${CUTOVER_REDIS_PASSWORD}
+      CUTOVER_JWT_SECRET: ${CUTOVER_JWT_SECRET}
+    volumes:
+      - ${CUTOVER_RUNTIME:?private directory required}:/private
+      - cutover-state:/run/yeodam-cutover
+    ports: ["${CUTOVER_BIND_IP:-127.0.0.1}:19091:19091"]
+    mem_limit: 256m
+    depends_on: [v1-backend, v2-ingress]
+
+  metrics:
+    build:
+      context: ../..
+      dockerfile: deploy/request-cutover/Dockerfile
+    entrypoint: [python, -m, request_cutover.exporter]
+    command: [--socket, /run/yeodam-cutover/control.sock, --bind, 0.0.0.0]
+    volumes: [cutover-state:/run/yeodam-cutover:ro]
+    ports: ["${CUTOVER_BIND_IP:-127.0.0.1}:19092:19092"]
+    mem_limit: 96m
+
+  ingress:
+    image: nginx:1.24.0-alpine
+    mem_limit: 64m
+    volumes:
+      - ./ingress.conf:/etc/nginx/nginx.conf:ro
+      - ${CUTOVER_RUNTIME}/tls:/tls:ro
+    ports: ["${CUTOVER_BIND_IP:-127.0.0.1}:19443:443"]
+    depends_on: [gate]
+    networks:
+      default:
+        aliases: [yeodam-2gether.com]
+
+networks:
+  default:
+    internal: true
+
+volumes:
+  mysql-data:
+  redis-data:
+  cutover-state:
