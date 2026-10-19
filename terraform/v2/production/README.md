@@ -195,3 +195,37 @@ sudo docker inspect --format '{{.State.Health.Status}}' yeodam-ai-redis
 `files/verify-ai-redis.py`는 일회성 Fargate 검증용이다. 허용 모드에는 실행 역할이 Parameter를 `REDIS_URL` Secret으로 주입하고 `PROBE_RUN_ID`(32자리 hex)와 `EXPECTED_REDIS_IP`를 전달한다. 새 호스트에서 만든 같은 ID의 `cloud:preflight:332:<ID>` 임시 키를 컨테이너 재시작 후 조회하고, 미인증 거절·AUTH·읽기쓰기·시험 키 삭제를 확인한다. 비허용 모드는 인증값 없이 DNS의 실제 목적지를 확인한 다음 TCP Timeout만 차단 성공으로 판정한다. DNS 실패/Connection Refused를 보안 그룹 차단 성공으로 간주하지 않는다. 검증 역할과 Task Definition은 종료 후 정리한다.
 
 Redis URL은 사설망의 AUTH 접속이며 TLS 구성이 아니다. AOF always와 데이터 EBS 보존은 단일 호스트의 데이터 기록 설정이다. 이번 확인은 새 컨테이너 재시작에 한정하며 EC2/EBS 장애나 별도 복구·고가용성 시험이 아니다. 실제 AI API/정리 실행기 연결과 공유 GPU 접근 경계는 후속 작업이다.
+
+
+## #337 공유 GPU와 운영 Qdrant
+
+GPU EC2는 기존 스테이징 VPC에 그대로 둔다. Production State는 기존 GPU·EBS를 가져와 관리하지 않고, 새 Peering/Route/보안 규칙/운영 DNS/운영 Qdrant SSM 문서만 소유한다. 기존 스테이징 이미지·Compose·컨테이너3개는 그대로 유지한다.
+
+| 연결 | 주소/범위 |
+| --- | --- |
+| 운영 임베딩 | `http://ai-gpu.production.yeodam.internal:8000/v1` |
+| 운영 Qdrant | `http://ai-gpu.production.yeodam.internal:6335` |
+| 기존 스테이징 | 기존 `ai-gpu.staging.yeodam.internal`의8000/6333 유지 |
+| 운영 Route | 운영 Private RT→기존 GPU IP/32→Peering |
+| 반환 Route | 기존 GPU Private RT→운영 Private10.20.10.0/24→Peering |
+| 접근 | 운영 AI SG만8000/6335, 기존 스테이징 AI SG는8000/6333 |
+
+Peering은 같은 Account/Region의 두 VPC를 연결한다. 인터넷 공개 포트·V1 공개 Route·기본 NAT 경로·서브넷 Association은 바꾸지 않는다. 교차 환경 Qdrant 포트는 허용하지 않는다. 새 Route와 보안 규칙은 별도 Terraform 리소스여서 staging이 소유한 Route Table/SG 자체를 import하거나 재생성하지 않는다. 운영 Private Hosted Zone의 A Record가 기존 GPU 사설 IP를 가리키며 스테이징 DNS를 수정하지 않는다.
+
+운영 Qdrant는 스테이징과 같은1.19.1 Digest를 사용한다. 기존 `/data/qdrant/storage`와 달리 `/data/qdrant/production/storage`를 마운트하며 별도 Compose Project/컨테이너/서비스로 실행한다. 컨테이너 내부6333을 호스트 사설IP6335에만 게시한다. EBS20GiB 자체는 공동 사용하며 새 볼륨이나 GPU를 만들지 않는다. 임베딩 모델은 기존 한 개를 공유한다.
+
+Cloud 저장소 루트에서 다음을 실행한다. 새 SSM 문서는 정확한 GPU Instance ID·EBS Serial·마운트와 설치 마커를 확인한다. 다른 호스트/볼륨이나 기존 미확인 데이터가 있으면 중단하며 포맷·재귀 삭제·기존 스테이징 경로 chown은 하지 않는다.
+
+```bash
+gpu_instance=$(terraform -chdir=terraform/v2/production output -raw shared_gpu_instance_id)
+aws ssm send-command --profile yeodam-admin --region ap-northeast-2 \
+  --instance-ids "$gpu_instance" \
+  --document-name yeodam-v2-production-qdrant-runtime \
+  --query Command.CommandId --output text
+```
+
+Command ID로 `get-command-invocation`을 조회해 Success와 `Production Qdrant ready`를 확인한다. 준비 판정은 실제 `/readyz`200이며 실행 중인 PID만으로 판정하지 않는다. 실패하면 새 production 컨테이너와 `/opt/yeodam-production-qdrant/compose.yml`만 확인하고 기존 스테이징 Compose를 재배포하거나 GPU를 재부팅하지 않는다.
+
+설치 위치는 `/opt/yeodam-production-qdrant`, 서비스는 `yeodam-production-qdrant.service`, 컨테이너는 `yeodam-ai-qdrant-production`이다. 기존 `yeodam-ai-gpu.service`와 별개다. `deploy/v2-production/qdrant/verify-client.py`는 각 환경의 AI SG를 붙인 일회성 Fargate에서 자기 환경의8000/Qdrant readiness와 반대 환경 Qdrant TCP Timeout을 확인한다. DNS 실패나 Connection Refused를 격리 성공으로 세지 않는다. 데이터 검증은 고유 시험 컬렉션에 같은 Point ID를 서로 다른 값으로 쓰고 조회·삭제하는 범위로 수행한다.
+
+이 작업 뒤에는 기존 스테이징3개와 운영 Qdrant1개로 총4개 컨테이너다. 운영 정리 실행기는 운영 AI 배포 때 추가하며, 현재 스테이징 실행기의 Redis나 S3 설정은 바꾸지 않는다. 기존 GPU가 running인 상태를 그대로 유지한다. GPU의 배포·중지는 양쪽 환경에 영향을 주며, 컨테이너/데이터 경로 분리를 CPU·GPU·EBS 용량이나 장애 영역 분리로 해석하지 않는다. 이 작업은 기존 GPU 배포 워크플로우나 전원 정책을 변경하지 않는다.
