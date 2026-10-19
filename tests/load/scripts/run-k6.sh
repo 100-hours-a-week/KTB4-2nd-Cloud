@@ -36,6 +36,10 @@ if [[ "${script_path}" == scenarios/migration-write.js || "${script_path}" == sc
   event_name="probe-events.jsonl"
   [[ "${script_path}" != scenarios/migration-trip-create.js ]] || event_name="trip-events.jsonl"
   k6_args+=(--console-output "${result_dir}/${event_name}" --log-format raw)
+  if [[ "${script_path}" == scenarios/migration-trip-create.js ]]; then
+    # Keep k6's native aggregate when the custom handleSummary output fails.
+    k6_args+=(--summary-export "${result_dir}/native-summary.json")
+  fi
   if [[ "${script_path}" == scenarios/migration-write.js && "${K6_PROBE_PROMETHEUS:-0}" == 1 ]]; then
     export K6_PROMETHEUS_RW_SERVER_URL='http://plg.staging.yeodam.internal:9090/api/v1/write'
     export K6_PROMETHEUS_RW_TREND_STATS='p(95),p(99)'

@@ -14,10 +14,10 @@ if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(runId
 }
 const datasetId = requiredEnv('K6_TRIP_DATASET_ID');
 const mode = __ENV.K6_TRIP_MODE || 'contract';
-if (!['contract', 'load', 'live', 'original'].includes(mode)) {
-  throw new Error('Trip mode must be contract, load, live or original');
+if (!['contract', 'load', 'live', 'original', 'bulk'].includes(mode)) {
+  throw new Error('Trip mode must be contract, load, live, original or bulk');
 }
-const longRun = mode === 'live' || mode === 'original';
+const longRun = mode === 'live' || mode === 'original' || mode === 'bulk';
 const rate = positiveIntegerEnv('K6_TRIP_RATE', 10);
 const duration = positiveIntegerEnv('K6_TRIP_DURATION_SECONDS', 120);
 const preVus = positiveIntegerEnv('K6_TRIP_PREALLOCATED_VUS', 40);
@@ -29,8 +29,13 @@ if (mode === 'load' && (![10, 30, 100].includes(rate) || duration !== 120 ||
 if (mode === 'live' && (rate !== 10 || duration !== 2700 || preVus !== 40 || maxVus !== 40)) {
   throw new Error('CDC live run requires 10 RPS for 2700s and 40 fixed VUs');
 }
-if (mode === 'original' && (rate !== 10 || duration !== 2100 || preVus !== 40 || maxVus !== 40)) {
-  throw new Error('CDC original run requires 10 RPS for 2100s and 40 fixed VUs');
+if (mode === 'bulk' && (rate !== 10 || duration !== 600 || preVus !== 40 || maxVus !== 40)) {
+  throw new Error('CDC Bulk pilot requires 10 RPS for 600s and 40 fixed VUs');
+}
+const originalVus = { 10: 40, 30: 120, 100: 800 };
+if (mode === 'original' && (duration !== 2100 || preVus !== originalVus[rate] ||
+    maxVus !== originalVus[rate])) {
+  throw new Error('CDC original run requires 10/30/100 RPS for 2100s with fixed 40/120/800 VUs');
 }
 const pool = new SharedArray('existing-user-session-pool', () => {
   const value = JSON.parse(open(requiredEnv('K6_SESSION_POOL_FILE')));
@@ -72,9 +77,9 @@ export const options = {
       preAllocatedVUs: preVus, maxVUs: maxVus, gracefulStop: '30s' },
   },
   thresholds: mode === 'contract' ? { trip_create_confirmed: ['rate==1'] } : {
-    trip_create_confirmed: rate === 100
+    trip_create_confirmed: rate === 100 && mode !== 'original'
       ? [{ threshold: 'rate==1', abortOnFail: true, delayAbortEval: '10s' }] : ['rate==1'],
-    dropped_iterations: rate === 100
+    dropped_iterations: rate === 100 && mode !== 'original'
       ? [{ threshold: 'count==0', abortOnFail: true, delayAbortEval: '10s' }] : ['count==0'],
   },
 };
@@ -126,6 +131,7 @@ export default function () {
   console.log(JSON.stringify({ source: 'migration-trip-create', event: 'started', runId,
     iteration, userId: session.userId, tripName, request }));
   started.add(1);
+  const requestStartedAt = Date.now();
   const response = http.post(`${baseUrl}/api/trips`, JSON.stringify(request), {
     cookies: { accessToken: { value: session.accessToken },
       CSRF_CONTEXT: { value: session.csrfContext } },
@@ -141,7 +147,8 @@ export default function () {
   finalFailures.add(ok ? 0 : 1);
   console.log(JSON.stringify({ source: 'migration-trip-create', event: 'final', runId,
     iteration, userId: session.userId, tripName, status: response.status, tripId: data?.tripId ?? null,
-    outcome: ok ? 'confirmed' : response.status === 0 ? 'unconfirmed' : 'not_confirmed' }));
+    outcome: ok ? 'confirmed' : response.status === 0 ? 'unconfirmed' : 'not_confirmed',
+    elapsedMs: Date.now() - requestStartedAt, httpDurationMs: response.timings?.duration ?? null }));
   if ([400, 401, 403, 409].includes(response.status)) {
     exec.test.abort(`Trip request contract/auth failed with ${response.status}; reconcile recorded requests`);
   }
