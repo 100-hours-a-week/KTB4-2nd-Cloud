@@ -83,3 +83,10 @@ output "redis_endpoint" { value = module.redis.primary_endpoint_address }
 output "redis_port" { value = module.redis.port }
 output "redis_auth_secret_arn" { value = module.redis.auth_token_secret_arn }
 output "redis_replication_group_id" { value = module.redis.replication_group_id }
+
+output "kafka_instance_id" { value = aws_instance.kafka.id }
+output "kafka_private_ip" { value = aws_instance.kafka.private_ip }
+output "kafka_data_volume_id" { value = aws_ebs_volume.kafka_data.id }
+output "kafka_bootstrap_servers" { value = "${aws_route53_record.kafka_private.fqdn}:9092" }
+output "ai_kafka_client_security_group_id" { value = aws_security_group.ai_kafka_clients.id }
+output "kafka_runtime_ssm_document_name" { value = aws_ssm_document.kafka_runtime.name }

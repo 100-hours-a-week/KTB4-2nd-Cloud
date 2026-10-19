@@ -3,6 +3,9 @@ set -Eeuo pipefail
 
 python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
+python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
+bash -n scripts/install-v2-production-kafka.sh deploy/v2-production/kafka/topics.sh deploy/v2-production/kafka/verify-client.sh terraform/v2/production/kafka-bootstrap.sh.tftpl
+KAFKA_CLUSTER_ID=abcdefghijklmnopqrstuv docker compose -f deploy/v2-production/kafka/compose.yml config --quiet
 bash -n terraform/v2/production/files/provision-mysql-app-account.sh
 python3 -c 'import ast,pathlib; [ast.parse(pathlib.Path(p).read_text()) for p in ["scripts/provision-production-mysql-credentials.py", "terraform/v2/production/files/verify-storage.py"]]'
 python3 -m unittest discover -s tests/ci -p 'test_ci_baseline.py'
