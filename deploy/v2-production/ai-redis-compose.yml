@@ -1,0 +1,23 @@
+services:
+  redis:
+    image: redis:7.4.2@sha256:fbdbaea47b9ae4ecc2082ecdb4e1cea81e32176ffb1dcf643d422ad07427e5d9
+    platform: linux/arm64
+    container_name: yeodam-ai-redis
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    restart: unless-stopped
+    mem_limit: 1536m
+    security_opt: ["no-new-privileges:true"]
+    ports: ["${AI_REDIS_BIND_IP:?private bind IP required}:6379:6379"]
+    volumes:
+      - /data/redis/data:/data
+      - /etc/yeodam/ai-redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - /etc/yeodam/ai-redis/users.acl:/usr/local/etc/redis/users.acl:ro
+      - /etc/yeodam/ai-redis/password:/run/secrets/redis-password:ro
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$(cat /run/secrets/redis-password)" redis-cli ping | grep -qx PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}

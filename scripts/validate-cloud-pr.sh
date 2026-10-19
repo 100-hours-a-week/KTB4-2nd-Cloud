@@ -4,6 +4,9 @@ set -Eeuo pipefail
 python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
+bash -n terraform/v2/production/ai-redis-bootstrap.sh.tftpl
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("terraform/v2/production/files/verify-ai-redis.py").read_text())'
+AI_REDIS_BIND_IP=10.20.10.10 docker compose -f deploy/v2-production/ai-redis-compose.yml config --quiet
 bash -n scripts/install-v2-production-kafka.sh deploy/v2-production/kafka/topics.sh deploy/v2-production/kafka/verify-client.sh terraform/v2/production/kafka-bootstrap.sh.tftpl
 KAFKA_CLUSTER_ID=abcdefghijklmnopqrstuv docker compose -f deploy/v2-production/kafka/compose.yml config --quiet
 bash -n terraform/v2/production/files/provision-mysql-app-account.sh
@@ -20,6 +23,11 @@ KAFKA_CLUSTER_ID=abcdefghijklmnopqrstuv docker compose -f deploy/v2-staging/kafk
 python3 -m unittest discover -s tests/load/tests -p 'test_synthetic_session_pool.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_probe.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_trip.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_cdc_322_contract.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_cdc_323_contract.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_cdc_323_ordered_audit.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_cdc_324_replay_contract.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_cdc_331_bulk_contract.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_defense.py'
 node --test tests/load/tests/nginx-defense.test.mjs
 node --check tests/load/scenarios/nginx-request-repeat.js
