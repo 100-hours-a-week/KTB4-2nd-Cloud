@@ -41,7 +41,7 @@ ephemeral "random_password" "redis_auth" {
 
 resource "aws_secretsmanager_secret" "redis_auth" {
   name        = "${var.name_prefix}/redis-auth-token"
-  description = "AUTH token for the V2 staging Redis; read only by backend task execution role"
+  description = "AUTH token for the V2 ${var.tags.Environment} Redis; read only by backend task execution role"
 
   tags = var.tags
 }
@@ -60,7 +60,7 @@ ephemeral "aws_secretsmanager_secret_version" "redis_auth" {
 
 resource "aws_elasticache_replication_group" "redis" {
   replication_group_id       = "${var.name_prefix}-redis"
-  description                = "Single-AZ auth state for V2 staging backend tasks"
+  description                = "Single-AZ auth state for V2 ${var.tags.Environment} backend tasks"
   engine                     = "redis"
   engine_version             = "7.1"
   node_type                  = var.node_type
