@@ -1,0 +1,10 @@
+{
+  "agent": {"region": "ap-northeast-2", "run_as_user": "root"},
+  "logs": {
+    "force_flush_interval": 5,
+    "logs_collected": {"files": {"collect_list": [
+      {"file_path": "/var/log/yeodam/ai-runner/staging.jsonl", "log_group_name": "/yeodam/v2/staging/ai-runner", "log_stream_name": "{instance_id}/process-runner", "timezone": "UTC"},
+      {"file_path": "/var/log/yeodam/ai-runner/production.jsonl", "log_group_name": "/yeodam/v2/production/ai-runner", "log_stream_name": "{instance_id}/process-runner", "timezone": "UTC"}
+    ]}}
+  }
+}

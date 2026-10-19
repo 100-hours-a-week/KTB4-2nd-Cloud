@@ -5,6 +5,9 @@ python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_observability.py'
+python3 -m unittest discover -s tests/ci -p 'test_ai_runner_ops.py'
+python3 -c 'import ast,pathlib,json; [ast.parse(p.read_text()) for p in pathlib.Path("monitoring/ai-runner").glob("*.py")]; json.loads(pathlib.Path("monitoring/ai-runner/cloudwatch.json").read_text())'
+bash -n monitoring/ai-runner/install.sh
 python3 -c 'import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path("monitoring/v2-production").glob("*.py")]'
 for production_script in monitoring/v2-production/*.sh; do bash -n "$production_script"; done
 production_alert_test_dir="$(mktemp -d)"
