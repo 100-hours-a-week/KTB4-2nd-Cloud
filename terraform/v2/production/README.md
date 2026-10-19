@@ -229,3 +229,30 @@ Command ID로 `get-command-invocation`을 조회해 Success와 `Production Qdran
 설치 위치는 `/opt/yeodam-production-qdrant`, 서비스는 `yeodam-production-qdrant.service`, 컨테이너는 `yeodam-ai-qdrant-production`이다. 기존 `yeodam-ai-gpu.service`와 별개다. `deploy/v2-production/qdrant/verify-client.py`는 각 환경의 AI SG를 붙인 일회성 Fargate에서 자기 환경의8000/Qdrant readiness와 반대 환경 Qdrant TCP Timeout을 확인한다. DNS 실패나 Connection Refused를 격리 성공으로 세지 않는다. 데이터 검증은 고유 시험 컬렉션에 같은 Point ID를 서로 다른 값으로 쓰고 조회·삭제하는 범위로 수행한다.
 
 이 작업 뒤에는 기존 스테이징3개와 운영 Qdrant1개로 총4개 컨테이너다. 운영 정리 실행기는 운영 AI 배포 때 추가하며, 현재 스테이징 실행기의 Redis나 S3 설정은 바꾸지 않는다. 기존 GPU가 running인 상태를 그대로 유지한다. GPU의 배포·중지는 양쪽 환경에 영향을 주며, 컨테이너/데이터 경로 분리를 CPU·GPU·EBS 용량이나 장애 영역 분리로 해석하지 않는다. 이 작업은 기존 GPU 배포 워크플로우나 전원 정책을 변경하지 않는다.
+
+
+## #343 운영 정리 실행기
+
+기존 공유 GPU에 `yeodam-ai-process-runner-production`만 추가한다. 별도 Compose Project `yeodam-v2-production-ai-runner`, `/opt/yeodam-production-runner`, `/etc/yeodam/production-ai/runner.env`와 `yeodam-production-runner.service`를 사용한다. 실행은 `python -m app.jobs.runner`, CPU 상한2개이며 GPU Device Request는 없다. 이미지는 검증된 Cloud V2 Manifest의 ai-app Digest를 사용한다. 기존 staging runner나 모델/Qdrant 이미지를 갱신하는 도구가 아니다.
+
+환경은 `JOBS_ENV=production`, 운영 AI Redis URL Parameter와 운영 Qdrant6335를 사용한다. 임베딩8000과 API Key는 기존 모델 한 개를 공유하므로 embedding credential은 기존 staging Parameter를 조회하되 수정하지 않는다. 운영 `API_KEY`는 없을 때만 호스트에서 생성하며 기존 값은 보존한다. 값을 Terraform State·SSM 명령 출력·로그에 쓰지 않는다. 운영 API 배포에서도 동일한 `/yeodam/v2/production/ai/API_KEY`를 조회해야 한다.
+
+운영 사진은 기존 `yeodam-v1-app-data-483175530259-ap-northeast-2` 버킷을 유지한다. 버킷 자체는 V1 State 소유이며 새 버킷/정책으로 대체하지 않는다. 호스트 역할에는 `trip-uploads/*/derived/*`와 `trip-additions/*/derived/*`의 GetObject만 추가한다. 기존 사진 객체를 옮기거나 원본 읽기·쓰기 권한을 늘리지 않는다. 검증용 고유 derived 객체는 관리자 계정이 만들고 컨테이너에서 읽은 뒤 해당 Version ID만 삭제한다.
+
+운영 Private Hosted Zone을 기존 GPU의 staging VPC에도 연결해 운영 Redis/GPU DNS를 조회한다. 이는 zone의 주소를 해석하도록 하는 연결이며 모든 운영 서비스의 네트워크 접근을 허용하는 변경은 아니다. Peering Route는 #337을 재사용하고 새 SG 규칙은 GPU↔운영 AI Redis6379 두 개뿐이다. process runner는 Redis에서 작업을 가져오므로 GPU의 운영 Kafka9092 접근을 이번에 추가하지 않는다. Topic 변수는 prod Prefix지만 실제 Kafka 소비·발행은 후속 AI API 역할이다.
+
+설치 SSM은 `yeodam-v2-production-ai-runner-runtime`이다. 정확한 GPU/데이터 EBS·이미지 Digest·Redis 목적지를 검증하고, 미확인 컨테이너 이름 충돌은 거절한다. 임베딩·운영 Qdrant가 준비된 뒤 새 실행기만 기동하며 systemd의 기동 전에도 같은 준비 확인을 수행한다. systemd에서 기존 staging 서비스나 Docker를 재시작하지 않는다.
+
+```bash
+# Cloud 저장소 루트, 검토한 운영 Terraform 적용 후 실행
+aws ssm send-command --profile yeodam-admin --region ap-northeast-2 \
+  --instance-ids i-05e1ad9dd96dba4ae \
+  --document-name yeodam-v2-production-ai-runner-runtime \
+  --query Command.CommandId --output text
+```
+
+반환한 Command ID의 `get-command-invocation`이 Success이고 새 runner의 실제 Redis PING/모델 health/Qdrant readiness가 통과해야 한다. 실패하면 새 production 서비스/컨테이너와 해당 명령의 상태만 조사한다. 상태가 불명확하면 다른 설치를 겹쳐 실행하지 않는다. Env 파일·Docker 전체 inspect·SecretString을 출력하지 않는다. 운영 업무 작업을 테스트용으로 큐에 넣지 않는다.
+
+공유 GPU는 staging CD 완료 후 자동 중지하지 않는다. 코드에서 stop 호출을 제거했고 기존 release 역할에도 해당 GPU의 StopInstances만 명시적Deny한다. StartInstances와 관리자 수동 운영 권한을 막는 정책은 아니다. GPU 비용은 실행 중 계속 발생하며 운영·staging이 모두 의존하므로 종료는 양쪽 작업 상태를 확인한 별도 운영 행위다.
+
+동일 EC2/역할을 사용하는 실행기이므로 서로 다른 환경 설정·Redis/Qdrant 저장소를 사용하는 분리다. 컨테이너별 IAM 신뢰 경계나 CPU/GPU/EBS 장애 영역 분리로 주장하지 않는다. 공유 모델 변경·호스트 중지는 양 환경에 영향을 주며 동시 처리량·실제 여행 생성 E2E는 별도 검증이다. 이번 작업에서 운영 FE/BE/API나 공개 요청 경로를 배포·전환하지 않는다.

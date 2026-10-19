@@ -5,6 +5,8 @@ python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_qdrant_host.py'
+python3 -m unittest discover -s tests/ci -p 'test_production_ai_runner.py'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/install-v2-production-ai-runner.py").read_text())'
 bash -n scripts/install-v2-production-qdrant.sh
 AI_GPU_BIND_IP=10.30.10.162 docker compose -f deploy/v2-production/qdrant/compose.yml config --quiet
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("deploy/v2-production/qdrant/verify-client.py").read_text())'
@@ -152,7 +154,7 @@ bash -n terraform/v2/staging/ai-redis-bootstrap.sh.tftpl
 
 # Some Compose versions still require env_file paths with --no-env-resolution.
 # Validate the deployment structure using CI-only values, never host secrets.
-python3 - "${temporary_env}" "${temporary_dir}/ai-gpu-compose.yml" <<'PYTHON'
+python3 - "${temporary_env}" "${temporary_dir}/ai-gpu-compose.yml" "${temporary_dir}/production-runner-compose.yml" <<'PYTHON'
 import pathlib
 import sys
 
@@ -160,8 +162,12 @@ compose = pathlib.Path('deploy/v2-staging/ai-gpu/compose.yml').read_text()
 for name in ('embedding', 'runner'):
     compose = compose.replace(f'/etc/yeodam/ai/{name}.env', sys.argv[1])
 pathlib.Path(sys.argv[2]).write_text(compose)
+production = pathlib.Path('deploy/v2-production/ai-runner/compose.yml').read_text()
+production = production.replace('/etc/yeodam/production-ai/runner.env', sys.argv[1])
+pathlib.Path(sys.argv[3]).write_text(production)
 PYTHON
 AI_GPU_BIND_IP=10.30.10.162 docker compose -f "${temporary_dir}/ai-gpu-compose.yml" config --quiet
+PRODUCTION_RUNNER_IMAGE=ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:0000000000000000000000000000000000000000000000000000000000000000 docker compose -f "${temporary_dir}/production-runner-compose.yml" config --quiet
 bash -n scripts/install-v2-staging-ai-gpu.sh
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/configure-v2-staging-ai-gpu.py").read_text())'
 

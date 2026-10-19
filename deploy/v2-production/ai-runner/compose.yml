@@ -1,0 +1,16 @@
+name: yeodam-v2-production-ai-runner
+services:
+  process-runner:
+    image: ${PRODUCTION_RUNNER_IMAGE:?immutable runner image required}
+    platform: linux/amd64
+    container_name: yeodam-ai-process-runner-production
+    command: ["python", "-m", "app.jobs.runner"]
+    env_file: /etc/yeodam/production-ai/runner.env
+    init: true
+    cpus: 2.0
+    restart: unless-stopped
+    stop_grace_period: 20s
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: {max-size: "20m", max-file: "3"}
