@@ -15,7 +15,12 @@ BASE = 'http://127.0.0.1:8083'
 CASE = os.environ.get('CDC_LIVE_CASE', '313')
 ORIGINAL_CASES = ('318', '32210', '32230', '322100')
 FIXED_CASES = ('323',)
-if CASE not in ('313', *ORIGINAL_CASES, *FIXED_CASES):
+REPLAY_BATCH_SIZES = {'324replay': '500', '324replay1000': '1000'}
+REPLAY_CASES = tuple(REPLAY_BATCH_SIZES)
+REPLAY_TOPIC = 'staging.yeodam.migration.b1.live323.ordered-records'
+REPLAY_SOURCE = 'yeodam-migration-b1-live323-source'
+REPLAY_PREVIOUS_SINK = 'yeodam-migration-b1-live323-sink-ordered'
+if CASE not in ('313', *ORIGINAL_CASES, *FIXED_CASES, *REPLAY_CASES):
     raise RuntimeError('unsupported CDC live case')
 PREFIX = f'staging.yeodam.migration.b1.live{CASE}'
 SOURCE = f'yeodam-migration-b1-live{CASE}-source'
@@ -154,6 +159,41 @@ def config(kind):
 
 
 def register(kind):
+    if kind == 'replay-sink':
+        if CASE not in REPLAY_CASES:
+            raise RuntimeError('replay-sink requires the isolated replay case')
+        existing_credential('sink')
+        names = set(api('/connectors'))
+        if FULL_SINK_PREFIX + 'ordered' in names:
+            raise RuntimeError('replay sink already exists; inspect its offset before retry')
+        for preserved in (REPLAY_SOURCE, REPLAY_PREVIOUS_SINK):
+            if api('/connectors/' + preserved + '/status')['connector']['state'] != 'STOPPED':
+                raise RuntimeError('original pilot connector must remain stopped: ' + preserved)
+        if CASE == '324replay1000' and api(
+                '/connectors/yeodam-migration-b1-live324replay-sink-ordered/status'
+        )['connector']['state'] != 'STOPPED':
+            raise RuntimeError('previous replay sink must remain stopped')
+        outbox = api('/connectors/yeodam-staging-outbox/status')
+        if outbox['connector']['state'] != 'RUNNING' or any(
+                task['state'] != 'RUNNING' for task in outbox['tasks']):
+            raise RuntimeError('service Outbox must remain running')
+        if REPLAY_TOPIC not in set(kafka('--list').splitlines()) or topic_end(REPLAY_TOPIC) == 0:
+            raise RuntimeError('preserved ordered topic is missing or empty')
+        name = FULL_SINK_PREFIX + 'ordered'
+        data = config('sink')
+        data.update({'name': name, 'topics': REPLAY_TOPIC,
+                     'batch.size': REPLAY_BATCH_SIZES[CASE],
+                     'consumer.override.max.poll.records': REPLAY_BATCH_SIZES[CASE],
+                     'use.reduction.buffer': 'false'})
+        plugin = 'io.debezium.connector.jdbc.JdbcSinkConnector'
+        validate = api(f'/connector-plugins/{plugin}/config/validate', data, 'PUT')
+        if validate['error_count']:
+            fields = [item['definition']['name'] for item in validate.get('configs', [])
+                      if item.get('value', {}).get('errors')]
+            raise RuntimeError('invalid replay sink fields: ' + ','.join(fields))
+        api('/connectors/' + name + '/config', data, 'PUT')
+        print('REGISTERED', name, flush=True)
+        return
     expected = set(topic_names())
     if kind.startswith('ordered-'):
         expected.add(ORDERED_TOPIC)
@@ -238,6 +278,34 @@ def register(kind):
 
 
 def status():
+    if CASE in REPLAY_CASES:
+        names = set(api('/connectors'))
+        replay_names = ([REPLAY_SOURCE, REPLAY_PREVIOUS_SINK]
+                        + (['yeodam-migration-b1-live324replay-sink-ordered']
+                           if CASE == '324replay1000' else [])
+                        + [FULL_SINK_PREFIX + 'ordered', 'yeodam-staging-outbox'])
+        for name in replay_names:
+            if name not in names:
+                raise RuntimeError('expected connector is missing: ' + name)
+            for attempt in range(10):
+                try:
+                    value = api('/connectors/' + name + '/status')
+                    break
+                except urllib.error.HTTPError as exc:
+                    if exc.code != 404 or attempt == 9:
+                        raise
+                    time.sleep(1)
+            print(name, value['connector']['state'],
+                  ','.join(task['state'] for task in value['tasks']), flush=True)
+        print('TOPIC_END', REPLAY_TOPIC, topic_end(REPLAY_TOPIC), flush=True)
+        try:
+            print('SINK_OFFSET', FULL_SINK_PREFIX + 'ordered',
+                  *sink_lag(FULL_SINK_PREFIX + 'ordered', REPLAY_TOPIC), flush=True)
+        except RuntimeError as exc:
+            if not str(exc).startswith('consumer group has no committed offset yet:'):
+                raise
+            print('SINK_OFFSET', FULL_SINK_PREFIX + 'ordered', 'UNCOMMITTED', flush=True)
+        return
     names = api('/connectors')
     for name in [SOURCE] + [FULL_SINK_PREFIX + table for table in TABLES] + [
             FULL_SINK_PREFIX + 'ordered']:
@@ -356,7 +424,7 @@ def main():
     parser.add_argument('phase', choices=('topics', 'initial-source', 'sink-users',
                                          'sink-trips', 'sink-trip_regions', 'ordered-topic',
                                          'pause-legacy-sinks', 'ordered-source',
-                                         'ordered-sink', 'pause-source', 'resume-source',
+                                         'ordered-sink', 'replay-sink', 'pause-source', 'resume-source',
                                          'resume-legacy-trips', 'pause-legacy-trips',
                                          'resume-legacy-trip_regions',
                                          'pause-legacy-trip_regions',
@@ -367,6 +435,8 @@ def main():
         raise RuntimeError('original case keeps table topics and does not pause or recover')
     if CASE in FIXED_CASES and phase not in ('topics', 'initial-source', 'ordered-sink', 'status'):
         raise RuntimeError('fixed case routes snapshot and binlog to one topic from the start')
+    if CASE in REPLAY_CASES and phase not in ('replay-sink', 'status'):
+        raise RuntimeError('replay case only consumes the preserved ordered topic')
     if os.geteuid() != 0:
         raise RuntimeError('run as root on Kafka host')
     if phase == 'topics':

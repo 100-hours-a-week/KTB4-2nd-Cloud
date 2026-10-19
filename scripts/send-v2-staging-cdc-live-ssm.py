@@ -36,7 +36,7 @@ PHASES = ('destination', 'topics', 'initial-source', 'sink-users', 'sink-trips',
           'trip-count-source', 'trip-count-destination',
           'trip-export-source', 'trip-export-destination',
           'trip-attest-source', 'trip-attest-destination',
-          'auth-refresh-smoke', 'generator-deploy', 'ordered-audit')
+          'auth-refresh-smoke', 'generator-deploy', 'ordered-audit', 'replay-sink')
 ORIGINAL_PHASES = ('destination', 'topics', 'initial-source', 'sink-users',
                    'sink-trips', 'sink-trip_regions', 'status', 'attest-source',
                    'attest-destination', 'trip-check-source', 'trip-check-destination',
@@ -47,7 +47,8 @@ ORIGINAL_PHASES = ('destination', 'topics', 'initial-source', 'sink-users',
 ORIGINAL_SERVER_IDS = {'318': '5405', '32210': '5406', '32230': '5407',
                        '322100': '5408'}
 FIXED_SERVER_IDS = {'323': '5409'}
-SERVER_IDS = {**ORIGINAL_SERVER_IDS, **FIXED_SERVER_IDS}
+REPLAY_SERVER_IDS = {'324replay': '5410', '324replay1000': '5411'}
+SERVER_IDS = {**ORIGINAL_SERVER_IDS, **FIXED_SERVER_IDS, **REPLAY_SERVER_IDS}
 FIXED_PHASES = ('destination', 'topics', 'initial-source', 'ordered-sink', 'status',
                 'ordered-audit',
                 'attest-source', 'attest-destination', 'trip-check-source',
@@ -55,6 +56,8 @@ FIXED_PHASES = ('destination', 'topics', 'initial-source', 'ordered-sink', 'stat
                 'trip-count-destination', 'trip-export-source',
                 'trip-export-destination', 'trip-attest-source',
                 'trip-attest-destination', 'auth-refresh-smoke', 'generator-deploy')
+REPLAY_PHASES = ('destination', 'replay-sink', 'status',
+                 'attest-source', 'attest-destination')
 
 
 def append_file(commands, path, source, case='313'):
@@ -79,6 +82,7 @@ def command_for(phase, run_id=None, case='313'):
     if (case not in ('313', *SERVER_IDS) or
             (case in ORIGINAL_SERVER_IDS and phase not in ORIGINAL_PHASES) or
             (case in FIXED_SERVER_IDS and phase not in FIXED_PHASES) or
+            (case in REPLAY_SERVER_IDS and phase not in REPLAY_PHASES) or
             (phase == 'ordered-audit' and case != '323')):
         raise ValueError('case or phase is outside the fixed CDC experiment contract')
     commands = ['set -eu', 'umask 077']
