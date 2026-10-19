@@ -7,4 +7,4 @@ module "ecs_foundation" {
   tags               = local.common_tags
 }
 
-# No Task Definition, ECS Service or application secret value is created here.
+# AI service resources live in ai-api.tf; foundation credentials are populated outside state.

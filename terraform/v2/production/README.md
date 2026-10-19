@@ -256,3 +256,53 @@ aws ssm send-command --profile yeodam-admin --region ap-northeast-2 \
 공유 GPU는 staging CD 완료 후 자동 중지하지 않는다. 코드에서 stop 호출을 제거했고 기존 release 역할에도 해당 GPU의 StopInstances만 명시적Deny한다. StartInstances와 관리자 수동 운영 권한을 막는 정책은 아니다. GPU 비용은 실행 중 계속 발생하며 운영·staging이 모두 의존하므로 종료는 양쪽 작업 상태를 확인한 별도 운영 행위다.
 
 동일 EC2/역할을 사용하는 실행기이므로 서로 다른 환경 설정·Redis/Qdrant 저장소를 사용하는 분리다. 컨테이너별 IAM 신뢰 경계나 CPU/GPU/EBS 장애 영역 분리로 주장하지 않는다. 공유 모델 변경·호스트 중지는 양 환경에 영향을 주며 동시 처리량·실제 여행 생성 E2E는 별도 검증이다. 이번 작업에서 운영 FE/BE/API나 공개 요청 경로를 배포·전환하지 않는다.
+
+## #347 운영 AI API 사전 배포
+
+운영 AI API는 기존 운영 ECS Cluster에 Fargate 0.5 vCPU/1GiB, 1 Task로 시작한다. Cloud Manifest의 AI Digest를 정리 실행기와 함께 사용한다. 기본 명령은 이미지의 `uvicorn app.v2_main:create_app --factory`다. 모델과 Qdrant를 이 컨테이너에 설치하지 않는다.
+
+| 경로 | 설정 |
+| --- | --- |
+| BE → AI | `http://ai-api.production.yeodam.internal` → 내부 ALB80 → Task8000 |
+| Task 위치 | 기존 운영 Private2a `10.20.10.0/24`, Public IP 없음 |
+| ALB 위치 | Private2a + 새 Private2c `10.20.11.0/24` |
+| Redis / Kafka | 운영 전용 주소, `JOBS_ENV=production`, Topic `prod.yeodam.*` |
+| 임베딩 / Qdrant | 기존 공유 GPU8000/v1 / 운영 전용6335 |
+| 로그 | `/yeodam/v2/production/ai-api`, 보존30일 |
+
+ALB의80은 운영 BE SG만, Task의8000은 ALB SG만 허용한다. AI Task에는 기존 운영 AI Kafka Client SG를 붙여 Kafka9092/Redis6379/공유 GPU8000·6335/외부 HTTPS443만 사용한다. 두 번째 Private Subnet은 기존 Private RT를 재사용하며 새 NAT를 만들지 않는다. Task는 GPU 반환 Route가 있는2a에 유지하므로 ALB가2AZ라는 사실을 Task나 NAT의 고가용성으로 해석하지 않는다.
+
+실행 역할은 지정한 Parameter5개·운영 GHCR Secret·자기 로그 그룹만 조회한다. Task 역할은 기존 운영 버킷의 `trip-uploads/*/derived/*`, `trip-additions/*/derived/*` GetObject만 가진다. 원본 읽기/객체 쓰기/DB 접속은 추가하지 않는다. 운영 API Key와 Redis URL은 #343/#332의 기존 Parameter를 사용하고 임베딩 Key는 같은 모델 서버의 기존 staging Parameter를 읽기만 한다.
+
+### 최초 Parameter 등록과 적용
+
+Cloud 작업 브랜치의 저장소 루트에서 실행한다. 아래 스크립트는 계정483175530259/서울에 한정하고, 운영 API_KEY/REDIS_URL과 공유 임베딩 Key가 이미 있는지 확인한다. RunPod의 현재 staging URL·Key 두 개를 운영 경로로 처음 한 번 복사한다. 기존 운영 쌍이 있으면 보존하며 한쪽만 있으면 중단한다. 값은 stdout/argv/State에 출력하지 않고0600 임시 요청 파일을 삭제한다. 두 Parameter의 등록은 원자적이지 않으므로 부분 실패 시 자동 덮어쓰기로 복구하지 않는다.
+
+```bash
+AWS_PROFILE=yeodam-admin python3 scripts/seed-v2-production-ai-parameters.py
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production fmt -check
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production validate
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production plan -out=/private/tmp/production-ai.plan
+# 계정·생성/변경/삭제 및 기존 V1/DB 비변경을 검토한 뒤 같은 Plan 적용
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production apply /private/tmp/production-ai.plan
+```
+
+등록 경로는 `/yeodam/v2/production/ai/VLM_BASE_URL`(String), `/yeodam/v2/production/ai/VLM_API_KEY`(SecureString)다. 모델은 확인한 staging 설정과 같은 `gemma-4`이며 주소는 코드에 고정하지 않는다. 이후 RunPod 변경 시 운영 Parameter를 따로 갱신하고 AI Service의 새 배포가 필요하다. staging URL 갱신용 Actions가 운영 값을 함께 수정하는 구성은 아니다. 키를 CLI 문자열이나 채팅에 넣지 않는다.
+
+```bash
+aws ecs describe-services --profile yeodam-admin --region ap-northeast-2 \
+  --cluster yeodam-v2-production-app --services yeodam-v2-production-ai-api \
+  --query 'services[].{desired:desiredCount,running:runningCount,pending:pendingCount,deployments:deployments[].rolloutState}'
+# Parameter 변경 뒤 같은 이미지로 재기동해야 할 때만 실행
+aws ecs update-service --profile yeodam-admin --region ap-northeast-2 \
+  --cluster yeodam-v2-production-app --service yeodam-v2-production-ai-api \
+  --force-new-deployment --query 'service.serviceName' --output text
+```
+
+헬스는 `/health`200으로 Redis/Kafka/스토리 실행 루프 상태를 확인한다. 실제 이미지 Pull/IAM/SSM 실패는 ECS stoppedReason과 로그를 구분해서 본다. Target Group의 healthy와 실제 인증 요청은 별도로 확인한다. Rolling은 min100/max200, Circuit Breaker Rollback, ALB deregistration30초, Task stopTimeout120초다. 이 값만으로 실행 중 스토리의 완료나 무손실 교체를 검증했다고 주장하지 않는다. 이미지의 shutdown/drain 처리와 실제 작업 시험은 별도다.
+
+`scripts/verify-v2-production-ai-api.py`는 같은 이미지/Task Role의 일회성 Fargate에서 실행하는 검증 도구다. 허용 시험은 BE SG와 AI Client SG를 함께 붙여 내부 ALB health, 미인증401/인증 metrics200, Redis AUTH, Qdrant readiness, 임베딩·RunPod `/models`와 고유 S3 fixture의 presigned GET을 확인한다. 모델 생성·Kafka 메시지 발행·여행 작업 제출은 하지 않는다. `PROBE_RUN_ID` UUID에 해당하는 `trip-uploads/cloud-preflight-347-<UUID>/derived/read-probe.txt`를 관리자가 만들고 정확한 Version ID만 삭제한다. 비허용 시험은 AI Client SG만 붙이고 `PROBE_MODE=deny`로 DNS 해석 뒤 ALB80 Timeout을 확인한다. DNS 실패/Connection Refused는 SG 차단 성공으로 판정하지 않는다. 예외에는 서명 URL이 포함될 수 있어 타입만 출력한다.
+
+운영 FE/BE 배포·공개 DNS 전환·V1 DB/인증 이전·Outbox Connector 등록은 이 작업에 포함하지 않는다. production AI API는 운영 Kafka/Redis에만 연결하며, staging 서비스나 DB 리허설 Kafka·Consumer Group·Offset을 변경하지 않는다. 운영 AI API/runner의 업무 E2E와 처리량은 사전 배포 헬스 검증과 구분한다. 신규 Service의 자동 배포/복구 CD 연결 역시 후속 운영 배포 작업에서 다룬다.
+
+#347 최초 적용에서는18개 생성·기존 변경/삭제0개였고 후속 전체 Plan은 No changes였다. Service1 Task/rollout COMPLETED, ALB healthy와 위 허용·차단 probe의 종료코드0을 확인했다. fixture Version/DeleteMarker0, GPU 기존6개 컨테이너/boot ID와 공개 DNS·운영 Kafka 업무 offset0/Connector[] 전후 동일을 확인했다. 실제 업무 E2E는 수행하지 않았다.
