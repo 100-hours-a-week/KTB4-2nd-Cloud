@@ -4,6 +4,8 @@ set -Eeuo pipefail
 python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
+python3 -m unittest discover -s tests/ci -p 'test_production_outbox.py'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("scripts/configure-v2-production-outbox-connector.py").read_text())'
 python3 -m unittest discover -s tests/ci -p 'test_production_qdrant_host.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_ai_runner.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_ai_parameters.py'
