@@ -120,6 +120,49 @@ resource "aws_iam_role_policy" "kafka_mysql_cdc_test_parameters" {
   })
 }
 
+# #331: a single-transaction, data-only dump uses the private backup bucket.
+# The Source writes one immutable run prefix, B1 reads/imports and writes its
+# receipt, and Kafka checks only the two receipts before starting its Sink.
+data "aws_iam_policy_document" "cdc_bulk331" {
+  statement {
+    sid       = "SourceBulkSnapshot"
+    actions   = ["s3:PutObject", "s3:GetObject", "s3:AbortMultipartUpload"]
+    resources = ["${aws_s3_bucket.mysql_backup.arn}/migration/cdc-live331/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "v1_source_cdc_bulk331" {
+  name   = "yeodam-v2-staging-cdc-bulk331-source"
+  role   = aws_iam_role.v1_source_app.id
+  policy = data.aws_iam_policy_document.cdc_bulk331.json
+}
+
+resource "aws_iam_role_policy" "mysql_cdc_test_bulk331" {
+  name = "yeodam-v2-staging-cdc-bulk331-destination"
+  role = aws_iam_role.mysql_cdc_test.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["s3:GetObject", "s3:PutObject"]
+      Resource = ["${aws_s3_bucket.mysql_backup.arn}/migration/cdc-live331/*"]
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "kafka_cdc_bulk331_receipt" {
+  name = "yeodam-v2-staging-cdc-bulk331-receipt"
+  role = aws_iam_role.kafka.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["s3:GetObject"]
+      Resource = ["${aws_s3_bucket.mysql_backup.arn}/migration/cdc-live331/*"]
+    }]
+  })
+}
+
 resource "aws_iam_instance_profile" "mysql_cdc_test" {
   name = local.mysql_cdc_test_name
   role = aws_iam_role.mysql_cdc_test.name
