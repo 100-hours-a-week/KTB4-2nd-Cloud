@@ -30,12 +30,16 @@ def load(path):
     c = json.loads(Path(path).read_text())
     run_id(c['run_id'])
     staging = c['environment'] == 'staging-preparation'
+    staging_a = c['environment'] == 'staging-a-rehearsal'
     if staging:
         from .staging import validate_gate
         validate_gate(c)
+    elif staging_a:
+        from .staging import validate_a_gate
+        validate_a_gate(c)
     elif c['environment'] != 'isolated-staging':
         raise ValueError('unsupported cutover environment')
-    if not staging and not re.fullmatch(r'yeodam_cutover_[a-z0-9_]{1,32}', c['mysql']['database']):
+    if not staging and not staging_a and not re.fullmatch(r'yeodam_cutover_[a-z0-9_]{1,32}', c['mysql']['database']):
         raise ValueError('refuse shared, QA or production schema')
     if c['redis']['prefix'] != 'yeodam:cutover:' + c['run_id'] + ':':
         raise ValueError('Redis prefix must belong exclusively to this run')

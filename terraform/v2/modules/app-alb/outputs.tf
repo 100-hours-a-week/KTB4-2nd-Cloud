@@ -27,3 +27,8 @@ output "backend_target_group_arn" {
   description = "Backend ECS Service target group"
   value       = aws_lb_target_group.backend.arn
 }
+
+output "https_listener_arn" {
+  description = "HTTPS listener for an explicitly scoped rehearsal rule"
+  value       = aws_lb_listener.https.arn
+}

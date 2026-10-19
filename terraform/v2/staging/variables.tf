@@ -195,3 +195,25 @@ variable "backend_mysql_mode" {
     error_message = "backend_mysql_mode must be validation or migration_target."
   }
 }
+
+variable "a_rehearsal_run_id" {
+  description = "A cutover rehearsal UUID; null leaves the isolated Backend absent"
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.a_rehearsal_run_id == null || can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", var.a_rehearsal_run_id))
+    error_message = "a_rehearsal_run_id must be a canonical v4 UUID or null."
+  }
+}
+
+variable "a_rehearsal_backend_image" {
+  description = "Reviewed V2 Backend digest for the isolated A rehearsal; required when run_id is set"
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.a_rehearsal_backend_image == null || can(regex("^ghcr[.]io/100-hours-a-week/yeodam-backend@sha256:[0-9a-f]{64}$", var.a_rehearsal_backend_image))
+    error_message = "a_rehearsal_backend_image must be a pinned GHCR Backend digest."
+  }
+}

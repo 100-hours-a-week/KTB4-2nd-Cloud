@@ -177,6 +177,119 @@ class Barrier(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([x[0] for x in self.calls], ['V1'])
         self.assertEqual(self.gate.reason, 'hold_timeout')
 
+    async def test_sealed_hold_timeout_never_reopens_v1(self):
+        self.gate.config['hold_seconds'] = 0.05
+        hold = await self.gate.begin()
+        await self.gate.seal(hold['hold_token'], self.proof(hold))
+        response = await self.client.post('/api/probe', data=b'once')
+        await response.read()
+        self.assertEqual(response.status, 502)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.gate.phase, 'BLOCKED')
+        self.gate.config['hold_seconds'] = 1
+        self.assertEqual(Gate(self.config).phase, 'BLOCKED')
+        with self.assertRaises(ValueError):
+            async with self.gate.changed:
+                self.gate.abort_locked('unsafe rollback')
+
+    async def test_db_handoff_mode_requires_seal(self):
+        self.gate.config['require_seal'] = True
+        hold = await self.gate.begin()
+        with self.assertRaisesRegex(ValueError, 'sealed HTTP gate'):
+            await self.gate.commit(self.proof(hold))
+        await self.gate.seal(hold['hold_token'], self.proof(hold))
+        self.assertTrue(self.gate.sealed)
+        with self.assertRaises(KeyError):
+            await self.gate.commit(self.proof(hold))
+
+    async def test_sealed_commit_and_abort_follow_db_journal(self):
+        self.gate.config['require_seal'] = True
+        self.gate.config['a_db_target'] = '10.30.10.28'
+        self.gate.config['a_db_journal'] = self.tmp.name + '/db-handoff.json'
+        hold = await self.gate.begin()
+        await self.gate.seal(hold['hold_token'], self.proof(hold))
+        journal = Path(self.config['a_db_journal'])
+        journal.write_text(json.dumps({'runId': self.config['run_id'], 'target': '10.30.10.28',
+            'phase': 'aborted', 'promotionPossible': False}))
+        journal.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, 'required phase'):
+            await self.gate.commit(self.proof(hold))
+        self.assertEqual((await self.gate.resume_v1(hold['hold_token']))['phase'], 'V1')
+        hold = await self.gate.begin()
+        await self.gate.seal(hold['hold_token'], self.proof(hold))
+        journal.write_text(json.dumps({'runId': self.config['run_id'], 'target': '10.30.10.28',
+            'phase': 'switched', 'promotionPossible': True}))
+        self.assertEqual((await self.gate.commit(self.proof(hold)))['phase'], 'V2')
+
+    async def test_expired_a_hold_preserves_failure_then_recovers_forward(self):
+        self.gate.config.update(require_seal=True, hold_seconds=0.05,
+            a_db_target='10.30.10.28', a_db_journal=self.tmp.name + '/db-handoff.json')
+        hold = await self.gate.begin()
+        proof = self.proof(hold)
+        await self.gate.seal(hold['hold_token'], proof)
+        await asyncio.sleep(0.07)
+        self.assertEqual(self.gate.phase, 'BLOCKED')
+        journal = Path(self.config['a_db_journal'])
+        journal.write_text(json.dumps({'runId': self.config['run_id'], 'target': '10.30.10.28',
+            'phase': 'switched', 'promotionPossible': True}))
+        journal.chmod(0o600)
+        wrong = dict(proof, target_fingerprint='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'sealed source snapshot'):
+            await self.gate.recover_v2(wrong)
+        self.assertEqual((await self.gate.recover_v2(proof))['phase'], 'V2')
+        self.assertEqual(self.gate.reason, 'recovered_after_failed_hold')
+        self.assertEqual(json.loads(Path(self.config['journal']).read_text())['phase'], 'V2')
+
+    async def test_a_controller_never_commits_before_db_switch(self):
+        from request_cutover.control import _a_cutover
+        from unittest.mock import MagicMock, AsyncMock
+        import request_cutover.control as control
+        self.gate.config.update(require_seal=True, a_db_target='10.30.10.28',
+            a_db_journal=self.tmp.name + '/db-handoff.json')
+        journal = Path(self.config['a_db_journal'])
+        sequence = []
+
+        async def local_admin(config, command='status', payload=None):
+            sequence.append(command)
+            if command == 'status':
+                return self.gate.status()
+            if command == 'begin':
+                return await self.gate.begin()
+            if command == 'seal':
+                return await self.gate.seal(payload['hold_token'], payload)
+            if command == 'commit':
+                return await self.gate.commit({'run_id': config['run_id'], **payload})
+            if command == 'resume-v1':
+                return await self.gate.resume_v1(payload['hold_token'])
+            async with self.gate.changed:
+                self.gate.abort_locked('controller_abort')
+            return self.gate.status()
+
+        def db_check():
+            sequence.append('db_check')
+
+        def db_switch():
+            sequence.append('db_switch')
+            journal.write_text(json.dumps({'runId': self.config['run_id'],
+                'target': '10.30.10.28', 'phase': 'switched', 'promotionPossible': True}))
+            journal.chmod(0o600)
+
+        def auth_transfer(config):
+            sequence.append('auth_snapshot')
+            return {'pending_jobs': 0, 'keys': 0,
+                'source_fingerprint': fingerprint({}), 'target_fingerprint': fingerprint({})}
+
+        with patch.object(control, 'admin', local_admin), \
+                patch.object(control, 'database', return_value=MagicMock()), \
+                patch.object(control, 'checks'), \
+                patch.object(control, 'transfer', auth_transfer), \
+                patch.object(control, 'healthy', new_callable=AsyncMock):
+            result = await _a_cutover(self.config, db_check, db_switch)
+        self.assertEqual(result['phase'], 'V2')
+        self.assertLess(sequence.index('auth_snapshot'), sequence.index('seal'))
+        self.assertLess(sequence.index('seal'), sequence.index('db_switch'))
+        self.assertLess(sequence.index('db_switch'), sequence.index('commit'))
+
     async def test_capacity_aborts_instead_of_rejecting_request(self):
         self.gate.config['max_wait_bytes'] = 1
         await self.gate.begin()
