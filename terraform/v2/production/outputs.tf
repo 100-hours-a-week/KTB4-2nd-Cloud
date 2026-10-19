@@ -69,3 +69,17 @@ output "backend_log_group_name" {
 output "alb_logs_bucket_name" {
   value = aws_s3_bucket.alb_logs.id
 }
+
+output "mysql_instance_id" { value = module.mysql.instance_id }
+output "mysql_private_ip" { value = module.mysql.private_ip }
+output "mysql_data_volume_id" { value = module.mysql.data_volume_id }
+output "mysql_root_password_secret_arn" { value = module.mysql.root_password_secret_arn }
+output "mysql_predeploy_host" { value = aws_route53_record.mysql_predeploy.fqdn }
+output "mysql_app_password_parameter" { value = local.mysql_app_password_parameter }
+output "mysql_backup_bucket_name" { value = aws_s3_bucket.mysql_backup.id }
+output "backend_security_group_id" { value = aws_security_group.backend_tasks.id }
+output "backend_execution_role_arn" { value = aws_iam_role.backend_execution.arn }
+output "redis_endpoint" { value = module.redis.primary_endpoint_address }
+output "redis_port" { value = module.redis.port }
+output "redis_auth_secret_arn" { value = module.redis.auth_token_secret_arn }
+output "redis_replication_group_id" { value = module.redis.replication_group_id }

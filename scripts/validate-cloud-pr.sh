@@ -2,6 +2,9 @@
 set -Eeuo pipefail
 
 python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
+python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
+bash -n terraform/v2/production/files/provision-mysql-app-account.sh
+python3 -c 'import ast,pathlib; [ast.parse(pathlib.Path(p).read_text()) for p in ["scripts/provision-production-mysql-credentials.py", "terraform/v2/production/files/verify-storage.py"]]'
 python3 -m unittest discover -s tests/ci -p 'test_ci_baseline.py'
 python3 -m unittest discover -s tests/ci -p 'test_request_path_bridge.py'
 bash tests/ci/check-request-path-bridge.sh
