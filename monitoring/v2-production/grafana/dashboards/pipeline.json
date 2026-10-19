@@ -1,0 +1,289 @@
+{
+  "uid": "yeodam-v2-production-pipeline",
+  "title": "V2 production pipeline and hosts",
+  "tags": [
+    "production",
+    "yeodam"
+  ],
+  "schemaVersion": 41,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Expected Outbox connector / running tasks",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{__name__=~\"yeodam_connect_expected_.*\"}",
+          "legendFormat": "{{service}} {{outbox}} {{topic}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Unpublished Outbox events",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_outbox_pending",
+          "legendFormat": "{{service}} {{outbox}} {{topic}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Oldest unpublished event",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_outbox_oldest_pending_seconds",
+          "legendFormat": "{{service}} {{outbox}} {{topic}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "DLT new records / 5m",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_min(sum by(topic)(delta(kafka_topic_partition_current_offset{job=\"v2-kafka-lag\",topic=~\".*-dlt\"}[5m])),0)",
+          "legendFormat": "{{service}} {{outbox}} {{topic}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Host CPU use",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1 - avg by(service)(rate(node_cpu_seconds_total{job=\"v2-hosts\",mode=\"idle\"}[5m]))",
+          "legendFormat": "{{service}} {{outbox}} {{topic}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Host memory use",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1 - node_memory_MemAvailable_bytes{job=\"v2-hosts\"}/node_memory_MemTotal_bytes{job=\"v2-hosts\"}",
+          "legendFormat": "{{service}} {{outbox}} {{topic}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Filesystem available",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "node_filesystem_avail_bytes{job=\"v2-hosts\",fstype!~\"tmpfs|overlay|squashfs\"}",
+          "legendFormat": "{{service}} {{outbox}} {{topic}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Observer / discovery freshness",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time()-{__name__=~\"yeodam_backend_discovery_timestamp_seconds|yeodam_observer_sample_timestamp_seconds|yeodam_host_log_ship_timestamp_seconds\"}",
+          "legendFormat": "{{service}} {{outbox}} {{topic}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Backend pipeline executions by current state",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_trip_pipeline_executions",
+          "legendFormat": "{{state}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "AI result waiting for BE persistence",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_result_apply_oldest_seconds",
+          "legendFormat": "oldest result age"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    }
+  ]
+}

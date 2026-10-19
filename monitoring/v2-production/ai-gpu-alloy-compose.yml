@@ -1,0 +1,29 @@
+name: yeodam-v2-production-gpu-observability
+services:
+  alloy:
+    image: grafana/alloy:v1.20.1@sha256:2aa2099af76c0098d4af7a4d6e48f86cb66dc1a000222ad927a1c67c6542d13f
+    container_name: yeodam-production-ai-gpu-alloy
+    restart: unless-stopped
+    user: "65534:65534"
+    network_mode: host
+    mem_limit: 256m
+    cpus: 0.25
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    environment:
+      GPU_PRIVATE_IP: ${GPU_PRIVATE_IP:?private IP required}
+      GPU_INSTANCE_ID: ${GPU_INSTANCE_ID:?instance ID required}
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=${GPU_PRIVATE_IP}:12346
+      - --disable-reporting
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./ai-gpu.alloy:/etc/alloy/config.alloy:ro
+      - /var/lib/yeodam/production-gpu-metrics:/var/lib/yeodam/production-gpu-metrics:ro
+      - /var/lib/yeodam/production-gpu-alloy:/var/lib/alloy
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}

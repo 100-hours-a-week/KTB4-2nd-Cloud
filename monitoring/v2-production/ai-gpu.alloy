@@ -1,0 +1,60 @@
+logging {
+  level = "info"
+}
+
+prometheus.exporter.unix "gpu_textfile" {
+  set_collectors = ["textfile"]
+  textfile {
+    directory = "/var/lib/yeodam/production-gpu-metrics"
+  }
+}
+
+prometheus.scrape "gpu_host" {
+  targets = prometheus.exporter.unix.gpu_textfile.targets
+  job_name = "v2-ai-gpu-host"
+  scrape_interval = "15s"
+  forward_to = [prometheus.relabel.gpu_host.receiver]
+}
+
+prometheus.scrape "embedding" {
+  targets = [{__address__ = sys.env("GPU_PRIVATE_IP") + ":8000"}]
+  job_name = "v2-embedding"
+  metrics_path = "/metrics"
+  scrape_interval = "30s"
+  scrape_timeout = "10s"
+  forward_to = [prometheus.relabel.gpu.receiver]
+}
+
+prometheus.scrape "qdrant" {
+  targets = [{__address__ = sys.env("GPU_PRIVATE_IP") + ":6335"}]
+  job_name = "v2-qdrant"
+  metrics_path = "/metrics"
+  params = {"anonymize" = ["true"]}
+  scrape_interval = "30s"
+  scrape_timeout = "10s"
+  forward_to = [prometheus.relabel.gpu.receiver]
+}
+
+prometheus.relabel "gpu" {
+  rule {
+    target_label = "instance"
+    replacement = "ai-gpu.production.yeodam.internal"
+  }
+  forward_to = [prometheus.remote_write.production.receiver]
+}
+
+prometheus.remote_write "production" {
+  external_labels = {env = "production", instance_id = sys.env("GPU_INSTANCE_ID")}
+  endpoint {
+    url = "http://plg.production.yeodam.internal:9090/api/v1/write"
+  }
+}
+
+// The integrated unix target supplies its own job label; normalize only host samples.
+prometheus.relabel "gpu_host" {
+  rule {
+    target_label = "job"
+    replacement = "v2-ai-gpu-host"
+  }
+  forward_to = [prometheus.relabel.gpu.receiver]
+}
