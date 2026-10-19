@@ -14,10 +14,10 @@ if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(runId
 }
 const datasetId = requiredEnv('K6_TRIP_DATASET_ID');
 const mode = __ENV.K6_TRIP_MODE || 'contract';
-if (!['contract', 'load', 'live', 'original'].includes(mode)) {
-  throw new Error('Trip mode must be contract, load, live or original');
+if (!['contract', 'load', 'live', 'original', 'bulk'].includes(mode)) {
+  throw new Error('Trip mode must be contract, load, live, original or bulk');
 }
-const longRun = mode === 'live' || mode === 'original';
+const longRun = mode === 'live' || mode === 'original' || mode === 'bulk';
 const rate = positiveIntegerEnv('K6_TRIP_RATE', 10);
 const duration = positiveIntegerEnv('K6_TRIP_DURATION_SECONDS', 120);
 const preVus = positiveIntegerEnv('K6_TRIP_PREALLOCATED_VUS', 40);
@@ -28,6 +28,9 @@ if (mode === 'load' && (![10, 30, 100].includes(rate) || duration !== 120 ||
 }
 if (mode === 'live' && (rate !== 10 || duration !== 2700 || preVus !== 40 || maxVus !== 40)) {
   throw new Error('CDC live run requires 10 RPS for 2700s and 40 fixed VUs');
+}
+if (mode === 'bulk' && (rate !== 10 || duration !== 600 || preVus !== 40 || maxVus !== 40)) {
+  throw new Error('CDC Bulk pilot requires 10 RPS for 600s and 40 fixed VUs');
 }
 const originalVus = { 10: 40, 30: 120, 100: 800 };
 if (mode === 'original' && (duration !== 2100 || preVus !== originalVus[rate] ||

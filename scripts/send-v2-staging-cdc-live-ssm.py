@@ -23,6 +23,7 @@ TRIP_SCENARIO = ROOT / 'tests/load/scenarios/migration-trip-create.js'
 TRIP_RUNNER = ROOT / 'tests/load/scripts/run-k6.sh'
 TRIP_ATTEST = ROOT / 'tests/load/scripts/attest-migration-trip.py'
 ORDERED_AUDIT = ROOT / 'scripts/audit-v2-staging-cdc-ordered-events.py'
+BULK = ROOT / 'scripts/cdc-bulk331.py'
 SOURCE_CONFIG = ROOT / 'deploy/v2-staging/kafka/cdc-live313-source.json'
 SINK_CONFIG = ROOT / 'deploy/v2-staging/kafka/cdc-live313-sink.json'
 DDL = ROOT / 'deploy/v2-staging/kafka/cdc-live313-destination.sql'
@@ -36,7 +37,8 @@ PHASES = ('destination', 'topics', 'initial-source', 'sink-users', 'sink-trips',
           'trip-count-source', 'trip-count-destination',
           'trip-export-source', 'trip-export-destination',
           'trip-attest-source', 'trip-attest-destination',
-          'auth-refresh-smoke', 'generator-deploy', 'ordered-audit', 'replay-sink')
+          'auth-refresh-smoke', 'generator-deploy', 'ordered-audit', 'replay-sink',
+          'bulk-ready', 'bulk-capture', 'bulk-destination')
 ORIGINAL_PHASES = ('destination', 'topics', 'initial-source', 'sink-users',
                    'sink-trips', 'sink-trip_regions', 'status', 'attest-source',
                    'attest-destination', 'trip-check-source', 'trip-check-destination',
@@ -48,7 +50,9 @@ ORIGINAL_SERVER_IDS = {'318': '5405', '32210': '5406', '32230': '5407',
                        '322100': '5408'}
 FIXED_SERVER_IDS = {'323': '5409'}
 REPLAY_SERVER_IDS = {'324replay': '5410', '324replay1000': '5411'}
-SERVER_IDS = {**ORIGINAL_SERVER_IDS, **FIXED_SERVER_IDS, **REPLAY_SERVER_IDS}
+BULK_SERVER_IDS = {'331': '5412', '331r': '5413', '331s': '5414'}
+SERVER_IDS = {**ORIGINAL_SERVER_IDS, **FIXED_SERVER_IDS,
+              **REPLAY_SERVER_IDS, **BULK_SERVER_IDS}
 FIXED_PHASES = ('destination', 'topics', 'initial-source', 'ordered-sink', 'status',
                 'ordered-audit',
                 'attest-source', 'attest-destination', 'trip-check-source',
@@ -58,6 +62,13 @@ FIXED_PHASES = ('destination', 'topics', 'initial-source', 'ordered-sink', 'stat
                 'trip-attest-destination', 'auth-refresh-smoke', 'generator-deploy')
 REPLAY_PHASES = ('destination', 'replay-sink', 'status',
                  'attest-source', 'attest-destination')
+BULK_PHASES = ('destination', 'topics', 'initial-source', 'bulk-ready',
+               'bulk-capture', 'bulk-destination', 'ordered-sink', 'status',
+               'attest-source', 'attest-destination', 'trip-check-source',
+               'trip-check-destination', 'trip-count-source',
+               'trip-count-destination', 'trip-export-source',
+               'trip-export-destination', 'trip-attest-source',
+               'trip-attest-destination', 'auth-refresh-smoke', 'generator-deploy')
 
 
 def append_file(commands, path, source, case='313'):
@@ -82,6 +93,7 @@ def command_for(phase, run_id=None, case='313'):
     if (case not in ('313', *SERVER_IDS) or
             (case in ORIGINAL_SERVER_IDS and phase not in ORIGINAL_PHASES) or
             (case in FIXED_SERVER_IDS and phase not in FIXED_PHASES) or
+            (case in BULK_SERVER_IDS and phase not in BULK_PHASES) or
             (case in REPLAY_SERVER_IDS and phase not in REPLAY_PHASES) or
             (phase == 'ordered-audit' and case != '323')):
         raise ValueError('case or phase is outside the fixed CDC experiment contract')
@@ -160,11 +172,23 @@ def command_for(phase, run_id=None, case='313'):
         commands.append('python3 /run/yeodam-cdc-live323-ordered-audit.py')
         return result(KAFKA)
 
+    if phase in ('bulk-capture', 'bulk-destination'):
+        if not run_id or str(UUID(run_id)) != run_id:
+            raise ValueError('bulk phase requires a canonical run UUID')
+        transfer('/run/yeodam-cdc-live331-bulk.py', BULK)
+        action = 'capture' if phase == 'bulk-capture' else 'destination'
+        commands.append(f'python3 /run/yeodam-cdc-live331-bulk.py {action} --run-id {run_id}')
+        return result(SOURCE_DB if action == 'capture' else DESTINATION)
+
     transfer('/run/yeodam-cdc-live313.py', CONNECTOR)
     transfer('/run/yeodam-cdc-live313-source.json', SOURCE_CONFIG)
     transfer('/run/yeodam-cdc-live313-sink.json', SINK_CONFIG)
     commands.append('export CDC_LIVE_SOURCE_B64="$(base64 -w0 /run/yeodam-cdc-live313-source.json)"')
     commands.append('export CDC_LIVE_SINK_B64="$(base64 -w0 /run/yeodam-cdc-live313-sink.json)"')
+    if case in BULK_SERVER_IDS and phase == 'ordered-sink':
+        if not run_id or str(UUID(run_id)) != run_id:
+            raise ValueError('bulk Sink needs the import run UUID')
+        commands.append(f'export CDC_BULK_RUN_ID={run_id}')
     commands.append(f'python3 /run/yeodam-cdc-live313.py {phase}')
     return result(KAFKA)
 

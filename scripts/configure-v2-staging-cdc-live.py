@@ -15,12 +15,13 @@ BASE = 'http://127.0.0.1:8083'
 CASE = os.environ.get('CDC_LIVE_CASE', '313')
 ORIGINAL_CASES = ('318', '32210', '32230', '322100')
 FIXED_CASES = ('323',)
+BULK_CASES = ('331', '331r', '331s')
 REPLAY_BATCH_SIZES = {'324replay': '500', '324replay1000': '1000'}
 REPLAY_CASES = tuple(REPLAY_BATCH_SIZES)
 REPLAY_TOPIC = 'staging.yeodam.migration.b1.live323.ordered-records'
 REPLAY_SOURCE = 'yeodam-migration-b1-live323-source'
 REPLAY_PREVIOUS_SINK = 'yeodam-migration-b1-live323-sink-ordered'
-if CASE not in ('313', *ORIGINAL_CASES, *FIXED_CASES, *REPLAY_CASES):
+if CASE not in ('313', *ORIGINAL_CASES, *FIXED_CASES, *BULK_CASES, *REPLAY_CASES):
     raise RuntimeError('unsupported CDC live case')
 PREFIX = f'staging.yeodam.migration.b1.live{CASE}'
 SOURCE = f'yeodam-migration-b1-live{CASE}-source'
@@ -150,6 +151,33 @@ def existing_credential(kind):
         raise RuntimeError('existing Connect credential ownership/mode is unexpected')
 
 
+def bulk_import_receipt():
+    run_id = os.environ.get('CDC_BULK_RUN_ID', '')
+    if not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', run_id):
+        raise RuntimeError('CDC_BULK_RUN_ID is required for one-use bulk Sink')
+    base = f'migration/cdc-live331/{run_id}'
+    files = []
+    for name in ('snapshot.ready.json', 'snapshot.imported.json'):
+        path = Path('/run') / f'cdc-live331-{run_id}-{name}'
+        subprocess.run(['aws', 's3', 'cp',
+                        f's3://yeodam-v2-staging-mysql-backup-483175530259-ap-northeast-2/{base}/{name}',
+                        str(path), '--region', 'ap-northeast-2', '--only-show-errors'],
+                       check=True, capture_output=True, text=True)
+        files.append(path)
+    try:
+        ready, imported = (json.loads(path.read_text()) for path in files)
+    finally:
+        for path in files:
+            path.unlink(missing_ok=True)
+    if (ready.get('runId') != run_id or imported.get('runId') != run_id or
+            ready.get('archiveSha256') != imported.get('archiveSha256') or
+            imported.get('destinationSchema') != 'yeodam_cdc_live' + CASE or
+            any(imported.get('foreignKeyOrphans', {}).values()) or
+            not all(imported.get('rows', {}).get(table, 0) > 0 for table in TABLES)):
+        raise RuntimeError('B1 import receipt is incomplete or inconsistent')
+    print('BULK_IMPORT_RECEIPT', run_id, flush=True)
+
+
 def config(kind):
     key = 'CDC_LIVE_SOURCE_B64' if kind == 'source' else 'CDC_LIVE_SINK_B64'
     value = os.environ.get(key)
@@ -211,11 +239,18 @@ def register(kind):
         if kind == 'initial-source':
             if any(topic_end(topic) != 0 for topic in topic_names()):
                 raise RuntimeError('full topics already have records; inspect before creating source')
-            if CASE in FIXED_CASES:
+            if CASE in (*FIXED_CASES, *BULK_CASES):
                 if (ORDERED_TOPIC not in set(kafka('--list').splitlines()) or
                         topic_end(ORDERED_TOPIC) != 0):
                     raise RuntimeError('fixed ordered topic must exist and be empty before source')
                 configure_ordered_route(data)
+                if CASE in BULK_CASES:
+                    data['snapshot.mode'] = 'no_data'
+                    # A fresh logical name/empty topic is mandatory. A restart
+                    # must recover its own offset, never start from current tail.
+                    if data.get('database.server.id') != {'331': '5412', '331r': '5413',
+                                                          '331s': '5414'}[CASE]:
+                        raise RuntimeError('unexpected bulk CDC server ID')
         if kind == 'ordered-source':
             if name not in api('/connectors'):
                 raise RuntimeError('initial source is missing')
@@ -229,7 +264,7 @@ def register(kind):
             configure_ordered_route(data)
     else:
         if kind == 'ordered-sink':
-            if CASE not in FIXED_CASES:
+            if CASE not in (*FIXED_CASES, *BULK_CASES):
                 for table in TABLES:
                     old = FULL_SINK_PREFIX + table
                     if api('/connectors/' + old + '/status')['connector']['state'] != 'PAUSED':
@@ -238,12 +273,24 @@ def register(kind):
             if (source_config.get('transforms') != 'route' or
                     source_config.get('transforms.route.topic.replacement') != ORDERED_TOPIC):
                 raise RuntimeError('source is not routed to the ordered topic')
+            if CASE in BULK_CASES:
+                bulk_ready()
             name = FULL_SINK_PREFIX + 'ordered'
             if name in api('/connectors'):
                 raise RuntimeError('ordered sink already exists; inspect offset before retry')
             data['topics'] = ORDERED_TOPIC
-            data['batch.size'] = '1'
-            data['consumer.override.max.poll.records'] = '1'
+            # live331s isolates the FK failure observed with 500-record
+            # cross-table batches. This proves order, not 100 RPS capacity.
+            bulk_batch = '1' if CASE == '331s' else '500'
+            data['batch.size'] = bulk_batch if CASE in BULK_CASES else '1'
+            data['consumer.override.max.poll.records'] = bulk_batch if CASE in BULK_CASES else '1'
+            if CASE in BULK_CASES:
+                bulk_import_receipt()
+                data['use.reduction.buffer'] = 'false'
+                data['consumer.override.auto.offset.reset'] = 'earliest'
+                # Import must have completed before the first delta write.
+                if topic_end(ORDERED_TOPIC) == 0:
+                    raise RuntimeError('no committed delta event before bulk replay')
         else:
             table = kind.removeprefix('sink-')
             assert kind.startswith('sink-') and table in TABLES
@@ -361,6 +408,27 @@ def status():
             print('SOURCE_OFFSET UNAVAILABLE', flush=True)
 
 
+def bulk_ready():
+    if CASE not in BULK_CASES:
+        raise RuntimeError('bulk-ready is only for the separated path')
+    config = api('/connectors/' + SOURCE + '/config')
+    state = api('/connectors/' + SOURCE + '/status')
+    if (config.get('snapshot.mode') != 'no_data' or
+            config.get('transforms.route.topic.replacement') != ORDERED_TOPIC or
+            state['connector']['state'] != 'RUNNING' or
+            not state['tasks'] or any(t['state'] != 'RUNNING' for t in state['tasks'])):
+        raise RuntimeError('no_data Source is not streaming to ordered Topic')
+    offsets = api('/connectors/' + SOURCE + '/offsets').get('offsets', [])
+    if len(offsets) != 1 or offsets[0].get('offset', {}).get('snapshot') is not None:
+        raise RuntimeError('Source Binlog offset is not established')
+    count = topic_end(ORDERED_TOPIC)
+    if count < 1:
+        raise RuntimeError('no API event observed before the bulk dump')
+    print('BULK_READY', ORDERED_TOPIC, 'topicEnd', count,
+          'binlogFile', offsets[0]['offset'].get('file'),
+          'binlogPos', offsets[0]['offset'].get('pos'), flush=True)
+
+
 def pause_legacy_sinks():
     if api('/connectors/' + SOURCE + '/status')['connector']['state'] != 'PAUSED':
         raise RuntimeError('pause source and drain its final table-topic offsets first')
@@ -424,7 +492,8 @@ def main():
     parser.add_argument('phase', choices=('topics', 'initial-source', 'sink-users',
                                          'sink-trips', 'sink-trip_regions', 'ordered-topic',
                                          'pause-legacy-sinks', 'ordered-source',
-                                         'ordered-sink', 'replay-sink', 'pause-source', 'resume-source',
+                                         'ordered-sink', 'replay-sink', 'bulk-ready',
+                                         'pause-source', 'resume-source',
                                          'resume-legacy-trips', 'pause-legacy-trips',
                                          'resume-legacy-trip_regions',
                                          'pause-legacy-trip_regions',
@@ -435,13 +504,16 @@ def main():
         raise RuntimeError('original case keeps table topics and does not pause or recover')
     if CASE in FIXED_CASES and phase not in ('topics', 'initial-source', 'ordered-sink', 'status'):
         raise RuntimeError('fixed case routes snapshot and binlog to one topic from the start')
+    if CASE in BULK_CASES and phase not in ('topics', 'initial-source', 'bulk-ready',
+                                           'ordered-sink', 'status'):
+        raise RuntimeError('bulk case only permits no_data source and post-import ordered sink')
     if CASE in REPLAY_CASES and phase not in ('replay-sink', 'status'):
         raise RuntimeError('replay case only consumes the preserved ordered topic')
     if os.geteuid() != 0:
         raise RuntimeError('run as root on Kafka host')
     if phase == 'topics':
         ensure_topics()
-        if CASE in FIXED_CASES:
+        if CASE in (*FIXED_CASES, *BULK_CASES):
             ensure_ordered_topic()
     elif phase == 'ordered-topic':
         ensure_ordered_topic()
@@ -459,6 +531,8 @@ def main():
         status()
     elif phase == 'status':
         status()
+    elif phase == 'bulk-ready':
+        bulk_ready()
     elif phase.startswith(('resume-legacy-', 'pause-legacy-')):
         action, _, table = phase.split('-', 2)
         table = table.removeprefix('legacy-')
