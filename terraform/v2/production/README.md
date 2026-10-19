@@ -306,3 +306,76 @@ aws ecs update-service --profile yeodam-admin --region ap-northeast-2 \
 운영 FE/BE 배포·공개 DNS 전환·V1 DB/인증 이전·Outbox Connector 등록은 이 작업에 포함하지 않는다. production AI API는 운영 Kafka/Redis에만 연결하며, staging 서비스나 DB 리허설 Kafka·Consumer Group·Offset을 변경하지 않는다. 운영 AI API/runner의 업무 E2E와 처리량은 사전 배포 헬스 검증과 구분한다. 신규 Service의 자동 배포/복구 CD 연결 역시 후속 운영 배포 작업에서 다룬다.
 
 #347 최초 적용에서는18개 생성·기존 변경/삭제0개였고 후속 전체 Plan은 No changes였다. Service1 Task/rollout COMPLETED, ALB healthy와 위 허용·차단 probe의 종료코드0을 확인했다. fixture Version/DeleteMarker0, GPU 기존6개 컨테이너/boot ID와 공개 DNS·운영 Kafka 업무 offset0/Connector[] 전후 동일을 확인했다. 실제 업무 E2E는 수행하지 않았다.
+
+## #350 운영 BE 사전 배포
+
+운영 BE는 V2 Manifest의 backend Digest로 Fargate 1vCPU/2GiB, 1 Task를 기동한다. 기존 Private2a와 BE SG를 사용하고 Public IP를 부여하지 않는다. 기존 운영 ALB의 `/api/*` Rule과 BE Target Group8080에 연결한다. 공개 A/AAAA를 바꾸지 않으므로 일반 사용자는 계속 V1 Nginx로 접속한다. ALB의 별도 DNS는 사전 점검용으로 접근할 수 있으므로, DNS 미전환을 외부 접근 차단과 같은 의미로 쓰지 않는다.
+
+MySQL은 #327에서 새로 만든 `mysql-predeploy.production.yeodam.internal:3306/yeodam`, `yeodam_app` 계정이다. 기존 V1 DB 주소·계정으로 연결하지 않는다. 첫 기동 전 Instance ID·서버 UUID·테이블0/복제채널0·read_only/super_read_only0을 확인한 뒤 새 서버의 빈 스키마에만 Flyway를 실행했다. JPA는 validate로 두고 DDL을 만들지 않는다. 이번 기동은 승인 Manifest의 V1~V25 Migration 범위이며 BE 원격 main의 더 최신 코드와 혼동하지 않는다. V1 데이터 복사·지속 복제·Writer 전환을 수행하는 작업이 아니다. 본 데이터 이전 전에는 검증 앱 중지와 사전 배포 스키마 보존/정리를 별도 확인한다.
+
+| 항목 | 운영 값 |
+| --- | --- |
+| Profile | `prod,internal-metrics` |
+| Redis | 운영 ElastiCache, TLS/AUTH, `yeodam:v2:production:auth:` Prefix |
+| AI | `http://ai-api.production.yeodam.internal`, 운영 AI의 기존 API_KEY 공유 |
+| Kafka | `kafka.production.yeodam.internal:9092`, 6개 `prod.yeodam.*` Topic |
+| Consumer Group | `prod.yeodam-trip-results`, `prod.yeodam-story-results`, `prod.yeodam-outbox-receipts` |
+| 브라우저 Origin / JWT Issuer | `https://yeodam-2gether.com` |
+| Kakao Callback | `https://yeodam-2gether.com/api/auth/kakao/callback` |
+| FE Callback | `https://yeodam-2gether.com/auth/callback` |
+| 관리 포트 | 9091, 공개 ALB 연결/SG 인바운드 없음 |
+
+JWT Secret·Kakao ID/Secret은 실제 V1 컨테이너에서 현재 Parameter와 일치하는지 값 출력 없이 확인했다. `seed-v2-production-backend-parameters.py`는 이를 운영 V2 namespace로 최초 복사하며 기존 값과 다르면 중단한다. 지역 카탈로그 API URL/Key/Timeout도 같은 방식으로 복사한다. AI Key는 복제하지 않고 운영 AI Parameter를 직접 참조한다. SSM 값과 Redis AUTH는 Task 실행 역할로 주입하고 State·argv·stdout에 비밀값을 쓰지 않는다. Sentry DSN은 기존 V1 Parameter에 없어 이번에 임의 발급/등록하지 않았으며 이미지 기본값인 비활성 상태다.
+
+```bash
+# Cloud #350 작업 브랜치 저장소 루트
+AWS_PROFILE=yeodam-admin python3 scripts/seed-v2-production-backend-parameters.py
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production fmt -check
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production validate
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production plan -out=/private/tmp/production-backend.plan
+# 기존 V1/DB/AI 서비스 교체·삭제가 없는지 검토한 뒤 저장 Plan 적용
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production apply /private/tmp/production-backend.plan
+```
+
+실행 역할은 지정한 Parameter와 기존 GHCR/Redis Secret·BE 로그에만 접근한다. 별도 Task Role은 운영 사진 버킷의 `trip-uploads/*`, `trip-additions/*`의 Get/Put/Tag/Delete와 `trip-downloads/*`의 Get/Put/Tag, Bucket Location을 허용한다. EC2 Start/Stop이나 MySQL 관리 Secret은 주지 않는다. `AI_EC2_INSTANCE_ID`는 기존 생성자의 필수 설정이며 공유 GPU를 BE가 제어하도록 허용한 것이 아니다.
+
+애플리케이션 Worker/정리 Scheduler는 새 DB만 조회한다. S3 전체를 스캔해 기존 사진을 정리하는 설정을 추가하지 않았다. 기동 전 운영 Kafka 업무 파티션 end offset0/Connect[]를 확인했으며 Consumer는 운영 Topic만 사용한다. 새 운영 Outbox Connector 등록과 실제 여행 메시지 발행은 이번 사전 배포 검증에 포함하지 않는다. 기존 DB 시험 Kafka/Group/Offset이나 staging 설정을 변경하지 않는다.
+
+### DNS를 바꾸지 않고 API 확인
+
+로컬 터미널에서 실행한다. `--connect-to`는 해당 요청의 목적지만 ALB로 바꾸고 URL의 Host/SNI와 인증서 검증은 운영 도메인 그대로 유지한다. 인증서 검증을 끄는 `-k`를 사용하지 않는다. 일반 브라우저 DNS나 다른 사용자의 연결에는 영향을 주지 않는다.
+
+```bash
+curl --fail --silent --show-error --connect-timeout 10 --max-time 25 \
+  --connect-to yeodam-2gether.com:443:yeodam-v2-production-alb-491165947.ap-northeast-2.elb.amazonaws.com:443 \
+  https://yeodam-2gether.com/api/actuator/health
+```
+
+기대값은 HTTP200, JSON `status=UP`다. 첫 기동 중에는 Task가 RUNNING이어도 Spring/Flyway/Tomcat이 준비되지 않아502가 날 수 있으므로 단순 PID/RUNNING을 배포 정상으로 보지 않는다. ECS rollout COMPLETED와 Target Group healthy를 함께 확인한다. 로그는 `/yeodam/v2/production/backend`이며 Secret/Cookie/Authorization이나 전체 컨테이너 Env를 출력하지 않는다.
+
+```bash
+aws ecs describe-services --profile yeodam-admin --region ap-northeast-2 \
+  --cluster yeodam-v2-production-app --services yeodam-v2-production-backend \
+  --query 'services[].{desired:desiredCount,running:runningCount,pending:pendingCount,deployments:deployments[].rolloutState}'
+```
+
+`scripts/verify-v2-production-backend.py`는 기존 Python AI 이미지를 쓰는 일회성 Fargate에서 BE의 Task Role·실행 역할·SG·환경/Secret을 동일하게 적용하는 의존성 probe다. 실제 BE 컨테이너 이미지를 바꾸거나 Java 앱 안에서 실행하는 도구가 아니다. 새 ALB로 TCP 연결하되 운영 Host/SNI를 유지해 health200·인증 없는 users/me401·공개 metrics차단·CORS를 확인한다. Kakao authorize302의 Callback/Client ID/Secure·HttpOnly Cookie를 검사하지만 Provider Redirect를 따라가거나 계정 로그인을 수행하지 않는다. BE가 저장한 고유 OAuth State를 운영 Redis TLS로 확인하고 그 정확한 키만 finally에서 삭제한다. 추가 로그인 세션·사용자·여행을 만들지 않는다.
+
+같은 probe에서 BE→AI 공통 Key의 metrics200, Group 없는 Kafka 메타데이터 조회로6 Topic, BE Task Role의 고유 S3 fixture presignedGET을 확인한다. Kafka 업무 메시지·Offset commit·AI 추론은 없다. S3 fixture는 `trip-uploads/cloud-preflight-350-<PROBE_RUN_ID>/derived/read-probe.txt` 하나만 만들고 정확한 Version ID를 삭제한다. Probe Task 종료코드와 임시 Task Definition 비활성화를 확인한다.
+
+JWT Key/Issuer를 같게 준비한 것은 기존 로그인 세션 이행 완료를 뜻하지 않는다. 운영 V1의 DB 세션/진행 작업을 옮기거나 Redis 인증 상태를 이행하지 않았다. V1/V2 요청 경로·실사용 로그인 연속성·전체 여행 생성·Outbox 발행·배포 중 Drain·처리량은 이후 전환 검증 범위다. 이번에는 운영 CD/모니터링 자동 연결도 추가하지 않는다.
+
+#350 적용 결과는6개 생성·기존 변경/삭제0개였고 후속 전체 Plan은 No changes였다. BE1Task/rollout COMPLETED, ALB healthy와 health200을 확인했다. 신규 MySQL에는 Flyway25/25 성공·테이블29·복제채널0, 기본 system 사용자1·여행/TripCreationOutbox0이었다. MySQL9.7이 Flyway의 자체 최신 검증9.4보다 새 버전이라는 WARN은 남아 있으며, 이번 적용 성공을 장기 호환 보장으로 해석하지 않는다.
+
+첫 probe는 같은 출처 OPTIONS에도 Allow-Origin 헤더가 필수라고 가정해 KeyError로 중단됐다. 앱 설정을 바꾸지 않고 같은 출처 OPTIONS200과 비허용 Origin403으로 시험 조건을 구분한 뒤 전체 검증이 통과했다. 수정된 probe의 종료코드는0, OAuth 시험 키 제거·S3 fixture Version/DeleteMarker0·임시 Task Definition 비활성화를 확인했다. V1 컨테이너와 공개 DNS·운영 Kafka 업무 end offset0/Connector[]는 전후 동일했다.
+
+작업 중 승인 Manifest가 갱신되면 먼저 이미지의 설정·Migration 차이를 확인한다. Terraform은 새 Task Revision을 등록하지만 Service의 task_definition은 CD 소유로 ignore하므로 Apply만으로 기존 Service의 이미지가 바뀌지는 않는다. 검토한 Revision을 의도적으로 배포할 때 다음처럼 정확한 ARN을 지정한다. 이 명령은 운영 BE만 갱신하며 공개 DNS를 바꾸지 않는다.
+
+```bash
+backend_revision=$(AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production output -raw backend_task_definition_arn)
+aws ecs update-service --profile yeodam-admin --region ap-northeast-2 \
+  --cluster yeodam-v2-production-app --service yeodam-v2-production-backend \
+  --task-definition "$backend_revision" --query 'service.taskDefinition' --output text
+```
+
+작업 중 PR349에서 승인된 BE39540ce/Digest63a68ffe…를 반영해 최종 Service를 Revision2로 배포했다. 스키마·설정·Dockerfile 차이는 없고 프로필 사진 처리 변경이었다. 새 Task에서도 Flyway25개 검증/추가 Migration 없음, ALB healthy/rollout COMPLETED와 위 probe 전체 통과·종료코드0을 확인했다. 이전 a1a41549/Revision1의 검증 기록은 중간 결과로 분리하고 이전 Revision은 복구용 ACTIVE로 보존했다. 최종 전체 Terraform Plan은 No changes다.
