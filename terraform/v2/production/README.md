@@ -379,3 +379,45 @@ aws ecs update-service --profile yeodam-admin --region ap-northeast-2 \
 ```
 
 작업 중 PR349에서 승인된 BE39540ce/Digest63a68ffe…를 반영해 최종 Service를 Revision2로 배포했다. 스키마·설정·Dockerfile 차이는 없고 프로필 사진 처리 변경이었다. 새 Task에서도 Flyway25개 검증/추가 Migration 없음, ALB healthy/rollout COMPLETED와 위 probe 전체 통과·종료코드0을 확인했다. 이전 a1a41549/Revision1의 검증 기록은 중간 결과로 분리하고 이전 Revision은 복구용 ACTIVE로 보존했다. 최종 전체 Terraform Plan은 No changes다.
+
+## #352 운영 FE 사전 배포
+
+FE는 승인 V2 Manifest의 frontend Digest로 Fargate0.5vCPU/1GiB, 1 Task를 시작한다. 기존 Private2a/NAT·GHCR Secret·FE 로그 그룹과 실행 역할을 사용한다. 별도 Task Role·앱 Secret·내부 ALB·Cloud Map·DNS override는 추가하지 않는다. FE SG의 인바운드는 기존 운영 ALB SG→3000만, 아웃바운드는 HTTPS443만 허용한다. Task Public IP는 없다.
+
+서버 API 주소는 `SERVER_API_BASE_URL=https://yeodam-2gether.com/api`다. 승인된 FE source5a8b34f의 serverApiClient가 이 런타임 값을 읽고 브라우저는 상대 `/api` 경로를 사용하는 것을 확인했다. 지도 JS Key는 이미지 빌드 시 포함되는 값이므로 이번에 런타임 Secret으로 새로 주입하거나 이미지를 다시 만들지 않는다.
+
+ALB의 기본 화면 경로는 FE Target Group3000, `/api/*`는 기존 BE Target Group8080으로 연결된다. `/api/health`만 우선순위10의 FE 헬스 Rule을 사용한다. 이 경로는 source의 정적 `{status:ok}` 응답이며 BE 호출이나 로그인·SSR 여정을 실행하지 않는다. Task 내부 헬스도 Node fetch로 이 경로만 조회한다. ECS 런타임 호스트명으로 수신 주소가 바뀌지 않도록 `HOSTNAME=0.0.0.0`을 Task 환경에 명시한다.
+
+사용자와 합의한 사전 배포 범위는 이미지·환경 설정·ECS/ALB 헬스 확인이다. 스테이징에서 검증한 화면·SSR·로그인·FE/BE 연동 시험을 반복하지 않는다. 공개 DNS는 계속 V1을 가리키므로 도메인 전환 전 이 FE로 실제 서비스 사용을 시작하지 않는다. SSR 요청을 V2로 강제로 보내기 위한 임시 내부 경로나 광범위한 DNS 변경도 만들지 않는다. DB·인증·진행 작업·DNS TTL을 포함한 실제 전환 경계는 기존 전환 계획을 따른다.
+
+```bash
+# Cloud #352 작업 브랜치 저장소 루트
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production fmt -check
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production validate
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production plan -out=/private/tmp/production-frontend.plan
+# 대상 계정/Region과 기존 리소스 변경·삭제가 없는지 검토한 뒤 적용
+AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production apply /private/tmp/production-frontend.plan
+```
+
+ECS의 Running과 실제 준비 완료를 구분한다. Service rollout COMPLETED, Container HEALTHY, FE Target Group healthy를 확인한다. 실패 시 해당 Task의 stoppedReason과 `/yeodam/v2/production/frontend` 로그를 확인하며 임의로 기존 V1이나 BE/AI 서비스를 재시작하지 않는다.
+
+```bash
+aws ecs describe-services --profile yeodam-admin --region ap-northeast-2 \
+  --cluster yeodam-v2-production-app --services yeodam-v2-production-frontend \
+  --query 'services[].{desired:desiredCount,running:runningCount,pending:pendingCount,deployments:deployments[].rolloutState}'
+# FE 헬스만 확인. 공개 DNS·브라우저 설정은 변경하지 않음.
+curl --fail --silent --show-error --connect-timeout 10 --max-time 25 \
+  --connect-to yeodam-2gether.com:443:yeodam-v2-production-alb-491165947.ap-northeast-2.elb.amazonaws.com:443 \
+  https://yeodam-2gether.com/api/health
+```
+
+curl은 기대 상태200/본문`status:ok`만 확인한다. URL Host/SNI의 운영 인증서 검증을 유지하고 `-k`는 사용하지 않는다. 여기서 사용하는 요청별 `--connect-to`는 임시 앱 내부 경로나 전역 DNS override를 구성하는 것이 아니다. 새 페이지·정적 자산·사용자 API를 탐색하지 않는다. 이미지 갱신/복구용 운영 CD와 다중 Task/오토스케일링 정책을 이 첫 사전 배포 작업에서 추가하지 않는다.
+
+첫 적용은 FE Service도 생성하지만 이후 Task Definition 변경은 자동 배포되지 않는다. `task_definition`은 CD 관리 대상으로 무시하므로, 검토한 FE Revision을 배포할 때만 다음 명령을 사용한다. 이전 Revision은 `skip_destroy`로 보존한다.
+
+```bash
+frontend_revision=$(AWS_PROFILE=yeodam-admin terraform -chdir=terraform/v2/production output -raw frontend_task_definition_arn)
+aws ecs update-service --profile yeodam-admin --region ap-northeast-2 \
+  --cluster yeodam-v2-production-app --service yeodam-v2-production-frontend \
+  --task-definition "$frontend_revision" --query 'service.taskDefinition' --output text
+```

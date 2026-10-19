@@ -20,4 +20,4 @@ module "app_alb" {
 }
 
 # The module creates only ACM-validation CNAMEs, not the production A/AAAA Alias.
-# Backend is attached by backend-service.tf; public DNS still sends users to V1.
+# FE/BE attach through their service files; public DNS still sends users to V1.
