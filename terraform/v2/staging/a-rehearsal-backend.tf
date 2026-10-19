@@ -36,6 +36,18 @@ resource "aws_iam_role_policy" "a_rehearsal_source_redis_read" {
   })
 }
 
+# The final authentication snapshot runs on the V1 Source host. Its existing
+# outbound rule is open, but the V2 Redis security group only admits BE tasks.
+resource "aws_vpc_security_group_ingress_rule" "a_rehearsal_source_redis" {
+  count                        = local.a_rehearsal_enabled ? 1 : 0
+  security_group_id            = module.redis.security_group_id
+  referenced_security_group_id = aws_security_group.v1_source_app.id
+  description                  = "V1 Source authentication snapshot for A rehearsal"
+  ip_protocol                  = "tcp"
+  from_port                    = 6379
+  to_port                      = 6379
+}
+
 resource "aws_iam_role" "a_rehearsal_execution" {
   count              = local.a_rehearsal_enabled ? 1 : 0
   name               = "yeodam-v2-staging-a-rehearsal-execution"
