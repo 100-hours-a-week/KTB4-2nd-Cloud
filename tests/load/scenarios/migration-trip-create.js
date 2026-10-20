@@ -14,10 +14,10 @@ if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(runId
 }
 const datasetId = requiredEnv('K6_TRIP_DATASET_ID');
 const mode = __ENV.K6_TRIP_MODE || 'contract';
-if (!['contract', 'load', 'live', 'original', 'bulk'].includes(mode)) {
-  throw new Error('Trip mode must be contract, load, live, original or bulk');
+if (!['contract', 'load', 'live', 'original', 'bulk', 'a-rehearsal'].includes(mode)) {
+  throw new Error('Trip mode must be contract, load, live, original, bulk or a-rehearsal');
 }
-const longRun = mode === 'live' || mode === 'original' || mode === 'bulk';
+const longRun = mode === 'live' || mode === 'original' || mode === 'bulk' || mode === 'a-rehearsal';
 const rate = positiveIntegerEnv('K6_TRIP_RATE', 10);
 const duration = positiveIntegerEnv('K6_TRIP_DURATION_SECONDS', 120);
 const preVus = positiveIntegerEnv('K6_TRIP_PREALLOCATED_VUS', 40);
@@ -33,6 +33,11 @@ if (mode === 'bulk' && (rate !== 10 || duration !== 600 || preVus !== 40 || maxV
   throw new Error('CDC Bulk pilot requires 10 RPS for 600s and 40 fixed VUs');
 }
 const originalVus = { 10: 40, 30: 120, 100: 800 };
+const aRehearsalVus = { 10: 40, 30: 120, 50: 200 };
+if (mode === 'a-rehearsal' && (duration !== 900 || preVus !== aRehearsalVus[rate] ||
+    maxVus !== aRehearsalVus[rate])) {
+  throw new Error('A rehearsal requires 10/30/50 RPS for 900s with fixed 40/120/200 VUs');
+}
 if (mode === 'original' && (duration !== 2100 || preVus !== originalVus[rate] ||
     maxVus !== originalVus[rate])) {
   throw new Error('CDC original run requires 10/30/100 RPS for 2100s with fixed 40/120/800 VUs');
@@ -67,6 +72,7 @@ const authRefreshes = new Counter('trip_auth_refreshes');
 const authRefreshFailures = new Counter('trip_auth_refresh_failures');
 let liveSession = null; // k6 gives each VU its own copy across iterations.
 let liveExpiry = expiry;
+let nextRehearsalRefresh = 0;
 export const options = {
   tags: { kind: mode === 'contract' ? 'migration_trip_contract' : 'migration_trip_load', testid: runId },
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(95)', 'p(99)'],
@@ -91,8 +97,12 @@ export function setup() {
 
 function currentSession() {
   if (!longRun) return pool[1 + ((__VU - 1) % (pool.length - 1))];
-  if (liveSession === null) liveSession = { ...pool[__VU] };
-  if (Date.now() < liveExpiry - 120000) return liveSession;
+  if (liveSession === null) {
+    liveSession = { ...pool[__VU] };
+    nextRehearsalRefresh = Date.now() + 60000;
+  }
+  if (mode === 'a-rehearsal' ? Date.now() < nextRehearsalRefresh :
+    Date.now() < liveExpiry - 120000) return liveSession;
   const refreshed = http.post(`${baseUrl}/api/auth/token/refresh`, null, {
     cookies: { refreshToken: { value: liveSession.refreshToken },
       CSRF_CONTEXT: { value: liveSession.csrfContext } },
@@ -111,6 +121,7 @@ function currentSession() {
   liveSession.accessToken = accessToken;
   liveSession.refreshToken = refreshToken;
   liveExpiry = Date.now() + 1800000;
+  nextRehearsalRefresh = Date.now() + 60000;
   authRefreshes.add(1);
   console.log(JSON.stringify({ source: 'migration-trip-create', event: 'auth_refreshed', runId,
     vu: __VU, status: refreshed.status }));
