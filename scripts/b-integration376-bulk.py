@@ -34,7 +34,7 @@ def import_snapshot(run_id,key):
     if mysql("SELECT COUNT(*) FROM information_schema.processlist WHERE USER NOT IN ('root','event_scheduler','system user') AND ID!=CONNECTION_ID();")!='0':raise RuntimeError('Target has unexpected clients')
     if mysql("SELECT COUNT(*) FROM performance_schema.replication_connection_status WHERE SERVICE_STATE='ON';")!='0' or mysql("SELECT COUNT(*) FROM performance_schema.replication_applier_status WHERE SERVICE_STATE='ON';")!='0':raise RuntimeError('Native replication must stay OFF')
     if not re.fullmatch(r'migration/v1-source/\d{8}T\d{6}Z-[0-9a-f]{8}\.ready',key):raise ValueError('Unexpected source marker')
-    directory=Path('/var/lib/yeodam/b376')/run_id;directory.mkdir(parents=True,mode=0o700)
+    directory=Path('/var/lib/yeodam/b380')/run_id;directory.mkdir(parents=True,mode=0o700)
     marker=directory/'source.ready';archive=directory/'source.sql.gz'
     for path,s3key in ((marker,key),(archive,key[:-6]+'.sql.gz')):
         run(['aws','s3','cp','s3://'+BUCKET+'/'+s3key,str(path),'--region','ap-northeast-2','--only-show-errors']);path.chmod(0o600)
@@ -62,9 +62,11 @@ def import_snapshot(run_id,key):
         mysql("SET SESSION sql_log_bin=0; CREATE USER IF NOT EXISTS 'yeodam_cdc_sink'@'10.30.10.95' IDENTIFIED BY '"+password+"' REQUIRE SSL; GRANT REPLICATION SLAVE,REPLICATION CLIENT,CONNECTION_ADMIN ON *.* TO 'yeodam_cdc_sink'@'10.30.10.95'; "+' '.join("GRANT SELECT,INSERT,UPDATE,DELETE ON "+SCHEMA+'.'+t+" TO 'yeodam_cdc_sink'@'10.30.10.95';" for t in ('trips','trip_regions','users','login_sessions','csrf_tokens')))
         mysql("SET SESSION sql_log_bin=0; CREATE USER IF NOT EXISTS 'yeodam_cdc_sink'@'10.30.0.174' IDENTIFIED BY '"+password+"' REQUIRE SSL; GRANT CONNECTION_ADMIN ON *.* TO 'yeodam_cdc_sink'@'10.30.0.174'; "+' '.join("GRANT SELECT,INSERT,UPDATE,DELETE ON "+SCHEMA+'.'+t+" TO 'yeodam_cdc_sink'@'10.30.0.174';" for t in ('login_sessions','csrf_tokens')))
         # This file contains only public DDL, installed with the helper bundle.
-        ddl=Path('/run/yeodam-b376/journal.sql').read_text()
-        exists=mysql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='"+SCHEMA+"' AND table_name='migration_trip_request_result';")
-        if exists=='0':mysql('SET SESSION sql_log_bin=0; USE '+SCHEMA+'; '+ddl)
+        ddl=Path('/run/yeodam-b380/journal.sql').read_text()
+        # Each CREATE is idempotent: an existing trip journal must not suppress a new auth journal.
+        mysql('SET SESSION sql_log_bin=0; USE '+SCHEMA+'; '+ddl)
+        if mysql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='"+SCHEMA+"' AND table_name IN ('migration_trip_request_result','migration_auth_request_result');")!='2':
+            raise RuntimeError('Required migration journals missing; do not proceed to Writer cutover')
         completed=True
         print(json.dumps({'phase':'bulk_imported','runId':run_id,'tables':int(mysql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='"+SCHEMA+"';")),
                           'trips':int(mysql('SELECT COUNT(*) FROM '+SCHEMA+'.trips;')),'sourceFile':info['source_file'],'sourcePosition':int(info['source_position']),

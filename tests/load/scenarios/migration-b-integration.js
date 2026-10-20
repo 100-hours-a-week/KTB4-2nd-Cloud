@@ -18,7 +18,7 @@ const pool = new SharedArray('b376-sessions', () => {
   const p = JSON.parse(open(requiredEnv('K6_SESSION_POOL_FILE')));
   return [p, ...p.sessions];
 });
-if (pool[0].runId !== runId || pool[0].datasetId !== dataset || pool.length - 1 < vus + 10) {
+if (pool[0].runId !== runId || pool[0].datasetId !== dataset || pool.length - 1 < vus + 20) {
   throw new Error('Pool identity or count invalid');
 }
 const admitted = new Rate('b_request_admitted');
@@ -55,8 +55,16 @@ function credentials() {
     const ok = r.status === 200 && access && refresh;
     if (ok) { session.accessToken = access; session.refreshToken = refresh; }
     else authFailures.add(1);
+    const c = http.get(`${base}/api/auth/csrf`, {
+      cookies: { CSRF_CONTEXT: { value: session.csrfContext } },
+      timeout: '10s', redirects: 0, tags: { operation: 'auth_csrf' },
+      responseCallback: http.expectedStatuses(200),
+    });
+    if (c.status === 200) { try { session.csrfToken = c.json().data.token; } catch (_) {} }
+    console.log(JSON.stringify({ source: 'migration-b376', event: 'auth_csrf', runId, vu: __VU,
+      at: Date.now(), elapsedMs: c.timings.duration, status: c.status, ok: c.status === 200 }));
     nextRefresh = Date.now() + 60000;
-    console.log(JSON.stringify({ source: 'migration-b376', event: 'auth_refresh', runId, vu: __VU, status: r.status, ok: Boolean(ok) }));
+    console.log(JSON.stringify({ source: 'migration-b376', event: 'auth_refresh', runId, vu: __VU, at: Date.now(), elapsedMs: r.timings.duration, status: r.status, ok: Boolean(ok) }));
   }
   return session;
 }
