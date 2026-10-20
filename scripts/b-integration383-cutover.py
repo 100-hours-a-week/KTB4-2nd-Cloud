@@ -12,7 +12,7 @@ from urllib.request import Request,urlopen
 from uuid import UUID
 from confluent_kafka import Consumer,TopicPartition
 
-BASE='http://127.0.0.1:8083'
+BASE='http://127.0.0.1:18083'
 def api(path,method=None):
     with urlopen(Request(BASE+path,method=method),timeout=15) as r:
         b=r.read();return json.loads(b) if b else {}

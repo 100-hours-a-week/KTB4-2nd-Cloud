@@ -10,7 +10,7 @@ from urllib.request import Request,urlopen
 from uuid import UUID
 
 BROKER='yeodam-v2-staging-kafka-kafka-1'
-BASE='http://127.0.0.1:8083'
+BASE='http://127.0.0.1:18083'
 
 def api(path,data=None,method=None):
     request=Request(BASE+path,data=None if data is None else json.dumps(data).encode(),method=method,headers={'Content-Type':'application/json'})
