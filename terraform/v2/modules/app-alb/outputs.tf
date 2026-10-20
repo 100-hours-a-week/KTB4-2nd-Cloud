@@ -1,3 +1,8 @@
+output "https_listener_arn" {
+  description = "Existing HTTPS listener for additional hostname routes"
+  value       = aws_lb_listener.https.arn
+}
+
 output "alb_arn" {
   description = "Application Load Balancer ARN"
   value       = aws_lb.app.arn

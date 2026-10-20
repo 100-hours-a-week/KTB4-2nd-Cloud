@@ -36,7 +36,7 @@ def build_rule(spec, paused=True):
                    'service': spec['service'], 'severity': spec['severity']},
         'annotations': {'summary': spec['summary'],
                         'description': '지표와 로그를 함께 확인하세요. 복구 통지는 조건 해제이며 사용자 작업 완료의 증거는 아닙니다.',
-                        'dashboard': 'http://localhost:3000/d/' + spec['dashboard']},
+                        'dashboard': 'https://grafana-staging.yeodam-2gether.com/d/' + spec['dashboard']},
         'data': [
             {'refId': 'A', 'queryType': '', 'relativeTimeRange': {'from': 600, 'to': 0},
              'datasourceUid': datasource, 'model': model},
