@@ -12,7 +12,9 @@ class Contract(unittest.TestCase):
   self.assertNotIn('0.0.0.0/0',t)
   self.assertIn('referenced_security_group_id',t)
   self.assertNotIn('6379',t);self.assertNotIn('3306',t)
-  self.assertIn('127.0.0.1:3000:3000',(P/'plg-compose.yml').read_text())
+  self.assertIn('GF_AUTH_ANONYMOUS_ENABLED: "false"',(P/'plg-compose.yml').read_text())
+  self.assertIn('GF_SECURITY_COOKIE_SECURE: "true"',(P/'plg-compose.yml').read_text())
+  self.assertIn('var.alb_security_group_id',(ROOT/'terraform/v2/modules/grafana-web/main.tf').read_text())
  def test_missing_connector_not_healthy_server(self):
   m=load('probe-exporter')
   with patch.object(m.urllib.request,'urlopen',side_effect=urllib.error.HTTPError('x',404,'missing',{},None)):

@@ -1,6 +1,8 @@
 locals {
   plg_name = "${local.name_prefix}-plg"
 }
+# Retain the original creation description to avoid replacing the live SG.
+# Current HTTPS ingress is managed by module.grafana_web.
 resource "aws_security_group" "plg" {
   name_prefix = "${local.plg_name}-"
   description = "Private production observers; Grafana only via SSM"

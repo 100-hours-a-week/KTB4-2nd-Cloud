@@ -2,6 +2,8 @@ locals {
   plg_name = "yeodam-v2-staging-plg"
 }
 
+# Retain the original creation description to avoid replacing the live SG.
+# Current HTTPS ingress is managed by module.grafana_web.
 resource "aws_security_group" "plg" {
   name_prefix = "${local.plg_name}-"
   description = "Private PLG collector; Grafana is reachable only through SSM port forwarding"
