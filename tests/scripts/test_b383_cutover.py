@@ -13,7 +13,7 @@ class CutoverTests(unittest.TestCase):
    if 'SHOW BINARY LOG STATUS' in sql:return 'binlog.000010\t100'
    return ''
   db.query.side_effect=query
-  with tempfile.TemporaryDirectory() as d,patch.object(m,'BASE',Path(d)),patch.object(m,'database',return_value=db),patch.object(m.subprocess,'check_output',return_value='10.30.0.174'),patch.object(m.subprocess,'run'),patch.object(m,'audit',side_effect=AssertionError('Full hash on critical path')),patch.object(sys,'argv',['control','fence','--run-id',run]):
+  with tempfile.TemporaryDirectory() as d,patch.object(m,'BASE',Path(d)),patch.object(m,'database',return_value=db),patch.object(m,'ensure_prepared'),patch.object(m.subprocess,'check_output',return_value='10.30.0.174'),patch.object(m.subprocess,'run'),patch.object(m,'audit',side_effect=AssertionError('Full hash on critical path')),patch.object(sys,'argv',['control','fence','--run-id',run]):
    m.main();state=json.loads((Path(d)/(run+'.json')).read_text())
    self.assertEqual(state['phase'],'source_fenced');self.assertEqual([e['phase'] for e in state['events']],['fence_intent','requests_queued','source_read_only','source_fenced'])
    self.assertTrue(any('INSERT INTO' in c.args[1] for c in db.query.call_args_list))

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owned Source-host cutover: final CDC marker, durable flush, then writer handoff.
+"""Kafka-host boundary proof: final CDC marker, durable flush, then writer handoff.
 
 No Kafka offset reset or shared worker configuration change. The marker is written
 by root only after read_only has blocked application writes. Seeing it allows one
@@ -12,12 +12,10 @@ from urllib.request import Request,urlopen
 from uuid import UUID
 from confluent_kafka import Consumer,TopicPartition
 
-BASE='http://10.30.10.95:8083'
+BASE='http://127.0.0.1:8083'
 def api(path,method=None):
     with urlopen(Request(BASE+path,method=method),timeout=15) as r:
         b=r.read();return json.loads(b) if b else {}
-def control(run,action):
-    subprocess.run(['python3','/run/yeodam-b383/b-integration376-control.py',action,'--run-id',run],check=True)
 def position_at_least(actual,expected):
     f,p=actual.get('file',''),actual.get('pos',0);ef,ep=expected.split('\t')[:2]
     prefix,_,num=f.rpartition('.');wanted,_,n=ef.rpartition('.')
@@ -38,16 +36,9 @@ def caught(c,topic):
     end={p.partition:c.get_watermark_offsets(p,timeout=3,cached=False)[1] for p in parts}
     current={p.partition:p.offset for p in c.committed(parts,timeout=3)}
     return current==end,{'topic':topic,'end':end,'current':current}
-def cutover(run,at):
-    root=Path('/run/yeodam-b383')/run
-    while time.time()<at:time.sleep(min(.2,at-time.time()))
-    if not (root/'cutover-ready').exists():raise RuntimeError('Cutover preparation incomplete at the fixed deadline')
-    for origin in ('source','target'):
-        if not (root/(origin+'.projection-ready')).exists():raise RuntimeError('Authentication projection not prepared')
-        unit='yeodam-b383-auth-'+('target-' if origin=='target' else '')+run[:8]+'.service'
-        subprocess.run(['systemctl','is-active','--quiet',unit],check=True)
-    started=time.time();control(run,'fence')
-    state=json.loads((Path('/var/lib/yeodam/b383')/(run+'.json')).read_text())
+def cutover(run,position):
+    started=time.time()
+    state={'sourcePosition':position}
     n='yeodam-b383-'+run[:8];p='staging.yeodam.migration.b383.'+run;a='staging.yeodam.migration.auth368.b383-'+run
     audit=consumer('yeodam-b383-boundary-'+run);deadline=time.monotonic()+30
     try:
@@ -74,12 +65,9 @@ def cutover(run,at):
     finally:
         for c in clients:c.close()
     api('/connectors/'+n+'-sink/stop','PUT')
-    proof={'runId':run,'equal':True,'groups':details,'observedAt':time.time(),'boundaryMethod':'final-binlog-marker-and-graceful-flush'}
-    (Path('/var/lib/yeodam/b383')/(run+'.cdc-drained.json')).write_text(json.dumps(proof))
-    control(run,'auth-boundary');control(run,'promote')
-    subprocess.run(['python3','/run/yeodam-b383/b-integration376-app.py','enable-consumer','--run-id',run],check=True)
-    print(json.dumps({'phase':'cutover_complete','runId':run,'startedAt':started,'finishedAt':time.time(),'elapsedSeconds':time.time()-started}),flush=True)
+    proof={'runId':run,'equal':True,'groups':details,'observedAt':time.time(),'boundaryMethod':'final-binlog-marker-and-graceful-flush','startedAt':started,'finishedAt':time.time(),'elapsedSeconds':time.time()-started}
+    print(json.dumps(proof),flush=True)
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--run-id',required=True);p.add_argument('--at',type=float,required=True);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--run-id',required=True);p.add_argument('--source-position',required=True);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id:raise ValueError('Canonical Run required')
-    cutover(a.run_id,a.at)
+    cutover(a.run_id,a.source_position)

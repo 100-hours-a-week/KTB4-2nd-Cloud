@@ -50,8 +50,8 @@ def records(result):
     return values
 
 def deploy():
-    source=['b-integration376-app.py','b-integration376-control.py','b-integration376-auth.py','b-integration376-e2e.py','b-integration376-reset.py','b-integration376-smoke.py','b-integration383-cutover.py']
-    for host,files in [('source',source),('target',['b-integration376-bulk.py','b-integration376-reset.py']),('kafka',['b-integration376-kafka.py']),('generator',['b-integration376-generator.py'])]:
+    source=['b-integration376-app.py','b-integration376-control.py','b-integration376-auth.py','b-integration376-e2e.py','b-integration376-reset.py','b-integration376-smoke.py']
+    for host,files in [('source',source),('target',['b-integration376-bulk.py','b-integration376-reset.py']),('kafka',['b-integration376-kafka.py','b-integration383-cutover.py']),('generator',['b-integration376-generator.py'])]:
         commands=[]
         for name in files:commands+=ssm.deploy('scripts/'+name,'/run/yeodam-b383/'+name)
         if host=='source':
@@ -191,7 +191,7 @@ def execute(case,index):
             checkpoint('auth_actor_mapping_failed',k6Command=load_id,authActorAssignments=info.get('authActorAssignments'))
             raise RuntimeError('Authentication actor mapping invalid; no Snapshot or cutover scheduled')
     started=info['actualStartedAt'];checkpoint('load_started',k6Command=load_id,startedAt=started,authActorMappingValid=True)
-    fence_id=raw('source',['/opt/yeodam-cdc-auth368/venv/bin/python3 /run/yeodam-b383/b-integration383-cutover.py --run-id '+run+' --at '+str(started+360)],sync=False)
+    fence_id=phase('source','b-integration376-control.py',run,'fence','--at',str(started+360),sync=False)
     kafka(run,'trips',index);kafka(run,'auth-source',index)
     kafka(run,'ready-trips',index);kafka(run,'ready-auth-source',index)
     # Capture full consistent data only after live requests and no_data CDC started.
@@ -225,9 +225,18 @@ def finish(case,index,state,state_path,load_id,fence_id,started,resume_boundary=
     fence=wait('source',fence_id,bound=500,allow_failure=True)
     switched=False;old_service=None
     if fence['Status']=='Success':
-        switched=True;old_service=service_start(run)
-        checkpoint('switched',originalE2ETaskDefinition=old_service,cutover=records(fence))
-        phase('source','b-integration376-control.py',run,'audit-source')
+        boundary=records(fence)[-1]
+        drained=raw('kafka',['/opt/yeodam-b383/venv/bin/python3 /run/yeodam-b383/b-integration383-cutover.py --run-id '+run+' --source-position '+shlex.quote(boundary['sourcePosition'])],allow_failure=True)
+        if drained['Status']=='Success':
+            proof=records(drained)[-1]
+            cmd="printf '%s' "+shlex.quote(json.dumps(proof))+" > /var/lib/yeodam/b383/"+run+'.cdc-drained.json'
+            cmd+='\npython3 /run/yeodam-b383/b-integration376-control.py auth-boundary --run-id '+run
+            cmd+='\npython3 /run/yeodam-b383/b-integration376-control.py promote --run-id '+run
+            cmd+='\npython3 /run/yeodam-b383/b-integration376-app.py enable-consumer --run-id '+run
+            applied=raw('source',[cmd]);switched=True;old_service=service_start(run)
+            checkpoint('switched',originalE2ETaskDefinition=old_service,cutover=records(applied))
+            phase('source','b-integration376-control.py',run,'audit-source')
+        else:checkpoint('cdc_boundary_failed')
     else:checkpoint('fence_failed')
     # Every launched run retains its fixed duration, including strategy failures.
     load=wait('generator',load_id,bound=1000,allow_failure=True)

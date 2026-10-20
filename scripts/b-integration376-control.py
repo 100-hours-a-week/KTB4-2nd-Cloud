@@ -42,6 +42,14 @@ def audit(db,run,role,max_id=None):
     return {'rows':rows,'fullRowsSha256':hashlib.sha256((data+'\n').encode()).hexdigest(),'requestProjectionSha256':h.hexdigest(),
             'missingRegions':sum(line.endswith('\tNULL') for line in projection.splitlines())}
 
+def ensure_prepared(run):
+    root=Path('/run/yeodam-b383')/run
+    if not (root/'cutover-ready').exists():raise RuntimeError('Cutover preparation incomplete at fixed deadline')
+    for origin in ('source','target'):
+        if not (root/(origin+'.projection-ready')).exists():raise RuntimeError('Authentication projection not ready')
+        unit='yeodam-b383-auth-'+('target-' if origin=='target' else '')+run[:8]+'.service'
+        subprocess.run(['systemctl','is-active','--quiet',unit],check=True)
+
 def main():
     p=argparse.ArgumentParser();p.add_argument('action',choices=('checkpoint','target-position','preflight','fence','promote','audit-source','audit-target','status','resume-source','recover-unpromoted','park-target-pool','auth-boundary'));p.add_argument('--run-id',required=True);p.add_argument('--at',type=float);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id or '10.30.0.174' not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Wrong host or UUID')
@@ -79,6 +87,7 @@ def main():
                 while time.time()<a.at:time.sleep(max(0,min(1,a.at-time.time())))
             source,target=db.identity('source'),db.identity('target')
             if source[2:]!=['0','0'] or target[2:]!=['1','0']:raise RuntimeError('Unexpected pre-fence roles')
+            ensure_prepared(a.run_id)
             save(a.run_id,'fence_intent')
             subprocess.run(['python3','/run/yeodam-b383/b-integration376-app.py','queue','--run-id',a.run_id],check=True)
             save(a.run_id,'requests_queued')
