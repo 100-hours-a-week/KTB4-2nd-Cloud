@@ -21,14 +21,29 @@ def request(base,path,session,method='GET',route=None,csrf=None):
             for c in r.headers.get_all('Set-Cookie') or []:jar.load(c)
             return r.status,body,{k:v.value for k,v in jar.items()}
     except HTTPError as e:return e.code,b'',{}
-    except URLError:return 0,b'',{}
+    except (URLError,TimeoutError,ConnectionError):return 0,b'',{}
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('refresh','e2e'));p.add_argument('--run-id',required=True);p.add_argument('--route-header');a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('refresh','v1','e2e'));p.add_argument('--run-id',required=True);p.add_argument('--route-header');a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id:raise ValueError('Canonical run UUID required')
-    directory=Path('/run/yeodam-b376')/a.run_id
+    directory=Path('/run/yeodam-b380')/a.run_id
     path=directory/'e2e-pool.json'
-    if a.action=='refresh':
+    if a.action=='v1':
+        pool=json.loads((Path('/run/yeodam-synthetic-sessions')/(a.run_id+'.json')).read_text())
+        results=[]
+        for s in pool['sessions'][-20:-10]:
+            csrf=s['csrfToken']
+            for operation,endpoint,method in [('refresh','/api/auth/token/refresh','POST'),('users_me','/api/users/me','GET'),('csrf','/api/auth/csrf','GET')]:
+                status,body,cookies=request('https://v1-staging.yeodam-2gether.com',endpoint,s,method,csrf=csrf)
+                if operation=='refresh' and status==200 and cookies.get('accessToken'):
+                    s.update(accessToken=cookies['accessToken'],refreshToken=cookies.get('refreshToken',s['refreshToken']))
+                if operation=='csrf' and status==200:
+                    try:csrf=json.loads(body)['data']['token']
+                    except (ValueError,KeyError,TypeError):pass
+                results.append({'userId':s['userId'],'operation':operation,'status':status})
+        report={'phase':'v1_e2e','runId':a.run_id,'requests':len(results),'success':sum(r['status']==200 for r in results),'results':results}
+        (directory/'e2e-v1-result.json').write_text(json.dumps(report));print(json.dumps(report))
+    elif a.action=='refresh':
         if path.exists():raise RuntimeError('E2E refreshed pool already exists')
         pool=json.loads((Path('/run/yeodam-synthetic-sessions')/(a.run_id+'.json')).read_text())
         sessions=pool['sessions'][-10:];results=[]

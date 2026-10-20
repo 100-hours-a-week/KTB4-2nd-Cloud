@@ -10,7 +10,7 @@ import subprocess
 import time
 from uuid import UUID,uuid5
 
-BASE=Path('/var/lib/yeodam/b376')
+BASE=Path('/var/lib/yeodam/b380')
 
 def database():
     loader=SourceFileLoader('b376db','/usr/local/sbin/yeodam-staging-db-cutover')
@@ -39,13 +39,14 @@ def audit(db,run,role,max_id=None):
             'missingRegions':sum(line.endswith('\tNULL') for line in projection.splitlines())}
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('preflight','fence','promote','audit-source','audit-target','status','resume-source','recover-unpromoted','park-target-pool'));p.add_argument('--run-id',required=True);p.add_argument('--at',type=float);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('target-position','preflight','fence','promote','audit-source','audit-target','status','resume-source','recover-unpromoted','park-target-pool'));p.add_argument('--run-id',required=True);p.add_argument('--at',type=float);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id or '10.30.0.174' not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Wrong host or UUID')
     db=database()
     try:
         source,target=db.identity('source'),db.identity('target')
         if source[0]!='1' or target[0]!='2':raise RuntimeError('Unexpected database identity')
-        if a.action=='preflight':
+        if a.action=='target-position':print(json.dumps({'targetPosition':db.query('target','SHOW BINARY LOG STATUS;')}))
+        elif a.action=='preflight':
             if source[2:]!=['0','0'] or target[2:]!=['1','1']:raise RuntimeError('Expected Source Writer and protected Target')
             if db.query('proxy',"SELECT DISTINCT default_hostgroup FROM runtime_mysql_users WHERE username='yeodam_app';")!='10':raise RuntimeError('ProxySQL is not on Source')
             if db.query('proxy','SELECT COUNT(*) FROM runtime_mysql_query_rules WHERE active=1;')!='0':raise RuntimeError('Unexpected ProxySQL rules')
@@ -63,7 +64,7 @@ def main():
                 while time.time()<a.at:time.sleep(min(1,a.at-time.time()))
             source,target=db.identity('source'),db.identity('target')
             if source[2:]!=['0','0'] or target[2:]!=['1','0']:raise RuntimeError('Unexpected pre-fence roles')
-            subprocess.run(['python3','/run/yeodam-b376/b-integration376-app.py','queue','--run-id',a.run_id],check=True)
+            subprocess.run(['python3','/run/yeodam-b380/b-integration376-app.py','queue','--run-id',a.run_id],check=True)
             # The read_only transition waits for pre-existing writes; no B2 consumer is opened here.
             db.query('source','SET SESSION lock_wait_timeout=5; SET PERSIST read_only=ON; SET PERSIST super_read_only=ON;',timeout=10)
             if db.query('source','SELECT COUNT(*) FROM information_schema.innodb_trx;')!='0':raise RuntimeError('Source transactions remain after fence')
@@ -105,6 +106,7 @@ def main():
                 reopened=[event['at'] for event in state['events'] if event['phase']=='source_reopened']
                 upper=(' AND created_at<=FROM_UNIXTIME('+str(reopened[-1])+')') if reopened else ''
                 report['journal']=db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+")"+upper+" AND request_id!='"+smoke+"' GROUP BY status;")
+                report['authJournalRows']=int(db.query('target',"SELECT COUNT(*) FROM yeodam_v1_source.migration_auth_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+")"+upper+";"))
                 report['publicSmokeJournal']=db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE request_id='"+smoke+"' GROUP BY status;")
             print(json.dumps(report))
         else:print(json.dumps({'source':source[2:],'target':target[2:],'proxy':db.query('proxy',"SELECT DISTINCT default_hostgroup FROM runtime_mysql_users WHERE username='yeodam_app';")}))
