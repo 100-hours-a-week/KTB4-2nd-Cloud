@@ -54,7 +54,11 @@ def deploy():
     for host,files in [('source',source),('target',['b-integration376-bulk.py','b-integration376-reset.py']),('kafka',['b-integration376-kafka.py']),('generator',['b-integration376-generator.py'])]:
         commands=[]
         for name in files:commands+=ssm.deploy('scripts/'+name,'/run/yeodam-b382/'+name)
-        if host=='source':commands+=ssm.deploy('scripts/audit-cdc-auth368.py','/opt/yeodam-cdc-auth368/audit-cdc-auth368.py')
+        if host=='source':
+            commands+=ssm.deploy('scripts/audit-cdc-auth368.py','/opt/yeodam-cdc-auth368/audit-cdc-auth368.py')
+            commands+=ssm.deploy('scripts/b2-pilot370-host.py','/run/yeodam-b382/image-pull.py')
+            image=json.loads((EVIDENCE/'plan.json').read_text())['backendImage']
+            commands+=["python3 - <<'PULL'\nfrom importlib.machinery import SourceFileLoader\nm=SourceFileLoader('pull382','/run/yeodam-b382/image-pull.py').load_module()\nm.IMAGE="+repr(image)+"\nm.pull_image()\nPULL"]
         if host=='target':
             tree=ast.parse((ROOT/'scripts/b2-pilot370-target.py').read_text())
             ddl=next(ast.literal_eval(node.value) for node in tree.body if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='DDL' for t in node.targets))
