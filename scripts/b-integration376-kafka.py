@@ -139,7 +139,9 @@ def drain(run,source_file,source_position,target=False,absolute_deadline=None):
                 offsets=api('/connectors/'+n+'-'+kind+'/offsets').get('offsets',[])
                 offset=offsets[0]['offset'] if len(offsets)==1 else {}
                 file=offset.get('file','');pos=offset.get('pos',0)
-                caught=caught and file.startswith('binlog.') and (int(file.split('.')[1]),int(pos)) >= (int(source_file.split('.')[1]),source_position)
+                prefix,_,number=file.rpartition('.')
+                expected_prefix,_,expected_number=source_file.rpartition('.')
+                caught=caught and prefix==expected_prefix and number.isdigit() and expected_number.isdigit() and (int(number),int(pos)) >= (int(expected_number),source_position)
             if caught:
                 for kind in kinds:api('/connectors/'+n+'-'+kind+'/stop',method='PUT')
                 stopped=True
