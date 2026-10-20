@@ -1,0 +1,671 @@
+{
+  "uid": "yeodam-v2-ai-gpu",
+  "title": "V2 AI GPU runtime",
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "refresh": "30s",
+  "tags": [
+    "v2",
+    "production",
+    "gpu"
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "EC2 state (AWS)",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by(ec2_state) (up{job=\"v2-ai-gpu-agent\"} * 0 + 1)",
+          "legendFormat": "{{ec2_state}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "description": "State comes from AWS every 30s. A value of 1 selects the named state. Check discovery age; stale state is unknown."
+    },
+    {
+      "id": 2,
+      "title": "AWS discovery age",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - max(prometheus_sd_file_mtime_seconds{filename=\"/etc/prometheus/targets/gpu.json\"})",
+          "legendFormat": "Discovery age",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "description": "Above 90s: state discovery is stale. Do not classify a missing GPU as intentionally stopped."
+    },
+    {
+      "id": 3,
+      "title": "Agent reachable",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"v2-ai-gpu-agent\"}",
+          "legendFormat": "{{ec2_state}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "description": "Stopped + 0 is expected. Running + 0 is an agent/network fault or startup. This is not application readiness."
+    },
+    {
+      "id": 4,
+      "title": "Host sample age",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(time() - yeodam_gpu_sample_timestamp_seconds{job=\"v2-ai-gpu-host\"}) and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "Sample age",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "description": "Above 60s: sampler or remote write is delayed. Missing is not zero."
+    },
+    {
+      "id": 5,
+      "title": "GPU utilization",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_gpu_utilization_percent{job=\"v2-ai-gpu-host\"} and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "GPU {{gpu}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "description": ""
+    },
+    {
+      "id": 6,
+      "title": "GPU VRAM used",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 7,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(100 * yeodam_gpu_memory_used_bytes{job=\"v2-ai-gpu-host\"} / yeodam_gpu_memory_total_bytes{job=\"v2-ai-gpu-host\"}) and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "GPU {{gpu}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "description": ""
+    },
+    {
+      "id": 7,
+      "title": "Container running",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_ai_container_running{job=\"v2-ai-gpu-host\"} and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "{{component}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "description": "Process runner running is process liveness only; use V2 AI jobs for work completion and queue state."
+    },
+    {
+      "id": 8,
+      "title": "Endpoint ready",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_ai_endpoint_ready{job=\"v2-ai-gpu-host\"} and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "{{component}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "description": "Embedding /health and Qdrant /readyz. Model cold starts can take over 180s."
+    },
+    {
+      "id": 9,
+      "title": "Container restart count",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_ai_container_restarts{job=\"v2-ai-gpu-host\"} and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "{{component}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "description": ""
+    },
+    {
+      "id": 10,
+      "title": "Filesystem available",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_ai_filesystem_available_bytes{job=\"v2-ai-gpu-host\"} and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "{{mountpoint}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "description": ""
+    },
+    {
+      "id": 11,
+      "title": "Native metrics scrape",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=~\"v2-embedding|v2-qdrant\"} and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "{{job}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "description": ""
+    },
+    {
+      "id": 12,
+      "title": "NVIDIA and container inspection",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{__name__=~\"yeodam_gpu_smi_success|yeodam_ai_container_inspect_success\",job=\"v2-ai-gpu-host\"} and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "{{__name__}} {{component}}",
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "description": ""
+    },
+    {
+      "id": 13,
+      "title": "Embedding running and waiting",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{__name__=~\"vllm:num_requests_running|vllm:num_requests_waiting\",job=\"v2-embedding\"} and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "{{__name__}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      },
+      "description": ""
+    },
+    {
+      "id": 14,
+      "title": "Qdrant points",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 35,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance_id) (collection_points{job=\"v2-qdrant\"}) and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "Points"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      },
+      "description": "Aggregate anonymized collection metrics. Not job completion."
+    },
+    {
+      "id": 15,
+      "title": "Embedding request p95",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by(instance_id, le) (rate(vllm:e2e_request_latency_seconds_bucket{job=\"v2-embedding\"}[5m]))) and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "Embedding"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      },
+      "description": "No traffic yields NaN; do not replace it with zero. Model-server duration, not full AI job."
+    },
+    {
+      "id": 16,
+      "title": "Qdrant HTTP rate",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 42,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance_id) (rate(rest_responses_total{job=\"v2-qdrant\"}[5m])) and on(instance_id) (up{job=\"v2-ai-gpu-agent\",ec2_state=\"running\"} == 1)",
+          "legendFormat": "Responses/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      },
+      "description": "Includes monitoring requests."
+    }
+  ]
+}

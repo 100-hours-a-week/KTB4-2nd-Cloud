@@ -82,6 +82,11 @@ def main():
     compose=Path('/opt/yeodam-kafka/compose.yml')
     compose.write_bytes(base64.b64decode(os.environ['CDC_COMPOSE_B64']))
     command=['docker','compose','--env-file','/etc/yeodam/kafka/runtime.env','-f',str(compose)]
+    override=compose.with_name('compose.override.yml')
+    if override.exists():
+        if '# yeodam-kafka-observability' not in override.read_text():
+            raise RuntimeError('Unrecognized Kafka Compose override; inspect before changing Connect')
+        command+=['-f',str(override)]
     subprocess.run(command+['config','--quiet'],check=True)
     # Only Connect changes. Never restart or reformat the broker.
     recreate=['--force-recreate'] if libraries_changed else []

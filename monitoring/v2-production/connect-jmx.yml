@@ -1,0 +1,32 @@
+lowercaseOutputName: true
+includeObjectNames:
+  - 'debezium.mysql:type=connector-metrics,context=streaming,*'
+  - 'kafka.connect:type=connector-metrics,*'
+  - 'kafka.connect:type=connector-task-metrics,*'
+rules:
+  - pattern: 'debezium.mysql<.*context=streaming.*><>MilliSecondsBehindSource'
+    name: yeodam_debezium_source_lag_seconds
+    type: GAUGE
+    valueFactor: 0.001
+  - pattern: 'debezium.mysql<.*context=streaming.*><>QueueRemainingCapacity'
+    name: yeodam_debezium_queue_remaining
+    type: GAUGE
+  - pattern: 'debezium.mysql<.*context=streaming.*><>QueueTotalCapacity'
+    name: yeodam_debezium_queue_capacity
+    type: GAUGE
+  - pattern: 'debezium.mysql<.*context=streaming.*><>Connected'
+    name: yeodam_debezium_connected
+    type: GAUGE
+  - pattern: 'debezium.mysql<.*context=streaming.*><>TotalNumberOfEventsSeen'
+    name: yeodam_debezium_events_seen_total
+    type: COUNTER
+  - pattern: 'kafka.connect<type=connector-metrics, connector=(.+)><>status: ([a-z-]+)'
+    name: yeodam_connect_connector_state
+    type: GAUGE
+    value: 1
+    labels: {connector: '$1', state: '$2'}
+  - pattern: 'kafka.connect<type=connector-task-metrics, connector=(.+), task=(.+)><>status: ([a-z-]+)'
+    name: yeodam_connect_task_state
+    type: GAUGE
+    value: 1
+    labels: {connector: '$1', task: '$2', state: '$3'}

@@ -1,0 +1,100 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: plg-prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+  - job_name: plg-loki
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["loki:3100"]
+  - job_name: plg-grafana
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["grafana:3000"]
+  # Shared Redis snapshot: one logical target, never one series per ECS task.
+  - job_name: v2-ai-shared
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/ai-metrics/api-key
+    static_configs:
+      - targets: ["ai-api.production.yeodam.internal:80"]
+        labels:
+          env: production
+          service: ai-api
+          scope: shared-redis
+  - job_name: v2-kafka-lag
+    scrape_interval: 30s
+    scrape_timeout: 20s
+    static_configs:
+      - targets: ["kafka.production.yeodam.internal:9308"]
+        labels: {env: production, service: kafka}
+  - job_name: v2-connect
+    scrape_interval: 30s
+    scrape_timeout: 15s
+    static_configs:
+      - targets: ["kafka.production.yeodam.internal:9404"]
+        labels: {env: production, service: connect, cdc_source: production-mysql}
+  # Task-local metrics: discover every RUNNING backend task, never via ALB.
+  - job_name: yeodam-backend-production
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: /actuator/prometheus
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/backend.json"]
+        refresh_interval: 15s
+  # Production application DB; staging migration targets are not scraped here.
+  - job_name: v2-mysql-production
+    scrape_interval: 30s
+    scrape_timeout: 12s
+    static_configs:
+      - targets: ["mysql-predeploy.production.yeodam.internal:9104"]
+        labels: {env: production, service: mysql, db_role: production}
+  # Server metrics only; shared AI queue lengths remain in v2-ai-shared.
+  - job_name: v2-ai-redis
+    scrape_interval: 30s
+    scrape_timeout: 12s
+    static_configs:
+      - targets: ["ai-redis.production.yeodam.internal:9121"]
+        labels: {env: production, service: redis, redis_role: ai}
+  # EC2 state labels distinguish an intentionally stopped GPU from an unreachable agent.
+  - job_name: v2-ai-gpu-agent
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/gpu.json"]
+        refresh_interval: 15s
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "alloy_build_info|prometheus_remote_storage_samples_pending|prometheus_remote_storage_samples_failed_total"
+        action: keep
+
+  - job_name: v2-outbox
+    scrape_interval: 30s
+    scrape_timeout: 12s
+    static_configs:
+      - targets: ["${mysql_ip}:9187"]
+        labels: {env: production, service: outbox}
+  - job_name: v2-connect-presence
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["${kafka_ip}:9187"]
+        labels: {env: production, service: connect}
+  - job_name: v2-hosts
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["${mysql_ip}:9100"]
+        labels: {env: production, service: mysql}
+      - targets: ["${kafka_ip}:9100"]
+        labels: {env: production, service: kafka}
+      - targets: ["${redis_ip}:9100"]
+        labels: {env: production, service: ai-redis}
+      - targets: ["${gpu_ip}:9100"]
+        labels: {env: production, service: ai-gpu, resource_scope: shared}
+      - targets: ["${plg_ip}:9100"]
+        labels: {env: production, service: plg}

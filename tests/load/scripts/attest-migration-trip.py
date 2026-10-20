@@ -126,9 +126,9 @@ def main():
     parser.add_argument('--path', type=Path, required=True)
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--max-trip-id', type=int, help='For comparing the pre-switch Source prefix on Target')
-    parser.add_argument('--expected-rate', type=int, choices=(10, 30, 100), default=30)
+    parser.add_argument('--expected-rate', type=int, choices=(10, 30, 50, 100), default=30)
     parser.add_argument('--expected-duration', type=int, default=120)
-    parser.add_argument('--expected-mode', choices=('load', 'live', 'original', 'bulk'), default='load')
+    parser.add_argument('--expected-mode', choices=('load', 'live', 'original', 'bulk', 'a-rehearsal'), default='load')
     parser.add_argument('--allow-incomplete', action='store_true',
                         help='Keep aggregate evidence for a stopped or failed run; never implies a passed load')
     args = parser.parse_args()

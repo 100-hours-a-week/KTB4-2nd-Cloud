@@ -1,0 +1,397 @@
+{
+  "uid": "yeodam-v2-mysql-production",
+  "title": "V2 MySQL production",
+  "schemaVersion": 41,
+  "tags": [
+    "yeodam",
+    "production",
+    "mysql",
+    "validation"
+  ],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Exporter and collector health",
+      "description": "Prometheus scrape status and minimum collector success; mysql_up alone does not prove every collector succeeded.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"v2-mysql-production\"}",
+          "legendFormat": "Prometheus scrape"
+        },
+        {
+          "refId": "B",
+          "expr": "min(mysql_exporter_collector_success{job=\"v2-mysql-production\"})",
+          "legendFormat": "Collectors minimum"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bool"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "MySQL connection",
+      "description": "1 means the exporter can authenticate and query status; not end-to-end application success.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mysql_up{job=\"v2-mysql-production\"}",
+          "legendFormat": "{{instance}} {{command}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bool"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Connections and limit",
+      "description": "Connected clients, running threads and configured maximum; compare with Hikari pending.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mysql_global_status_threads_connected{job=\"v2-mysql-production\"}",
+          "legendFormat": "Connected"
+        },
+        {
+          "refId": "B",
+          "expr": "mysql_global_status_threads_running{job=\"v2-mysql-production\"}",
+          "legendFormat": "Running"
+        },
+        {
+          "refId": "C",
+          "expr": "mysql_global_variables_max_connections{job=\"v2-mysql-production\"}",
+          "legendFormat": "Max connections"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Client queries / second",
+      "description": "All client questions, including monitoring requests. Not business requests or commits.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mysql_global_status_questions{job=\"v2-mysql-production\"}[5m])",
+          "legendFormat": "{{instance}} {{command}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Commands / second",
+      "description": "MySQL commands; statements are not affected rows or unique business operations.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mysql_global_status_commands_total{job=\"v2-mysql-production\",command=~\"select|insert|update|delete|commit|rollback\"}[5m])",
+          "legendFormat": "{{instance}} {{command}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Slow queries / second",
+      "description": "Count exceeding current long_query_time; no SQL text or slow log is collected.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mysql_global_status_slow_queries{job=\"v2-mysql-production\"}[5m])",
+          "legendFormat": "{{instance}} {{command}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Slow query threshold",
+      "description": "Current server threshold in seconds; collection does not change this threshold.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mysql_global_variables_long_query_time{job=\"v2-mysql-production\"}",
+          "legendFormat": "{{instance}} {{command}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "InnoDB current row lock waits",
+      "description": "Row locks only; zero does not rule out metadata locks or application waits.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mysql_global_status_innodb_row_lock_current_waits{job=\"v2-mysql-production\"}",
+          "legendFormat": "{{instance}} {{command}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "InnoDB row lock wait time / second",
+      "description": "Cumulative wait time is reported in milliseconds and converted to seconds per second.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mysql_global_status_innodb_row_lock_time{job=\"v2-mysql-production\"}[5m]) / 1000",
+          "legendFormat": "{{instance}} {{command}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "InnoDB row lock waits / second",
+      "description": "Rate of row lock wait events.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mysql_global_status_innodb_row_lock_waits{job=\"v2-mysql-production\"}[5m])",
+          "legendFormat": "{{instance}} {{command}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Buffer pool read hit ratio",
+      "description": "Idle 0/0 is undefined, not perfect cache efficiency.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1 - rate(mysql_global_status_innodb_buffer_pool_reads{job=\"v2-mysql-production\"}[5m]) / rate(mysql_global_status_innodb_buffer_pool_read_requests{job=\"v2-mysql-production\"}[5m])",
+          "legendFormat": "{{instance}} {{command}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Connection errors / second",
+      "description": "Failed connection attempts; investigate cause using DB and app logs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mysql_global_status_aborted_connects{job=\"v2-mysql-production\"}[5m])",
+          "legendFormat": "{{instance}} {{command}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "text",
+      "title": "Scope and interpretation",
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Functional-test MySQL only. Migration replica metrics are in their separate dashboard. Slow query count depends on long_query_time; no statement text, CPU, disk or transaction tracing is collected here. No data is not zero. Correlate with BE Hikari/JVM and ECS CPU/memory at the same time."
+      }
+    }
+  ]
+}

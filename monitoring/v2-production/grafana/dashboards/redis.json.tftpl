@@ -1,0 +1,739 @@
+{
+  "uid": "yeodam-v2-redis",
+  "title": "V2 Redis",
+  "schemaVersion": 41,
+  "tags": [
+    "yeodam",
+    "production",
+    "redis"
+  ],
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "BE Redis: engine CPU",
+      "description": "ElastiCache node metrics, 60-second periods. Missing data is not zero. Authentication cache only.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "production-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ElastiCache",
+          "metricName": "EngineCPUUtilization",
+          "statistic": "Average",
+          "dimensions": {
+            "CacheClusterId": [
+              "${redis_cluster}"
+            ],
+            "CacheNodeId": [
+              "0001"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "EngineCPUUtilization"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "BE Redis: database memory used",
+      "description": "ElastiCache node metrics, 60-second periods. Missing data is not zero. Authentication cache only.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "production-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ElastiCache",
+          "metricName": "DatabaseMemoryUsagePercentage",
+          "statistic": "Average",
+          "dimensions": {
+            "CacheClusterId": [
+              "${redis_cluster}"
+            ],
+            "CacheNodeId": [
+              "0001"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "DatabaseMemoryUsagePercentage"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "BE Redis: connections",
+      "description": "ElastiCache node metrics, 60-second periods. Missing data is not zero. Authentication cache only.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "production-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ElastiCache",
+          "metricName": "CurrConnections",
+          "statistic": "Average",
+          "dimensions": {
+            "CacheClusterId": [
+              "${redis_cluster}"
+            ],
+            "CacheNodeId": [
+              "0001"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "CurrConnections"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "BE Redis: evictions / minute",
+      "description": "ElastiCache node metrics, 60-second periods. Missing data is not zero. Authentication cache only.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "production-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ElastiCache",
+          "metricName": "Evictions",
+          "statistic": "Sum",
+          "dimensions": {
+            "CacheClusterId": [
+              "${redis_cluster}"
+            ],
+            "CacheNodeId": [
+              "0001"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "Evictions"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "BE Redis: free memory and swap",
+      "description": "ElastiCache node metrics, 60-second periods. Missing data is not zero. Authentication cache only.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "production-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ElastiCache",
+          "metricName": "FreeableMemory",
+          "statistic": "Average",
+          "dimensions": {
+            "CacheClusterId": [
+              "${redis_cluster}"
+            ],
+            "CacheNodeId": [
+              "0001"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "FreeableMemory"
+        },
+        {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ElastiCache",
+          "metricName": "SwapUsage",
+          "statistic": "Average",
+          "dimensions": {
+            "CacheClusterId": [
+              "${redis_cluster}"
+            ],
+            "CacheNodeId": [
+              "0001"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "SwapUsage"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "BE Redis: cache hits and misses / minute",
+      "description": "ElastiCache node metrics, 60-second periods. Missing data is not zero. Authentication cache only.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "production-cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ElastiCache",
+          "metricName": "CacheHits",
+          "statistic": "Sum",
+          "dimensions": {
+            "CacheClusterId": [
+              "${redis_cluster}"
+            ],
+            "CacheNodeId": [
+              "0001"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "CacheHits"
+        },
+        {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "${region}",
+          "namespace": "AWS/ElastiCache",
+          "metricName": "CacheMisses",
+          "statistic": "Sum",
+          "dimensions": {
+            "CacheClusterId": [
+              "${redis_cluster}"
+            ],
+            "CacheNodeId": [
+              "0001"
+            ]
+          },
+          "matchExact": true,
+          "period": "60",
+          "id": "",
+          "expression": "",
+          "label": "CacheMisses"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "AI Redis: scrape and connection",
+      "description": "Both should be 1. This is server visibility, not completion of AI jobs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"v2-ai-redis\"}",
+          "legendFormat": "Prometheus scrape"
+        },
+        {
+          "refId": "B",
+          "expr": "redis_up{job=\"v2-ai-redis\"}",
+          "legendFormat": "Redis connection"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bool"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "AI Redis: memory used and limit",
+      "description": "Redis maxmemory is not host or container memory. Current noeviction can reject writes before host memory is exhausted.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "redis_memory_used_bytes{job=\"v2-ai-redis\"}",
+          "legendFormat": "Used"
+        },
+        {
+          "refId": "B",
+          "expr": "redis_memory_max_bytes{job=\"v2-ai-redis\"}",
+          "legendFormat": "Configured maxmemory"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "AI Redis: memory ratio",
+      "description": "Compare with command errors and queue growth; do not force missing values to zero.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "redis_memory_used_bytes{job=\"v2-ai-redis\"} / redis_memory_max_bytes{job=\"v2-ai-redis\"}",
+          "legendFormat": "Used / maxmemory"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "AI Redis: clients",
+      "description": "Blocked clients may include intentional blocking operations; not alone an outage signal.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "redis_connected_clients{job=\"v2-ai-redis\"}",
+          "legendFormat": "Connected"
+        },
+        {
+          "refId": "B",
+          "expr": "redis_blocked_clients{job=\"v2-ai-redis\"}",
+          "legendFormat": "Blocked"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "AI Redis: commands / second",
+      "description": "Includes application and monitoring commands; not unique AI jobs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(redis_commands_processed_total{job=\"v2-ai-redis\"}[5m])",
+          "legendFormat": "Commands"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "AI Redis: rejected connections / second",
+      "description": "Connection limit pressure; separate from authentication errors or OOM command replies.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(redis_rejected_connections_total{job=\"v2-ai-redis\"}[5m])",
+          "legendFormat": "Rejected connections"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "AI Redis: evictions and expirations / second",
+      "description": "With noeviction, zero evictions does not mean writes can still be accepted.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(redis_evicted_keys_total{job=\"v2-ai-redis\"}[5m])",
+          "legendFormat": "Evicted"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(redis_expired_keys_total{job=\"v2-ai-redis\"}[5m])",
+          "legendFormat": "Expired"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "AI Redis: error replies / second",
+      "description": "Aggregate Redis error replies, including OOM or bad commands; determine cause with logs. Not a user-visible failure rate.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(redis_total_error_replies{job=\"v2-ai-redis\"}[5m])",
+          "legendFormat": "Error replies"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "AI Redis: AOF status",
+      "description": "1 means enabled or last operation OK. Not proof of end-to-end job durability or successful backup restore.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "redis_aof_enabled{job=\"v2-ai-redis\"}",
+          "legendFormat": "Enabled"
+        },
+        {
+          "refId": "B",
+          "expr": "redis_aof_last_write_status{job=\"v2-ai-redis\"}",
+          "legendFormat": "Last write OK"
+        },
+        {
+          "refId": "C",
+          "expr": "redis_aof_last_bgrewrite_status{job=\"v2-ai-redis\"}",
+          "legendFormat": "Last rewrite OK"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bool"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "AI Redis: AOF current size",
+      "description": "AOF size only; this is not filesystem free space.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "redis_aof_current_size_bytes{job=\"v2-ai-redis\"}",
+          "legendFormat": "AOF size"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "AI Redis: AOF pending fsync",
+      "description": "Current background fsync backlog. appendfsync always may keep this zero; zero is not a disk-latency measurement.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "redis_aof_pending_bio_fsync{job=\"v2-ai-redis\"}",
+          "legendFormat": "Pending fsync"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "AI Redis: AOF delayed fsync / second",
+      "description": "Delayed fsync counter rate; interpret with fsync policy and AOF write status.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "production-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(redis_aof_delayed_fsync{job=\"v2-ai-redis\"}[5m])",
+          "legendFormat": "Delayed fsync"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 19,
+      "type": "text",
+      "title": "Scope",
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "BE ElastiCache uses CloudWatch; AI Redis uses a local exporter. Refresh is 1 minute. Both use noeviction, so also watch memory and errors. AI job queue lengths and job completion remain in V2 AI jobs. No key scans, key values or full slow-command arguments are exported. Missing data is not zero."
+      }
+    }
+  ]
+}
