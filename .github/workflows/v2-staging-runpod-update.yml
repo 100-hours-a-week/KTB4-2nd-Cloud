@@ -1,4 +1,4 @@
-name: V2 Staging RunPod URL Update
+name: V2 RunPod URL Update
 
 on:
   workflow_dispatch:
@@ -16,13 +16,14 @@ permissions:
   contents: read
   id-token: write
 
-concurrency:
-  group: yeodam-v2-staging-release
-  queue: max
-  cancel-in-progress: false
-
 jobs:
-  update:
+  staging:
+    outputs:
+      parameter-version: ${{ steps.receipt.outputs.parameter-version }}
+    concurrency:
+      group: yeodam-v2-staging-release
+      queue: max
+      cancel-in-progress: false
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -31,7 +32,7 @@ jobs:
       - name: Checkout Cloud main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Validate URL
         env:
@@ -53,12 +54,24 @@ jobs:
         env:
           RUNPOD_URL: ${{ inputs.url }}
           RUNPOD_UPDATE_REPORT: ${{ runner.temp }}/runpod-update.json
-        run: python3 scripts/update-v2-staging-runpod.py "$RUNPOD_URL"
+        run: python3 scripts/update-v2-runpod.py "$RUNPOD_URL" --environment staging
+      - name: Export successful staging version
+        id: receipt
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'runpod-update.json').read_text())
+          if report['status'] != 'healthy' or report['environment'] != 'staging':
+              raise SystemExit('Staging update did not complete')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"parameter-version={int(report['parameterVersion'])}\n")
+          PYTHON
       - name: Preserve update result
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: runpod-update-${{ github.run_id }}-${{ github.run_attempt }}
+          name: runpod-update-staging-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/runpod-update.json
           retention-days: 7
           if-no-files-found: warn
@@ -70,6 +83,63 @@ jobs:
         run: |
           {
             echo '## V2 staging RunPod URL'
+            echo "- Reason: $REASON"
+            echo "- Result: $RESULT"
+            if [[ -f "$RUNNER_TEMP/runpod-update.json" ]]; then
+              echo '```json'
+              cat "$RUNNER_TEMP/runpod-update.json"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+
+  production:
+    needs: staging
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: production
+    concurrency:
+      group: yeodam-v2-production-release
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - name: Checkout the approved workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Configure production-only RunPod credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_V2_PRODUCTION_RUNPOD_UPDATE_ROLE_ARN }}
+          aws-region: ap-northeast-2
+          role-duration-seconds: 3600
+          role-session-name: yeodam-v2-production-runpod
+      - name: Verify and update the production AI API
+        env:
+          RUNPOD_URL: ${{ inputs.url }}
+          STAGING_VERSION: ${{ needs.staging.outputs.parameter-version }}
+          RUNPOD_UPDATE_REPORT: ${{ runner.temp }}/runpod-update.json
+        run: |
+          python3 scripts/update-v2-runpod.py "$RUNPOD_URL" \
+            --environment production --expected-staging-version "$STAGING_VERSION"
+      - name: Preserve production update result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: runpod-update-production-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/runpod-update.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Write production update summary
+        if: always()
+        env:
+          REASON: ${{ inputs.reason }}
+          RESULT: ${{ job.status }}
+        run: |
+          {
+            echo '## V2 production RunPod URL'
             echo "- Reason: $REASON"
             echo "- Result: $RESULT"
             if [[ -f "$RUNNER_TEMP/runpod-update.json" ]]; then

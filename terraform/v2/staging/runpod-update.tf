@@ -15,6 +15,8 @@ resource "aws_iam_role_policy" "runpod_update" {
     ] },
     { Effect = "Allow", Action = ["ssm:PutParameter"], Resource = aws_ssm_parameter.ai_vlm_base_url.arn },
     { Effect = "Allow", Action = ["ecs:DescribeServices", "ecs:UpdateService"], Resource = aws_ecs_service.ai_api.id },
+    { Effect = "Allow", Action = ["ecs:ListTasks"], Resource = "*", Condition = { ArnEquals = { "ecs:cluster" = module.ecs_foundation.cluster_arn } } },
+    { Effect = "Allow", Action = ["ecs:DescribeTasks"], Resource = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/yeodam-v2-staging-app/*" },
     { Effect = "Allow", Action = ["ecs:DescribeTaskDefinition", "ecs:RegisterTaskDefinition"], Resource = "*" },
     { Effect = "Allow", Action = ["iam:PassRole"], Resource = [aws_iam_role.ai_api_execution.arn, aws_iam_role.ai_api_task.arn],
     Condition = { StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" } } },
