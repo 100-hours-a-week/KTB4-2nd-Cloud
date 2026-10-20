@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 from importlib.machinery import SourceFileLoader
 import json
+import re
 from pathlib import Path
 import subprocess
 import time
@@ -42,6 +43,13 @@ def audit(db,run,role,max_id=None):
     return {'rows':rows,'fullRowsSha256':hashlib.sha256((data+'\n').encode()).hexdigest(),'requestProjectionSha256':h.hexdigest(),
             'missingRegions':sum(line.endswith('\tNULL') for line in projection.splitlines())}
 
+def auth_boundary(db,run):
+    position=db.query('target','SHOW BINARY LOG STATUS;').split('\t')[:2]
+    path=Path('/run/yeodam-b383')/run/'auth-handoff.json'
+    path.write_text(json.dumps({'runId':run,'file':position[0],'pos':int(position[1])}));path.chmod(0o600)
+    print(json.dumps({'authTargetBoundary':position}))
+
+
 def ensure_prepared(run):
     root=Path('/run/yeodam-b383')/run
     if not (root/'cutover-ready').exists():raise RuntimeError('Cutover preparation incomplete at fixed deadline')
@@ -60,10 +68,7 @@ def main():
         if a.action=='auth-boundary':
             state=json.loads((BASE/(a.run_id+'.json')).read_text())
             if state['phase']!='source_fenced' or source[2:]!=['1','1'] or target[2:]!=['1','0']:raise RuntimeError('Unsafe auth handoff boundary')
-            position=db.query('target','SHOW BINARY LOG STATUS;').split('\t')[:2]
-            path=Path('/run/yeodam-b383')/a.run_id/'auth-handoff.json'
-            path.write_text(json.dumps({'runId':a.run_id,'file':position[0],'pos':int(position[1])}));path.chmod(0o600)
-            print(json.dumps({'authTargetBoundary':position}))
+            auth_boundary(db,a.run_id)
         elif a.action=='target-position':print(json.dumps({'targetPosition':db.query('target','SHOW BINARY LOG STATUS;')}))
         elif a.action=='preflight':
             if source[2:]!=['0','0'] or target[2:]!=['1','1']:raise RuntimeError('Expected Source Writer and protected Target')
@@ -105,9 +110,10 @@ def main():
                     save(a.run_id,'write_drain_failed',transactionSummary=rows)
                     raise RuntimeError('Source modified transactions remain after write fence')
                 time.sleep(.1)
+            business_gtids=db.query('source',"SELECT REPLACE(@@GLOBAL.gtid_executed,CHAR(10),'');")
             db.query('source',"INSERT INTO yeodam_v1_source.migration_cutover_barrier(run_id) VALUES ('"+a.run_id+"');")
             db.query('source','SET PERSIST super_read_only=ON;',timeout=10)
-            save(a.run_id,'source_fenced',sourcePosition=db.query('source','SHOW BINARY LOG STATUS;'))
+            save(a.run_id,'source_fenced',sourcePosition=db.query('source','SHOW BINARY LOG STATUS;'),sourceBusinessGtids=business_gtids)
         elif a.action=='checkpoint':
             state=json.loads((BASE/(a.run_id+'.json')).read_text());lower=state['events'][0]['at'];smoke=str(uuid5(UUID(a.run_id),'public-b2-smoke'))
             print(json.dumps({'phase':'fixed_checkpoint','runId':a.run_id,'at':time.time(),'authJournalScope':'run including E2E preparation',
@@ -120,7 +126,15 @@ def main():
             if not proof.exists():raise RuntimeError('Missing frozen-tail CDC drain proof')
             value=json.loads(proof.read_text())
             if value.get('runId')!=a.run_id or value.get('equal') is not True:raise RuntimeError('CDC proof does not match Run')
+            required=state.get('sourceBusinessGtids','')
+            if not required or not re.fullmatch('[0-9a-fA-F:,\\-]+',required):raise RuntimeError('Missing frozen business GTID boundary')
+            for kind in ('trips','auth-source'):
+                captured=value.get('sourceOffsets',{}).get(kind,{}).get('gtids','')
+                if not captured or not re.fullmatch('[0-9a-fA-F:,\\-]+',captured):raise RuntimeError('Missing durable CDC GTID history')
+                if db.query('source',"SELECT GTID_SUBSET('"+required+"','"+captured+"');")!='1':raise RuntimeError('Frozen business commits are not durably captured')
+
             if db.query('source','SHOW BINARY LOG STATUS;').split('\t')[:2]!=state['sourcePosition'].split('\t')[:2]:raise RuntimeError('Source changed after the frozen boundary')
+            auth_boundary(db,a.run_id)
             save(a.run_id,'promotion_intent')
             db.query('target','SET PERSIST super_read_only=OFF; SET PERSIST read_only=OFF;')
             db.query('proxy',"UPDATE mysql_servers SET status='ONLINE' WHERE hostgroup_id=20; LOAD MYSQL SERVERS TO RUNTIME; SAVE MYSQL SERVERS TO DISK; INSERT INTO mysql_query_rules(rule_id,active,username,match_digest,destination_hostgroup,apply) VALUES(2376,1,'yeodam_app','.*',20,1); LOAD MYSQL QUERY RULES TO RUNTIME; SAVE MYSQL QUERY RULES TO DISK; UPDATE mysql_users SET default_hostgroup=20 WHERE username='yeodam_app'; LOAD MYSQL USERS TO RUNTIME; SAVE MYSQL USERS TO DISK;")

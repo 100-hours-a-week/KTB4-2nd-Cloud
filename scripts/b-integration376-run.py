@@ -230,7 +230,6 @@ def finish(case,index,state,state_path,load_id,fence_id,started,resume_boundary=
         if drained['Status']=='Success':
             proof=records(drained)[-1]
             cmd="printf '%s' "+shlex.quote(json.dumps(proof))+" > /var/lib/yeodam/b383/"+run+'.cdc-drained.json'
-            cmd+='\npython3 /run/yeodam-b383/b-integration376-control.py auth-boundary --run-id '+run
             cmd+='\npython3 /run/yeodam-b383/b-integration376-control.py promote --run-id '+run
             cmd+='\npython3 /run/yeodam-b383/b-integration376-app.py enable-consumer --run-id '+run
             applied=raw('source',[cmd]);switched=True;old_service=service_start(run)

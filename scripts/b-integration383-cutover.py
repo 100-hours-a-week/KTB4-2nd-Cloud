@@ -40,7 +40,7 @@ def cutover(run,position):
     started=time.time()
     state={'sourcePosition':position}
     n='yeodam-b383-'+run[:8];p='staging.yeodam.migration.b383.'+run;a='staging.yeodam.migration.auth368.b383-'+run
-    audit=consumer('yeodam-b383-boundary-'+run);deadline=time.monotonic()+30
+    audit=consumer('yeodam-b383-boundary-'+run);deadline=time.monotonic()+30;source_offsets={}
     try:
         for topic in [p+'.yeodam_v1_source.migration_cutover_barrier',a+'.source.yeodam_v1_source.migration_cutover_barrier']:
             marker_seen(audit,topic,run,deadline)
@@ -52,7 +52,8 @@ def cutover(run,position):
                 time.sleep(.05)
             else:raise RuntimeError('Source connector stop did not flush')
             offsets=api('/connectors/'+n+'-'+kind+'/offsets').get('offsets',[])
-            if len(offsets)!=1 or not position_at_least(offsets[0]['offset'],state['sourcePosition']):raise RuntimeError('Flushed source position is behind fence')
+            if len(offsets)!=1 or not offsets[0]['offset'].get('gtids'):raise RuntimeError('Durable source checkpoint missing')
+            source_offsets[kind]=offsets[0]['offset']
     finally:audit.close()
     pairs=[('connect-'+n+'-sink',p+'.trips'),('yeodam-auth368-b383-'+run,a+'-encrypted')]
     clients=[consumer(g) for g,_ in pairs];details=[]
@@ -65,7 +66,7 @@ def cutover(run,position):
     finally:
         for c in clients:c.close()
     api('/connectors/'+n+'-sink/stop','PUT')
-    proof={'runId':run,'equal':True,'groups':details,'observedAt':time.time(),'boundaryMethod':'final-binlog-marker-and-graceful-flush','startedAt':started,'finishedAt':time.time(),'elapsedSeconds':time.time()-started}
+    proof={'runId':run,'equal':True,'groups':details,'observedAt':time.time(),'sourceOffsets':source_offsets,'boundaryMethod':'frozen-business-gtids-final-marker-and-graceful-flush','startedAt':started,'finishedAt':time.time(),'elapsedSeconds':time.time()-started}
     print(json.dumps(proof),flush=True)
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--run-id',required=True);p.add_argument('--source-position',required=True);a=p.parse_args()
