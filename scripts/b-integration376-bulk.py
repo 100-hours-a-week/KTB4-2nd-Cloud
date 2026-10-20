@@ -63,8 +63,10 @@ def import_snapshot(run_id,key):
         mysql("SET SESSION sql_log_bin=0; CREATE USER IF NOT EXISTS 'yeodam_cdc_sink'@'10.30.0.174' IDENTIFIED BY '"+password+"' REQUIRE SSL; GRANT CONNECTION_ADMIN ON *.* TO 'yeodam_cdc_sink'@'10.30.0.174'; "+' '.join("GRANT SELECT,INSERT,UPDATE,DELETE ON "+SCHEMA+'.'+t+" TO 'yeodam_cdc_sink'@'10.30.0.174';" for t in ('login_sessions','csrf_tokens')))
         # This file contains only public DDL, installed with the helper bundle.
         ddl=Path('/run/yeodam-b380/journal.sql').read_text()
-        exists=mysql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='"+SCHEMA+"' AND table_name='migration_trip_request_result';")
-        if exists=='0':mysql('SET SESSION sql_log_bin=0; USE '+SCHEMA+'; '+ddl)
+        # Each CREATE is idempotent: an existing trip journal must not suppress a new auth journal.
+        mysql('SET SESSION sql_log_bin=0; USE '+SCHEMA+'; '+ddl)
+        if mysql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='"+SCHEMA+"' AND table_name IN ('migration_trip_request_result','migration_auth_request_result');")!='2':
+            raise RuntimeError('Required migration journals missing; do not proceed to Writer cutover')
         completed=True
         print(json.dumps({'phase':'bulk_imported','runId':run_id,'tables':int(mysql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='"+SCHEMA+"';")),
                           'trips':int(mysql('SELECT COUNT(*) FROM '+SCHEMA+'.trips;')),'sourceFile':info['source_file'],'sourcePosition':int(info['source_position']),

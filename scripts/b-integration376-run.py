@@ -56,6 +56,7 @@ def deploy():
         if host=='target':
             tree=ast.parse((ROOT/'scripts/b2-pilot370-target.py').read_text())
             ddl=next(ast.literal_eval(node.value) for node in tree.body if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='DDL' for t in node.targets))
+            ddl=ddl.replace('CREATE TABLE yeodam_v1_source.migration_trip_request_result', 'CREATE TABLE IF NOT EXISTS yeodam_v1_source.migration_trip_request_result')
             ddl+='\nCREATE TABLE IF NOT EXISTS yeodam_v1_source.migration_auth_request_result(request_id CHAR(64) PRIMARY KEY, encrypted_result MEDIUMTEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);\n'
             commands+=["printf '%s' '"+base64.b64encode(ddl.encode()).decode()+"' | base64 -d > /run/yeodam-b380/journal.sql"]
         if host=='generator':
@@ -123,9 +124,10 @@ def service_start(run):
     return old
 
 def service_stop(old):
-    tasks=ssm.aws('ecs','list-tasks','--cluster',CLUSTER,'--service-name',SERVICE,'--desired-status','RUNNING')['taskArns']
+    # Include tasks already requested to stop: desiredCount/runningCount can be zero while a task drains.
+    tasks=list(set(ssm.aws('ecs','list-tasks','--cluster',CLUSTER,'--service-name',SERVICE,'--desired-status','RUNNING')['taskArns']+ssm.aws('ecs','list-tasks','--cluster',CLUSTER,'--service-name',SERVICE,'--desired-status','STOPPED')['taskArns']))
     ssm.aws('ecs','update-service','--cluster',CLUSTER,'--service',SERVICE,'--task-definition',old,'--desired-count','0')
-    end=time.monotonic()+180
+    end=time.monotonic()+420
     while time.monotonic()<end:
         service=ssm.aws('ecs','describe-services','--cluster',CLUSTER,'--services',SERVICE)['services'][0]
         stopped=not tasks or all(t['lastStatus']=='STOPPED' for t in ssm.aws('ecs','describe-tasks','--cluster',CLUSTER,'--tasks',*tasks)['tasks'])
@@ -206,7 +208,7 @@ def finish(case,index,state,state_path,load_id,fence_id,started,resume_boundary=
             kafka(run,'auth-target',index);kafka(run,'ready-auth-target',index)
             phase('source','b-integration376-control.py',run,'promote')
             phase('source','b-integration376-app.py',run,'start-consumer')
-            switched=True;old_service=service_start(run);checkpoint('switched')
+            switched=True;old_service=service_start(run);checkpoint('switched',originalE2ETaskDefinition=old_service)
         else:checkpoint('cdc_boundary_failed')
     else:checkpoint('fence_failed')
     # Every launched run retains its fixed duration, including strategy failures.
