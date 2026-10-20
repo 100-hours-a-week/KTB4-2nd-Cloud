@@ -31,12 +31,12 @@ mkdir -p "${result_dir}"
 
 export K6_SUMMARY_PATH="${result_dir}/summary.json"
 k6_args=(--no-color)
-if [[ "${script_path}" == scenarios/migration-write.js || "${script_path}" == scenarios/migration-trip-create.js ]]; then
+if [[ "${script_path}" == scenarios/migration-write.js || ( "${script_path}" == scenarios/migration-trip-create.js || "${script_path}" == scenarios/migration-b-integration.js ) ]]; then
   [[ -z "${K6_HTTP_DEBUG:-}" ]] || { echo 'Disable K6_HTTP_DEBUG to keep session credentials out of logs.' >&2; exit 2; }
   event_name="probe-events.jsonl"
-  [[ "${script_path}" != scenarios/migration-trip-create.js ]] || event_name="trip-events.jsonl"
+  [[ "${script_path}" == scenarios/migration-write.js ]] || event_name="trip-events.jsonl"
   k6_args+=(--console-output "${result_dir}/${event_name}" --log-format raw)
-  if [[ "${script_path}" == scenarios/migration-trip-create.js ]]; then
+  if [[ ( "${script_path}" == scenarios/migration-trip-create.js || "${script_path}" == scenarios/migration-b-integration.js ) ]]; then
     # Keep k6's native aggregate when the custom handleSummary output fails.
     k6_args+=(--summary-export "${result_dir}/native-summary.json")
   fi
@@ -73,7 +73,7 @@ network_tx_before="$(network_totals tx)"
 
 set +e
 if [[ -x /usr/bin/time ]] && /usr/bin/time --version 2>&1 | grep -qi 'GNU time'; then
-  if [[ "${script_path}" == scenarios/migration-trip-create.js ]]; then
+  if [[ ( "${script_path}" == scenarios/migration-trip-create.js || "${script_path}" == scenarios/migration-b-integration.js ) ]]; then
     /usr/bin/time --verbose --output="${result_dir}/runner-time.txt" \
       k6 run "${k6_args[@]}" "${script_path}" >"${result_dir}/run.log" 2>&1
     k6_status="$?"
@@ -86,7 +86,7 @@ if [[ -x /usr/bin/time ]] && /usr/bin/time --version 2>&1 | grep -qi 'GNU time';
     k6_status="${PIPESTATUS[0]}"
   fi
 else
-  if [[ "${script_path}" == scenarios/migration-trip-create.js ]]; then
+  if [[ ( "${script_path}" == scenarios/migration-trip-create.js || "${script_path}" == scenarios/migration-b-integration.js ) ]]; then
     k6 run "${k6_args[@]}" "${script_path}" >"${result_dir}/run.log" 2>&1
     k6_status="$?"
   else
@@ -111,7 +111,7 @@ printf '%s\n' \
   "exit_code=${k6_status}" >"${result_dir}/execution.txt"
 
 echo "Result directory: ${result_dir}"
-if [[ "${script_path}" == scenarios/migration-trip-create.js ]]; then
+if [[ ( "${script_path}" == scenarios/migration-trip-create.js || "${script_path}" == scenarios/migration-b-integration.js ) ]]; then
   echo "k6 output saved to ${result_dir}/run.log (last 25 lines):"
   tail -n 25 "${result_dir}/run.log"
 fi

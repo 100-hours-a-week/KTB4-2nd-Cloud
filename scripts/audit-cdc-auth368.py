@@ -24,6 +24,7 @@ COMMIT;"""
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True)
+    parser.add_argument('--mysql-role', choices=('source', 'target'), default='source')
     args = parser.parse_args()
     config = json.loads(Path(args.config).read_text())
     prefix = config['redis']['prefix']
@@ -36,15 +37,29 @@ def main():
                          decode_responses=True, socket_timeout=5)
     seconds, micros = client.time()
     now_ms = seconds * 1000 + micros // 1000
-    result = subprocess.run(['mysql', '--protocol=socket', '--user=root', '--batch',
-                             '--raw', '--skip-column-names', '-e', QUERY],
-                            capture_output=True, text=True, check=True)
+    if args.mysql_role == 'source':
+        result = subprocess.run(['mysql', '--protocol=socket', '--user=root', '--batch',
+                                 '--raw', '--skip-column-names', '-e', QUERY],
+                                capture_output=True, text=True, check=True)
+        sql_rows = result.stdout
+    else:
+        import importlib.util
+        from importlib.machinery import SourceFileLoader
+        loader = SourceFileLoader('auth_audit_target', '/usr/local/sbin/yeodam-staging-db-cutover')
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        database = module.Database('10.30.10.28')
+        try:
+            sql_rows = database.query('target', QUERY, timeout=20)
+        finally:
+            database.close()
     expected = set()
     expected_index = {}
     rows = {'sessions': 0, 'csrf': 0}
     mismatches = {'sessions': 0, 'refresh': 0, 'index': 0, 'csrf': 0,
                   'extra': 0}
-    for line in result.stdout.splitlines():
+    for line in sql_rows.splitlines():
         parts = line.split('\t')
         if parts[0] == 'S' and len(parts) == 5:
             rows['sessions'] += 1
@@ -83,7 +98,7 @@ def main():
             mismatches['index'] += 1
     actual_keys = set(client.scan_iter(match=prefix + '*', count=500))
     mismatches['extra'] = len(actual_keys - expected)
-    report = {'source_rows': rows, 'expected_keys': len(expected),
+    report = {'mysql_role': args.mysql_role, 'source_rows': rows, 'expected_keys': len(expected),
               'actual_keys': len(actual_keys), 'mismatches': mismatches,
               'equal': not any(mismatches.values()) and actual_keys == expected}
     print(json.dumps(report, sort_keys=True))
