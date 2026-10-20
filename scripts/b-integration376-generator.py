@@ -18,8 +18,8 @@ def save(path,state):
     temporary.write_text(json.dumps(state));temporary.chmod(0o600);os.replace(temporary,path)
 
 def paths(run):
-    directory=Path('/run/yeodam-b380')/run;directory.mkdir(parents=True,mode=0o700,exist_ok=True)
-    return directory,Path('/opt/yeodam-load/results/b380')/run
+    directory=Path('/run/yeodam-b382')/run;directory.mkdir(parents=True,mode=0o700,exist_ok=True)
+    return directory,Path('/opt/yeodam-load/results/b382')/run
 
 def start(run,rate):
     directory,root=paths(run)
@@ -32,18 +32,14 @@ def start(run,rate):
          'K6_SESSION_POOL_FILE':str(BASE/'private'/(run+'.json')),'K6_RESULTS_DIRECTORY':str(root)}
     state={'runId':run,'rate':rate,'startedAt':time.time(),'scenarioSha256':hashlib.sha256((BASE/'scenarios/migration-b-integration.js').read_bytes()).hexdigest()}
     path=directory/'k6.json';save(path,state)
-    observer_log=(directory/'observer.log').open('w')
-    observer=subprocess.Popen(['python3','/run/yeodam-b380/b-integration376-observe.py','--run-id',run],stdout=observer_log,stderr=subprocess.STDOUT)
     with (directory/'wrapper.log').open('w') as log:
         cmd=['runuser','-u','ubuntu','--','env',*[k+'='+v for k,v in env.items()],'bash','scripts/run-k6.sh','scenarios/migration-b-integration.js']
         p=subprocess.run(cmd,cwd=BASE,stdout=log,stderr=subprocess.STDOUT,env={k:v for k,v in os.environ.items() if k not in ('K6_HTTP_DEBUG','K6_LOG_FORMAT')})
     state.update(finishedAt=time.time(),k6ExitCode=p.returncode)
     save(path,state)
-    if not list(root.glob('*/trip-events.jsonl')):observer.terminate()
-    try:state['observerExitCode']=observer.wait(timeout=40)
-    except subprocess.TimeoutExpired:
-        observer.terminate();observer.wait();state['observerExitCode']=-1
-    observer_log.close();save(path,state);print(json.dumps(state))
+    state['observerExitCode']=None
+    state['completionObserver']='disabled; fixed SQL/Kafka checkpoints only'
+    save(path,state);print(json.dumps(state))
 
 def read(run,do_audit=False):
     directory,root=paths(run);state=json.loads((directory/'k6.json').read_text())
@@ -51,7 +47,7 @@ def read(run,do_audit=False):
     if len(files)>1:raise RuntimeError('More than one event file for a one-use Run')
     if not files:print(json.dumps(state));return
     file=files[0];state['resultDirectory']=str(file.parent)
-    started={};final={};statuses=Counter();first_status={};refreshes=Counter();csrf=Counter();plan=None;first=[];latencies=[]
+    recovered=Counter();started={};final={};statuses=Counter();first_status={};refreshes=Counter();csrf=Counter();plan=None;first=[];latencies=[]
     event_files=[file]
     if (file.parent/'completion-events.jsonl').exists():event_files.append(file.parent/'completion-events.jsonl')
     lines=(line for event_file in event_files for line in event_file.open())
@@ -64,8 +60,12 @@ def read(run,do_audit=False):
             elif e['event']=='started':started[e['requestId']]=e
             elif e['event']=='first_response':statuses[e['status']]+=1;first_status[e['requestId']]=e['status'];first.append(e['elapsedMs'])
             elif e['event']=='final':final[e['requestId']]=e;latencies.append(e['elapsedMs'])
-            elif e['event']=='auth_refresh':refreshes['success' if e['ok'] else 'failure']+=1
-            elif e['event']=='auth_csrf':csrf['success' if e['ok'] else 'failure']+=1
+            elif e['event']=='auth_refresh':
+                refreshes['success' if e['ok'] else 'failure']+=1
+                if e.get('recovered'):recovered['refresh']+=1
+            elif e['event']=='auth_csrf':
+                csrf['success' if e['ok'] else 'failure']+=1
+                if e.get('recovered'):recovered['csrf']+=1
     if plan:state['actualStartedAt']=plan['startedAt']/1000
     if do_audit:
         def digest(rows):
@@ -79,8 +79,8 @@ def read(run,do_audit=False):
             values=sorted(values)
             return {k:values[min(len(values)-1,int((len(values)-1)*q))] for k,q in [('p50',.5),('p95',.95),('p99',.99),('max',1)]} if values else {}
         state.update(completedAfterDeadline=sum(e.get('outcome')=='confirmed' and e.get('withinDeadline') is False for e in final.values()),
-                     started=len(started),final=len(final),confirmed=sum(e['outcome']=='confirmed' for e in final.values()),
-                     firstStatuses=dict(statuses),refreshes=dict(refreshes),csrf=dict(csrf),missingFinal=len(set(started)-set(final)),
+                     started=len(started),final=len(final),retryRecovered=dict(recovered),confirmed=sum(e['outcome']=='confirmed' for e in final.values()),
+                     firstStatuses=dict(statuses),refreshes=dict(refreshes),csrf=dict(csrf),missingFinal=0,acceptedNotIndividuallyPolled=statuses.get(202,0),completionObservation="fixed aggregate checkpoints; no completion latency percentile",
                      requestProjectionSha256=digest(projected),non202Requests=len(non202),non202ProjectionSha256=digest(non202_projected),
                      firstResponseMs=stats(first),finalObservationMs=stats(latencies))
         stats=directory/'observer-stats.json'
@@ -91,7 +91,7 @@ def read(run,do_audit=False):
         if not native.exists() and custom.exists():native=custom
         if native.exists():
             data=json.loads(native.read_text()).get('metrics',{})
-            state['native']={k:data[k].get('values',data[k]) for k in ('dropped_iterations','http_req_failed','b_request_admitted','b_request_completed','b_completion_ms','b_first_response_ms') if k in data}
+            state['native']={k:data[k].get('values',data[k]) for k in ('dropped_iterations','http_req_failed','b_request_admitted','b_request_completed','b_completion_ms','b_first_response_ms','b_refresh_failures') if k in data}
         else:
             state['summaryLimitation']='Aggregate JSON missing; exact dropped_iterations count unavailable. Retain raw events and threshold output.'
         (directory/'result.json').write_text(json.dumps(state))

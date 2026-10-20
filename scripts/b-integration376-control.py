@@ -10,7 +10,7 @@ import subprocess
 import time
 from uuid import UUID,uuid5
 
-BASE=Path('/var/lib/yeodam/b380')
+BASE=Path('/var/lib/yeodam/b382')
 
 def database():
     loader=SourceFileLoader('b376db','/usr/local/sbin/yeodam-staging-db-cutover')
@@ -39,7 +39,7 @@ def audit(db,run,role,max_id=None):
             'missingRegions':sum(line.endswith('\tNULL') for line in projection.splitlines())}
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('target-position','preflight','fence','promote','audit-source','audit-target','status','resume-source','recover-unpromoted','park-target-pool'));p.add_argument('--run-id',required=True);p.add_argument('--at',type=float);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('checkpoint','target-position','preflight','fence','promote','audit-source','audit-target','status','resume-source','recover-unpromoted','park-target-pool'));p.add_argument('--run-id',required=True);p.add_argument('--at',type=float);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id or '10.30.0.174' not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Wrong host or UUID')
     db=database()
     try:
@@ -55,21 +55,28 @@ def main():
             if s['Replica_IO_Running']!='No' or s['Replica_SQL_Running']!='No':raise RuntimeError('Native replication must be stopped')
             prefix='t'+hashlib.sha256(a.run_id.encode()).hexdigest()[:5]
             if db.query('source',"SELECT COUNT(*) FROM yeodam_v1_source.trips WHERE trip_name LIKE '"+prefix+"%';")!='0':raise RuntimeError('Run trip name prefix already exists')
+            if db.query('source',"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='yeodam_v1_source' AND table_name IN ('migration_trip_request_result','migration_auth_request_result');")!='2':raise RuntimeError('Source journal tables absent; stop before input')
             save(a.run_id,'preflight',sourceRows=int(db.query('source','SELECT COUNT(*) FROM yeodam_v1_source.trips;')),
-                 sourceConnections=int(db.query('source','SELECT @@max_connections;')),targetConnections=int(db.query('target','SELECT @@max_connections;')),
+                 sourceMaxConnections=int(db.query('source','SELECT @@max_connections;')),targetMaxConnections=int(db.query('target','SELECT @@max_connections;')),
+                 sourceConnections=int(db.query('source',"SHOW GLOBAL STATUS LIKE 'Threads_connected';").split('\t')[-1]),targetConnections=int(db.query('target',"SHOW GLOBAL STATUS LIKE 'Threads_connected';").split('\t')[-1]),
                  flywaySource=db.query('source','SELECT version FROM yeodam_v1_source.flyway_schema_history WHERE success=1 ORDER BY installed_rank DESC LIMIT 1;'))
         elif a.action=='fence':
             if a.at is not None:
                 if not 0 <= a.at-time.time() <= 900:raise RuntimeError('Cutover schedule outside this Run')
-                while time.time()<a.at:time.sleep(min(1,a.at-time.time()))
+                while time.time()<a.at:time.sleep(max(0,min(1,a.at-time.time())))
             source,target=db.identity('source'),db.identity('target')
             if source[2:]!=['0','0'] or target[2:]!=['1','0']:raise RuntimeError('Unexpected pre-fence roles')
-            subprocess.run(['python3','/run/yeodam-b380/b-integration376-app.py','queue','--run-id',a.run_id],check=True)
+            subprocess.run(['python3','/run/yeodam-b382/b-integration376-app.py','queue','--run-id',a.run_id],check=True)
             # The read_only transition waits for pre-existing writes; no B2 consumer is opened here.
             db.query('source','SET SESSION lock_wait_timeout=5; SET PERSIST read_only=ON; SET PERSIST super_read_only=ON;',timeout=10)
             if db.query('source','SELECT COUNT(*) FROM information_schema.innodb_trx;')!='0':raise RuntimeError('Source transactions remain after fence')
             max_id=int(db.query('source','SELECT COALESCE(MAX(trip_id),0) FROM yeodam_v1_source.trips;'))
             save(a.run_id,'source_fenced',sourcePosition=db.query('source','SHOW BINARY LOG STATUS;'),sourceMaxTripId=max_id,sourceRun=audit(db,a.run_id,'source'))
+        elif a.action=='checkpoint':
+            state=json.loads((BASE/(a.run_id+'.json')).read_text());lower=state['events'][0]['at'];smoke=str(uuid5(UUID(a.run_id),'public-b2-smoke'))
+            print(json.dumps({'phase':'fixed_checkpoint','runId':a.run_id,'at':time.time(),'authJournalScope':'run including E2E preparation',
+                'tripJournal':db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+") AND request_id!='"+smoke+"' GROUP BY status;"),
+                'authJournalRows':db.query('target',"SELECT COUNT(*) FROM yeodam_v1_source.migration_auth_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+");")}))
         elif a.action=='promote':
             state=json.loads((BASE/(a.run_id+'.json')).read_text())
             if source[2:]!=['1','1'] or target[2:]!=['1','0'] or state['phase']!='source_fenced':raise RuntimeError('Unexpected promotion boundary')

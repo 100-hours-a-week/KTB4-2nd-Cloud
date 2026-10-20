@@ -40,7 +40,7 @@ def raw(host,commands,*,sync=True,bound=1800,allow_failure=False):
 
 def phase(host,script,run,action=None,*extra,sync=True,allow_failure=False):
     args=([action] if action else [])+['--run-id',run,*extra]
-    cmd='python3 /run/yeodam-b380/'+script+' '+shlex.join(args)
+    cmd='python3 /run/yeodam-b382/'+script+' '+shlex.join(args)
     return raw(host,[cmd],sync=sync,allow_failure=allow_failure)
 def records(result):
     values=[]
@@ -51,28 +51,28 @@ def records(result):
 
 def deploy():
     source=['b-integration376-app.py','b-integration376-control.py','b-integration376-auth.py','b-integration376-e2e.py','b-integration376-reset.py','b-integration376-smoke.py']
-    for host,files in [('source',source),('target',['b-integration376-bulk.py','b-integration376-reset.py']),('kafka',['b-integration376-kafka.py']),('generator',['b-integration376-generator.py','b-integration376-observe.py'])]:
+    for host,files in [('source',source),('target',['b-integration376-bulk.py','b-integration376-reset.py']),('kafka',['b-integration376-kafka.py']),('generator',['b-integration376-generator.py'])]:
         commands=[]
-        for name in files:commands+=ssm.deploy('scripts/'+name,'/run/yeodam-b380/'+name)
+        for name in files:commands+=ssm.deploy('scripts/'+name,'/run/yeodam-b382/'+name)
         if host=='source':commands+=ssm.deploy('scripts/audit-cdc-auth368.py','/opt/yeodam-cdc-auth368/audit-cdc-auth368.py')
         if host=='target':
             tree=ast.parse((ROOT/'scripts/b2-pilot370-target.py').read_text())
             ddl=next(ast.literal_eval(node.value) for node in tree.body if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='DDL' for t in node.targets))
             ddl=ddl.replace('CREATE TABLE yeodam_v1_source.migration_trip_request_result', 'CREATE TABLE IF NOT EXISTS yeodam_v1_source.migration_trip_request_result')
             ddl+='\nCREATE TABLE IF NOT EXISTS yeodam_v1_source.migration_auth_request_result(request_id CHAR(64) PRIMARY KEY, encrypted_result MEDIUMTEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);\n'
-            commands+=["printf '%s' '"+base64.b64encode(ddl.encode()).decode()+"' | base64 -d > /run/yeodam-b380/journal.sql"]
+            commands+=["printf '%s' '"+base64.b64encode(ddl.encode()).decode()+"' | base64 -d > /run/yeodam-b382/journal.sql"]
         if host=='generator':
             for name in ('scenarios/migration-b-integration.js','scripts/run-k6.sh'):
                 commands+=ssm.deploy('tests/load/'+name,'/opt/yeodam-load/source/tests/load/'+name)
                 commands+=['chown ubuntu:ubuntu /opt/yeodam-load/source/tests/load/'+name]
-            commands+=ssm.deploy('tests/load/scripts/private-pool-transfer.py','/run/yeodam-b380/pool-transfer.py')
+            commands+=ssm.deploy('tests/load/scripts/private-pool-transfer.py','/run/yeodam-b382/pool-transfer.py')
         raw(host,commands)
     log('artifacts_installed')
 
 def transfer_pool(run):
     # Only encrypted SSM tunnels carry the pool. No credential file is created on Mac.
     sender=raw('source',['python3 /run/yeodam-private-pool-transfer.py send --file /run/yeodam-synthetic-sessions/'+run+'.json --port 18765'],sync=False,bound=150)
-    receiver=raw('generator',['python3 /run/yeodam-b380/pool-transfer.py receive --file /opt/yeodam-load/source/tests/load/private/'+run+'.json --port 18765'],sync=False,bound=150)
+    receiver=raw('generator',['python3 /run/yeodam-b382/pool-transfer.py receive --file /opt/yeodam-load/source/tests/load/private/'+run+'.json --port 18765'],sync=False,bound=150)
     processes=[]
     sockets=[socket.socket(),socket.socket()]
     for sock in sockets:sock.bind(('127.0.0.1',0))
@@ -110,7 +110,7 @@ def transfer_pool(run):
             file.close()
 
 def auth(host_run,action,*,sync=True,role='source',allow_failure=False):
-    command='/opt/yeodam-cdc-auth368/venv/bin/python3 /run/yeodam-b380/b-integration376-auth.py '+action+' --run-id '+host_run+' --mysql-role '+role
+    command='/opt/yeodam-cdc-auth368/venv/bin/python3 /run/yeodam-b382/b-integration376-auth.py '+action+' --run-id '+host_run+' --mysql-role '+role
     return raw('source',[command],sync=sync,allow_failure=allow_failure)
 
 def service_start(run):
@@ -147,7 +147,7 @@ def service_stop(old):
 
 def pause_auth(run):
     # Consumer is an owned systemd transient unit; signal closes and commits cleanly.
-    raw('source',['systemctl stop yeodam-b380-auth-'+run[:8]+'.service'])
+    raw('source',['systemctl stop yeodam-b382-auth-'+run[:8]+'.service'])
 
 def kafka(run,action,index,**kwargs):return phase('kafka','b-integration376-kafka.py',run,action,'--index',str(index),**kwargs)
 def sleep_until(at):
@@ -204,8 +204,10 @@ def finish(case,index,state,state_path,load_id,fence_id,started,resume_boundary=
         state.update(phase=phase_name,**values);state_path.write_text(json.dumps(state,indent=2));log(phase_name,runId=run,rate=rate,**values)
     if not resume_boundary:
         kafka(run,'sink',index)
-        unit='yeodam-b380-auth-'+run[:8]
-        raw('source',['systemd-run --unit='+unit+' --property=Type=exec /opt/yeodam-cdc-auth368/venv/bin/python3 /run/yeodam-b380/b-integration376-auth.py consume --run-id '+run])
+        unit='yeodam-b382-auth-'+run[:8]
+        raw('source',['systemd-run --unit='+unit+' --property=Type=exec /opt/yeodam-cdc-auth368/venv/bin/python3 /run/yeodam-b382/b-integration376-auth.py consume --run-id '+run])
+        phase('source','b-integration376-app.py',run,'start-consumer')
+        raw('source',["python3 - <<'READY'\nimport time,urllib.request\nend=time.monotonic()+100\nwhile time.monotonic()<end:\n try:\n  if urllib.request.urlopen('http://127.0.0.1:18081/api/actuator/health',timeout=2).status==200:print('CONSUMER_READY_APPLY_DISABLED');break\n except Exception:pass\n time.sleep(2)\nelse:raise RuntimeError('Consumer preparation failed')\nREADY"])
         checkpoint('bulk_and_cdc_started',snapshotMarker=marker)
     fence=wait('source',fence_id,bound=500,allow_failure=True)
     switched=False;old_service=None
@@ -214,10 +216,10 @@ def finish(case,index,state,state_path,load_id,fence_id,started,resume_boundary=
         drained=phase('kafka','b-integration376-kafka.py',run,'drain','--index',str(index),'--source-file',position[0],'--source-position',position[1],'--deadline',str(started+900),allow_failure=True)
         if drained['Status']=='Success':
             proof=records(drained)[-1]
-            raw('source',["printf '%s' "+shlex.quote(json.dumps(proof))+" > /var/lib/yeodam/b380/"+run+'.cdc-drained.json'])
+            raw('source',["printf '%s' "+shlex.quote(json.dumps(proof))+" > /var/lib/yeodam/b382/"+run+'.cdc-drained.json'])
             kafka(run,'auth-target',index);kafka(run,'ready-auth-target',index)
             phase('source','b-integration376-control.py',run,'promote')
-            phase('source','b-integration376-app.py',run,'start-consumer')
+            phase('source','b-integration376-app.py',run,'enable-consumer')
             switched=True;old_service=service_start(run);checkpoint('switched',originalE2ETaskDefinition=old_service)
         else:checkpoint('cdc_boundary_failed')
     else:checkpoint('fence_failed')
@@ -225,25 +227,29 @@ def finish(case,index,state,state_path,load_id,fence_id,started,resume_boundary=
     load=wait('generator',load_id,bound=1000,allow_failure=True)
     result=records(phase('generator','b-integration376-generator.py',run,'audit'))[-1]
     checkpoint('load_finished',loadResult=result)
-    db_observation=phase('source','b-integration376-control.py',run,'audit-target',allow_failure=True)
-    checkpoint('post_load_db_observation',database=records(db_observation))
-    v1_e2e=phase('source','b-integration376-e2e.py',run,'v1',allow_failure=True)
-    checkpoint('v1_e2e_recorded',e2e=records(v1_e2e))
-    e2e_refresh=phase('source','b-integration376-e2e.py',run,'refresh',allow_failure=True)
+    # Fixed checkpoint, no per-request completion polling. E2E is scheduled independently from SQL audits.
     if switched:
-        # Freeze B2/auth command application before taking the final CDC boundary.
+        checkpoint_at=result['finishedAt']+120
+        v1_id=phase('source','b-integration376-e2e.py',run,'v1','--at',str(checkpoint_at),sync=False)
+        e2e_refresh=phase('source','b-integration376-e2e.py',run,'refresh',allow_failure=True)
+        v2_id=phase('source','b-integration376-e2e.py',run,'e2e','--route-header',ROUTE,'--at',str(checkpoint_at),sync=False)
+        checkpoint_id=raw('source',["python3 - <<'POINT'\nimport time,subprocess\nat="+str(checkpoint_at)+"\nwhile time.time()<at:time.sleep(max(0,min(.2,at-time.time())))\nsubprocess.run(['python3','/run/yeodam-b382/b-integration376-control.py','checkpoint','--run-id','"+run+"'],check=True)\nPOINT"],sync=False)
+        audit_started=time.time()
+        auth_result=auth(run,'audit',role='target',allow_failure=True)
+        audit_finished=time.time()
+        checkpoint('auth_before_e2e',auth=records(auth_result),authAuditStartedAt=audit_started,authAuditFinishedAt=audit_finished)
+        v1_e2e=wait('source',v1_id,allow_failure=True)
+        e2e=wait('source',v2_id,allow_failure=True)
+        checkpoint('e2e_recorded',e2e=records(e2e),v1E2E=records(v1_e2e),freshCredentialPreparation=records(e2e_refresh),fixedCheckpoint=records(wait('source',checkpoint_id,allow_failure=True)),authAuditBeforeE2E=audit_finished<min([v.get('startedAt',0) for v in records(e2e)+records(v1_e2e)] or [0]))
         phase('source','b-integration376-app.py',run,'stop-consumer')
         target_position=records(phase('source','b-integration376-control.py',run,'target-position'))[-1]['targetPosition'].split('\t')
-        phase('kafka','b-integration376-kafka.py',run,'drain-target','--index',str(index),'--source-file',target_position[0],'--source-position',target_position[1],'--deadline',str(time.time()+120))
+        drained=phase('kafka','b-integration376-kafka.py',run,'drain-target','--index',str(index),'--source-file',target_position[0],'--source-position',target_position[1],'--deadline',str(time.time()+120),allow_failure=True)
         pause_auth(run)
-        auth_result=auth(run,'audit',role='target',allow_failure=True)
-        db_result=phase('source','b-integration376-control.py',run,'audit-target')
-        checkpoint('final_data_audited',auth=records(auth_result),database=records(db_result))
-        sleep_until(result.get('finishedAt',time.time())+120)
-        e2e=phase('source','b-integration376-e2e.py',run,'e2e','--route-header',ROUTE,allow_failure=True)
-        checkpoint('e2e_recorded',e2e=records(e2e),v1E2E=records(v1_e2e))
+        db_result=phase('source','b-integration376-control.py',run,'audit-target',allow_failure=True)
+        checkpoint('final_data_audited',auth=records(auth_result),database=records(db_result),targetAuthBoundaryStatus=drained['Status'])
         service_stop(old_service)
     else:
+        phase('source','b-integration376-app.py',run,'stop-consumer')
         # Keep failed queues and offsets. Reopen Source only if promotion never began.
         for kind in ('trips','auth-source','sink'):
             kafka(run,'stop-'+kind,index,allow_failure=True)
@@ -252,7 +258,7 @@ def finish(case,index,state,state_path,load_id,fence_id,started,resume_boundary=
         checkpoint('strategy_failed_unpromoted')
     phase('source','b-integration376-app.py',run,'restore-route')
     phase('source','b-integration376-app.py',run,'stop-app')
-    raw('source',['rm -f -- /run/yeodam-b380/'+run+'/container-auth/aes.hex /run/yeodam-b380/'+run+'/container-auth/redis.json'])
+    raw('source',['rm -f -- /run/yeodam-b382/'+run+'/container-auth/aes.hex /run/yeodam-b382/'+run+'/container-auth/redis.json'])
     if switched:
         # Both sides are preserved before the between-run maintenance copy.
         phase('source','b-integration376-control.py',run,'park-target-pool')
@@ -263,7 +269,7 @@ def finish(case,index,state,state_path,load_id,fence_id,started,resume_boundary=
     cleanup=subprocess.run(['python3',str(ROOT/'tests/load/scripts/run-synthetic-pool-ssm.py'),'cleanup-existing','--instance-id',ssm.HOSTS['source'],'--run-id',run,'--dataset-id',DATASET],capture_output=True,text=True)
     if cleanup.returncode:raise RuntimeError('Scoped session cleanup failed; preserve files and investigate')
     raw('generator',['rm -- /opt/yeodam-load/source/tests/load/private/'+run+'.json'])
-    raw('source',['rm -f -- /run/yeodam-b380/'+run+'/e2e-pool.json /run/yeodam-b380/'+run+'/e2e-v1-pool.json'])
+    raw('source',['rm -f -- /run/yeodam-b382/'+run+'/e2e-pool.json /run/yeodam-b382/'+run+'/e2e-v1-pool.json'])
     checkpoint('completed',switched=switched)
     return state
 
