@@ -102,7 +102,9 @@ def main():
                 report['sourceBoundaryEqual']=report['sourceBoundary']==state['sourceRun']
                 lower=state['events'][0]['at']
                 smoke=str(uuid5(UUID(a.run_id),'public-b2-smoke'))
-                report['journal']=db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+") AND request_id!='"+smoke+"' GROUP BY status;")
+                reopened=[event['at'] for event in state['events'] if event['phase']=='source_reopened']
+                upper=(' AND created_at<=FROM_UNIXTIME('+str(reopened[-1])+')') if reopened else ''
+                report['journal']=db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+")"+upper+" AND request_id!='"+smoke+"' GROUP BY status;")
                 report['publicSmokeJournal']=db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE request_id='"+smoke+"' GROUP BY status;")
             print(json.dumps(report))
         else:print(json.dumps({'source':source[2:],'target':target[2:],'proxy':db.query('proxy',"SELECT DISTINCT default_hostgroup FROM runtime_mysql_users WHERE username='yeodam_app';")}))

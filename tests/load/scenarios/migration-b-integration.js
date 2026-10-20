@@ -18,8 +18,9 @@ const pool = new SharedArray('b376-sessions', () => {
   const p = JSON.parse(open(requiredEnv('K6_SESSION_POOL_FILE')));
   return [p, ...p.sessions];
 });
-if (pool[0].runId !== runId || pool[0].datasetId !== dataset || pool.length - 1 < vus + 10 ||
-    Date.parse(pool[0].expiresAt) < Date.now() + 1080000) throw new Error('Pool identity, count or remaining lifetime invalid');
+if (pool[0].runId !== runId || pool[0].datasetId !== dataset || pool.length - 1 < vus + 10) {
+  throw new Error('Pool identity or count invalid');
+}
 const admitted = new Rate('b_request_admitted');
 const accepted = new Counter('b_request_202');
 const authFailures = new Counter('b_refresh_failures');
@@ -34,6 +35,10 @@ export const options = {
   thresholds: { b_request_admitted: ['rate==1'], dropped_iterations: ['count==0'] },
 };
 export function setup() {
+  // k6 initializes the module again for handleSummary after the timed run.
+  if (Date.parse(pool[0].expiresAt) < Date.now() + 1080000) {
+    throw new Error('Pool remaining lifetime invalid at load start');
+  }
   console.log(JSON.stringify({ source: 'migration-b376', event: 'run_started', runId,
     rate, duration, vus, startedAt: Date.now(), completionDeadlineSeconds: 30, pollSeconds: 5 }));
 }

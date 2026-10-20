@@ -51,7 +51,7 @@ def read(run,do_audit=False):
     if len(files)>1:raise RuntimeError('More than one event file for a one-use Run')
     if not files:print(json.dumps(state));return
     file=files[0];state['resultDirectory']=str(file.parent)
-    started={};final={};statuses=Counter();refreshes=Counter();plan=None;first=[];latencies=[]
+    started={};final={};statuses=Counter();first_status={};refreshes=Counter();plan=None;first=[];latencies=[]
     event_files=[file]
     if (file.parent/'completion-events.jsonl').exists():event_files.append(file.parent/'completion-events.jsonl')
     lines=(line for event_file in event_files for line in event_file.open())
@@ -62,7 +62,7 @@ def read(run,do_audit=False):
             if e.get('runId')!=run:continue
             if e['event']=='run_started':plan=e
             elif e['event']=='started':started[e['requestId']]=e
-            elif e['event']=='first_response':statuses[e['status']]+=1;first.append(e['elapsedMs'])
+            elif e['event']=='first_response':statuses[e['status']]+=1;first_status[e['requestId']]=e['status'];first.append(e['elapsedMs'])
             elif e['event']=='final':final[e['requestId']]=e;latencies.append(e['elapsedMs'])
             elif e['event']=='auth_refresh':refreshes['success' if e['ok'] else 'failure']+=1
     if plan:state['actualStartedAt']=plan['startedAt']/1000
@@ -72,19 +72,27 @@ def read(run,do_audit=False):
             for row in sorted(rows):h.update(json.dumps(row,ensure_ascii=False,separators=(',',':')).encode());h.update(b'\n')
             return h.hexdigest()
         projected=[(str(e['userId']),e['tripName'],e['request']['startDate'],e['request']['endDate'],'PROCESSING',str(code)) for e in started.values() for code in e['request']['regionCodes']]
+        non202=[e for e in started.values() if first_status.get(e['requestId']) in (0,201)]
+        non202_projected=[(str(e['userId']),e['tripName'],e['request']['startDate'],e['request']['endDate'],'PROCESSING',str(code)) for e in non202 for code in e['request']['regionCodes']]
         def stats(values):
             values=sorted(values)
             return {k:values[min(len(values)-1,int((len(values)-1)*q))] for k,q in [('p50',.5),('p95',.95),('p99',.99),('max',1)]} if values else {}
         state.update(completedAfterDeadline=sum(e.get('outcome')=='confirmed' and e.get('withinDeadline') is False for e in final.values()),
                      started=len(started),final=len(final),confirmed=sum(e['outcome']=='confirmed' for e in final.values()),
                      firstStatuses=dict(statuses),refreshes=dict(refreshes),missingFinal=len(set(started)-set(final)),
-                     requestProjectionSha256=digest(projected),firstResponseMs=stats(first),finalObservationMs=stats(latencies))
+                     requestProjectionSha256=digest(projected),non202Requests=len(non202),non202ProjectionSha256=digest(non202_projected),
+                     firstResponseMs=stats(first),finalObservationMs=stats(latencies))
         stats=directory/'observer-stats.json'
         if stats.exists():state['completionObserver']=json.loads(stats.read_text())
         native=file.parent/'native-summary.json'
+        custom=file.parent/'summary.json'
+        state['summaryArtifacts']={'nativeExists':native.exists(),'customExists':custom.exists()}
+        if not native.exists() and custom.exists():native=custom
         if native.exists():
             data=json.loads(native.read_text()).get('metrics',{})
             state['native']={k:data[k].get('values',data[k]) for k in ('dropped_iterations','http_req_failed','b_request_admitted','b_request_completed','b_completion_ms','b_first_response_ms') if k in data}
+        else:
+            state['summaryLimitation']='Aggregate JSON missing; exact dropped_iterations count unavailable. Retain raw events and threshold output.'
         (directory/'result.json').write_text(json.dumps(state))
     print(json.dumps(state))
 if __name__=='__main__':
