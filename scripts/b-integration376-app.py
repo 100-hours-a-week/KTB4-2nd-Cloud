@@ -50,6 +50,8 @@ def create(run,consumer):
       'MIGRATION_AUTH_KEY_FILE':'/run/migration-auth/aes.hex',
       'MIGRATION_AUTH_REDIS_FILE':'/run/migration-auth/redis.json',
       'MIGRATION_TRIP_CONSUMER_ENABLED':'false','SPRING_FLYWAY_ENABLED':'false',
+      # A synchronous Kafka reply wait must not retain a request-scoped JPA connection.
+      'SPRING_JPA_OPEN_IN_VIEW':'false',
       'JAVA_TOOL_OPTIONS':'-Xms128m -Xmx512m -XX:ActiveProcessorCount=2'})
     hc={'NetworkMode':'yeodam-app-network','RestartPolicy':{'Name':'no'},
         'PortBindings':{'8080/tcp':[{'HostIp':'127.0.0.1','HostPort':'18081' if consumer else '8080'}]}}
