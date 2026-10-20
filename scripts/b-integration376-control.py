@@ -10,7 +10,7 @@ import subprocess
 import time
 from uuid import UUID,uuid5
 
-BASE=Path('/var/lib/yeodam/b382')
+BASE=Path('/var/lib/yeodam/b383')
 
 def database():
     loader=SourceFileLoader('b376db','/usr/local/sbin/yeodam-staging-db-cutover')
@@ -21,7 +21,11 @@ def save(run,phase,**values):
     BASE.mkdir(mode=0o700,parents=True,exist_ok=True);path=BASE/(run+'.json')
     value=json.loads(path.read_text()) if path.exists() else {'runId':run,'events':[]}
     value.update(phase=phase,**values);value['events'].append({'phase':phase,'at':time.time()})
-    path.write_text(json.dumps(value));path.chmod(0o600)
+    import os
+    temporary=path.with_suffix('.next')
+    with temporary.open('w') as f:
+        f.write(json.dumps(value));f.flush();os.fsync(f.fileno())
+    temporary.chmod(0o600);os.replace(temporary,path)
     print(json.dumps({'phase':phase,'runId':run,**values}),flush=True)
 
 def audit(db,run,role,max_id=None):
@@ -39,13 +43,20 @@ def audit(db,run,role,max_id=None):
             'missingRegions':sum(line.endswith('\tNULL') for line in projection.splitlines())}
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('checkpoint','target-position','preflight','fence','promote','audit-source','audit-target','status','resume-source','recover-unpromoted','park-target-pool'));p.add_argument('--run-id',required=True);p.add_argument('--at',type=float);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('checkpoint','target-position','preflight','fence','promote','audit-source','audit-target','status','resume-source','recover-unpromoted','park-target-pool','auth-boundary'));p.add_argument('--run-id',required=True);p.add_argument('--at',type=float);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id or '10.30.0.174' not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Wrong host or UUID')
     db=database()
     try:
         source,target=db.identity('source'),db.identity('target')
         if source[0]!='1' or target[0]!='2':raise RuntimeError('Unexpected database identity')
-        if a.action=='target-position':print(json.dumps({'targetPosition':db.query('target','SHOW BINARY LOG STATUS;')}))
+        if a.action=='auth-boundary':
+            state=json.loads((BASE/(a.run_id+'.json')).read_text())
+            if state['phase']!='source_fenced' or source[2:]!=['1','1'] or target[2:]!=['1','0']:raise RuntimeError('Unsafe auth handoff boundary')
+            position=db.query('target','SHOW BINARY LOG STATUS;').split('\t')[:2]
+            path=Path('/run/yeodam-b383')/a.run_id/'auth-handoff.json'
+            path.write_text(json.dumps({'runId':a.run_id,'file':position[0],'pos':int(position[1])}));path.chmod(0o600)
+            print(json.dumps({'authTargetBoundary':position}))
+        elif a.action=='target-position':print(json.dumps({'targetPosition':db.query('target','SHOW BINARY LOG STATUS;')}))
         elif a.action=='preflight':
             if source[2:]!=['0','0'] or target[2:]!=['1','1']:raise RuntimeError('Expected Source Writer and protected Target')
             if db.query('proxy',"SELECT DISTINCT default_hostgroup FROM runtime_mysql_users WHERE username='yeodam_app';")!='10':raise RuntimeError('ProxySQL is not on Source')
@@ -56,6 +67,8 @@ def main():
             prefix='t'+hashlib.sha256(a.run_id.encode()).hexdigest()[:5]
             if db.query('source',"SELECT COUNT(*) FROM yeodam_v1_source.trips WHERE trip_name LIKE '"+prefix+"%';")!='0':raise RuntimeError('Run trip name prefix already exists')
             if db.query('source',"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='yeodam_v1_source' AND table_name IN ('migration_trip_request_result','migration_auth_request_result');")!='2':raise RuntimeError('Source journal tables absent; stop before input')
+            if db.query('source',"SELECT COUNT(*) FROM mysql.global_grants WHERE USER='yeodam_app' AND PRIV IN ('CONNECTION_ADMIN','SYSTEM_VARIABLES_ADMIN');")!='0' or db.query('source',"SELECT COUNT(*) FROM mysql.user WHERE User='yeodam_app' AND Super_priv='Y';")!='0':raise RuntimeError('Application can bypass read_only; stop before input')
+            db.query('source',"CREATE TABLE IF NOT EXISTS yeodam_v1_source.migration_cutover_barrier(run_id CHAR(36) PRIMARY KEY,created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6)); GRANT SELECT ON yeodam_v1_source.migration_cutover_barrier TO 'yeodam_cdc_test'@'10.30.10.95';")
             save(a.run_id,'preflight',sourceRows=int(db.query('source','SELECT COUNT(*) FROM yeodam_v1_source.trips;')),
                  sourceMaxConnections=int(db.query('source','SELECT @@max_connections;')),targetMaxConnections=int(db.query('target','SELECT @@max_connections;')),
                  sourceConnections=int(db.query('source',"SHOW GLOBAL STATUS LIKE 'Threads_connected';").split('\t')[-1]),targetConnections=int(db.query('target',"SHOW GLOBAL STATUS LIKE 'Threads_connected';").split('\t')[-1]),
@@ -66,12 +79,26 @@ def main():
                 while time.time()<a.at:time.sleep(max(0,min(1,a.at-time.time())))
             source,target=db.identity('source'),db.identity('target')
             if source[2:]!=['0','0'] or target[2:]!=['1','0']:raise RuntimeError('Unexpected pre-fence roles')
-            subprocess.run(['python3','/run/yeodam-b382/b-integration376-app.py','queue','--run-id',a.run_id],check=True)
-            # The read_only transition waits for pre-existing writes; no B2 consumer is opened here.
-            db.query('source','SET SESSION lock_wait_timeout=5; SET PERSIST read_only=ON; SET PERSIST super_read_only=ON;',timeout=10)
-            if db.query('source','SELECT COUNT(*) FROM information_schema.innodb_trx;')!='0':raise RuntimeError('Source transactions remain after fence')
-            max_id=int(db.query('source','SELECT COALESCE(MAX(trip_id),0) FROM yeodam_v1_source.trips;'))
-            save(a.run_id,'source_fenced',sourcePosition=db.query('source','SHOW BINARY LOG STATUS;'),sourceMaxTripId=max_id,sourceRun=audit(db,a.run_id,'source'))
+            save(a.run_id,'fence_intent')
+            subprocess.run(['python3','/run/yeodam-b383/b-integration376-app.py','queue','--run-id',a.run_id],check=True)
+            save(a.run_id,'requests_queued')
+            # read_only blocks application writers; root alone emits the final CDC boundary.
+            db.query('source','SET SESSION lock_wait_timeout=5; SET PERSIST read_only=ON;',timeout=10)
+            save(a.run_id,'source_read_only')
+            end=time.monotonic()+10
+            while True:
+                rows=db.query('source','SELECT trx_is_read_only,COUNT(*),SUM(trx_rows_modified) FROM information_schema.innodb_trx GROUP BY trx_is_read_only;')
+                # trx_is_read_only=0 also includes ordinary SELECT transactions. A nonzero
+                # modified-row count is actual prior writing, while read_only excludes new writes.
+                modified=sum(int(line.split('\t')[2] or 0) for line in rows.splitlines()) if rows else 0
+                if modified==0:break
+                if time.monotonic()>end:
+                    save(a.run_id,'write_drain_failed',transactionSummary=rows)
+                    raise RuntimeError('Source modified transactions remain after write fence')
+                time.sleep(.1)
+            db.query('source',"INSERT INTO yeodam_v1_source.migration_cutover_barrier(run_id) VALUES ('"+a.run_id+"');")
+            db.query('source','SET PERSIST super_read_only=ON;',timeout=10)
+            save(a.run_id,'source_fenced',sourcePosition=db.query('source','SHOW BINARY LOG STATUS;'))
         elif a.action=='checkpoint':
             state=json.loads((BASE/(a.run_id+'.json')).read_text());lower=state['events'][0]['at'];smoke=str(uuid5(UUID(a.run_id),'public-b2-smoke'))
             print(json.dumps({'phase':'fixed_checkpoint','runId':a.run_id,'at':time.time(),'authJournalScope':'run including E2E preparation',
@@ -94,16 +121,21 @@ def main():
             db.query('proxy',"UPDATE mysql_servers SET status='OFFLINE_SOFT' WHERE hostgroup_id=20; LOAD MYSQL SERVERS TO RUNTIME; SAVE MYSQL SERVERS TO DISK;")
             print('TARGET_PROXY_POOL_PARKED')
         elif a.action in ('resume-source','recover-unpromoted'):
-            if source[2:]!=['1','1'] or target[2:] not in (['1','1'],['1','0']):raise RuntimeError('Cannot reopen Source while Target may be an application Writer')
+            if source[2:] not in (['0','0'],['1','0'],['1','1']) or target[2:] not in (['1','1'],['1','0']):raise RuntimeError('Cannot reopen Source while Target may be an application Writer')
             if a.action=='recover-unpromoted':
                 state=json.loads((BASE/(a.run_id+'.json')).read_text())
-                if state['phase']!='source_fenced':raise RuntimeError('Promotion may have started; keep both sides protected')
+                if state['phase'] not in ('preflight','fence_intent','requests_queued','source_read_only','write_drain_failed','source_fenced'):raise RuntimeError('Promotion may have started; keep both sides protected')
+                if any(e['phase'] in ('promotion_intent','switched') for e in state['events']):raise RuntimeError('Promotion evidence present; keep Source protected')
+                if db.query('proxy',"SELECT DISTINCT default_hostgroup FROM runtime_mysql_users WHERE username='yeodam_app';")!='10':raise RuntimeError('Source route no longer authoritative')
             db.query('target','SET PERSIST read_only=ON; SET PERSIST super_read_only=ON;')
             db.query('proxy',"DELETE FROM mysql_query_rules WHERE rule_id=2376; LOAD MYSQL QUERY RULES TO RUNTIME; SAVE MYSQL QUERY RULES TO DISK; UPDATE mysql_users SET default_hostgroup=10 WHERE username='yeodam_app'; LOAD MYSQL USERS TO RUNTIME; SAVE MYSQL USERS TO DISK; UPDATE mysql_servers SET status='ONLINE' WHERE hostgroup_id=10; UPDATE mysql_servers SET status='OFFLINE_SOFT' WHERE hostgroup_id=20; LOAD MYSQL SERVERS TO RUNTIME; SAVE MYSQL SERVERS TO DISK;")
             db.query('source','SET PERSIST super_read_only=OFF; SET PERSIST read_only=OFF;')
             save(a.run_id,'source_reopened')
         elif a.action.startswith('audit-'):
             state=json.loads((BASE/(a.run_id+'.json')).read_text());role=a.action[6:]
+            if role=='source':
+                state.update(sourceMaxTripId=int(db.query('source','SELECT COALESCE(MAX(trip_id),0) FROM yeodam_v1_source.trips;')),sourceRun=audit(db,a.run_id,'source'))
+                (BASE/(a.run_id+'.json')).write_text(json.dumps(state))
             report={'runId':a.run_id,'role':role,'all':audit(db,a.run_id,role)}
             if role=='target' and state.get('sourceMaxTripId'):
                 report['sourceBoundary']=audit(db,a.run_id,'target',state['sourceMaxTripId'])

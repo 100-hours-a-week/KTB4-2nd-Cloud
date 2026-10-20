@@ -18,8 +18,8 @@ def save(path,state):
     temporary.write_text(json.dumps(state));temporary.chmod(0o600);os.replace(temporary,path)
 
 def paths(run):
-    directory=Path('/run/yeodam-b382')/run;directory.mkdir(parents=True,mode=0o700,exist_ok=True)
-    return directory,Path('/opt/yeodam-load/results/b382')/run
+    directory=Path('/run/yeodam-b383')/run;directory.mkdir(parents=True,mode=0o700,exist_ok=True)
+    return directory,Path('/opt/yeodam-load/results/b383')/run
 
 def start(run,rate):
     directory,root=paths(run)

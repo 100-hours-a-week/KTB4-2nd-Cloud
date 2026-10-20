@@ -13,9 +13,9 @@ import re
 from urllib.parse import quote
 from uuid import UUID
 
-IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:2fffa519662a719d0a8b16e5a59c19b100708715ab42297e39b58146189160f5'
+IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:a3a8ce329fea539e894d1c301e06b3885d0886d28936baa6692cdd60c9b049da'
 ORIGINAL='yeodam-app-backend-1'
-BASE=Path('/var/lib/yeodam/b382')
+BASE=Path('/var/lib/yeodam/b383')
 class Connection(http.client.HTTPConnection):
     def connect(self):
         self.sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);self.sock.connect('/var/run/docker.sock')
@@ -26,27 +26,27 @@ def docker(method,path,data=None):
     return json.loads(b) if b else {}
 def inspect(name):return docker('GET','/containers/'+quote(name,safe='')+'/json')
 def mode(run,value):
-    d=Path('/run/yeodam-b382')/run;d.mkdir(mode=0o755,exist_ok=True)
+    d=Path('/run/yeodam-b383')/run;d.mkdir(mode=0o755,exist_ok=True)
     d.chmod(0o755)
     p=d/'mode';q=d/'mode.next'
     with q.open('w') as f:f.write(value+'\n');f.flush();os.fsync(f.fileno())
     q.chmod(0o644);os.replace(q,p)
     print(json.dumps({'mode':value,'runId':run}),flush=True)
 def create(run,consumer):
-    role='consumer' if consumer else 'app';name='yeodam-b382-'+role
+    role='consumer' if consumer else 'app';name='yeodam-b383-'+role
     base=inspect(ORIGINAL)
     if 'migration-probe-v1-sha-816d69ba' not in base['Config']['Image']:raise RuntimeError('Original V1 image differs')
     env=dict(s.split('=',1) for s in base['Config']['Env'] if '=' in s)
     env.update({'MIGRATION_KAFKA_BOOTSTRAP_SERVERS':'10.30.10.95:9092',
-      'MIGRATION_TRIP_TOPIC':'staging.yeodam.migration.b382.'+run+'.requests',
-      'MIGRATION_TRIP_CONSUMER_GROUP':'yeodam-b382-'+run,
+      'MIGRATION_TRIP_TOPIC':'staging.yeodam.migration.b383.'+run+'.requests',
+      'MIGRATION_TRIP_CONSUMER_GROUP':'yeodam-b383-'+run,
       'MIGRATION_TRIP_CONCURRENCY':'4',
       'MIGRATION_AUTH_ENABLED':'true',
-      'MIGRATION_AUTH_TOPIC':'staging.yeodam.migration.b382.'+run+'.auth-requests',
+      'MIGRATION_AUTH_TOPIC':'staging.yeodam.migration.b383.'+run+'.auth-requests',
       'MIGRATION_AUTH_CONSUMER_ENABLED':'false',
       'MIGRATION_AUTH_RESULTS_ENABLED':'false' if consumer else 'true',
-      'MIGRATION_AUTH_CONSUMER_GROUP':'yeodam-b382-auth-'+run,
-      'MIGRATION_AUTH_RESULT_GROUP':'yeodam-b382-auth-result-'+run,
+      'MIGRATION_AUTH_CONSUMER_GROUP':'yeodam-b383-auth-'+run,
+      'MIGRATION_AUTH_RESULT_GROUP':'yeodam-b383-auth-result-'+run,
       'MIGRATION_AUTH_KEY_FILE':'/run/migration-auth/aes.hex',
       'MIGRATION_AUTH_REDIS_FILE':'/run/migration-auth/redis.json',
       'MIGRATION_TRIP_CONSUMER_ENABLED':'false','SPRING_FLYWAY_ENABLED':'false',
@@ -59,10 +59,10 @@ def create(run,consumer):
         env['MYSQL_URL']='jdbc:mysql://10.30.10.28:3306/yeodam_v1_source';env['MIGRATION_TRIP_MODE_FILE']=''
         env['MIGRATION_CONSUMER_ENABLE_FILE']='/run/migration-auth/apply-enabled'
     else:
-        mode(run,'direct');d='/run/yeodam-b382/'+run
+        mode(run,'direct');d='/run/yeodam-b383/'+run
         env['MIGRATION_TRIP_MODE_FILE']=d+'/mode';hc['Binds']=[d+':'+d+':ro']
-    hc.setdefault('Binds',[]).append('/run/yeodam-b382/'+run+'/container-auth:/run/migration-auth:ro')
-    payload={'Image':IMAGE,'Env':[k+'='+v for k,v in env.items()],'HostConfig':hc,'ExposedPorts':{'8080/tcp':{}},'Labels':{'yeodam.issue':'382','yeodam.run':run}}
+    hc.setdefault('Binds',[]).append('/run/yeodam-b383/'+run+'/container-auth:/run/migration-auth:ro')
+    payload={'Image':IMAGE,'Env':[k+'='+v for k,v in env.items()],'HostConfig':hc,'ExposedPorts':{'8080/tcp':{}},'Labels':{'yeodam.issue':'383','yeodam.run':run}}
     if not consumer:
         if not base['State']['Running']:raise RuntimeError('Original V1 BE must be running before replacement')
         BASE.mkdir(mode=0o700,parents=True,exist_ok=True)
@@ -78,10 +78,10 @@ def create(run,consumer):
     print(json.dumps({'started':name,'runId':run,'consumerEnabled':consumer}),flush=True)
 def auth_files(run):
     import shutil
-    config=json.loads((Path('/run/yeodam-b382')/run/'auth.json').read_text())
+    config=json.loads((Path('/run/yeodam-b383')/run/'auth.json').read_text())
     result=subprocess.run(['aws','secretsmanager','get-secret-value','--secret-id','yeodam-v2-staging/redis-auth-token','--region','ap-northeast-2','--output','json'],capture_output=True,text=True,check=True)
     redis=dict(config['redis']);redis['password']=json.loads(result.stdout)['SecretString']
-    directory=Path('/run/yeodam-b382')/run/'container-auth';directory.mkdir(mode=0o750)
+    directory=Path('/run/yeodam-b383')/run/'container-auth';directory.mkdir(mode=0o750)
     shutil.copyfile('/run/yeodam-cdc-auth368/aes.hex',directory/'aes.hex')
     (directory/'redis.json').write_text(json.dumps(redis))
     for path in directory.iterdir():path.chmod(0o400);os.chown(path,1001,1001)
@@ -90,7 +90,7 @@ def auth_files(run):
 
 def remove(name,run):
     v=inspect(name)
-    if v['Config'].get('Labels',{}).get('yeodam.issue')!='382' or v['Config']['Labels'].get('yeodam.run')!=run:raise RuntimeError('Container ownership differs')
+    if v['Config'].get('Labels',{}).get('yeodam.issue')!='383' or v['Config']['Labels'].get('yeodam.run')!=run:raise RuntimeError('Container ownership differs')
     if v['State']['Running']:docker('POST','/containers/'+name+'/stop?t=30')
     docker('DELETE','/containers/'+name)
     print(json.dumps({'removed':name}))
@@ -140,14 +140,14 @@ if __name__=='__main__':
     if a.action=='auth-files':auth_files(a.run_id)
     elif a.action in ('route-status','restore-route'):status_route(a.run_id,a.action=='restore-route')
     elif a.action=='enable-consumer':
-        path=Path('/run/yeodam-b382')/a.run_id/'container-auth'/'apply-enabled';path.touch(mode=0o444,exist_ok=False)
+        path=Path('/run/yeodam-b383')/a.run_id/'container-auth'/'apply-enabled';path.touch(mode=0o444,exist_ok=False)
         print(json.dumps({'consumerApplyEnabled':True,'runId':a.run_id}))
     elif a.action.startswith('start-'):create(a.run_id,a.action=='start-consumer')
     elif a.action in ('queue','direct'):mode(a.run_id,a.action)
-    elif a.action.startswith('stop-'):remove('yeodam-b382-'+a.action[5:],a.run_id)
+    elif a.action.startswith('stop-'):remove('yeodam-b383-'+a.action[5:],a.run_id)
     elif a.action=='restore-original':docker('POST','/containers/'+ORIGINAL+'/start');print('ORIGINAL_STARTED')
     else:
-        for name in (ORIGINAL,'yeodam-b382-app','yeodam-b382-consumer'):
+        for name in (ORIGINAL,'yeodam-b383-app','yeodam-b383-consumer'):
             try:
                 s=inspect(name);print(json.dumps({'container':name,'status':s['State']['Status'],'health':s['State'].get('Health',{}).get('Status')}))
             except RuntimeError:print(json.dumps({'container':name,'status':'absent'}))

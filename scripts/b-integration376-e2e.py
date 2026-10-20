@@ -38,7 +38,7 @@ def main():
     if a.at:
         while time.time()<a.at:time.sleep(max(0,min(.2,a.at-time.time())))
     actual_started=time.time()
-    directory=Path('/run/yeodam-b382')/a.run_id
+    directory=Path('/run/yeodam-b383')/a.run_id
     path=directory/'e2e-pool.json'
     if a.action=='v1':
         pool=json.loads((Path('/run/yeodam-synthetic-sessions')/(a.run_id+'.json')).read_text())

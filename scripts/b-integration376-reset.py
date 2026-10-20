@@ -39,8 +39,8 @@ def main():
     role='target' if a.action=='target-snapshot' else 'source'
     address='10.30.10.28' if role=='target' else '10.30.0.174'
     if address not in subprocess.check_output(['hostname','-I'],text=True).split():raise RuntimeError('Wrong maintenance host')
-    directory=Path('/var/lib/yeodam/b382')/a.run_id;directory.mkdir(mode=0o700,parents=True,exist_ok=True)
-    prefix='migration/rehearsal-reset/'+a.run_id+'/b382-'
+    directory=Path('/var/lib/yeodam/b383')/a.run_id;directory.mkdir(mode=0o700,parents=True,exist_ok=True)
+    prefix='migration/rehearsal-reset/'+a.run_id+'/b383-'
     if role=='target':
         if query(role,'SELECT @@server_id;')!='2':raise RuntimeError('Wrong Target ID')
         if query(role,"SELECT COUNT(*) FROM information_schema.processlist WHERE USER NOT IN ('root','event_scheduler','system user') AND ID!=CONNECTION_ID();")!='0':raise RuntimeError('Stop rehearsal apps and CDC clients before reset')

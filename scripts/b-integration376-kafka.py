@@ -23,11 +23,11 @@ def kafka(tool,*args):
     return p.stdout.strip()
 
 def names(run):
-    return 'yeodam-b382-'+run[:8], 'staging.yeodam.migration.b382.'+run, 'staging.yeodam.migration.auth368.b382-'+run
+    return 'yeodam-b383-'+run[:8], 'staging.yeodam.migration.b383.'+run, 'staging.yeodam.migration.auth368.b383-'+run
 
 def topics(run):
     n,p,a=names(run)
-    for name,partitions,retention in [(p+'.trips',8,86400000),(p+'.requests',4,86400000),(p+'.auth-requests',4,86400000),(p+'.auth-requests.results',4,86400000),(p+'.schema-history',1,-1),(a+'-encrypted',1,86400000),(a+'.source-history',1,-1),(a+'.target-history',1,-1),('__debezium-heartbeat.'+p,1,86400000),('__debezium-heartbeat.'+a+'.source',1,86400000),('__debezium-heartbeat.'+a+'.target',1,86400000)]:
+    for name,partitions,retention in [(p+'.trips',8,86400000),(p+'.requests',4,86400000),(p+'.auth-requests',4,86400000),(p+'.auth-requests.results',4,86400000),(p+'.schema-history',1,-1),(a+'-encrypted',1,86400000),(a+'-target-encrypted',1,86400000),(p+'.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source-history',1,-1),(a+'.target-history',1,-1),('__debezium-heartbeat.'+p,1,86400000),('__debezium-heartbeat.'+a+'.source',1,86400000),('__debezium-heartbeat.'+a+'.target',1,86400000)]:
         if name in kafka('kafka-topics','--list').splitlines():raise RuntimeError('Run topic already exists; preserve it')
         kafka('kafka-topics','--create','--topic',name,'--partitions',str(partitions),'--replication-factor','1','--config','cleanup.policy=delete','--config','retention.ms='+str(retention))
     print(json.dumps({'action':'topics','runId':run,'tripPartitions':8,'b2Partitions':4,'retentionHours':24}))
@@ -40,7 +40,7 @@ def source(run,kind,index):
           'database.password':'${file:/run/yeodam-cdc/b1-'+('sink' if target else 'source')+'.properties:password}',
           'database.server.id':str((6476 if target else 6276 if auth else 6376)+index),
           'database.ssl.mode':'required','database.include.list':'yeodam_v1_source',
-          'table.include.list':','.join('yeodam_v1_source.'+t for t in (('login_sessions','csrf_tokens') if auth else ('trips','trip_regions'))),
+          'table.include.list':','.join('yeodam_v1_source.'+t for t in (('login_sessions','csrf_tokens') if target else ('login_sessions','csrf_tokens','migration_cutover_barrier') if auth else ('trips','trip_regions','migration_cutover_barrier'))),
           'topic.prefix':a+('.target' if target else '.source') if auth else p,
           'snapshot.mode':'initial' if kind=='auth-source' else 'no_data','snapshot.locking.mode':'none' if target else 'minimal',
           'schema.history.internal.kafka.bootstrap.servers':'kafka.staging.yeodam.internal:9092',
@@ -51,7 +51,7 @@ def source(run,kind,index):
     if auth:
         data.update({'key.converter':'org.apache.kafka.connect.storage.StringConverter','value.converter':'org.apache.kafka.connect.storage.StringConverter',
           'transforms':'encrypt','transforms.encrypt.type':'com.yeodam.cdc.EncryptAuthRecord',
-          'transforms.encrypt.key.file':'/run/yeodam-cdc/auth368-aes.hex','transforms.encrypt.destination.topic':a+'-encrypted',
+          'transforms.encrypt.key.file':'/run/yeodam-cdc/auth368-aes.hex','transforms.encrypt.destination.topic':a+('-target-encrypted' if target else '-encrypted'),
           'predicates':'isAuth','predicates.isAuth.type':'org.apache.kafka.connect.transforms.predicates.TopicNameMatches',
           'predicates.isAuth.pattern':r'.*\.(login_sessions|csrf_tokens)$','transforms.encrypt.predicate':'isAuth'})
     else:
@@ -100,7 +100,7 @@ def status(run):
             print(json.dumps({'name':name,'offsets':api('/connectors/'+name+'/offsets').get('offsets',[])}))
     for topic in [p+'.trips',p+'.requests',p+'.auth-requests',p+'.auth-requests.results',a+'-encrypted']:
         print(kafka('kafka-get-offsets','--topic',topic,'--time','-1'))
-    for group in ['connect-'+n+'-sink','yeodam-b382-'+run,'yeodam-b382-auth-'+run,'yeodam-b382-auth-result-'+run,'yeodam-auth368-b382-'+run]:
+    for group in ['connect-'+n+'-sink','yeodam-b383-'+run,'yeodam-b383-auth-'+run,'yeodam-b383-auth-result-'+run,'yeodam-auth368-b383-'+run]:
         print(kafka('kafka-consumer-groups','--describe','--group',group))
 
 def end_offsets(topic):
@@ -145,7 +145,7 @@ def drain(run,source_file,source_position,target=False,absolute_deadline=None):
             if caught:
                 for kind in kinds:api('/connectors/'+n+'-'+kind+'/stop',method='PUT')
                 stopped=True
-        groups=[('yeodam-auth368-b382-'+run,a+'-encrypted')]
+        groups=[('yeodam-auth368-b383-'+run+('-target' if target else ''),a+('-target-encrypted' if target else '-encrypted'))]
         if not target:groups.append(('connect-'+n+'-sink',p+'.trips'))
         equal=stopped
         details=[]
