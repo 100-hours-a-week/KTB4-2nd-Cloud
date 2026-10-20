@@ -236,10 +236,12 @@ def finish(case,index,state,state_path,load_id,fence_id,started,resume_boundary=
     # Every launched run retains its fixed duration, including strategy failures.
     load=wait('generator',load_id,bound=1000,allow_failure=True)
     result=records(phase('generator','b-integration376-generator.py',run,'audit'))[-1]
+    result['fixedInputEndAt']=started+900
+    result['k6FinishedAfterInputSeconds']=result['finishedAt']-(started+900)
     checkpoint('load_finished',loadResult=result)
     # Fixed checkpoint, no per-request completion polling. E2E is scheduled independently from SQL audits.
     if switched:
-        checkpoint_at=result['finishedAt']+120
+        checkpoint_at=result['fixedInputEndAt']+120
         v1_id=phase('source','b-integration376-e2e.py',run,'v1','--at',str(checkpoint_at),sync=False)
         e2e_refresh=phase('source','b-integration376-e2e.py',run,'refresh',allow_failure=True)
         v2_id=phase('source','b-integration376-e2e.py',run,'e2e','--route-header',ROUTE,'--at',str(checkpoint_at),sync=False)
