@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 import shlex
 import signal
+import socket
+import os
 import subprocess
 import time
 from urllib.request import Request,urlopen
@@ -72,21 +74,25 @@ def transfer_pool(run):
     sender=raw('source',['python3 /run/yeodam-private-pool-transfer.py send --file /run/yeodam-synthetic-sessions/'+run+'.json --port 18765'],sync=False,bound=150)
     receiver=raw('generator',['python3 /run/yeodam-b380/pool-transfer.py receive --file /opt/yeodam-load/source/tests/load/private/'+run+'.json --port 18765'],sync=False,bound=150)
     processes=[]
+    sockets=[socket.socket(),socket.socket()]
+    for sock in sockets:sock.bind(('127.0.0.1',0))
+    local_ports=[sock.getsockname()[1] for sock in sockets]
+    for sock in sockets:sock.close()
     try:
-        for host,port in [('source',19761),('generator',19762)]:
+        for host,port in zip(('source','generator'),local_ports):
             params=json.dumps({'portNumber':['18765'],'localPortNumber':[str(port)]})
             file=(EVIDENCE/(run+'-tunnel-'+host+'.log')).open('w');file.chmod(0o600) if hasattr(file,'chmod') else None
-            process=subprocess.Popen(['aws','ssm','start-session','--target',ssm.HOSTS[host],'--document-name','AWS-StartPortForwardingSession','--parameters',params,'--profile','yeodam-admin','--region','ap-northeast-2'],stdout=file,stderr=subprocess.STDOUT)
+            process=subprocess.Popen(['aws','ssm','start-session','--target',ssm.HOSTS[host],'--document-name','AWS-StartPortForwardingSession','--parameters',params,'--profile','yeodam-admin','--region','ap-northeast-2'],stdout=file,stderr=subprocess.STDOUT,start_new_session=True)
             processes.append((process,file))
         end=time.monotonic()+35
-        for port in (19761,19762):
+        for port in local_ports:
             while subprocess.run(['lsof','-nP','-iTCP:'+str(port),'-sTCP:LISTEN'],capture_output=True).returncode!=0:
                 if time.monotonic()>end:raise RuntimeError('SSM pool tunnel did not open')
                 time.sleep(1)
-        with urlopen('http://127.0.0.1:19761/pool',timeout=15) as response:data=response.read()
+        with urlopen('http://127.0.0.1:'+str(local_ports[0])+'/pool',timeout=15) as response:data=response.read()
         pool=json.loads(data)
         if pool.get('runId')!=run:raise RuntimeError('Pool Run mismatch')
-        with urlopen(Request('http://127.0.0.1:19762/pool',data=data,method='POST',headers={'Content-Type':'application/json'}),timeout=15) as response:
+        with urlopen(Request('http://127.0.0.1:'+str(local_ports[1])+'/pool',data=data,method='POST',headers={'Content-Type':'application/json'}),timeout=15) as response:
             if response.status!=204:raise RuntimeError('Pool receiver rejected file')
         count=len(pool['sessions']);data=None;pool=None
         wait('source',sender,160);wait('generator',receiver,160)
@@ -94,9 +100,13 @@ def transfer_pool(run):
         log('private_pool_transferred',runId=run,sessions=count,macFileCreated=False)
     finally:
         for process,file in processes:
-            process.terminate()
+            try:os.killpg(process.pid,signal.SIGTERM)
+            except ProcessLookupError:pass
             try:process.wait(timeout=5)
-            except subprocess.TimeoutExpired:process.kill();process.wait()
+            except subprocess.TimeoutExpired:
+                try:os.killpg(process.pid,signal.SIGKILL)
+                except ProcessLookupError:pass
+                process.wait()
             file.close()
 
 def auth(host_run,action,*,sync=True,role='source',allow_failure=False):
