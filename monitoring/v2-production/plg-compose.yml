@@ -43,9 +43,14 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_METRICS_ENABLED: "true"
-      GF_SERVER_DOMAIN: localhost
+      GF_SERVER_DOMAIN: grafana.yeodam-2gether.com
+      GF_SERVER_ROOT_URL: https://grafana.yeodam-2gether.com/
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: lax
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: Viewer
     ports:
-      - 127.0.0.1:3000:3000
+      - 3000:3000
     volumes:
       - /srv/yeodam/plg/grafana:/var/lib/grafana
       - /etc/yeodam/plg/admin-password:/run/secrets/admin-password:ro
