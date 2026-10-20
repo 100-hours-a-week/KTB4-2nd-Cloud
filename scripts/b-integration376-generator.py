@@ -47,7 +47,7 @@ def read(run,do_audit=False):
     if len(files)>1:raise RuntimeError('More than one event file for a one-use Run')
     if not files:print(json.dumps(state));return
     file=files[0];state['resultDirectory']=str(file.parent)
-    recovered=Counter();started={};final={};statuses=Counter();first_status={};refreshes=Counter();csrf=Counter();plan=None;first=[];latencies=[]
+    auth_actors={};recovered=Counter();started={};final={};statuses=Counter();first_status={};refreshes=Counter();csrf=Counter();plan=None;first=[];latencies=[]
     event_files=[file]
     if (file.parent/'completion-events.jsonl').exists():event_files.append(file.parent/'completion-events.jsonl')
     lines=(line for event_file in event_files for line in event_file.open())
@@ -57,6 +57,7 @@ def read(run,do_audit=False):
             except ValueError:continue
             if e.get('runId')!=run:continue
             if e['event']=='run_started':plan=e
+            elif e['event']=='auth_actor_started':auth_actors[e['vu']]={'actorIndex':e['actorIndex'],'userId':e['userId']}
             elif e['event']=='started':started[e['requestId']]=e
             elif e['event']=='first_response':statuses[e['status']]+=1;first_status[e['requestId']]=e['status'];first.append(e['elapsedMs'])
             elif e['event']=='final':final[e['requestId']]=e;latencies.append(e['elapsedMs'])
@@ -66,6 +67,9 @@ def read(run,do_audit=False):
             elif e['event']=='auth_csrf':
                 csrf['success' if e['ok'] else 'failure']+=1
                 if e.get('recovered'):recovered['csrf']+=1
+    expected_actors={10:40,30:120,50:200}[state['rate']]
+    state['authActorAssignments']=list(auth_actors.values())
+    state['authActorMappingValid']=(len(auth_actors)==expected_actors and len({x['userId'] for x in auth_actors.values()})==expected_actors and {x['actorIndex'] for x in auth_actors.values()}==set(range(expected_actors)))
     if plan:state['actualStartedAt']=plan['startedAt']/1000
     if do_audit:
         def digest(rows):
@@ -97,9 +101,16 @@ def read(run,do_audit=False):
         (directory/'result.json').write_text(json.dumps(state))
     print(json.dumps(state))
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('start','read','audit'));p.add_argument('--run-id',required=True);p.add_argument('--rate',type=int,choices=(10,30,50));a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('start','stop','read','audit'));p.add_argument('--run-id',required=True);p.add_argument('--rate',type=int,choices=(10,30,50));a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id or '10.30.0.126' not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Wrong generator or UUID')
     if a.action=='start':
         if a.rate is None:raise ValueError('Rate required')
         start(a.run_id,a.rate)
+    elif a.action=='stop':
+        import signal
+        stopped=[]
+        for pid in subprocess.run(['pgrep','-x','k6'],capture_output=True,text=True).stdout.split():
+            if ('K6_TRIP_RUN_ID='+a.run_id).encode() in Path('/proc/'+pid+'/environ').read_bytes().split(b'\0'):
+                os.kill(int(pid),signal.SIGINT);stopped.append(int(pid))
+        print(json.dumps({'runId':a.run_id,'stoppedOwnK6':stopped}))
     else:read(a.run_id,a.action=='audit')

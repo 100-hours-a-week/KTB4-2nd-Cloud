@@ -184,7 +184,13 @@ def execute(case,index):
         if 'k6ExitCode' in info:raise RuntimeError('k6 stopped before scenario setup; no cutover may be scheduled')
         time.sleep(5);info=records(phase('generator','b-integration376-generator.py',run,'read'))[-1]
         if 'actualStartedAt' not in info:raise RuntimeError('No measured k6 start event; preserve preparation failure')
-    started=info['actualStartedAt'];checkpoint('load_started',k6Command=load_id,startedAt=started)
+    if not info.get('authActorMappingValid'):
+        time.sleep(5);info=records(phase('generator','b-integration376-generator.py',run,'read'))[-1]
+        if not info.get('authActorMappingValid'):
+            phase('generator','b-integration376-generator.py',run,'stop')
+            checkpoint('auth_actor_mapping_failed',k6Command=load_id,authActorAssignments=info.get('authActorAssignments'))
+            raise RuntimeError('Authentication actor mapping invalid; no Snapshot or cutover scheduled')
+    started=info['actualStartedAt'];checkpoint('load_started',k6Command=load_id,startedAt=started,authActorMappingValid=True)
     fence_id=phase('source','b-integration376-control.py',run,'fence','--at',str(started+360),sync=False)
     kafka(run,'trips',index);kafka(run,'auth-source',index)
     kafka(run,'ready-trips',index);kafka(run,'ready-auth-source',index)

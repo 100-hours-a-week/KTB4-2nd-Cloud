@@ -34,7 +34,7 @@ export const options = {
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(95)', 'p(99)'],
   scenarios: { trip_load: { executor: 'constant-arrival-rate', rate, timeUnit: '1s',
     duration: '900s', preAllocatedVUs: vus, maxVUs: vus, gracefulStop: '30s' },
-    auth_load: { executor: 'constant-vus', exec: 'authFlow', vus: actors, duration: '900s', gracefulStop: '45s' } },
+    auth_load: { executor: 'per-vu-iterations', exec: 'authFlow', vus: actors, iterations: 1, maxDuration: '930s', gracefulStop: '0s' } },
   thresholds: { b_request_admitted: ['rate==1'], dropped_iterations: ['count==0'], b_refresh_failures: ['count==0'] },
 };
 export function setup() {
@@ -47,14 +47,19 @@ export function setup() {
 }
 function initialSession() { return { ...pool[1 + ((__VU - 1) % actors)] }; }
 export function authFlow() {
-  if (session === null) {
-    session = initialSession();
-    // One auth actor per session, 60s period with a fixed stagger.
-    nextRefresh = Date.now() + 60000 + ((__VU - 1) % actors) * 60000 / actors;
-  }
-  if (Date.now() < nextRefresh) sleep(Math.max(0, Math.min(nextRefresh, exec.scenario.startTime + 900000) - Date.now()) / 1000);
-  if (Date.now() >= exec.scenario.startTime + 900000) return;
+  // One iteration owns one authentication session for the entire input window.
+  const actorIndex = exec.scenario.iterationInTest;
+  if (actorIndex >= actors) throw new Error('Authentication actor index outside pool');
+  session = { ...pool[actorIndex + 1] };
+  console.log(JSON.stringify({ source: 'migration-b382', event: 'auth_actor_started', runId,
+    vu: __VU, actorIndex, userId: session.userId }));
+  const end = exec.scenario.startTime + 900000;
+  nextRefresh = exec.scenario.startTime + 60000 + actorIndex * 60000 / actors;
+  while (nextRefresh < end) {
+    if (Date.now() < nextRefresh) sleep(Math.max(0, Math.min(nextRefresh, end) - Date.now()) / 1000);
+    if (Date.now() >= end) break;
   for (const operation of ['refresh', 'csrf']) {
+    if (Date.now() >= end) break;
     const invoke = () => operation === 'refresh'
       ? http.post(`${base}/api/auth/token/refresh`, null, {
           cookies: { refreshToken: { value: session.refreshToken }, CSRF_CONTEXT: { value: session.csrfContext } },
@@ -64,7 +69,7 @@ export function authFlow() {
           cookies: { CSRF_CONTEXT: { value: session.csrfContext } }, timeout: '10s', redirects: 0,
           responseCallback: http.expectedStatuses(200), tags: { operation: 'auth_csrf' } });
     const first = invoke(); let result = first; let retried = false;
-    if (first.status === 0 || first.status === 503) { sleep(1); result = invoke(); retried = true; }
+    if ((first.status === 0 || first.status === 503) && Date.now() + 1000 < end) { sleep(1); result = invoke(); retried = true; }
     if (operation === 'refresh' && result.status === 200) {
       const access = result.cookies?.accessToken?.[0]?.value;
       const refresh = result.cookies?.refreshToken?.[0]?.value;
@@ -79,6 +84,7 @@ export function authFlow() {
       retried, retryStatus: retried ? result.status : null, recovered: retried && result.status === 200 }));
   }
   nextRefresh += 60000;
+  }
 }
 export default function () {
   const iteration = exec.scenario.iterationInTest;
