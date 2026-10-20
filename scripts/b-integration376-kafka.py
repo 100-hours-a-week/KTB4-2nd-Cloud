@@ -27,9 +27,18 @@ def names(run):
 
 def topics(run):
     n,p,a=names(run)
-    for name,partitions,retention in [(p+'.trips',8,86400000),(p+'.requests',4,86400000),(p+'.auth-requests',4,86400000),(p+'.auth-requests.results',4,86400000),(p+'.schema-history',1,-1),(a+'-encrypted',1,86400000),(a+'-target-encrypted',1,86400000),(p+'.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source-history',1,-1),(a+'.target-history',1,-1),('__debezium-heartbeat.'+p,1,86400000),('__debezium-heartbeat.'+a+'.source',1,86400000),('__debezium-heartbeat.'+a+'.target',1,86400000)]:
-        if name in kafka('kafka-topics','--list').splitlines():raise RuntimeError('Run topic already exists; preserve it')
-        kafka('kafka-topics','--create','--topic',name,'--partitions',str(partitions),'--replication-factor','1','--config','cleanup.policy=delete','--config','retention.ms='+str(retention))
+    definitions=[(p+'.trips',8,86400000),(p+'.requests',4,86400000),(p+'.auth-requests',4,86400000),(p+'.auth-requests.results',4,86400000),(p+'.schema-history',1,-1),(a+'-encrypted',1,86400000),(a+'-target-encrypted',1,86400000),(p+'.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source-history',1,-1),(a+'.target-history',1,-1),('__debezium-heartbeat.'+p,1,86400000),('__debezium-heartbeat.'+a+'.source',1,86400000),('__debezium-heartbeat.'+a+'.target',1,86400000)]
+    # One owned AdminClient call replaces repeated JVM starts before measured input.
+    code="""import json,sys
+from confluent_kafka.admin import AdminClient,NewTopic
+items=json.load(sys.stdin);a=AdminClient({'bootstrap.servers':'10.30.10.95:9092'})
+existing=set(a.list_topics(timeout=10).topics)
+if any(n in existing for n,_,_ in items):raise RuntimeError('Run topic already exists; preserve it')
+futures=a.create_topics([NewTopic(n,num_partitions=p,replication_factor=1,config={'cleanup.policy':'delete','retention.ms':str(r)}) for n,p,r in items],request_timeout=15)
+for f in futures.values():f.result()
+"""
+    result=subprocess.run(['/opt/yeodam-b383/venv/bin/python3','-c',code],input=json.dumps(definitions),capture_output=True,text=True)
+    if result.returncode:raise RuntimeError('Scoped topic creation failed; existing topics preserved')
     print(json.dumps({'action':'topics','runId':run,'tripPartitions':8,'b2Partitions':4,'retentionHours':24}))
 
 def source(run,kind,index):
