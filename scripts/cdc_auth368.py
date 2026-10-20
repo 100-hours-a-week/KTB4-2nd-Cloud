@@ -10,8 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any
 import base64
 import json
-
-from request_cutover.auth import expiry
+from zoneinfo import ZoneInfo
 
 
 TABLES = {"login_sessions", "csrf_tokens"}
@@ -41,7 +40,13 @@ def _expiry_ms(value: Any, zone: str) -> int:
     # microsecond count without a timezone, not an absolute UTC instant.
     if isinstance(value, int) and not isinstance(value, bool):
         value = datetime(1970, 1, 1) + timedelta(microseconds=value)
-    return expiry(value, zone)
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    if not isinstance(value, datetime) or zone not in ('Asia/Seoul', 'UTC'):
+        raise ValueError('invalid auth expiry or source timezone')
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=ZoneInfo(zone))
+    return int(value.timestamp() * 1000)
 
 
 def parse_change(envelope: dict[str, Any]) -> Change:

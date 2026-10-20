@@ -19,6 +19,7 @@ def main():
     parser.add_argument('--key-file', required=True)
     parser.add_argument('--bootstrap', required=True)
     parser.add_argument('--max-events', type=int, default=0)
+    parser.add_argument('--check-only', action='store_true')
     args = parser.parse_args()
 
     if not args.topic.startswith('staging.yeodam.migration.auth368.'):
@@ -37,13 +38,25 @@ def main():
         raise ValueError('unknown Source timezone')
 
     from confluent_kafka import Consumer, KafkaException
+    from confluent_kafka.admin import AdminClient
     import redis
 
     section = config['redis']
+    if section.get('tls') is not True:
+        raise ValueError('staging Redis must use TLS')
     client = redis.Redis(host=section['host'], port=section.get('port', 6379),
                          db=section.get('db', 0), password=os.environ[section['password_env']],
-                         decode_responses=True, socket_connect_timeout=3, socket_timeout=3)
+                         ssl=True, ssl_cert_reqs='required', decode_responses=True,
+                         socket_connect_timeout=3, socket_timeout=3)
     client.ping()
+    if args.check_only:
+        metadata = AdminClient({'bootstrap.servers': args.bootstrap}).list_topics(topic=args.topic, timeout=5)
+        selected = metadata.topics.get(args.topic)
+        if selected is None or selected.error is not None or len(selected.partitions) != 1:
+            raise ValueError('auth topic must be present with exactly one partition')
+        count = sum(1 for _ in client.scan_iter(match=prefix + '*', count=100))
+        print(json.dumps({'redis_ping': True, 'topic_partitions': 1, 'prefix_keys': count}), flush=True)
+        return
     consumer = Consumer({'bootstrap.servers': args.bootstrap, 'group.id': args.group,
                          'auto.offset.reset': 'earliest', 'enable.auto.commit': False,
                          'enable.auto.offset.store': False})
