@@ -15,7 +15,7 @@ from urllib.request import Request,urlopen
 from urllib.parse import quote
 from uuid import UUID
 
-IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:db08f44e07474f336041f9653cccdd20d15f2d4d2cf1607bf986b7b12c622ef3'
+IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:452b07df31ab368270bdfa481744b462909e89b80c246f03d01f4ef5dee2e03d'
 ORIGINAL='yeodam-app-backend-1'
 BASE=Path('/var/lib/yeodam/b391')
 class Connection(http.client.HTTPConnection):
