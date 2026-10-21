@@ -34,8 +34,8 @@ def main():
     pool_path=Path('/opt/yeodam-load/source/tests/load/private')/(run+'.json')
     if pool_path.stat().st_mode&0o077:raise RuntimeError('Private pool required')
     pool=json.loads(pool_path.read_text());tokens={s['userId']:s['accessToken'] for s in pool['sessions']}
-    directory=Path('/run/yeodam-b376')/run
-    root=Path('/opt/yeodam-load/results/b376')/run
+    directory=Path('/run/yeodam-b380')/run
+    root=Path('/opt/yeodam-load/results/b380')/run
     state_path=directory/'k6.json'
     pending={};inflight={};queue=[];stream=None;buffer='';output=None;sequence=0;statuses=Counter()
     with ThreadPoolExecutor(max_workers=32) as executor:
