@@ -15,11 +15,7 @@ HOSTS = {'source':'i-05d320e3a87200d5a','target':'i-05535ae6ff812972c',
 EVIDENCE = ROOT.parent/'KTB4-2nd-Cloud/.local-docs/evidence/383-b-integration'
 
 def aws(*args):
-    started=time.time()
     p=subprocess.run(['aws',*args,'--profile','yeodam-admin','--region','ap-northeast-2','--output','json'],capture_output=True,text=True)
-    EVIDENCE.mkdir(parents=True,exist_ok=True)
-    with (EVIDENCE/'aws-call-timing.jsonl').open('a') as timing:
-        timing.write(json.dumps({'service':args[0],'operation':args[1] if len(args)>1 else '', 'startedAt':started,'finishedAt':time.time(),'elapsedSeconds':time.time()-started,'exitCode':p.returncode})+'\n')
     if p.returncode: raise RuntimeError('AWS call failed: '+p.stderr[:200])
     return json.loads(p.stdout) if p.stdout.strip() else {}
 

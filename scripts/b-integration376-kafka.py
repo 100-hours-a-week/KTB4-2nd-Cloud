@@ -49,7 +49,7 @@ def source(run,kind,index):
           'database.password':'${file:/run/yeodam-cdc/b1-'+('sink' if target else 'source')+'.properties:password}',
           'database.server.id':str((6476 if target else 6276 if auth else 6376)+index),
           'database.ssl.mode':'required','database.include.list':'yeodam_v1_source',
-          'table.include.list':','.join('yeodam_v1_source.'+t for t in (('login_sessions','csrf_tokens') if target else ('login_sessions','csrf_tokens','migration_auth_request_result','migration_cutover_barrier') if auth else ('trips','trip_regions','migration_cutover_barrier'))),
+          'table.include.list':','.join('yeodam_v1_source.'+t for t in (('login_sessions','csrf_tokens') if target else ('login_sessions','csrf_tokens','migration_cutover_barrier') if auth else ('trips','trip_regions','migration_cutover_barrier'))),
           'topic.prefix':a+('.target' if target else '.source') if auth else p,
           'snapshot.mode':'initial' if kind=='auth-source' else 'no_data','snapshot.locking.mode':'none' if target else 'minimal',
           'schema.history.internal.kafka.bootstrap.servers':'kafka.staging.yeodam.internal:9092',
@@ -58,16 +58,11 @@ def source(run,kind,index):
           'errors.tolerance':'none','producer.override.acks':'all','producer.override.enable.idempotence':'true',
           'producer.override.max.in.flight.requests.per.connection':'1','heartbeat.interval.ms':'1000'}
     if auth:
-        if not target:
-            # Recovery is valid for 120s; old journals are already in the full bulk copy.
-            data.update({'snapshot.select.statement.overrides':'yeodam_v1_source.migration_auth_request_result',
-              'snapshot.select.statement.overrides.yeodam_v1_source.migration_auth_request_result':
-              'SELECT * FROM yeodam_v1_source.migration_auth_request_result WHERE created_at>=UTC_TIMESTAMP()-INTERVAL 120 SECOND'})
         data.update({'key.converter':'org.apache.kafka.connect.storage.StringConverter','value.converter':'org.apache.kafka.connect.storage.StringConverter',
           'transforms':'encrypt','transforms.encrypt.type':'com.yeodam.cdc.EncryptAuthRecord',
           'transforms.encrypt.key.file':'/run/yeodam-cdc/auth368-aes.hex','transforms.encrypt.destination.topic':a+('-target-encrypted' if target else '-encrypted'),
           'predicates':'isAuth','predicates.isAuth.type':'org.apache.kafka.connect.transforms.predicates.TopicNameMatches',
-          'predicates.isAuth.pattern':r'.*\.(login_sessions|csrf_tokens|migration_auth_request_result)$','transforms.encrypt.predicate':'isAuth'})
+          'predicates.isAuth.pattern':r'.*\.(login_sessions|csrf_tokens)$','transforms.encrypt.predicate':'isAuth'})
     else:
         data.update({'key.converter':'org.apache.kafka.connect.json.JsonConverter','key.converter.schemas.enable':'true',
           'value.converter':'org.apache.kafka.connect.json.JsonConverter','value.converter.schemas.enable':'true',

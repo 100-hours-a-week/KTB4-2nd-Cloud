@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Isolate migration checkpoint cadence; leave shared Connect/Outbox untouched."""
 import http.client,json,socket,time
-from pathlib import Path
 from urllib.parse import quote
 from urllib.request import urlopen
 NAME='yeodam-b383-connect';ORIGINAL='yeodam-v2-staging-kafka-connect-1'
@@ -24,10 +23,6 @@ def start():
  'CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY':'All','CONNECT_CONFIG_PROVIDERS':'file','CONNECT_CONFIG_PROVIDERS_FILE_CLASS':'org.apache.kafka.common.config.provider.FileConfigProvider','HEAP_OPTS':'-Xms128m -Xmx512m','KAFKA_HEAP_OPTS':'-Xms128m -Xmx512m','JAVA_TOOL_OPTIONS':'-XX:ActiveProcessorCount=1'}
  mounts=[m for m in old['Mounts'] if m['Destination'] in ('/run/yeodam-cdc','/kafka/connect/debezium-connector-mysql/cloud-cdc-libs')]
  if len(mounts)!=2:raise RuntimeError('Expected existing read-only credential/plugin mounts')
- plugin_dir=Path('/opt/yeodam-b383/cdc-libs')
- if not (plugin_dir/'yeodam-auth368-smt.jar').is_file():raise RuntimeError('Owned recovery SMT library not prepared')
- for m in mounts:
-  if m['Destination'].endswith('/cloud-cdc-libs'):m['Source']=str(plugin_dir)
  payload={'Image':old['Config']['Image'],'Env':[k+'='+v for k,v in env.items()],'Cmd':old['Config']['Cmd'],
  'Labels':{'yeodam.issue':'383','yeodam.purpose':'migration-only-connect'},'HostConfig':{'NetworkMode':'host','RestartPolicy':{'Name':'no'},'Memory':896*1024*1024,'NanoCpus':1000000000,'Binds':[m['Source']+':'+m['Destination']+':ro' for m in mounts]}}
  docker('POST','/containers/create?name='+NAME,payload);docker('POST','/containers/'+NAME+'/start')

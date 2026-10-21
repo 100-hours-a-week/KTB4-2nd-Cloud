@@ -42,23 +42,6 @@ public final class EncryptAuthRecordSmoke {
             if (transform.apply(new SourceRecord(Map.of(), Map.of(), input.topic(), null, null)) != null) {
                 throw new AssertionError("raw tombstone escaped");
             }
-            for (String table : new String[]{"login_sessions", "migration_auth_request_result"}) {
-                var record = new SourceRecord(Map.of(), Map.of(), "source.yeodam_v1_source." + table,
-                        Schema.STRING_SCHEMA, "private-key", Schema.STRING_SCHEMA, "private-recovery-result");
-                var result = transform.apply(record);
-                if (!topic.equals(result.topic()) || !"auth".equals(result.key())
-                        || !String.valueOf(result.value()).startsWith("v1:")
-                        || String.valueOf(result.value()).contains("private-recovery-result")) {
-                    throw new AssertionError("recovery journal escaped encryption");
-                }
-            }
-            try {
-                transform.apply(new SourceRecord(Map.of(), Map.of(), "source.yeodam_v1_source.trips",
-                        Schema.STRING_SCHEMA, "key", Schema.STRING_SCHEMA, "value"));
-                throw new AssertionError("unapproved table accepted");
-            } catch (org.apache.kafka.connect.errors.ConnectException expected) {
-                // The recovery extension must keep the explicit table allowlist.
-            }
             transform.close();
             System.out.println("AUTH368_SMT_SMOKE_OK");
         } finally {

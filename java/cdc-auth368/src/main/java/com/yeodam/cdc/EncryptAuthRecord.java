@@ -73,8 +73,7 @@ public final class EncryptAuthRecord<R extends ConnectRecord<R>> implements Tran
         if (key == null || record.topic() == null) {
             throw new ConnectException("auth encryption transform is not configured");
         }
-        if (!record.topic().endsWith(".login_sessions") && !record.topic().endsWith(".csrf_tokens")
-                && !record.topic().endsWith(".migration_auth_request_result")) {
+        if (!record.topic().endsWith(".login_sessions") && !record.topic().endsWith(".csrf_tokens")) {
             throw new ConnectException("unexpected table in auth encryption transform");
         }
         try {
