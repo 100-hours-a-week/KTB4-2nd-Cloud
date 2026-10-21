@@ -36,14 +36,16 @@ def caught(c,topic):
     end={p.partition:c.get_watermark_offsets(p,timeout=3,cached=False)[1] for p in parts}
     current={p.partition:p.offset for p in c.committed(parts,timeout=3)}
     return current==end,{'topic':topic,'end':end,'current':current}
-def cutover(run,position):
+def cutover(run,position,marker_timeout=30):
     started=time.time()
     state={'sourcePosition':position}
-    n='yeodam-b383-'+run[:8];p='staging.yeodam.migration.b383.'+run;a='staging.yeodam.migration.auth368.b383-'+run
-    audit=consumer('yeodam-b383-boundary-'+run);deadline=time.monotonic()+30;source_offsets={}
+    n='yeodam-b386-'+run[:8];p='staging.yeodam.migration.b386.'+run;a='staging.yeodam.migration.auth368.b386-'+run
+    audit=consumer('yeodam-b386-boundary-'+run);deadline=time.monotonic()+marker_timeout;source_offsets={}
     try:
         for topic in [p+'.yeodam_v1_source.migration_cutover_barrier',a+'.source.yeodam_v1_source.migration_cutover_barrier']:
             marker_seen(audit,topic,run,deadline)
+        # Standby is outside the handoff budget; the same 30s drain starts at the marker.
+        started=time.time();deadline=time.monotonic()+30
         for kind in ('trips','auth-source'):api('/connectors/'+n+'-'+kind+'/stop','PUT')
         for kind in ('trips','auth-source'):
             while time.monotonic()<deadline:
@@ -55,7 +57,7 @@ def cutover(run,position):
             if len(offsets)!=1 or not offsets[0]['offset'].get('gtids'):raise RuntimeError('Durable source checkpoint missing')
             source_offsets[kind]=offsets[0]['offset']
     finally:audit.close()
-    pairs=[('connect-'+n+'-sink',p+'.trips'),('yeodam-auth368-b383-'+run,a+'-encrypted')]
+    pairs=[('connect-'+n+'-sink',p+'.trips'),('yeodam-auth368-b386-'+run,a+'-encrypted')]
     clients=[consumer(g) for g,_ in pairs];details=[]
     try:
         while time.monotonic()<deadline:
@@ -68,6 +70,7 @@ def cutover(run,position):
     api('/connectors/'+n+'-sink/stop','PUT')
     proof={'runId':run,'equal':True,'groups':details,'observedAt':time.time(),'sourceOffsets':source_offsets,'boundaryMethod':'frozen-business-gtids-final-marker-and-graceful-flush','startedAt':started,'finishedAt':time.time(),'elapsedSeconds':time.time()-started}
     print(json.dumps(proof),flush=True)
+    return proof
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--run-id',required=True);p.add_argument('--source-position',required=True);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id:raise ValueError('Canonical Run required')

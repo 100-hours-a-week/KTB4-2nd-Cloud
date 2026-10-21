@@ -23,11 +23,11 @@ def kafka(tool,*args):
     return p.stdout.strip()
 
 def names(run):
-    return 'yeodam-b383-'+run[:8], 'staging.yeodam.migration.b383.'+run, 'staging.yeodam.migration.auth368.b383-'+run
+    return 'yeodam-b386-'+run[:8], 'staging.yeodam.migration.b386.'+run, 'staging.yeodam.migration.auth368.b386-'+run
 
 def topics(run):
     n,p,a=names(run)
-    definitions=[(p+'.trips',8,86400000),(p+'.requests',4,86400000),(p+'.auth-requests',4,86400000),(p+'.auth-requests.results',4,86400000),(p+'.schema-history',1,-1),(a+'-encrypted',1,86400000),(a+'-target-encrypted',1,86400000),(p+'.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source-history',1,-1),(a+'.target-history',1,-1),('__debezium-heartbeat.'+p,1,86400000),('__debezium-heartbeat.'+a+'.source',1,86400000),('__debezium-heartbeat.'+a+'.target',1,86400000)]
+    definitions=[(p+'.trips',8,86400000),(p+'.requests',4,86400000),(p+'.auth-requests',4,86400000),(p+'.auth-requests.results',4,86400000),(p+'.handoff-proof',1,86400000),(p+'.schema-history',1,-1),(a+'-encrypted',1,86400000),(a+'-target-encrypted',1,86400000),(p+'.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source-history',1,-1),(a+'.target-history',1,-1),('__debezium-heartbeat.'+p,1,86400000),('__debezium-heartbeat.'+a+'.source',1,86400000),('__debezium-heartbeat.'+a+'.target',1,86400000)]
     # One owned AdminClient call replaces repeated JVM starts before measured input.
     code="""import json,sys
 from confluent_kafka.admin import AdminClient,NewTopic
@@ -109,7 +109,7 @@ def status(run):
             print(json.dumps({'name':name,'offsets':api('/connectors/'+name+'/offsets').get('offsets',[])}))
     for topic in [p+'.trips',p+'.requests',p+'.auth-requests',p+'.auth-requests.results',a+'-encrypted']:
         print(kafka('kafka-get-offsets','--topic',topic,'--time','-1'))
-    for group in ['connect-'+n+'-sink','yeodam-b383-'+run,'yeodam-b383-auth-'+run,'yeodam-b383-auth-result-'+run,'yeodam-auth368-b383-'+run]:
+    for group in ['connect-'+n+'-sink','yeodam-b386-'+run,'yeodam-b386-auth-'+run,'yeodam-b386-auth-result-'+run,'yeodam-auth368-b386-'+run]:
         print(kafka('kafka-consumer-groups','--describe','--group',group))
 
 def end_offsets(topic):
@@ -154,7 +154,7 @@ def drain(run,source_file,source_position,target=False,absolute_deadline=None):
             if caught:
                 for kind in kinds:api('/connectors/'+n+'-'+kind+'/stop',method='PUT')
                 stopped=True
-        groups=[('yeodam-auth368-b383-'+run+('-target' if target else ''),a+('-target-encrypted' if target else '-encrypted'))]
+        groups=[('yeodam-auth368-b386-'+run+('-target' if target else ''),a+('-target-encrypted' if target else '-encrypted'))]
         if not target:groups.append(('connect-'+n+'-sink',p+'.trips'))
         equal=stopped
         details=[]
