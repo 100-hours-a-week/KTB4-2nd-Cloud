@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""Kafka-host boundary proof: final CDC marker, durable flush, then writer handoff.
-
-No Kafka offset reset or shared worker configuration change. The marker is written
-by root only after read_only has blocked application writes. Seeing it allows one
-planned connector stop to flush offsets without waiting for the worker's periodic
-checkpoint. Every source coordinate and downstream committed offset is still checked.
-"""
-import argparse,json,subprocess,time
-from pathlib import Path
+"""Prearm metadata, freeze the CDC tail, and publish its durable boundary proof."""
+import argparse,json,time
 from urllib.request import Request,urlopen
 from uuid import UUID
 from confluent_kafka import Consumer,TopicPartition
 
 BASE='http://127.0.0.1:18083'
+CDC_BUDGET_SECONDS=45
+class BoundaryError(RuntimeError):
+    def __init__(self,code,state):
+        super().__init__(code);self.code=code;self.state=state
+    def proof(self,run):
+        return {'runId':run,'equal':False,'failureCode':self.code,**self.state,'finishedAt':time.time()}
 def api(path,method=None):
-    with urlopen(Request(BASE+path,method=method),timeout=15) as r:
+    with urlopen(Request(BASE+path,method=method),timeout=10) as r:
         b=r.read();return json.loads(b) if b else {}
 def position_at_least(actual,expected):
     f,p=actual.get('file',''),actual.get('pos',0);ef,ep=expected.split('\t')[:2]
@@ -30,48 +29,71 @@ def marker_seen(c,topic,run,deadline):
             if msg.error():raise RuntimeError('CDC marker stream error')
             if run.encode() in (msg.value() or b''):return
     raise RuntimeError('Final CDC marker not received')
-def caught(c,topic):
+def prepare(c,topic):
     metadata=c.list_topics(topic,timeout=3).topics[topic]
+    if metadata.error:raise RuntimeError('Topic metadata unavailable')
     parts=[TopicPartition(topic,p) for p in metadata.partitions]
-    end={p.partition:c.get_watermark_offsets(p,timeout=3,cached=False)[1] for p in parts}
+    c.committed(parts,timeout=3) # Resolve the coordinator before the write fence.
+    return parts
+def ends(c,parts):return {p.partition:c.get_watermark_offsets(p,timeout=3,cached=False)[1] for p in parts}
+def caught(c,topic,parts=None,end=None):
+    parts=prepare(c,topic) if parts is None else parts
+    end=ends(c,parts) if end is None else end
     current={p.partition:p.offset for p in c.committed(parts,timeout=3)}
     return current==end,{'topic':topic,'end':end,'current':current}
-def cutover(run,position,marker_timeout=30):
-    started=time.time()
-    state={'sourcePosition':position}
-    n='yeodam-b386-'+run[:8];p='staging.yeodam.migration.b386.'+run;a='staging.yeodam.migration.auth368.b386-'+run
-    audit=consumer('yeodam-b386-boundary-'+run);deadline=time.monotonic()+marker_timeout;source_offsets={}
+def cutover(run,position,marker_timeout=30,*,cutover_at=None,on_proof=None):
+    state={'stage':'prepare','events':[],'sourcePosition':position,'groups':[]}
+    def mark(stage,**values):
+        state['stage']=stage;state.update(values);state['events'].append({'stage':stage,'at':time.time()})
+    n='yeodam-b388-'+run[:8];p='staging.yeodam.migration.b388.'+run;a='staging.yeodam.migration.auth368.b388-'+run
+    pairs=[('connect-'+n+'-sink',p+'.trips'),('yeodam-auth368-b388-'+run,a+'-encrypted')]
+    clients=[];audit=None;source_offsets={}
     try:
+        clients=[consumer(g) for g,_ in pairs];parts=[prepare(c,t) for c,(_,t) in zip(clients,pairs)]
+        audit=consumer('yeodam-b388-boundary-'+run)
+        mark('marker_wait');marker_deadline=time.monotonic()+marker_timeout
         for topic in [p+'.yeodam_v1_source.migration_cutover_barrier',a+'.source.yeodam_v1_source.migration_cutover_barrier']:
-            marker_seen(audit,topic,run,deadline)
-        # Standby is outside the handoff budget; the same 30s drain starts at the marker.
-        started=time.time();deadline=time.monotonic()+30
+            marker_seen(audit,topic,run,marker_deadline)
+        started=time.time();deadline=(cutover_at if cutover_at is not None else started)+CDC_BUDGET_SECONDS
+        state['startedAt']=started;state['deadlineAt']=deadline
+        mark('source_stop_requested')
         for kind in ('trips','auth-source'):api('/connectors/'+n+'-'+kind+'/stop','PUT')
         for kind in ('trips','auth-source'):
-            while time.monotonic()<deadline:
+            mark('source_stop_wait',connector=kind)
+            while time.time()<deadline:
                 status=api('/connectors/'+n+'-'+kind+'/status')
+                state['sourceState']={'connector':status['connector']['state'],'tasks':[t['state'] for t in status['tasks']]}
                 if status['connector']['state']=='STOPPED' and not status['tasks']:break
                 time.sleep(.05)
-            else:raise RuntimeError('Source connector stop did not flush')
+            else:raise BoundaryError('SOURCE_STOP_DEADLINE',state)
+            mark('source_checkpoint',connector=kind)
             offsets=api('/connectors/'+n+'-'+kind+'/offsets').get('offsets',[])
-            if len(offsets)!=1 or not offsets[0]['offset'].get('gtids'):raise RuntimeError('Durable source checkpoint missing')
+            state['checkpointSummary']={'count':len(offsets),'hasGtids':bool(offsets and offsets[0]['offset'].get('gtids'))}
+            if len(offsets)!=1 or not offsets[0]['offset'].get('gtids'):raise BoundaryError('SOURCE_CHECKPOINT_MISSING',state)
             source_offsets[kind]=offsets[0]['offset']
-    finally:audit.close()
-    pairs=[('connect-'+n+'-sink',p+'.trips'),('yeodam-auth368-b386-'+run,a+'-encrypted')]
-    clients=[consumer(g) for g,_ in pairs];details=[]
-    try:
-        while time.monotonic()<deadline:
-            values=[caught(c,t) for c,(_,t) in zip(clients,pairs)]
-            if all(v[0] for v in values):details=[v[1] for v in values];break
+        mark('frozen_tail');tails=[ends(c,ps) for c,ps in zip(clients,parts)]
+        while time.time()<deadline:
+            values=[caught(c,t,ps,last) for c,(_,t),ps,last in zip(clients,pairs,parts,tails)]
+            state['groups']=[v[1] for v in values]
+            if all(v[0] for v in values):break
             time.sleep(.05)
-        else:raise RuntimeError('Frozen CDC tail remains unapplied')
+        else:raise BoundaryError('FROZEN_TAIL_DEADLINE',state)
+        mark('sink_stop');api('/connectors/'+n+'-sink/stop','PUT')
+        if time.time()>deadline:raise BoundaryError('PROOF_DEADLINE',state)
+        mark('validated')
+        proof={'runId':run,'equal':True,'groups':state['groups'],'observedAt':time.time(),'sourceOffsets':source_offsets,'boundaryMethod':'frozen-business-gtids-final-marker-and-graceful-flush','startedAt':started,'finishedAt':time.time(),'elapsedSeconds':time.time()-started,'deadlineAt':deadline,'events':state['events']}
+        # Read-only client teardown is outside the critical publication path.
+        if on_proof:on_proof(proof)
+        return proof
+    except BoundaryError:raise
+    except Exception as e:
+        state['errorClass']=type(e).__name__;raise BoundaryError('BOUNDARY_STAGE_ERROR',state) from None
     finally:
-        for c in clients:c.close()
-    api('/connectors/'+n+'-sink/stop','PUT')
-    proof={'runId':run,'equal':True,'groups':details,'observedAt':time.time(),'sourceOffsets':source_offsets,'boundaryMethod':'frozen-business-gtids-final-marker-and-graceful-flush','startedAt':started,'finishedAt':time.time(),'elapsedSeconds':time.time()-started}
-    print(json.dumps(proof),flush=True)
-    return proof
+        for c in [audit,*clients]:
+            if c is not None:
+                try:c.close()
+                except Exception:pass # Validation has its own fixed result; cleanup cannot revoke it.
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--run-id',required=True);p.add_argument('--source-position',required=True);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id:raise ValueError('Canonical Run required')
-    cutover(a.run_id,a.source_position)
+    print(json.dumps(cutover(a.run_id,a.source_position)),flush=True)

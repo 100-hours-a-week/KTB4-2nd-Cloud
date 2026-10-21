@@ -1,4 +1,4 @@
-import importlib.util,json,sys,tempfile,types,unittest
+import importlib.util,json,sys,tempfile,types,unittest,time
 from pathlib import Path
 from unittest.mock import Mock,patch
 ROOT=Path(__file__).resolve().parents[2]
@@ -25,7 +25,7 @@ class HandoffTests(unittest.TestCase):
             return original(path,*args,**kwargs)
         original=Path.read_text
         with tempfile.TemporaryDirectory() as tmp,patch.object(m,'ROOT',Path(tmp)),patch.object(m,'Consumer',return_value=client),patch.object(m.subprocess,'run',return_value=Mock(returncode=0)) as execute,patch.object(Path,'read_text',read):
-            m.source(run,123)
+            m.source(run,time.time())
             result=json.loads((Path(tmp)/run/'handoff-result.json').read_text())
             self.assertFalse(result['switched'])
             self.assertEqual(len(execute.call_args_list),1)

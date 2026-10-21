@@ -23,7 +23,7 @@ def kafka(tool,*args):
     return p.stdout.strip()
 
 def names(run):
-    return 'yeodam-b386-'+run[:8], 'staging.yeodam.migration.b386.'+run, 'staging.yeodam.migration.auth368.b386-'+run
+    return 'yeodam-b388-'+run[:8], 'staging.yeodam.migration.b388.'+run, 'staging.yeodam.migration.auth368.b388-'+run
 
 def topics(run):
     n,p,a=names(run)
@@ -109,7 +109,7 @@ def status(run):
             print(json.dumps({'name':name,'offsets':api('/connectors/'+name+'/offsets').get('offsets',[])}))
     for topic in [p+'.trips',p+'.requests',p+'.auth-requests',p+'.auth-requests.results',a+'-encrypted']:
         print(kafka('kafka-get-offsets','--topic',topic,'--time','-1'))
-    for group in ['connect-'+n+'-sink','yeodam-b386-'+run,'yeodam-b386-auth-'+run,'yeodam-b386-auth-result-'+run,'yeodam-auth368-b386-'+run]:
+    for group in ['connect-'+n+'-sink','yeodam-b388-'+run,'yeodam-b388-auth-'+run,'yeodam-b388-auth-result-'+run,'yeodam-auth368-b388-'+run]:
         print(kafka('kafka-consumer-groups','--describe','--group',group))
 
 def end_offsets(topic):
@@ -154,7 +154,7 @@ def drain(run,source_file,source_position,target=False,absolute_deadline=None):
             if caught:
                 for kind in kinds:api('/connectors/'+n+'-'+kind+'/stop',method='PUT')
                 stopped=True
-        groups=[('yeodam-auth368-b386-'+run+('-target' if target else ''),a+('-target-encrypted' if target else '-encrypted'))]
+        groups=[('yeodam-auth368-b388-'+run+('-target' if target else ''),a+('-target-encrypted' if target else '-encrypted'))]
         if not target:groups.append(('connect-'+n+'-sink',p+'.trips'))
         equal=stopped
         details=[]

@@ -6,37 +6,40 @@ from pathlib import Path
 from uuid import UUID
 from confluent_kafka import Consumer,Producer,TopicPartition
 
-ROOT=Path('/run/yeodam-b386')
-def topic(run):return 'staging.yeodam.migration.b386.'+run+'.handoff-proof'
+ROOT=Path('/run/yeodam-b388')
+def topic(run):return 'staging.yeodam.migration.b388.'+run+'.handoff-proof'
 def signature(proof,key):
-    return hmac.new(key,b'b386-handoff-proof:'+json.dumps(proof,sort_keys=True,separators=(',',':')).encode(),hashlib.sha256).hexdigest()
+    return hmac.new(key,b'b388-handoff-proof:'+json.dumps(proof,sort_keys=True,separators=(',',':')).encode(),hashlib.sha256).hexdigest()
 def store(path,value):
     temp=path.with_suffix('.next');temp.write_text(json.dumps(value));temp.chmod(0o600);temp.replace(path)
-def kafka(run):
-    m=SourceFileLoader('boundary386',str(ROOT/'b-integration383-cutover.py')).load_module()
-    try:
-        proof=m.cutover(run,'standby',marker_timeout=900)
-    except Exception as e:
-        proof={'runId':run,'equal':False,'errorClass':type(e).__name__}
+def kafka(run,at):
+    m=SourceFileLoader('boundary388',str(ROOT/'b-integration383-cutover.py')).load_module()
     key=bytes.fromhex(Path('/etc/yeodam/kafka/cdc/auth368-aes.hex').read_text().strip())
-    proof['signature']=signature(proof,key)
-    producer=Producer({'bootstrap.servers':'10.30.10.95:9092','acks':'all'})
-    errors=[]
-    producer.produce(topic(run),key=run,value=json.dumps(proof),on_delivery=lambda e,msg:errors.append(e) if e else None)
-    if producer.flush(10) or errors:raise RuntimeError('Handoff proof not durably published')
-    print(json.dumps({'runId':run,'proofPublished':True,'equal':proof['equal']}),flush=True)
+    delivery_attempted=False
+    def publish(value):
+        nonlocal delivery_attempted
+        proof=dict(value);proof['signature']=signature(proof,key)
+        producer=Producer({'bootstrap.servers':'10.30.10.95:9092','acks':'all'})
+        errors=[];delivery_attempted=True
+        producer.produce(topic(run),key=run,value=json.dumps(proof),on_delivery=lambda e,msg:errors.append(e) if e else None)
+        if producer.flush(2) or errors:raise RuntimeError('Handoff proof publication failed')
+        print(json.dumps({'runId':run,'proofPublished':True,'equal':proof['equal'],'failureCode':proof.get('failureCode'),'stage':proof.get('stage'),'at':time.time()}),flush=True)
+    try:m.cutover(run,'standby',marker_timeout=900,cutover_at=at,on_proof=publish)
+    except m.BoundaryError as e:
+        if delivery_attempted:raise
+        publish(e.proof(run))
 def source(run,at):
     directory=ROOT/run;directory.mkdir(parents=True,exist_ok=True)
-    c=Consumer({'bootstrap.servers':'10.30.10.95:9092','group.id':'yeodam-b386-proof-'+run,'enable.auto.commit':False})
+    c=Consumer({'bootstrap.servers':'10.30.10.95:9092','group.id':'yeodam-b388-proof-'+run,'enable.auto.commit':False})
     c.assign([TopicPartition(topic(run),0,0)])
-    result={'runId':run,'switched':False,'controllerArmedAt':time.time()}
+    result={'runId':run,'switched':False,'controllerArmedAt':time.time(),'plannedFenceAt':at,'cdcDeadlineAt':at+45,'activationDeadlineAt':at+50}
     def action(name,*extra):
         p=subprocess.run(['python3',str(ROOT/'b-integration376-control.py'),name,'--run-id',run,*extra],capture_output=True,text=True)
         if p.returncode:raise RuntimeError('Local handoff action failed: '+name)
     try:
         action('fence','--at',str(at));result['fencedAt']=time.time()
-        end=time.monotonic()+35
-        while time.monotonic()<end:
+        end=at+47 # 45s validation + up to 2s proof delivery; 3s activation reserve.
+        while time.time()<end:
             msg=c.poll(.1)
             if msg is None:continue
             if msg.error():raise RuntimeError('Handoff proof stream error')
@@ -44,14 +47,20 @@ def source(run,at):
             signed=proof.pop('signature','')
             key=bytes.fromhex(Path('/run/yeodam-cdc-auth368/aes.hex').read_text().strip())
             if not hmac.compare_digest(signed,signature(proof,key)):raise RuntimeError('Handoff proof signature rejected')
-            if proof.get('runId')!=run or proof.get('equal') is not True:raise RuntimeError('Handoff proof rejected')
-            store(Path('/var/lib/yeodam/b386')/(run+'.cdc-drained.json'),proof)
+            if proof.get('runId')!=run:raise RuntimeError('Handoff Run mismatch')
+            result['proofReceivedAt']=time.time()
+            if proof.get('equal') is not True:
+                result['boundaryFailure']=proof
+                raise RuntimeError('Handoff proof rejected: '+proof.get('failureCode','UNSPECIFIED'))
+            if proof.get('finishedAt',0)>at+45:raise RuntimeError('Handoff validation deadline exceeded')
+            store(Path('/var/lib/yeodam/b388')/(run+'.cdc-drained.json'),proof)
             result['proofReceivedAt']=time.time();break
         else:raise RuntimeError('Handoff proof deadline exceeded')
         # Existing promote rechecks GTID_SUBSET, frozen Binlog and both Writer flags.
         action('promote')
         subprocess.run(['python3',str(ROOT/'b-integration376-app.py'),'enable-consumer','--run-id',run],check=True,capture_output=True)
         result.update(switched=True,enabledAt=time.time())
+        result['activationWithinBudget']=result['enabledAt']<=at+50
     except Exception as e:
         result.update(errorClass=type(e).__name__,error=str(e))
     finally:
@@ -61,7 +70,6 @@ if __name__=='__main__':
     if str(UUID(a.run_id))!=a.run_id:raise ValueError('Canonical Run required')
     expected='10.30.0.174' if a.role=='source' else '10.30.10.95'
     if expected not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Wrong migration host')
-    if a.role=='source':
-        if a.at is None:raise ValueError('Fixed handoff time required')
-        source(a.run_id,a.at)
-    else:kafka(a.run_id)
+    if a.at is None:raise ValueError('Fixed handoff time required')
+    if a.role=='source':source(a.run_id,a.at)
+    else:kafka(a.run_id,a.at)

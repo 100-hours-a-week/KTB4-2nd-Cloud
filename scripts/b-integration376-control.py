@@ -11,7 +11,7 @@ import subprocess
 import time
 from uuid import UUID,uuid5
 
-BASE=Path('/var/lib/yeodam/b386')
+BASE=Path('/var/lib/yeodam/b388')
 
 def database():
     loader=SourceFileLoader('b376db','/usr/local/sbin/yeodam-staging-db-cutover')
@@ -45,17 +45,17 @@ def audit(db,run,role,max_id=None):
 
 def auth_boundary(db,run):
     position=db.query('target','SHOW BINARY LOG STATUS;').split('\t')[:2]
-    path=Path('/run/yeodam-b386')/run/'auth-handoff.json'
+    path=Path('/run/yeodam-b388')/run/'auth-handoff.json'
     path.write_text(json.dumps({'runId':run,'file':position[0],'pos':int(position[1])}));path.chmod(0o600)
     print(json.dumps({'authTargetBoundary':position}))
 
 
 def ensure_prepared(run):
-    root=Path('/run/yeodam-b386')/run
+    root=Path('/run/yeodam-b388')/run
     if not (root/'cutover-ready').exists():raise RuntimeError('Cutover preparation incomplete at fixed deadline')
     for origin in ('source','target'):
         if not (root/(origin+'.projection-ready')).exists():raise RuntimeError('Authentication projection not ready')
-        unit='yeodam-b386-auth-'+('target-' if origin=='target' else '')+run[:8]+'.service'
+        unit='yeodam-b388-auth-'+('target-' if origin=='target' else '')+run[:8]+'.service'
         subprocess.run(['systemctl','is-active','--quiet',unit],check=True)
 
 def main():
@@ -94,7 +94,7 @@ def main():
             if source[2:]!=['0','0'] or target[2:]!=['1','0']:raise RuntimeError('Unexpected pre-fence roles')
             ensure_prepared(a.run_id)
             save(a.run_id,'fence_intent')
-            subprocess.run(['python3','/run/yeodam-b386/b-integration376-app.py','queue','--run-id',a.run_id],check=True)
+            subprocess.run(['python3','/run/yeodam-b388/b-integration376-app.py','queue','--run-id',a.run_id],check=True)
             save(a.run_id,'requests_queued')
             # read_only blocks application writers; root alone emits the final CDC boundary.
             db.query('source','SET SESSION lock_wait_timeout=5; SET PERSIST read_only=ON;',timeout=10)
