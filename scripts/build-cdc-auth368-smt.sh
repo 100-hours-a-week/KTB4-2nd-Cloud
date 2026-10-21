@@ -24,5 +24,8 @@ mkdir -p "$scratch/classes"
 javac -cp "$scratch/*" -d "$scratch/classes" \
   "$root/java/cdc-auth368/src/main/java/com/yeodam/cdc/EncryptAuthRecord.java" \
   "$root/java/cdc-auth368/src/test/java/com/yeodam/cdc/EncryptAuthRecordSmoke.java"
+docker run --rm --platform linux/amd64 --network none --entrypoint java \
+  --mount "type=bind,source=$scratch/classes,target=/test,readonly" \
+  "$image" -cp '/test:/kafka/libs/*' com.yeodam.cdc.EncryptAuthRecordSmoke
 jar cf "$1" -C "$scratch/classes" com/yeodam/cdc/EncryptAuthRecord.class
 echo "SMT JAR: $1"

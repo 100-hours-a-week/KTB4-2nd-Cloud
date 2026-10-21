@@ -5,7 +5,7 @@ Target-side auth CDC subsequently updates Redis only. Kafka offsets commit after
 both required stores succeed; replayed upserts/deletes remain idempotent.
 """
 import argparse
-from datetime import datetime,timedelta
+from datetime import datetime,timedelta,timezone
 import json
 import os
 from pathlib import Path
@@ -35,12 +35,17 @@ def configure(run):
     print(json.dumps({'authConfig':str(path),'runId':run}))
 
 def mirror(event,connection):
-    change=parse_change(event)
-    table=change.table
-    before,after=change.before,change.after
-    pk='login_session_id' if table=='login_sessions' else 'csrf_token_id'
+    table=event.get('source',{}).get('table')
+    if table=='migration_auth_request_result':
+        before,after=event.get('before'),event.get('after');pk='request_id'
+    else:
+        change=parse_change(event);table=change.table
+        before,after=change.before,change.after
+        pk='login_session_id' if table=='login_sessions' else 'csrf_token_id'
     def value(column,item):
         if column.endswith('_at') and isinstance(item,int):return datetime(1970,1,1)+timedelta(microseconds=item)
+        if column.endswith('_at') and isinstance(item,str) and item.endswith('Z'):
+            return datetime.fromisoformat(item.replace('Z','+00:00')).astimezone(timezone.utc).replace(tzinfo=None)
         if item is not None and not isinstance(item,(int,str)):raise ValueError('Unsupported auth column type')
         return item
     try:
@@ -55,6 +60,14 @@ def mirror(event,connection):
                 cursor.execute(sql,tuple(value(c,after[c]) for c in columns))
     except Exception:
         raise RuntimeError('Auth Target projection failed; Kafka offset remains uncommitted') from None
+
+
+def project(event,origin,connection,client,config):
+    if origin=='source':mirror(event,connection)
+    if event.get('source',{}).get('table')=='migration_auth_request_result':
+        return  # Encrypted recovery replies belong in SQL; they are not Redis sessions.
+    sec,micro=client.time()
+    apply_change(client,event,config['redis']['prefix'],config['source_timezone'],sec*1000+micro//1000)
 
 
 def after_boundary(event,boundary):
@@ -87,7 +100,7 @@ def main():
     ca.write_text(aws('ssm','get-parameter','--name','/yeodam/v2/staging/migration/TARGET_CA_PEM')['Parameter']['Value']);ca.chmod(0o600)
     import pymysql,ssl
     context=ssl.create_default_context(cafile=str(ca));context.check_hostname=False
-    connection=pymysql.connect(host='10.30.10.28',user='yeodam_cdc_sink',password=password,database='yeodam_v1_source',ssl=context,autocommit=True,charset='utf8mb4',connect_timeout=3,read_timeout=5,write_timeout=5)
+    connection=pymysql.connect(host='10.30.10.28',user='yeodam_cdc_sink',password=password,database='yeodam_v1_source',ssl=context,autocommit=True,charset='utf8mb4',init_command="SET time_zone='+00:00'",connect_timeout=3,read_timeout=5,write_timeout=5)
     consumer=Consumer({'bootstrap.servers':'10.30.10.95:9092','group.id':'yeodam-auth368-b383-'+a.run_id+('-target' if a.origin=='target' else ''),'auto.offset.reset':'earliest','enable.auto.commit':False,'enable.auto.offset.store':False})
     consumer.subscribe([topic]);running=True;count=0
     def stop(*_):
@@ -112,8 +125,7 @@ def main():
                 boundary=json.loads(boundary_path.read_text())
                 if not after_boundary(event,boundary):
                     consumer.commit(message=msg,asynchronous=False);continue
-            if name.endswith('.source'):mirror(event,connection)
-            sec,micro=client.time();apply_change(client,event,r['prefix'],config['source_timezone'],sec*1000+micro//1000)
+            project(event,a.origin,connection,client,config)
             consumer.commit(message=msg,asynchronous=False);count+=1
             if count%500==0:print(json.dumps({'applied':count,'offset':msg.offset()}),flush=True)
     finally:consumer.close();connection.close();print(json.dumps({'phase':'auth_consumer_stopped','applied':count}),flush=True)

@@ -50,6 +50,19 @@ def auth_boundary(db,run):
     print(json.dumps({'authTargetBoundary':position}))
 
 
+def recovery_journal(db,lower):
+    # Compare ciphertext only inside this process; never print token replies or row IDs.
+    rows=db.query('source','SELECT request_id,encrypted_result,created_at FROM yeodam_v1_source.migration_auth_request_result WHERE created_at>=FROM_UNIXTIME('+str(lower)+') ORDER BY request_id;',timeout=30)
+    ids=[line.split('\t')[0] for line in rows.splitlines()]
+    if any(not re.fullmatch('[0-9a-f]{64}',value) for value in ids):raise RuntimeError('Unexpected recovery request identifier')
+    target=''
+    if ids:
+        target=db.query('target',"SELECT request_id,encrypted_result,created_at FROM yeodam_v1_source.migration_auth_request_result WHERE request_id IN ("+','.join("'"+value+"'" for value in ids)+') ORDER BY request_id;',timeout=30)
+    return {'sourceRows':len(ids),'targetRows':len(target.splitlines()) if target else 0,
+            'equal':rows==target,'sourceSha256':hashlib.sha256(rows.encode()).hexdigest(),
+            'targetSha256':hashlib.sha256(target.encode()).hexdigest()}
+
+
 def ensure_prepared(run):
     root=Path('/run/yeodam-b383')/run
     if not (root/'cutover-ready').exists():raise RuntimeError('Cutover preparation incomplete at fixed deadline')
@@ -75,6 +88,8 @@ def main():
             if db.query('proxy',"SELECT DISTINCT default_hostgroup FROM runtime_mysql_users WHERE username='yeodam_app';")!='10':raise RuntimeError('ProxySQL is not on Source')
             if db.query('proxy','SELECT COUNT(*) FROM runtime_mysql_query_rules WHERE active=1;')!='0':raise RuntimeError('Unexpected ProxySQL rules')
             if db.query('target',"SELECT COUNT(*) FROM information_schema.processlist WHERE USER NOT IN ('root','event_scheduler','system user','yeodam_cutover') AND ID!=CONNECTION_ID();")!='0':raise RuntimeError('Previous Target clients remain; do not start a new load')
+            indexed=db.query('source',"SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema='yeodam_v1_source' AND table_name='trips' AND index_name='IX_TRIPS_USER_NAME_ACTIVE';")
+            if indexed!='user_id,trip_name,deleted_at':raise RuntimeError('Approved Source trip lookup index absent or different')
             s=db.status()
             if s['Replica_IO_Running']!='No' or s['Replica_SQL_Running']!='No':raise RuntimeError('Native replication must be stopped')
             prefix='t'+hashlib.sha256(a.run_id.encode()).hexdigest()[:5]
@@ -170,6 +185,7 @@ def main():
                 report['journal']=db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+")"+upper+" AND request_id!='"+smoke+"' GROUP BY status;")
                 report['authJournalRows']=int(db.query('target',"SELECT COUNT(*) FROM yeodam_v1_source.migration_auth_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+")"+upper+";"))
                 report['publicSmokeJournal']=db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE request_id='"+smoke+"' GROUP BY status;")
+                if not reopened:report['sourceRecoveryJournal']=recovery_journal(db,lower)
             print(json.dumps(report))
         else:print(json.dumps({'source':source[2:],'target':target[2:],'proxy':db.query('proxy',"SELECT DISTINCT default_hostgroup FROM runtime_mysql_users WHERE username='yeodam_app';")}))
     finally:db.close()
