@@ -15,7 +15,7 @@ from urllib.request import Request,urlopen
 from urllib.parse import quote
 from uuid import UUID
 
-IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:d39fd16fc92e77d9c51be9056a2d0c79e355fdf0ad81e38a8d463ab554fd2010'
+IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:452b07df31ab368270bdfa481744b462909e89b80c246f03d01f4ef5dee2e03d'
 ORIGINAL='yeodam-app-backend-1'
 BASE=Path('/var/lib/yeodam/b391')
 class Connection(http.client.HTTPConnection):
@@ -42,7 +42,11 @@ def create(run,consumer):
     env.update({'MIGRATION_KAFKA_BOOTSTRAP_SERVERS':'10.30.10.95:9092',
       'MIGRATION_TRIP_TOPIC':'staging.yeodam.migration.b391.'+run+'.requests',
       'MIGRATION_TRIP_CONSUMER_GROUP':'yeodam-b391-'+run,
-      'MIGRATION_TRIP_CONCURRENCY':'4',
+      'MIGRATION_TRIP_CONCURRENCY':'8' if consumer else '4',
+      'MIGRATION_TRIP_PARTITIONS':'8',
+      # The public service owns housekeeping; the dedicated request executor must
+      # not run a second copy or reopen Target connections before Bulk import.
+      'MIGRATION_SERVICE_SCHEDULERS_ENABLED':'false' if consumer else 'true',
       'MIGRATION_AUTH_ENABLED':'true',
       'MIGRATION_AUTH_TOPIC':'staging.yeodam.migration.b391.'+run+'.auth-requests',
       'MIGRATION_AUTH_CONSUMER_ENABLED':'false',
@@ -110,7 +114,7 @@ def source_ready(run):
         try:state=source_control(run)
         except OSError:
             time.sleep(.5);continue
-        if state['runId']==run and not state['fencing'] and state['sourceConsumerRunning'] and state['sourceAssignedPartitions']==4:
+        if state['runId']==run and not state['fencing'] and state['sourceConsumerRunning'] and state['sourceAssignedPartitions']==8:
             print(json.dumps(state));return
         time.sleep(.5)
     raise RuntimeError('Source Consumer not assigned before input')
@@ -123,18 +127,31 @@ def collect_completions(name,run):
     while len(raw)>=8:
         length=int.from_bytes(raw[4:8],'big');chunks.append(raw[8:8+length]);raw=raw[8+length:]
     pattern=re.compile(r'migration_trip_completed request_id=([0-9a-f-]{36}) origin=(source|target) queued_at_ms=(\d+) committed_at_ms=(\d+)')
+    timing_pattern=re.compile(r'consumer_started_at_ms=(\d+) apply_elapsed_us=(\d+) partition=(\d+)')
     path=Path('/run/yeodam-b391')/run/'completions.json'
     rows=json.loads(path.read_text()) if path.exists() else {}
     from uuid import uuid5
     smoke=str(uuid5(UUID(run),'public-b2-smoke'))
-    for match in pattern.finditer(b''.join(chunks).decode(errors='replace')):
+    text=b''.join(chunks).decode(errors='replace')
+    for match in pattern.finditer(text):
         rid,origin,queued,committed=match.groups()
-        if rid!=smoke and int(queued)>0:rows.setdefault(rid,{'origin':origin,'queuedAtMs':int(queued),'committedAtMs':int(committed)})
+        if rid!=smoke and int(queued)>0:
+            row={'origin':origin,'queuedAtMs':int(queued),'committedAtMs':int(committed)}
+            timing=timing_pattern.match(text,match.end()+1)
+            if timing:
+                received,elapsed,partition=map(int,timing.groups())
+                row.update(consumerStartedAtMs=received,applyElapsedUs=elapsed,partition=partition)
+            rows.setdefault(rid,row)
     path.write_text(json.dumps(rows));path.chmod(0o600)
     def percentiles(values):
         values=sorted(values)
         return {k:values[int((len(values)-1)*q)] for k,q in [('p50',.5),('p95',.95),('p99',.99),('max',1)]} if values else {}
-    return {'count':len(rows),'origins':{origin:sum(v['origin']==origin for v in rows.values()) for origin in ('source','target')},'commandCreatedToCommitObservedMs':percentiles([v['committedAtMs']-v['queuedAtMs'] for v in rows.values()])}
+    timed=[v for v in rows.values() if 'consumerStartedAtMs' in v]
+    detail={}
+    for origin in ('source','target'):
+        selected=[v for v in timed if v['origin']==origin]
+        detail[origin]={'count':len(selected),'queueWaitMs':percentiles([v['consumerStartedAtMs']-v['queuedAtMs'] for v in selected]),'applyElapsedUs':percentiles([v['applyElapsedUs'] for v in selected]),'partitionCounts':{str(p):sum(v['partition']==p for v in selected) for p in range(8)}}
+    return {'timingCount':len(timed),'timingByOrigin':detail,'count':len(rows),'origins':{origin:sum(v['origin']==origin for v in rows.values()) for origin in ('source','target')},'commandCreatedToCommitObservedMs':percentiles([v['committedAtMs']-v['queuedAtMs'] for v in rows.values()])}
 
 def remove(name,run):
     v=inspect(name)
@@ -182,6 +199,18 @@ def status_route(run,restore=False):
         raise RuntimeError('Nginx candidate invalid; original retained')
     subprocess.run(['systemctl','reload','nginx'],check=True,capture_output=True)
     print(json.dumps({'statusRoute':'restored' if restore else 'installed','runId':run}))
+
+def restore_original():
+    docker('POST','/containers/'+ORIGINAL+'/start')
+    end=time.monotonic()+100
+    while time.monotonic()<end:
+        try:
+            with urlopen('http://127.0.0.1:8080/api/actuator/health',timeout=2) as response:
+                if response.status==200:
+                    print('ORIGINAL_STARTED_HEALTH_200');return
+        except OSError:pass
+        time.sleep(1)
+    raise RuntimeError('Original V1 startup did not become healthy; do not start next Run')
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('action',choices=('auth-files','start-app','start-consumer','queue','source-queue','source-ready','direct','stop-app','stop-consumer','enable-consumer','restore-original','status','route-status','restore-route'))
     p.add_argument('--run-id',required=True);p.add_argument('--deadline',type=float);a=p.parse_args()
@@ -203,7 +232,7 @@ if __name__=='__main__':
     elif a.action=='source-ready':source_ready(a.run_id)
     elif a.action in ('queue','source-queue','direct'):mode(a.run_id,a.action)
     elif a.action.startswith('stop-'):remove('yeodam-b391-'+a.action[5:],a.run_id)
-    elif a.action=='restore-original':docker('POST','/containers/'+ORIGINAL+'/start');print('ORIGINAL_STARTED')
+    elif a.action=='restore-original':restore_original()
     else:
         for name in (ORIGINAL,'yeodam-b391-app','yeodam-b391-consumer'):
             try:

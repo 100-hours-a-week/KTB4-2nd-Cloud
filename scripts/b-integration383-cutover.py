@@ -64,7 +64,7 @@ def cutover(run,position,marker_timeout=30,*,cutover_at=None,on_proof=None):
         # New requests keep accumulating: preserve committed positions, never require request Lag0.
         offsets=requests.committed(request_parts,timeout=3)
         request_offsets={part.partition:part.offset for part in offsets}
-        if len(request_offsets)!=4 or any(offset<0 for offset in request_offsets.values()):raise BoundaryError('SOURCE_REQUEST_OFFSET_MISSING',state)
+        if set(request_offsets)!=set(range(8)) or any(offset<0 for offset in request_offsets.values()):raise BoundaryError('SOURCE_REQUEST_OFFSET_MISSING',state)
         state['requestHandoff']={'group':request_group,'committed':request_offsets,'topic':p+'.requests'}
         mark('source_stop_requested')
         for kind in ('trips','auth-source'):api('/connectors/'+n+'-'+kind+'/stop','PUT')

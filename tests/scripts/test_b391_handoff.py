@@ -25,6 +25,9 @@ class SourceDrainTests(unittest.TestCase):
   env=dict(v.split('=',1) for v in payloads[0]['Env'])
   self.assertEqual(env['MIGRATION_TRIP_CONSUMER_ENABLED'],'false');self.assertEqual(env['MIGRATION_CONSUMER_DEFER_TRIP'],'true')
   self.assertEqual(env['MIGRATION_TRIP_APPLY_ROLE'],'target')
+  self.assertEqual(env['MIGRATION_SERVICE_SCHEDULERS_ENABLED'],'false')
+  self.assertEqual(env['MIGRATION_TRIP_CONCURRENCY'],'8')
+  self.assertEqual(env['MIGRATION_TRIP_PARTITIONS'],'8')
  def test_journal_uses_its_own_key_and_bounded_pool(self):
   m=load('b-integration376-kafka.py');run='26b45888-9b29-4afb-b090-ff2acbfc3ab6'
   source=m.source(run,'trips',0);sink=m.journal_sink(run)

@@ -46,7 +46,7 @@ class PromotionBoundaryTests(unittest.TestCase):
   db.query.side_effect=lambda role,sql,**kw:'1' if 'GTID_SUBSET' in sql else 'binlog.000010\t100' if 'SHOW BINARY LOG STATUS' in sql else ''
   with tempfile.TemporaryDirectory() as d,patch.object(m,'BASE',Path(d)),patch.object(m,'database',return_value=db),patch.object(m.subprocess,'check_output',return_value='10.30.0.174'),patch.object(m,'auth_boundary') as boundary,patch.object(sys,'argv',['control','promote','--run-id',run]):
    (Path(d)/(run+'.json')).write_text(json.dumps({'runId':run,'events':[],'phase':'source_fenced','sourcePosition':'binlog.000010\t100','sourceBusinessGtids':gtids}))
-   (Path(d)/(run+'.cdc-drained.json')).write_text(json.dumps({'runId':run,'equal':True,'requestHandoff':{'group':'yeodam-b391-'+run,'committed':{str(i):10 for i in range(4)}},'sourceOffsets':{k:{'gtids':gtids,'pos':50,'event':2,'row':1} for k in ('trips','auth-source')}}))
+   (Path(d)/(run+'.cdc-drained.json')).write_text(json.dumps({'runId':run,'equal':True,'requestHandoff':{'group':'yeodam-b391-'+run,'committed':{str(i):10 for i in range(8)}},'sourceOffsets':{k:{'gtids':gtids,'pos':50,'event':2,'row':1} for k in ('trips','auth-source')}}))
    m.main();boundary.assert_called_once_with(db,run)
    self.assertEqual(sum('GTID_SUBSET' in c.args[1] for c in db.query.call_args_list),2)
    self.assertEqual(json.loads((Path(d)/(run+'.json')).read_text())['phase'],'switched')
