@@ -23,11 +23,11 @@ def kafka(tool,*args):
     return p.stdout.strip()
 
 def names(run):
-    return 'yeodam-b388-'+run[:8], 'staging.yeodam.migration.b388.'+run, 'staging.yeodam.migration.auth368.b388-'+run
+    return 'yeodam-b391-'+run[:8], 'staging.yeodam.migration.b391.'+run, 'staging.yeodam.migration.auth368.b391-'+run
 
 def topics(run):
     n,p,a=names(run)
-    definitions=[(p+'.trips',8,86400000),(p+'.requests',4,86400000),(p+'.auth-requests',4,86400000),(p+'.auth-requests.results',4,86400000),(p+'.handoff-proof',1,86400000),(p+'.schema-history',1,-1),(a+'-encrypted',1,86400000),(a+'-target-encrypted',1,86400000),(p+'.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source-history',1,-1),(a+'.target-history',1,-1),('__debezium-heartbeat.'+p,1,86400000),('__debezium-heartbeat.'+a+'.source',1,86400000),('__debezium-heartbeat.'+a+'.target',1,86400000)]
+    definitions=[(p+'.trips',8,86400000),(p+'.yeodam_v1_source.migration_trip_request_result',1,86400000),(p+'.requests',4,86400000),(p+'.auth-requests',4,86400000),(p+'.auth-requests.results',4,86400000),(p+'.handoff-proof',1,86400000),(p+'.schema-history',1,-1),(a+'-encrypted',1,86400000),(a+'-target-encrypted',1,86400000),(p+'.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source.yeodam_v1_source.migration_cutover_barrier',1,86400000),(a+'.source-history',1,-1),(a+'.target-history',1,-1),('__debezium-heartbeat.'+p,1,86400000),('__debezium-heartbeat.'+a+'.source',1,86400000),('__debezium-heartbeat.'+a+'.target',1,86400000)]
     # One owned AdminClient call replaces repeated JVM starts before measured input.
     code="""import json,sys
 from confluent_kafka.admin import AdminClient,NewTopic
@@ -49,7 +49,7 @@ def source(run,kind,index):
           'database.password':'${file:/run/yeodam-cdc/b1-'+('sink' if target else 'source')+'.properties:password}',
           'database.server.id':str((6476 if target else 6276 if auth else 6376)+index),
           'database.ssl.mode':'required','database.include.list':'yeodam_v1_source',
-          'table.include.list':','.join('yeodam_v1_source.'+t for t in (('login_sessions','csrf_tokens') if target else ('login_sessions','csrf_tokens','migration_cutover_barrier') if auth else ('trips','trip_regions','migration_cutover_barrier'))),
+          'table.include.list':','.join('yeodam_v1_source.'+t for t in (('login_sessions','csrf_tokens') if target else ('login_sessions','csrf_tokens','migration_cutover_barrier') if auth else ('trips','trip_regions','migration_trip_request_result','migration_cutover_barrier'))),
           'topic.prefix':a+('.target' if target else '.source') if auth else p,
           'snapshot.mode':'initial' if kind=='auth-source' else 'no_data','snapshot.locking.mode':'none' if target else 'minimal',
           'schema.history.internal.kafka.bootstrap.servers':'kafka.staging.yeodam.internal:9092',
@@ -89,6 +89,11 @@ def sink(run):
       'key.converter':'org.apache.kafka.connect.json.JsonConverter','key.converter.schemas.enable':'true',
       'value.converter':'org.apache.kafka.connect.json.JsonConverter','value.converter.schemas.enable':'true'}
 
+def journal_sink(run):
+    data=sink(run);n,p,_=names(run)
+    data.update(name=n+'-sink-journal',**{'tasks.max':'1','topics':p+'.yeodam_v1_source.migration_trip_request_result','collection.name.format':'migration_trip_request_result','connection.pool.max_size':'1','batch.size':'100','consumer.override.max.poll.records':'100','use.reduction.buffer':'true'})
+    return data
+
 def register(data):
     if data['name'] in api('/connectors'):raise RuntimeError('Connector already exists; preserve its offset')
     validation=api('/connector-plugins/'+data['connector.class']+'/config/validate',data,'PUT')
@@ -100,7 +105,7 @@ def register(data):
 
 def status(run):
     n,p,a=names(run);existing=api('/connectors')
-    for name in ['yeodam-staging-outbox',*(n+'-'+k for k in ('trips','auth-source','sink','auth-target'))]:
+    for name in ['yeodam-staging-outbox',*(n+'-'+k for k in ('trips','auth-source','sink','sink-journal','auth-target'))]:
         if name not in existing:continue
         v=api('/connectors/'+name+'/status')
         print(json.dumps({'name':name,'state':v['connector']['state'],'tasks':[t['state'] for t in v['tasks']]}))
@@ -109,7 +114,7 @@ def status(run):
             print(json.dumps({'name':name,'offsets':api('/connectors/'+name+'/offsets').get('offsets',[])}))
     for topic in [p+'.trips',p+'.requests',p+'.auth-requests',p+'.auth-requests.results',a+'-encrypted']:
         print(kafka('kafka-get-offsets','--topic',topic,'--time','-1'))
-    for group in ['connect-'+n+'-sink','yeodam-b388-'+run,'yeodam-b388-auth-'+run,'yeodam-b388-auth-result-'+run,'yeodam-auth368-b388-'+run]:
+    for group in ['connect-'+n+'-sink','yeodam-b391-'+run,'yeodam-b391-auth-'+run,'yeodam-b391-auth-result-'+run,'yeodam-auth368-b391-'+run]:
         print(kafka('kafka-consumer-groups','--describe','--group',group))
 
 def end_offsets(topic):
@@ -154,8 +159,8 @@ def drain(run,source_file,source_position,target=False,absolute_deadline=None):
             if caught:
                 for kind in kinds:api('/connectors/'+n+'-'+kind+'/stop',method='PUT')
                 stopped=True
-        groups=[('yeodam-auth368-b388-'+run+('-target' if target else ''),a+('-target-encrypted' if target else '-encrypted'))]
-        if not target:groups.append(('connect-'+n+'-sink',p+'.trips'))
+        groups=[('yeodam-auth368-b391-'+run+('-target' if target else ''),a+('-target-encrypted' if target else '-encrypted'))]
+        if not target:groups.extend([('connect-'+n+'-sink',p+'.trips'),('connect-'+n+'-sink-journal',p+'.yeodam_v1_source.migration_trip_request_result')])
         equal=stopped
         details=[]
         for group,topic in groups:
@@ -163,14 +168,15 @@ def drain(run,source_file,source_position,target=False,absolute_deadline=None):
             matched=current==last
             equal=equal and matched;details.append({'group':group,'end':last,'current':current,'equal':matched})
         if equal:
-            if not target:api('/connectors/'+n+'-sink/stop',method='PUT')
+            if not target:
+                for kind in ('sink','sink-journal'):api('/connectors/'+n+'-'+kind+'/stop',method='PUT')
             print(json.dumps({'runId':run,'equal':True,'observedAt':time.time(),'groups':details}),flush=True);return
         time.sleep(2)
     print(json.dumps({'runId':run,'equal':False,'observedAt':time.time(),'groups':details}),flush=True)
     raise RuntimeError('Fixed Run CDC boundary deadline exceeded; preserve failure')
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('topics','trips','auth-source','sink','auth-target','status','stop-trips','stop-auth-source','stop-auth-target','stop-sink','ready-trips','ready-auth-source','ready-auth-target','drain','drain-target'))
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('topics','trips','auth-source','sink','sink-journal','auth-target','status','stop-trips','stop-auth-source','stop-auth-target','stop-sink','stop-sink-journal','ready-trips','ready-auth-source','ready-auth-target','drain','drain-target'))
     p.add_argument('--run-id',required=True);p.add_argument('--index',type=int,default=0);p.add_argument('--source-file');p.add_argument('--source-position',type=int);p.add_argument('--deadline',type=float);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id or a.index not in range(4):raise ValueError('Invalid run contract')
     n,_,_=names(a.run_id)
@@ -182,4 +188,4 @@ if __name__=='__main__':
         drain(a.run_id,a.source_file,a.source_position,a.action=='drain-target',a.deadline)
     elif a.action.startswith('stop-'):
         api('/connectors/'+n+'-'+a.action[5:]+'/stop',method='PUT');print('STOP_REQUESTED '+n+'-'+a.action[5:])
-    else:register(sink(a.run_id) if a.action=='sink' else source(a.run_id,a.action,a.index))
+    else:register(journal_sink(a.run_id) if a.action=='sink-journal' else sink(a.run_id) if a.action=='sink' else source(a.run_id,a.action,a.index))
