@@ -143,7 +143,7 @@ def main():
 
             if db.query('source','SHOW BINARY LOG STATUS;').split('\t')[:2]!=state['sourcePosition'].split('\t')[:2]:raise RuntimeError('Source changed after the frozen boundary')
             handoff=value.get('requestHandoff',{})
-            if handoff.get('group')!='yeodam-b391-'+a.run_id or len(handoff.get('committed',{}))!=4:raise RuntimeError('Request offset handoff missing')
+            if handoff.get('group')!='yeodam-b391-'+a.run_id or set(map(int,handoff.get('committed',{})))!=set(range(8)):raise RuntimeError('Request offset handoff missing')
             auth_boundary(db,a.run_id)
             save(a.run_id,'promotion_intent')
             db.query('target','SET PERSIST super_read_only=OFF; SET PERSIST read_only=OFF;')

@@ -42,7 +42,7 @@ def create(run,consumer):
     env.update({'MIGRATION_KAFKA_BOOTSTRAP_SERVERS':'10.30.10.95:9092',
       'MIGRATION_TRIP_TOPIC':'staging.yeodam.migration.b391.'+run+'.requests',
       'MIGRATION_TRIP_CONSUMER_GROUP':'yeodam-b391-'+run,
-      'MIGRATION_TRIP_CONCURRENCY':'4',
+      'MIGRATION_TRIP_CONCURRENCY':'8' if consumer else '4',
       # The public service owns housekeeping; the dedicated request executor must
       # not run a second copy or reopen Target connections before Bulk import.
       'MIGRATION_SERVICE_SCHEDULERS_ENABLED':'false' if consumer else 'true',
@@ -113,7 +113,7 @@ def source_ready(run):
         try:state=source_control(run)
         except OSError:
             time.sleep(.5);continue
-        if state['runId']==run and not state['fencing'] and state['sourceConsumerRunning'] and state['sourceAssignedPartitions']==4:
+        if state['runId']==run and not state['fencing'] and state['sourceConsumerRunning'] and state['sourceAssignedPartitions']==8:
             print(json.dumps(state));return
         time.sleep(.5)
     raise RuntimeError('Source Consumer not assigned before input')
@@ -149,7 +149,7 @@ def collect_completions(name,run):
     detail={}
     for origin in ('source','target'):
         selected=[v for v in timed if v['origin']==origin]
-        detail[origin]={'count':len(selected),'queueWaitMs':percentiles([v['consumerStartedAtMs']-v['queuedAtMs'] for v in selected]),'applyElapsedUs':percentiles([v['applyElapsedUs'] for v in selected]),'partitionCounts':{str(p):sum(v['partition']==p for v in selected) for p in range(4)}}
+        detail[origin]={'count':len(selected),'queueWaitMs':percentiles([v['consumerStartedAtMs']-v['queuedAtMs'] for v in selected]),'applyElapsedUs':percentiles([v['applyElapsedUs'] for v in selected]),'partitionCounts':{str(p):sum(v['partition']==p for v in selected) for p in range(8)}}
     return {'timingCount':len(timed),'timingByOrigin':detail,'count':len(rows),'origins':{origin:sum(v['origin']==origin for v in rows.values()) for origin in ('source','target')},'commandCreatedToCommitObservedMs':percentiles([v['committedAtMs']-v['queuedAtMs'] for v in rows.values()])}
 
 def remove(name,run):

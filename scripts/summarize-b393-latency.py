@@ -18,7 +18,7 @@ def summarize(rows,started_at):
     for origin in ('source','target'):
         selected=[r for r in timed if r['origin']==origin]
         partitions={}
-        for partition in range(4):
+        for partition in sorted({r['partition'] for r in timed}):
             records=sorted((r for r in selected if r['partition']==partition),key=lambda r:r['consumerStartedAtMs'])
             partitions[str(partition)]={**group(records),
                 # Includes offset acknowledgement, polling and scheduling, not only broker time.

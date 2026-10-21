@@ -18,7 +18,7 @@ class BoundaryTests(unittest.TestCase):
             c.list_topics.return_value=types.SimpleNamespace(topics={'trip':types.SimpleNamespace(error=None,partitions={0:None})})
             c.get_watermark_offsets.return_value=(0,10)
             c.committed.return_value=[types.SimpleNamespace(partition=0,offset=committed)]
-        clients[4].committed.return_value=[types.SimpleNamespace(partition=i,offset=i+5) for i in range(4)]
+        clients[4].committed.return_value=[types.SimpleNamespace(partition=i,offset=i+5) for i in range(8)]
         def prepare(c,topic):return [m.TopicPartition(topic,0)]
         def api(path,method=None):
             if path.endswith('/status'):return {'connector':{'state':'STOPPED'},'tasks':[]}
@@ -40,9 +40,16 @@ class BoundaryTests(unittest.TestCase):
         for c in clients:c.close.side_effect=lambda:self.assertEqual(len(published),1)
         with patch.object(m,'consumer',side_effect=clients),patch.object(m,'prepare',side_effect=prepare),patch.object(m,'marker_seen'),patch.object(m,'api',side_effect=api),patch.object(m.time,'time',return_value=101):
             proof=m.cutover('run','standby',cutover_at=100,on_proof=published.append)
-        self.assertEqual(proof['requestHandoff']['committed'],{0:5,1:6,2:7,3:8})
+        self.assertEqual(proof['requestHandoff']['committed'],{i:i+5 for i in range(8)})
         self.assertTrue(proof['equal']);self.assertEqual(published,[proof])
         for c in clients:c.close.assert_called_once()
+    def test_missing_eighth_request_offset_rejects_handoff_before_stopping_sources(self):
+        m,clients,prepare,api=self.case(10)
+        clients[4].committed.return_value=[types.SimpleNamespace(partition=i,offset=5) for i in range(7)]
+        with patch.object(m,'consumer',side_effect=clients),patch.object(m,'prepare',side_effect=prepare),patch.object(m,'marker_seen'),patch.object(m,'api',side_effect=api) as calls:
+            with self.assertRaises(m.BoundaryError) as caught:m.cutover('run','standby',cutover_at=100)
+        self.assertEqual(caught.exception.proof('run')['failureCode'],'SOURCE_REQUEST_OFFSET_MISSING')
+        self.assertFalse(any('/stop' in c.args[0] for c in calls.call_args_list))
     def test_frozen_tail_poll_reuses_prepared_metadata_and_end_offsets(self):
         m=load();c=Mock();parts=[m.TopicPartition('trip',0)];c.committed.return_value=[types.SimpleNamespace(partition=0,offset=10)]
         equal,_=m.caught(c,'trip',parts,{0:10})
