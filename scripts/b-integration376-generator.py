@@ -91,7 +91,7 @@ def read(run,do_audit=False):
             return {k:values[min(len(values)-1,int((len(values)-1)*q))] for k,q in [('p50',.5),('p95',.95),('p99',.99),('max',1)]} if values else {}
         state['connectionObservation']={**dict(network),'usedTripVUs':len(trip_vus),'maxRequestsInOneTripVU':max_in_vu,'preAllocatedVUs':plan.get('preAllocatedVUs') if plan else None,'maxVUs':plan.get('maxVUs') if plan else None}
         state.update(completedAfterDeadline=sum(e.get('outcome')=='confirmed' and e.get('withinDeadline') is False for e in final.values()),
-                     started=len(started),final=len(final),retryRecovered=dict(recovered),confirmed=sum(e['outcome']=='confirmed' for e in final.values()),
+                     started=len(started),uniqueTripUsers=len({e['userId'] for e in started.values()}),final=len(final),retryRecovered=dict(recovered),confirmed=sum(e['outcome']=='confirmed' for e in final.values()),
                      firstStatuses=dict(statuses),refreshes=dict(refreshes),csrf=dict(csrf),missingFinal=0,acceptedNotIndividuallyPolled=statuses.get(202,0),completionObservation="fixed aggregate checkpoints; no completion latency percentile",
                      requestProjectionSha256=digest(projected),non202Requests=len(non202),non202ProjectionSha256=digest(non202_projected),
                      firstResponseMs=stats(first),finalObservationMs=stats(latencies))
