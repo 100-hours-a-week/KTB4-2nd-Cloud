@@ -121,10 +121,12 @@ def main():
             db.query('source','SET PERSIST super_read_only=ON;',timeout=10)
             save(a.run_id,'source_fenced',sourcePosition=db.query('source','SHOW BINARY LOG STATUS;'),sourceBusinessGtids=business_gtids)
         elif a.action=='checkpoint':
+            # Read-only Journal scans use the existing audit bound, not the
+            # short control-query default. This does not extend HTTP/cutover time.
             state=json.loads((BASE/(a.run_id+'.json')).read_text());lower=state['events'][0]['at'];smoke=str(uuid5(UUID(a.run_id),'public-b2-smoke'))
             print(json.dumps({'phase':'fixed_checkpoint','runId':a.run_id,'at':time.time(),'authJournalScope':'run including E2E preparation',
-                'tripJournal':db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+") AND request_id!='"+smoke+"' GROUP BY status;"),
-                'authJournalRows':db.query('target',"SELECT COUNT(*) FROM yeodam_v1_source.migration_auth_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+");")}))
+                'tripJournal':db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+") AND request_id!='"+smoke+"' GROUP BY status;",timeout=90),
+                'authJournalRows':db.query('target',"SELECT COUNT(*) FROM yeodam_v1_source.migration_auth_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+");",timeout=90)}))
         elif a.action=='promote':
             state=json.loads((BASE/(a.run_id+'.json')).read_text())
             if source[2:]!=['1','1'] or target[2:]!=['1','0'] or state['phase']!='source_fenced':raise RuntimeError('Unexpected promotion boundary')
@@ -181,8 +183,8 @@ def main():
                 smoke=str(uuid5(UUID(a.run_id),'public-b2-smoke'))
                 reopened=[event['at'] for event in state['events'] if event['phase']=='source_reopened']
                 upper=(' AND created_at<=FROM_UNIXTIME('+str(reopened[-1])+')') if reopened else ''
-                report['journal']=db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+")"+upper+" AND request_id!='"+smoke+"' GROUP BY status;")
-                report['authJournalRows']=int(db.query('target',"SELECT COUNT(*) FROM yeodam_v1_source.migration_auth_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+")"+upper+";"))
+                report['journal']=db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+")"+upper+" AND request_id!='"+smoke+"' GROUP BY status;",timeout=90)
+                report['authJournalRows']=int(db.query('target',"SELECT COUNT(*) FROM yeodam_v1_source.migration_auth_request_result WHERE created_at>=FROM_UNIXTIME("+str(lower)+")"+upper+";",timeout=90))
                 report['publicSmokeJournal']=db.query('target',"SELECT status,COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE request_id='"+smoke+"' GROUP BY status;")
             print(json.dumps(report))
         else:print(json.dumps({'source':source[2:],'target':target[2:],'proxy':db.query('proxy',"SELECT DISTINCT default_hostgroup FROM runtime_mysql_users WHERE username='yeodam_app';")}))
