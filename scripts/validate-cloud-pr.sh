@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
+python3 -m unittest discover -s tests/scripts -p 'test_b3*.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_observability.py'

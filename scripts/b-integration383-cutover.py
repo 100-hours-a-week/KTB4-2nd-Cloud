@@ -48,17 +48,24 @@ def cutover(run,position,marker_timeout=30,*,cutover_at=None,on_proof=None):
     state={'stage':'prepare','events':[],'sourcePosition':position,'groups':[]}
     def mark(stage,**values):
         state['stage']=stage;state.update(values);state['events'].append({'stage':stage,'at':time.time()})
-    n='yeodam-b388-'+run[:8];p='staging.yeodam.migration.b388.'+run;a='staging.yeodam.migration.auth368.b388-'+run
-    pairs=[('connect-'+n+'-sink',p+'.trips'),('yeodam-auth368-b388-'+run,a+'-encrypted')]
-    clients=[];audit=None;source_offsets={}
+    n='yeodam-b391-'+run[:8];p='staging.yeodam.migration.b391.'+run;a='staging.yeodam.migration.auth368.b391-'+run
+    pairs=[('connect-'+n+'-sink',p+'.trips'),('connect-'+n+'-sink-journal',p+'.yeodam_v1_source.migration_trip_request_result'),('yeodam-auth368-b391-'+run,a+'-encrypted')]
+    clients=[];audit=None;requests=None;source_offsets={}
     try:
         clients=[consumer(g) for g,_ in pairs];parts=[prepare(c,t) for c,(_,t) in zip(clients,pairs)]
-        audit=consumer('yeodam-b388-boundary-'+run)
+        audit=consumer('yeodam-b391-boundary-'+run)
+        request_group='yeodam-b391-'+run;requests=consumer(request_group);request_parts=prepare(requests,p+'.requests')
         mark('marker_wait');marker_deadline=time.monotonic()+marker_timeout
         for topic in [p+'.yeodam_v1_source.migration_cutover_barrier',a+'.source.yeodam_v1_source.migration_cutover_barrier']:
             marker_seen(audit,topic,run,marker_deadline)
         started=time.time();deadline=(cutover_at if cutover_at is not None else started)+CDC_BUDGET_SECONDS
         state['startedAt']=started;state['deadlineAt']=deadline
+        # Source BE has gracefully stopped its trip listener before emitting the DB marker.
+        # New requests keep accumulating: preserve committed positions, never require request Lag0.
+        offsets=requests.committed(request_parts,timeout=3)
+        request_offsets={part.partition:part.offset for part in offsets}
+        if len(request_offsets)!=4 or any(offset<0 for offset in request_offsets.values()):raise BoundaryError('SOURCE_REQUEST_OFFSET_MISSING',state)
+        state['requestHandoff']={'group':request_group,'committed':request_offsets,'topic':p+'.requests'}
         mark('source_stop_requested')
         for kind in ('trips','auth-source'):api('/connectors/'+n+'-'+kind+'/stop','PUT')
         for kind in ('trips','auth-source'):
@@ -81,10 +88,17 @@ def cutover(run,position,marker_timeout=30,*,cutover_at=None,on_proof=None):
             if all(v[0] for v in values):break
             time.sleep(.05)
         else:raise BoundaryError('FROZEN_TAIL_DEADLINE',state)
-        mark('sink_stop');api('/connectors/'+n+'-sink/stop','PUT')
+        mark('sink_stop')
+        for kind in ('sink','sink-journal'):
+            api('/connectors/'+n+'-'+kind+'/stop','PUT')
+            while time.time()<deadline:
+                status=api('/connectors/'+n+'-'+kind+'/status')
+                if status['connector']['state']=='STOPPED' and not status['tasks']:break
+                time.sleep(.05)
+            else:raise BoundaryError('SINK_STOP_DEADLINE',state)
         if time.time()>deadline:raise BoundaryError('PROOF_DEADLINE',state)
         mark('validated')
-        proof={'runId':run,'equal':True,'groups':state['groups'],'observedAt':time.time(),'sourceOffsets':source_offsets,'boundaryMethod':'frozen-business-gtids-final-marker-and-graceful-flush','startedAt':started,'finishedAt':time.time(),'elapsedSeconds':time.time()-started,'deadlineAt':deadline,'events':state['events']}
+        proof={'runId':run,'equal':True,'groups':state['groups'],'observedAt':time.time(),'sourceOffsets':source_offsets,'requestHandoff':state['requestHandoff'],'boundaryMethod':'frozen-business-gtids-final-marker-and-graceful-flush','startedAt':started,'finishedAt':time.time(),'elapsedSeconds':time.time()-started,'deadlineAt':deadline,'events':state['events']}
         # Read-only client teardown is outside the critical publication path.
         if on_proof:on_proof(proof)
         return proof
@@ -92,7 +106,7 @@ def cutover(run,position,marker_timeout=30,*,cutover_at=None,on_proof=None):
     except Exception as e:
         state['errorClass']=type(e).__name__;raise BoundaryError('BOUNDARY_STAGE_ERROR',state) from None
     finally:
-        for c in [audit,*clients]:
+        for c in [requests,audit,*clients]:
             if c is not None:
                 try:c.close()
                 except Exception:pass # Validation has its own fixed result; cleanup cannot revoke it.

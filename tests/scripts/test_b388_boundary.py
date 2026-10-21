@@ -13,11 +13,12 @@ def load():
 
 class BoundaryTests(unittest.TestCase):
     def case(self,committed):
-        m=load();clients=[Mock(),Mock(),Mock()]
-        for c in clients[:2]:
+        m=load();clients=[Mock() for _ in range(5)]
+        for c in clients[:3]:
             c.list_topics.return_value=types.SimpleNamespace(topics={'trip':types.SimpleNamespace(error=None,partitions={0:None})})
             c.get_watermark_offsets.return_value=(0,10)
             c.committed.return_value=[types.SimpleNamespace(partition=0,offset=committed)]
+        clients[4].committed.return_value=[types.SimpleNamespace(partition=i,offset=i+5) for i in range(4)]
         def prepare(c,topic):return [m.TopicPartition(topic,0)]
         def api(path,method=None):
             if path.endswith('/status'):return {'connector':{'state':'STOPPED'},'tasks':[]}
@@ -39,6 +40,7 @@ class BoundaryTests(unittest.TestCase):
         for c in clients:c.close.side_effect=lambda:self.assertEqual(len(published),1)
         with patch.object(m,'consumer',side_effect=clients),patch.object(m,'prepare',side_effect=prepare),patch.object(m,'marker_seen'),patch.object(m,'api',side_effect=api),patch.object(m.time,'time',return_value=101):
             proof=m.cutover('run','standby',cutover_at=100,on_proof=published.append)
+        self.assertEqual(proof['requestHandoff']['committed'],{0:5,1:6,2:7,3:8})
         self.assertTrue(proof['equal']);self.assertEqual(published,[proof])
         for c in clients:c.close.assert_called_once()
     def test_frozen_tail_poll_reuses_prepared_metadata_and_end_offsets(self):

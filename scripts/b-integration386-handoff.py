@@ -6,10 +6,10 @@ from pathlib import Path
 from uuid import UUID
 from confluent_kafka import Consumer,Producer,TopicPartition
 
-ROOT=Path('/run/yeodam-b388')
-def topic(run):return 'staging.yeodam.migration.b388.'+run+'.handoff-proof'
+ROOT=Path('/run/yeodam-b391')
+def topic(run):return 'staging.yeodam.migration.b391.'+run+'.handoff-proof'
 def signature(proof,key):
-    return hmac.new(key,b'b388-handoff-proof:'+json.dumps(proof,sort_keys=True,separators=(',',':')).encode(),hashlib.sha256).hexdigest()
+    return hmac.new(key,b'b391-handoff-proof:'+json.dumps(proof,sort_keys=True,separators=(',',':')).encode(),hashlib.sha256).hexdigest()
 def store(path,value):
     temp=path.with_suffix('.next');temp.write_text(json.dumps(value));temp.chmod(0o600);temp.replace(path)
 def kafka(run,at):
@@ -30,7 +30,7 @@ def kafka(run,at):
         publish(e.proof(run))
 def source(run,at):
     directory=ROOT/run;directory.mkdir(parents=True,exist_ok=True)
-    c=Consumer({'bootstrap.servers':'10.30.10.95:9092','group.id':'yeodam-b388-proof-'+run,'enable.auto.commit':False})
+    c=Consumer({'bootstrap.servers':'10.30.10.95:9092','group.id':'yeodam-b391-proof-'+run,'enable.auto.commit':False})
     c.assign([TopicPartition(topic(run),0,0)])
     result={'runId':run,'switched':False,'controllerArmedAt':time.time(),'plannedFenceAt':at,'cdcDeadlineAt':at+45,'activationDeadlineAt':at+50}
     def action(name,*extra):
@@ -53,12 +53,12 @@ def source(run,at):
                 result['boundaryFailure']=proof
                 raise RuntimeError('Handoff proof rejected: '+proof.get('failureCode','UNSPECIFIED'))
             if proof.get('finishedAt',0)>at+45:raise RuntimeError('Handoff validation deadline exceeded')
-            store(Path('/var/lib/yeodam/b388')/(run+'.cdc-drained.json'),proof)
+            store(Path('/var/lib/yeodam/b391')/(run+'.cdc-drained.json'),proof)
             result['proofReceivedAt']=time.time();break
         else:raise RuntimeError('Handoff proof deadline exceeded')
         # Existing promote rechecks GTID_SUBSET, frozen Binlog and both Writer flags.
-        action('promote')
-        subprocess.run(['python3',str(ROOT/'b-integration376-app.py'),'enable-consumer','--run-id',run],check=True,capture_output=True)
+        action('promote');result.update(switched=True,promotedAt=time.time(),activationWithinBudget=False)
+        subprocess.run(['python3',str(ROOT/'b-integration376-app.py'),'enable-consumer','--run-id',run,'--deadline',str(at+50)],check=True,capture_output=True)
         result.update(switched=True,enabledAt=time.time())
         result['activationWithinBudget']=result['enabledAt']<=at+50
     except Exception as e:

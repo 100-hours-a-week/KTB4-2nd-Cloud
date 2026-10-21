@@ -10,12 +10,14 @@ import subprocess
 import time
 import hashlib
 import re
+import secrets
+from urllib.request import Request,urlopen
 from urllib.parse import quote
 from uuid import UUID
 
-IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:34ea639f509fcc955bd325e9ba1ce38ab0c38d35f77e8cab49175304c996cab9'
+IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:d39fd16fc92e77d9c51be9056a2d0c79e355fdf0ad81e38a8d463ab554fd2010'
 ORIGINAL='yeodam-app-backend-1'
-BASE=Path('/var/lib/yeodam/b388')
+BASE=Path('/var/lib/yeodam/b391')
 class Connection(http.client.HTTPConnection):
     def connect(self):
         self.sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);self.sock.connect('/var/run/docker.sock')
@@ -26,30 +28,30 @@ def docker(method,path,data=None):
     return json.loads(b) if b else {}
 def inspect(name):return docker('GET','/containers/'+quote(name,safe='')+'/json')
 def mode(run,value):
-    d=Path('/run/yeodam-b388')/run;d.mkdir(mode=0o755,exist_ok=True)
+    d=Path('/run/yeodam-b391')/run;d.mkdir(mode=0o755,exist_ok=True)
     d.chmod(0o755)
     p=d/'mode';q=d/'mode.next'
     with q.open('w') as f:f.write(value+'\n');f.flush();os.fsync(f.fileno())
     q.chmod(0o644);os.replace(q,p)
     print(json.dumps({'mode':value,'runId':run}),flush=True)
 def create(run,consumer):
-    role='consumer' if consumer else 'app';name='yeodam-b388-'+role
+    role='consumer' if consumer else 'app';name='yeodam-b391-'+role
     base=inspect(ORIGINAL)
     if 'migration-probe-v1-sha-816d69ba' not in base['Config']['Image']:raise RuntimeError('Original V1 image differs')
     env=dict(s.split('=',1) for s in base['Config']['Env'] if '=' in s)
     env.update({'MIGRATION_KAFKA_BOOTSTRAP_SERVERS':'10.30.10.95:9092',
-      'MIGRATION_TRIP_TOPIC':'staging.yeodam.migration.b388.'+run+'.requests',
-      'MIGRATION_TRIP_CONSUMER_GROUP':'yeodam-b388-'+run,
+      'MIGRATION_TRIP_TOPIC':'staging.yeodam.migration.b391.'+run+'.requests',
+      'MIGRATION_TRIP_CONSUMER_GROUP':'yeodam-b391-'+run,
       'MIGRATION_TRIP_CONCURRENCY':'4',
       'MIGRATION_AUTH_ENABLED':'true',
-      'MIGRATION_AUTH_TOPIC':'staging.yeodam.migration.b388.'+run+'.auth-requests',
+      'MIGRATION_AUTH_TOPIC':'staging.yeodam.migration.b391.'+run+'.auth-requests',
       'MIGRATION_AUTH_CONSUMER_ENABLED':'false',
       'MIGRATION_AUTH_RESULTS_ENABLED':'false' if consumer else 'true',
-      'MIGRATION_AUTH_CONSUMER_GROUP':'yeodam-b388-auth-'+run,
-      'MIGRATION_AUTH_RESULT_GROUP':'yeodam-b388-auth-result-'+run,
+      'MIGRATION_AUTH_CONSUMER_GROUP':'yeodam-b391-auth-'+run,
+      'MIGRATION_AUTH_RESULT_GROUP':'yeodam-b391-auth-result-'+run,
       'MIGRATION_AUTH_KEY_FILE':'/run/migration-auth/aes.hex',
       'MIGRATION_AUTH_REDIS_FILE':'/run/migration-auth/redis.json',
-      'MIGRATION_TRIP_CONSUMER_ENABLED':'false','SPRING_FLYWAY_ENABLED':'false',
+      'MIGRATION_TRIP_CONSUMER_ENABLED':'false' if consumer else 'true','MIGRATION_TRIP_APPLY_ROLE':'target' if consumer else 'source','SPRING_FLYWAY_ENABLED':'false',
       # A synchronous Kafka reply wait must not retain a request-scoped JPA connection.
       'SPRING_JPA_OPEN_IN_VIEW':'false',
       # Nginx auth read timeout is 60s; reserve 5s for returning the response.
@@ -63,11 +65,14 @@ def create(run,consumer):
         env['SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE']='0'
         env['SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT']='10000'
         env['MIGRATION_CONSUMER_ENABLE_FILE']='/run/migration-auth/apply-enabled'
+        env['MIGRATION_CONSUMER_DEFER_TRIP']='true'
     else:
-        mode(run,'direct');d='/run/yeodam-b388/'+run
+        mode(run,'source-queue');d='/run/yeodam-b391/'+run
         env['MIGRATION_TRIP_MODE_FILE']=d+'/mode';hc['Binds']=[d+':'+d+':ro']
-    hc.setdefault('Binds',[]).append('/run/yeodam-b388/'+run+'/container-auth:/run/migration-auth:ro')
-    payload={'Image':IMAGE,'Env':[k+'='+v for k,v in env.items()],'HostConfig':hc,'ExposedPorts':{'8080/tcp':{}},'Labels':{'yeodam.issue':'388','yeodam.run':run}}
+        env.update(MIGRATION_SOURCE_CONTROL_PORT='8091',MIGRATION_SOURCE_CONTROL_RUN_ID=run,MIGRATION_SOURCE_CONTROL_TOKEN_FILE='/run/migration-auth/control.token')
+        hc['PortBindings']['8091/tcp']=[{'HostIp':'127.0.0.1','HostPort':'18082'}]
+    hc.setdefault('Binds',[]).append('/run/yeodam-b391/'+run+'/container-auth:/run/migration-auth:ro')
+    payload={'Image':IMAGE,'Env':[k+'='+v for k,v in env.items()],'HostConfig':hc,'ExposedPorts':{'8080/tcp':{}},'Labels':{'yeodam.issue':'391','yeodam.run':run}}
     if not consumer:
         if not base['State']['Running']:raise RuntimeError('Original V1 BE must be running before replacement')
         BASE.mkdir(mode=0o700,parents=True,exist_ok=True)
@@ -83,22 +88,61 @@ def create(run,consumer):
     print(json.dumps({'started':name,'runId':run,'consumerEnabled':consumer}),flush=True)
 def auth_files(run):
     import shutil
-    config=json.loads((Path('/run/yeodam-b388')/run/'auth.json').read_text())
+    config=json.loads((Path('/run/yeodam-b391')/run/'auth.json').read_text())
     result=subprocess.run(['aws','secretsmanager','get-secret-value','--secret-id','yeodam-v2-staging/redis-auth-token','--region','ap-northeast-2','--output','json'],capture_output=True,text=True,check=True)
     redis=dict(config['redis']);redis['password']=json.loads(result.stdout)['SecretString']
-    directory=Path('/run/yeodam-b388')/run/'container-auth';directory.mkdir(mode=0o750)
+    directory=Path('/run/yeodam-b391')/run/'container-auth';directory.mkdir(mode=0o750)
     shutil.copyfile('/run/yeodam-cdc-auth368/aes.hex',directory/'aes.hex')
     (directory/'redis.json').write_text(json.dumps(redis))
+    (directory/'control.token').write_text(secrets.token_hex(32))
     for path in directory.iterdir():path.chmod(0o400);os.chown(path,1001,1001)
     os.chown(directory,1001,1001)
     print(json.dumps({'phase':'auth_private_files_prepared','runId':run}))
 
+def source_control(run,fence=False):
+    token=(Path('/run/yeodam-b391')/run/'container-auth'/'control.token').read_text().strip()
+    request=Request('http://127.0.0.1:18082/'+('fence' if fence else 'state'),method='POST' if fence else 'GET',headers={'X-Migration-Control-Token':token,'X-Migration-Run':run})
+    with urlopen(request,timeout=3) as response:return json.load(response)
+
+def source_ready(run):
+    end=time.monotonic()+40
+    while time.monotonic()<end:
+        try:state=source_control(run)
+        except OSError:
+            time.sleep(.5);continue
+        if state['runId']==run and not state['fencing'] and state['sourceConsumerRunning'] and state['sourceAssignedPartitions']==4:
+            print(json.dumps(state));return
+        time.sleep(.5)
+    raise RuntimeError('Source Consumer not assigned before input')
+
+def collect_completions(name,run):
+    # Docker's stdout multiplexing frames are binary; decode only matching safe records.
+    c=Connection('localhost',timeout=30);c.request('GET','/containers/'+name+'/logs?stdout=1&stderr=1');r=c.getresponse();raw=r.read();c.close()
+    if r.status!=200:raise RuntimeError('Completion log read failed')
+    chunks=[]
+    while len(raw)>=8:
+        length=int.from_bytes(raw[4:8],'big');chunks.append(raw[8:8+length]);raw=raw[8+length:]
+    pattern=re.compile(r'migration_trip_completed request_id=([0-9a-f-]{36}) origin=(source|target) queued_at_ms=(\d+) committed_at_ms=(\d+)')
+    path=Path('/run/yeodam-b391')/run/'completions.json'
+    rows=json.loads(path.read_text()) if path.exists() else {}
+    from uuid import uuid5
+    smoke=str(uuid5(UUID(run),'public-b2-smoke'))
+    for match in pattern.finditer(b''.join(chunks).decode(errors='replace')):
+        rid,origin,queued,committed=match.groups()
+        if rid!=smoke and int(queued)>0:rows.setdefault(rid,{'origin':origin,'queuedAtMs':int(queued),'committedAtMs':int(committed)})
+    path.write_text(json.dumps(rows));path.chmod(0o600)
+    def percentiles(values):
+        values=sorted(values)
+        return {k:values[int((len(values)-1)*q)] for k,q in [('p50',.5),('p95',.95),('p99',.99),('max',1)]} if values else {}
+    return {'count':len(rows),'origins':{origin:sum(v['origin']==origin for v in rows.values()) for origin in ('source','target')},'commandCreatedToCommitObservedMs':percentiles([v['committedAtMs']-v['queuedAtMs'] for v in rows.values()])}
+
 def remove(name,run):
     v=inspect(name)
-    if v['Config'].get('Labels',{}).get('yeodam.issue')!='388' or v['Config']['Labels'].get('yeodam.run')!=run:raise RuntimeError('Container ownership differs')
+    if v['Config'].get('Labels',{}).get('yeodam.issue')!='391' or v['Config']['Labels'].get('yeodam.run')!=run:raise RuntimeError('Container ownership differs')
     if v['State']['Running']:docker('POST','/containers/'+name+'/stop?t=30')
+    metrics=collect_completions(name,run)
     docker('DELETE','/containers/'+name)
-    print(json.dumps({'removed':name}))
+    print(json.dumps({'removed':name,'completionMetrics':metrics}))
 def status_route(run,restore=False):
     directory=BASE/run;directory.mkdir(mode=0o700,parents=True,exist_ok=True)
     record=directory/'nginx-route.json';backup=directory/'nginx.before'
@@ -139,20 +183,29 @@ def status_route(run,restore=False):
     subprocess.run(['systemctl','reload','nginx'],check=True,capture_output=True)
     print(json.dumps({'statusRoute':'restored' if restore else 'installed','runId':run}))
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('auth-files','start-app','start-consumer','queue','direct','stop-app','stop-consumer','enable-consumer','restore-original','status','route-status','restore-route'))
-    p.add_argument('--run-id',required=True);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('auth-files','start-app','start-consumer','queue','source-queue','source-ready','direct','stop-app','stop-consumer','enable-consumer','restore-original','status','route-status','restore-route'))
+    p.add_argument('--run-id',required=True);p.add_argument('--deadline',type=float);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id or '10.30.0.174' not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Unexpected host or UUID')
     if a.action=='auth-files':auth_files(a.run_id)
     elif a.action in ('route-status','restore-route'):status_route(a.run_id,a.action=='restore-route')
     elif a.action=='enable-consumer':
-        path=Path('/run/yeodam-b388')/a.run_id/'container-auth'/'apply-enabled';path.touch(mode=0o444,exist_ok=False)
-        print(json.dumps({'consumerApplyEnabled':True,'runId':a.run_id}))
+        path=Path('/run/yeodam-b391')/a.run_id/'container-auth'/'apply-enabled';path.touch(mode=0o444,exist_ok=False)
+        end=a.deadline if a.deadline is not None else time.time()+30
+        while time.time()<end:
+            try:
+                with urlopen('http://127.0.0.1:18081/api/actuator/health',timeout=1) as response:
+                    if response.status==200:break
+            except Exception:pass
+            time.sleep(.05)
+        else:raise RuntimeError('Target listener activation exceeded fixed budget')
+        print(json.dumps({'consumerApplyEnabled':True,'runId':a.run_id,'activatedAt':time.time()}))
     elif a.action.startswith('start-'):create(a.run_id,a.action=='start-consumer')
-    elif a.action in ('queue','direct'):mode(a.run_id,a.action)
-    elif a.action.startswith('stop-'):remove('yeodam-b388-'+a.action[5:],a.run_id)
+    elif a.action=='source-ready':source_ready(a.run_id)
+    elif a.action in ('queue','source-queue','direct'):mode(a.run_id,a.action)
+    elif a.action.startswith('stop-'):remove('yeodam-b391-'+a.action[5:],a.run_id)
     elif a.action=='restore-original':docker('POST','/containers/'+ORIGINAL+'/start');print('ORIGINAL_STARTED')
     else:
-        for name in (ORIGINAL,'yeodam-b388-app','yeodam-b388-consumer'):
+        for name in (ORIGINAL,'yeodam-b391-app','yeodam-b391-consumer'):
             try:
                 s=inspect(name);print(json.dumps({'container':name,'status':s['State']['Status'],'health':s['State'].get('Health',{}).get('Status')}))
             except RuntimeError:print(json.dumps({'container':name,'status':'absent'}))
