@@ -18,8 +18,8 @@ def save(path,state):
     temporary.write_text(json.dumps(state));temporary.chmod(0o600);os.replace(temporary,path)
 
 def paths(run):
-    directory=Path('/run/yeodam-b386')/run;directory.mkdir(parents=True,mode=0o700,exist_ok=True)
-    return directory,Path('/opt/yeodam-load/results/b386')/run
+    directory=Path('/run/yeodam-b388')/run;directory.mkdir(parents=True,mode=0o700,exist_ok=True)
+    return directory,Path('/opt/yeodam-load/results/b388')/run
 
 def start(run,rate):
     directory,root=paths(run)
@@ -48,6 +48,7 @@ def read(run,do_audit=False):
     if not files:print(json.dumps(state));return
     file=files[0];state['resultDirectory']=str(file.parent)
     auth_actors={};recovered=Counter();started={};final={};statuses=Counter();first_status={};refreshes=Counter();csrf=Counter();plan=None;first=[];latencies=[]
+    network=Counter();trip_vus=set();max_in_vu=0
     event_files=[file]
     if (file.parent/'completion-events.jsonl').exists():event_files.append(file.parent/'completion-events.jsonl')
     lines=(line for event_file in event_files for line in event_file.open())
@@ -59,7 +60,13 @@ def read(run,do_audit=False):
             if e['event']=='run_started':plan=e
             elif e['event']=='auth_actor_started':auth_actors[e['vu']]={'actorIndex':e['actorIndex'],'userId':e['userId']}
             elif e['event']=='started':started[e['requestId']]=e
-            elif e['event']=='first_response':statuses[e['status']]+=1;first_status[e['requestId']]=e['status'];first.append(e['elapsedMs'])
+            elif e['event']=='first_response':
+                statuses[e['status']]+=1;first_status[e['requestId']]=e['status'];first.append(e['elapsedMs'])
+                if e.get('vu') is not None:trip_vus.add(e['vu'])
+                max_in_vu=max(max_in_vu,e.get('requestInVU',0))
+                if e['status']>0 and 'connectingMs' in e:
+                    network['responsesWithNewTcp' if e['connectingMs']>0 else 'responsesWithoutNewTcp']+=1
+                    network['responsesWithTlsHandshake' if e.get('tlsMs',0)>0 else 'responsesWithoutTlsHandshake']+=1
             elif e['event']=='final':final[e['requestId']]=e;latencies.append(e['elapsedMs'])
             elif e['event']=='auth_refresh':
                 refreshes['success' if e['ok'] else 'failure']+=1
@@ -82,6 +89,7 @@ def read(run,do_audit=False):
         def stats(values):
             values=sorted(values)
             return {k:values[min(len(values)-1,int((len(values)-1)*q))] for k,q in [('p50',.5),('p95',.95),('p99',.99),('max',1)]} if values else {}
+        state['connectionObservation']={**dict(network),'usedTripVUs':len(trip_vus),'maxRequestsInOneTripVU':max_in_vu,'preAllocatedVUs':plan.get('preAllocatedVUs') if plan else None,'maxVUs':plan.get('maxVUs') if plan else None}
         state.update(completedAfterDeadline=sum(e.get('outcome')=='confirmed' and e.get('withinDeadline') is False for e in final.values()),
                      started=len(started),final=len(final),retryRecovered=dict(recovered),confirmed=sum(e['outcome']=='confirmed' for e in final.values()),
                      firstStatuses=dict(statuses),refreshes=dict(refreshes),csrf=dict(csrf),missingFinal=0,acceptedNotIndividuallyPolled=statuses.get(202,0),completionObservation="fixed aggregate checkpoints; no completion latency percentile",

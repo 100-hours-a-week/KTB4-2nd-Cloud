@@ -28,7 +28,7 @@ def aws(service,*args):
 def configure(run):
     old=json.loads(Path('/run/yeodam-cdc-auth368/consumer.json').read_text())
     old['run_id']=run;old['redis']['prefix']='yeodam:cutover:'+run+':'
-    directory=Path('/run/yeodam-b386')/run;directory.mkdir(mode=0o700,parents=True,exist_ok=True)
+    directory=Path('/run/yeodam-b388')/run;directory.mkdir(mode=0o700,parents=True,exist_ok=True)
     path=directory/'auth.json'
     if path.exists():raise RuntimeError('Auth config already exists')
     path.write_text(json.dumps(old));path.chmod(0o600)
@@ -68,7 +68,7 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('action',choices=('configure','consume','audit'));p.add_argument('--origin',choices=('source','target'),default='source');p.add_argument('--run-id',required=True);p.add_argument('--mysql-role',choices=('source','target'),default='source');a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id:raise ValueError('Canonical UUID required')
     if a.action=='configure':configure(a.run_id);return
-    config_path=Path('/run/yeodam-b386')/a.run_id/'auth.json'
+    config_path=Path('/run/yeodam-b388')/a.run_id/'auth.json'
     config=json.loads(config_path.read_text())
     # Existing IAM grants only this staging Redis secret to the Source host.
     secret=aws('secretsmanager','get-secret-value','--secret-id','yeodam-v2-staging/redis-auth-token')['SecretString']
@@ -80,7 +80,7 @@ def main():
     from confluent_kafka import Consumer
     r=config['redis'];client=redis.Redis(host=r['host'],port=r['port'],password=secret,ssl=True,decode_responses=True,socket_timeout=5)
     client.ping()
-    topic='staging.yeodam.migration.auth368.b386-'+a.run_id+('-target-encrypted' if a.origin=='target' else '-encrypted')
+    topic='staging.yeodam.migration.auth368.b388-'+a.run_id+('-target-encrypted' if a.origin=='target' else '-encrypted')
     key=bytes.fromhex(Path('/run/yeodam-cdc-auth368/aes.hex').read_text().strip())
     password=aws('ssm','get-parameter','--name','/yeodam/v2/staging/cdc-test/SINK_PASSWORD','--with-decryption')['Parameter']['Value']
     ca=config_path.parent/'target-ca.pem'
@@ -88,7 +88,7 @@ def main():
     import pymysql,ssl
     context=ssl.create_default_context(cafile=str(ca));context.check_hostname=False
     connection=pymysql.connect(host='10.30.10.28',user='yeodam_cdc_sink',password=password,database='yeodam_v1_source',ssl=context,autocommit=True,charset='utf8mb4',connect_timeout=3,read_timeout=5,write_timeout=5)
-    consumer=Consumer({'bootstrap.servers':'10.30.10.95:9092','group.id':'yeodam-auth368-b386-'+a.run_id+('-target' if a.origin=='target' else ''),'auto.offset.reset':'earliest','enable.auto.commit':False,'enable.auto.offset.store':False})
+    consumer=Consumer({'bootstrap.servers':'10.30.10.95:9092','group.id':'yeodam-auth368-b388-'+a.run_id+('-target' if a.origin=='target' else ''),'auto.offset.reset':'earliest','enable.auto.commit':False,'enable.auto.offset.store':False})
     consumer.subscribe([topic]);running=True;count=0
     def stop(*_):
         nonlocal running
@@ -103,7 +103,7 @@ def main():
             if msg.error():raise RuntimeError('Authentication Kafka record error')
             event=decrypt_event(msg.value(),topic,key)
             name=event.get('source',{}).get('name')
-            if name!='staging.yeodam.migration.auth368.b386-'+a.run_id+'.'+a.origin:raise RuntimeError('Unexpected auth Source identity')
+            if name!='staging.yeodam.migration.auth368.b388-'+a.run_id+'.'+a.origin:raise RuntimeError('Unexpected auth Source identity')
             if a.origin=='target':
                 boundary_path=config_path.parent/'auth-handoff.json'
                 if not boundary_path.exists():

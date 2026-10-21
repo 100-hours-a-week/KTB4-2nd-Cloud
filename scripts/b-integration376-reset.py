@@ -40,8 +40,8 @@ def main():
     role='target' if a.action=='target-snapshot' else 'source'
     address='10.30.10.28' if role=='target' else '10.30.0.174'
     if address not in subprocess.check_output(['hostname','-I'],text=True).split():raise RuntimeError('Wrong maintenance host')
-    directory=Path('/var/lib/yeodam/b386')/a.run_id;directory.mkdir(mode=0o700,parents=True,exist_ok=True)
-    prefix='migration/rehearsal-reset/'+a.run_id+'/b386-'
+    directory=Path('/var/lib/yeodam/b388')/a.run_id;directory.mkdir(mode=0o700,parents=True,exist_ok=True)
+    prefix='migration/rehearsal-reset/'+a.run_id+'/b388-'
     if role=='target':
         if query(role,'SELECT @@server_id;')!='2':raise RuntimeError('Wrong Target ID')
         # Stop acknowledgements can precede MySQL socket teardown.
