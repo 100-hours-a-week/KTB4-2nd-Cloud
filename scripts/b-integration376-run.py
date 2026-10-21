@@ -70,7 +70,14 @@ def deploy():
                 commands+=ssm.deploy('tests/load/'+name,'/opt/yeodam-load/source/tests/load/'+name)
                 commands+=['chown ubuntu:ubuntu /opt/yeodam-load/source/tests/load/'+name]
             commands+=ssm.deploy('tests/load/scripts/private-pool-transfer.py','/run/yeodam-b391/pool-transfer.py')
-        raw(host,commands)
+        # SSM includes its document in the 97KiB request budget. Split only artifact
+        # delivery; scripts and their execution order stay unchanged.
+        batch=[]
+        for command in commands:
+            if batch and len(json.dumps(batch+[command]).encode())>60000:
+                raw(host,batch);batch=[]
+            batch.append(command)
+        if batch:raw(host,batch)
     log('artifacts_installed')
 
 def transfer_pool(run):
