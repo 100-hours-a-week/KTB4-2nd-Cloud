@@ -6,11 +6,11 @@ def load(file):
  spec=importlib.util.spec_from_file_location('b391_'+file.replace('-','_'),ROOT/'scripts'/file);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
 class SourceDrainTests(unittest.TestCase):
  def test_active_direct_or_unstopped_listener_cannot_freeze_database(self):
-  for active,stopped in [(1,True),(0,False)]:
-   with self.subTest(active=active,stopped=stopped):
+  for active,stopped,trip,queued in [(1,True,0,0),(0,False,0,0),(0,True,1,0),(0,True,0,1)]:
+   with self.subTest(active=active,stopped=stopped,trip=trip,queued=queued):
     m=load('b-integration376-control.py');run='26b45888-9b29-4afb-b090-ff2acbfc3ab6';clock=[100.0]
     db=Mock();db.identity.side_effect=lambda role:['1' if role=='source' else '2','uuid',*(['0','0'] if role=='source' else ['1','0'])]
-    app=Mock();app.source_control.return_value={'instance':'same','runId':run,'fencing':True,'activeDirect':active,'sourceConsumerStopped':stopped,'sourceConsumerRunning':not stopped}
+    app=Mock();app.source_control.return_value={'instance':'same','runId':run,'fencing':True,'activeDirect':active,'activeTrip':trip,'queuedTrip':queued,'sourceConsumerStopped':stopped,'sourceConsumerRunning':not stopped}
     with tempfile.TemporaryDirectory() as d,patch.object(m,'BASE',Path(d)),patch.object(m,'database',return_value=db),patch.object(m,'source_app',return_value=app),patch.object(m,'ensure_prepared'),patch.object(m.subprocess,'check_output',return_value='10.30.0.174'),patch.object(m.time,'time',side_effect=lambda:clock[0]),patch.object(m.time,'sleep',side_effect=lambda _:clock.__setitem__(0,clock[0]+20)),patch.object(sys,'argv',['control','fence','--run-id',run,'--at','100']):
      with self.assertRaisesRegex(RuntimeError,'not frozen'):m.main()
      self.assertFalse(any('SET PERSIST' in c.args[1] for c in db.query.call_args_list))

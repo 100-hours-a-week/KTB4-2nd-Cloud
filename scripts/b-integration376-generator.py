@@ -84,7 +84,7 @@ def read(run,do_audit=False):
             for row in sorted(rows):h.update(json.dumps(row,ensure_ascii=False,separators=(',',':')).encode());h.update(b'\n')
             return h.hexdigest()
         projected=[(str(e['userId']),e['tripName'],e['request']['startDate'],e['request']['endDate'],'PROCESSING',str(code)) for e in started.values() for code in e['request']['regionCodes']]
-        non202=[e for e in started.values() if first_status.get(e['requestId']) in (0,201)]
+        non202=[e for e in started.values() if first_status.get(e['requestId']) != 202]
         non202_projected=[(str(e['userId']),e['tripName'],e['request']['startDate'],e['request']['endDate'],'PROCESSING',str(code)) for e in non202 for code in e['request']['regionCodes']]
         def stats(values):
             values=sorted(values)

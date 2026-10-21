@@ -13,7 +13,9 @@ const dataset = requiredEnv('K6_TRIP_DATASET_ID');
 const rate = positiveIntegerEnv('K6_TRIP_RATE', 10);
 const duration = positiveIntegerEnv('K6_TRIP_DURATION_SECONDS', 900);
 const actors = ({ 10: 40, 30: 120, 50: 200 })[rate];
-const vus = ({ 10: 64, 30: 900, 50: 1000 })[rate];
+// ACK path: two seconds of initial arrival capacity, not the former synchronous DB wait.
+// Real slow responses can still grow VUs; keep the service timeout and Drop=0 gate.
+const vus = ({ 10: 20, 30: 60, 50: 100 })[rate];
 const maxVus = rate * 120; // Keep the 100s response capacity plus 20% arrival scheduling headroom.
 if (base !== 'https://v1-staging.yeodam-2gether.com' || !/^[0-9a-f-]{36}$/.test(runId) ||
     !vus || duration !== 900) throw new Error('B integration requires staging, canonical Run, 10/30/50 RPS and 900s');

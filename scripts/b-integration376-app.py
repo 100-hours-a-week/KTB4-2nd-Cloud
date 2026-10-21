@@ -123,9 +123,12 @@ def collect_completions(name,run):
     # Docker's stdout multiplexing frames are binary; decode only matching safe records.
     c=Connection('localhost',timeout=30);c.request('GET','/containers/'+name+'/logs?stdout=1&stderr=1');r=c.getresponse();raw=r.read();c.close()
     if r.status!=200:raise RuntimeError('Completion log read failed')
-    chunks=[]
-    while len(raw)>=8:
-        length=int.from_bytes(raw[4:8],'big');chunks.append(raw[8:8+length]);raw=raw[8+length:]
+    chunks=[];offset=0;view=memoryview(raw)
+    while offset+8<=len(raw):
+        length=int.from_bytes(view[offset+4:offset+8],'big')
+        if offset+8+length>len(raw):raise RuntimeError('Incomplete Docker log frame')
+        chunks.append(view[offset+8:offset+8+length]);offset+=8+length
+    if offset!=len(raw):raise RuntimeError('Incomplete Docker log header')
     pattern=re.compile(r'migration_trip_completed request_id=([0-9a-f-]{36}) origin=(source|target) queued_at_ms=(\d+) committed_at_ms=(\d+)')
     timing_pattern=re.compile(r'consumer_started_at_ms=(\d+) apply_elapsed_us=(\d+) partition=(\d+)')
     path=Path('/run/yeodam-b391')/run/'completions.json'
