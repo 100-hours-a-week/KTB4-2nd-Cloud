@@ -123,18 +123,31 @@ def collect_completions(name,run):
     while len(raw)>=8:
         length=int.from_bytes(raw[4:8],'big');chunks.append(raw[8:8+length]);raw=raw[8+length:]
     pattern=re.compile(r'migration_trip_completed request_id=([0-9a-f-]{36}) origin=(source|target) queued_at_ms=(\d+) committed_at_ms=(\d+)')
+    timing_pattern=re.compile(r'consumer_started_at_ms=(\d+) apply_elapsed_us=(\d+) partition=(\d+)')
     path=Path('/run/yeodam-b391')/run/'completions.json'
     rows=json.loads(path.read_text()) if path.exists() else {}
     from uuid import uuid5
     smoke=str(uuid5(UUID(run),'public-b2-smoke'))
-    for match in pattern.finditer(b''.join(chunks).decode(errors='replace')):
+    text=b''.join(chunks).decode(errors='replace')
+    for match in pattern.finditer(text):
         rid,origin,queued,committed=match.groups()
-        if rid!=smoke and int(queued)>0:rows.setdefault(rid,{'origin':origin,'queuedAtMs':int(queued),'committedAtMs':int(committed)})
+        if rid!=smoke and int(queued)>0:
+            row={'origin':origin,'queuedAtMs':int(queued),'committedAtMs':int(committed)}
+            timing=timing_pattern.match(text,match.end()+1)
+            if timing:
+                received,elapsed,partition=map(int,timing.groups())
+                row.update(consumerStartedAtMs=received,applyElapsedUs=elapsed,partition=partition)
+            rows.setdefault(rid,row)
     path.write_text(json.dumps(rows));path.chmod(0o600)
     def percentiles(values):
         values=sorted(values)
         return {k:values[int((len(values)-1)*q)] for k,q in [('p50',.5),('p95',.95),('p99',.99),('max',1)]} if values else {}
-    return {'count':len(rows),'origins':{origin:sum(v['origin']==origin for v in rows.values()) for origin in ('source','target')},'commandCreatedToCommitObservedMs':percentiles([v['committedAtMs']-v['queuedAtMs'] for v in rows.values()])}
+    timed=[v for v in rows.values() if 'consumerStartedAtMs' in v]
+    detail={}
+    for origin in ('source','target'):
+        selected=[v for v in timed if v['origin']==origin]
+        detail[origin]={'count':len(selected),'queueWaitMs':percentiles([v['consumerStartedAtMs']-v['queuedAtMs'] for v in selected]),'applyElapsedUs':percentiles([v['applyElapsedUs'] for v in selected]),'partitionCounts':{str(p):sum(v['partition']==p for v in selected) for p in range(4)}}
+    return {'timingCount':len(timed),'timingByOrigin':detail,'count':len(rows),'origins':{origin:sum(v['origin']==origin for v in rows.values()) for origin in ('source','target')},'commandCreatedToCommitObservedMs':percentiles([v['committedAtMs']-v['queuedAtMs'] for v in rows.values()])}
 
 def remove(name,run):
     v=inspect(name)

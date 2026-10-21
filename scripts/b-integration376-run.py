@@ -50,7 +50,7 @@ def records(result):
     return values
 
 def deploy():
-    source=['b-integration376-app.py','b-integration376-control.py','b-integration376-auth.py','b-integration376-e2e.py','b-integration376-reset.py','b-integration376-smoke.py','b-integration386-handoff.py','b-integration388-connections.py']
+    source=['b-integration376-app.py','b-integration376-control.py','b-integration376-auth.py','b-integration376-e2e.py','b-integration376-reset.py','b-integration376-smoke.py','b-integration386-handoff.py','b-integration388-connections.py','b-integration393-resources.py']
     for host,files in [('source',source),('target',['b-integration376-bulk.py','b-integration376-reset.py']),('kafka',['b-integration376-kafka.py','b-integration383-cutover.py','b-integration386-handoff.py']),('generator',['b-integration376-generator.py'])]:
         commands=[]
         for name in files:commands+=ssm.deploy('scripts/'+name,'/run/yeodam-b391/'+name)
@@ -206,6 +206,8 @@ def execute(case,index):
     kafka_standby=raw('kafka',['/opt/yeodam-b383/venv/bin/python3 /run/yeodam-b391/b-integration386-handoff.py kafka --run-id '+run+' --at '+str(started+360)],sync=False,bound=1200)
     fence_id=raw('source',['/opt/yeodam-cdc-auth368/venv/bin/python3 /run/yeodam-b391/b-integration386-handoff.py source --run-id '+run+' --at '+str(started+360)],sync=False,bound=1000)
     state.update(fenceCommand=fence_id,kafkaHandoffCommand=kafka_standby,connectionSamplerCommand=raw('source',['python3 /run/yeodam-b391/b-integration388-connections.py --run-id '+run+' --started-at '+str(started)],sync=False,bound=1000));state_path.write_text(json.dumps(state,indent=2))
+    state['resourceSamplerCommand']=raw('source',['python3 /run/yeodam-b391/b-integration393-resources.py --run-id '+run+' --started-at '+str(started)],sync=False,bound=1000)
+    state_path.write_text(json.dumps(state,indent=2))
     kafka(run,'trips',index);kafka(run,'auth-source',index)
     kafka(run,'ready-trips',index);kafka(run,'ready-auth-source',index)
     # Capture full consistent data only after live requests and no_data CDC started.
@@ -214,7 +216,10 @@ def execute(case,index):
     with tempfile.NamedTemporaryFile('w',suffix='.json') as f:
         json.dump(request,f);f.flush();snapshot_id=ssm.aws('ssm','send-command','--cli-input-json','file://'+f.name)['Command']['CommandId']
     state['snapshotCommand']=snapshot_id;state_path.write_text(json.dumps(state,indent=2))
+    checkpoint('snapshot_started',snapshotCommand=snapshot_id)
     snapshot=wait('source',snapshot_id)
+    state['snapshotTiming']={k:snapshot.get(k) for k in ('ExecutionStartDateTime','ExecutionEndDateTime')}
+    checkpoint('snapshot_finished',snapshotTiming=state['snapshotTiming'])
     marker=next(line.split('Source snapshot ready: ',1)[1].strip() for line in snapshot['StandardOutputContent'].splitlines() if line.startswith('Source snapshot ready: '))
     prefix='s3://yeodam-v2-staging-mysql-backup-483175530259-ap-northeast-2/'
     if not marker.startswith(prefix):raise RuntimeError('Snapshot URI is outside the approved bucket')
@@ -222,7 +227,9 @@ def execute(case,index):
     state['snapshotMarker']=marker
     state['bulkCommand']=phase('target','b-integration376-bulk.py',run,None,'--source-marker',marker,sync=False)
     state_path.write_text(json.dumps(state,indent=2))
-    wait('target',state['bulkCommand'])
+    bulk=wait('target',state['bulkCommand'])
+    state['bulkTiming']={k:bulk.get(k) for k in ('ExecutionStartDateTime','ExecutionEndDateTime')}
+    checkpoint('bulk_finished',bulkTiming=state['bulkTiming'])
     return finish(case,index,state,state_path,load_id,fence_id,started)
 
 def finish(case,index,state,state_path,load_id,fence_id,started,resume_boundary=False):
@@ -266,6 +273,9 @@ def finish(case,index,state,state_path,load_id,fence_id,started,resume_boundary=
     result['k6FinishedAfterInputSeconds']=result['finishedAt']-(started+900)
     checkpoint('load_finished',loadResult=result)
     if state.get('connectionSamplerCommand'):checkpoint('connection_samples',sourceConnectionSamples=records(wait('source',state['connectionSamplerCommand'],allow_failure=True)))
+    if state.get('resourceSamplerCommand'):
+        wait('source',state['resourceSamplerCommand'],allow_failure=True)
+        checkpoint('resource_samples',resourceSamples=records(raw('source',['python3 /run/yeodam-b391/b-integration393-resources.py --run-id '+run+' --started-at '+str(started)+' --summarize'])))
     # Fixed checkpoint, no per-request completion polling. E2E is scheduled independently from SQL audits.
     if switched:
         checkpoint_at=result['fixedInputEndAt']+120
