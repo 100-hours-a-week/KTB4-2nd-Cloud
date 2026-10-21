@@ -33,7 +33,10 @@ def prepare(c,topic):
     metadata=c.list_topics(topic,timeout=3).topics[topic]
     if metadata.error:raise RuntimeError('Topic metadata unavailable')
     parts=[TopicPartition(topic,p) for p in metadata.partitions]
-    c.committed(parts,timeout=3) # Resolve the coordinator before the write fence.
+    # The run's Sink/Group may not exist yet; this is optional coordinator warmup.
+    try:c.committed(parts,timeout=3)
+    except Exception:pass
+    # Actual committed offsets are always checked strictly after the write fence.
     return parts
 def ends(c,parts):return {p.partition:c.get_watermark_offsets(p,timeout=3,cached=False)[1] for p in parts}
 def caught(c,topic,parts=None,end=None):
