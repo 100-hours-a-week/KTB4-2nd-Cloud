@@ -195,6 +195,18 @@ def status_route(run,restore=False):
         raise RuntimeError('Nginx candidate invalid; original retained')
     subprocess.run(['systemctl','reload','nginx'],check=True,capture_output=True)
     print(json.dumps({'statusRoute':'restored' if restore else 'installed','runId':run}))
+
+def restore_original():
+    docker('POST','/containers/'+ORIGINAL+'/start')
+    end=time.monotonic()+100
+    while time.monotonic()<end:
+        try:
+            with urlopen('http://127.0.0.1:8080/api/actuator/health',timeout=2) as response:
+                if response.status==200:
+                    print('ORIGINAL_STARTED_HEALTH_200');return
+        except OSError:pass
+        time.sleep(1)
+    raise RuntimeError('Original V1 startup did not become healthy; do not start next Run')
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('action',choices=('auth-files','start-app','start-consumer','queue','source-queue','source-ready','direct','stop-app','stop-consumer','enable-consumer','restore-original','status','route-status','restore-route'))
     p.add_argument('--run-id',required=True);p.add_argument('--deadline',type=float);a=p.parse_args()
@@ -216,7 +228,7 @@ if __name__=='__main__':
     elif a.action=='source-ready':source_ready(a.run_id)
     elif a.action in ('queue','source-queue','direct'):mode(a.run_id,a.action)
     elif a.action.startswith('stop-'):remove('yeodam-b391-'+a.action[5:],a.run_id)
-    elif a.action=='restore-original':docker('POST','/containers/'+ORIGINAL+'/start');print('ORIGINAL_STARTED')
+    elif a.action=='restore-original':restore_original()
     else:
         for name in (ORIGINAL,'yeodam-b391-app','yeodam-b391-consumer'):
             try:
