@@ -40,4 +40,15 @@ class LatencyTests(unittest.TestCase):
         self.assertEqual(result['hostBusyPercent'],20)
         self.assertEqual(result['processCpuOneCorePercent'],{'java':50})
 
+    def test_minute_buckets_follow_command_time_not_delayed_consumer_start(self):
+        module=load('summarize-b393-latency.py')
+        rows={'a':{'origin':'source','partition':0,'queuedAtMs':1000,'consumerStartedAtMs':60000,'committedAtMs':60001,'applyElapsedUs':1000},
+              'b':{'origin':'target','partition':1,'queuedAtMs':61000,'consumerStartedAtMs':63000,'committedAtMs':63002,'applyElapsedUs':2000},
+              'legacy':{'origin':'source','queuedAtMs':1000,'committedAtMs':2000}}
+        result=module.summarize(rows,0)
+        self.assertEqual(result['timedRecords'],2)
+        self.assertEqual(result['totalRecords'],3)
+        self.assertEqual(result['byCommandMinute']['0']['queueWaitMs']['p95'],59000)
+        self.assertEqual(result['byCommandMinute']['1']['applyElapsedMs']['p95'],2)
+
 if __name__=='__main__':unittest.main()
