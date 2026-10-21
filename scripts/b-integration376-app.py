@@ -43,6 +43,9 @@ def create(run,consumer):
       'MIGRATION_TRIP_TOPIC':'staging.yeodam.migration.b391.'+run+'.requests',
       'MIGRATION_TRIP_CONSUMER_GROUP':'yeodam-b391-'+run,
       'MIGRATION_TRIP_CONCURRENCY':'4',
+      # The public service owns housekeeping; the dedicated request executor must
+      # not run a second copy or reopen Target connections before Bulk import.
+      'MIGRATION_SERVICE_SCHEDULERS_ENABLED':'false' if consumer else 'true',
       'MIGRATION_AUTH_ENABLED':'true',
       'MIGRATION_AUTH_TOPIC':'staging.yeodam.migration.b391.'+run+'.auth-requests',
       'MIGRATION_AUTH_CONSUMER_ENABLED':'false',
