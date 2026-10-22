@@ -33,13 +33,13 @@ def deploy():
         'source': ['b-integration376-app.py', 'b-integration376-control.py',
                    'b-integration376-auth.py', 'b-integration376-smoke.py',
                    'b-integration388-connections.py', 'b-integration393-resources.py',
-                   'b-integration396-analyze.py'],
+                   'b-integration396-analyze.py', 'b-integration406-reads.py'],
         'generator': ['b-integration376-generator.py'],
     }
     for host, names in files.items():
         for name in names:
             b.raw(host, b.ssm.deploy('scripts/'+name, '/run/yeodam-b391/'+name))
-    for name in ('scenarios/migration-b-integration.js', 'scripts/run-k6.sh'):
+    for name in ('scenarios/migration-b-integration.js', 'scripts/run-k6.sh', 'lib/migration-read-probes.mjs'):
         target = '/opt/yeodam-load/source/tests/load/'+name
         b.raw('generator', b.ssm.deploy('tests/load/'+name, target)+['chown ubuntu:ubuntu '+target])
     b.raw('generator', b.ssm.deploy('tests/load/scripts/private-pool-transfer.py', '/run/yeodam-b391/pool-transfer.py'))
@@ -106,6 +106,15 @@ try:
 finally:d.close()
 """.replace('RUN',repr(run)).replace('EXPECTED',repr(expected))
     state['userDistribution']=b.records(remote('source',code))[-1];save(state)
+    if (EVIDENCE/'enable-read-probes').exists():
+        b.phase('source','b-integration406-reads.py',run,'prepare')
+        fixture=b.records(b.phase('source','b-integration406-reads.py',run,'metadata'))[-1]
+        payload=base64.b64encode(json.dumps(fixture).encode()).decode()
+        b.raw('generator',['install -d -m 0700 /run/yeodam-b391/'+run,
+                         "printf '%s' '"+payload+"' | base64 -d > /run/yeodam-b391/"+run+"/read-fixtures.json",
+                         'chown ubuntu:ubuntu /run/yeodam-b391/'+run,
+                         'chown ubuntu:ubuntu /run/yeodam-b391/'+run+'/read-fixtures.json',
+                         'chmod 0600 /run/yeodam-b391/'+run+'/read-fixtures.json'])
     b.transfer_pool(run)
     b.auth(run,'configure')
     b.phase('source','b-integration376-app.py',run,'auth-files')
@@ -114,6 +123,7 @@ finally:d.close()
     b.raw('source',["python3 - <<'HEALTH'\nimport time,urllib.request\nend=time.monotonic()+100\nwhile time.monotonic()<end:\n try:\n  if urllib.request.urlopen('http://127.0.0.1:8080/api/actuator/health',timeout=2).status==200:break\n except OSError:pass\n time.sleep(1)\nelse:raise RuntimeError('Baseline BE not healthy')\nHEALTH"])
     b.phase('source','b-integration376-app.py',run,'route-status')
     b.phase('source','b-integration376-app.py',run,'source-ready')
+    if (EVIDENCE/'enable-read-probes').exists():b.phase('source','b-integration406-reads.py',run,'verify')
     b.phase('source','b-integration376-smoke.py',run)
     b.phase('source','b-integration376-app.py',run,'diagnostic-ready')
     # No Target container: attest the actual Source listener, not configuration intent.
