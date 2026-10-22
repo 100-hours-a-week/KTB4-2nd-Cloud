@@ -28,7 +28,7 @@ def initialize():
     # Reference contains only logical-user IDs, not session credentials.
     shutil.copy(EVIDENCE.parent/'404-source-baseline/reference.json',EVIDENCE/'baseline/reference.json')
     (EVIDENCE/'baseline/enable-read-probes').touch()
-    case={'rate':30,'runId':str(uuid.uuid4()),'candidate':'finite-watermark','readProbes':True,'connectorIndex':406}
+    case={'rate':30,'runId':str(uuid.uuid4()),'candidate':'finite-watermark','readProbes':True,'connectorIndex':0}
     (EVIDENCE/'migration/plan.json').write_text(json.dumps({'backendImage':IMAGE,'rates':[case]},indent=2))
     value={'writeRate':30,'readListRate':1,'readDetailRate':1,'duration':900,'fixedCheckpoint':1020,
            'sourceConcurrency':4,'targetConcurrency':8,'batch':32,'readUsers':20,
@@ -53,4 +53,5 @@ if __name__=='__main__':
             s=json.loads((EVIDENCE/'baseline/state.json').read_text())
             if s['phase']!='completed':raise RuntimeError('Baseline not finalized')
             case=json.loads((m.EVIDENCE/'plan.json').read_text())['rates'][0]
+            if case['connectorIndex'] not in range(4):raise RuntimeError('Connector index must match existing 0..3 contract')
             m.execute(case,case['connectorIndex'])
