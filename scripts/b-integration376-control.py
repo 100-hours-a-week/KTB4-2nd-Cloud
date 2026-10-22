@@ -62,7 +62,7 @@ def source_app():
     return SourceFileLoader('source391','/run/yeodam-b391/b-integration376-app.py').load_module()
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('checkpoint','target-position','preflight','fence','promote','audit-source','audit-target','status','resume-source','recover-unpromoted','park-target-pool','auth-boundary'));p.add_argument('--run-id',required=True);p.add_argument('--at',type=float);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('checkpoint','target-position','preflight','fence','promote','audit-source','audit-target','status','resume-source','recover-unpromoted','park-target-pool','auth-boundary'));p.add_argument('--run-id',required=True);p.add_argument('--at',type=float);p.add_argument('--budget-started-at',type=float);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id or '10.30.0.174' not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Wrong host or UUID')
     db=database()
     try:
@@ -90,6 +90,9 @@ def main():
                  sourceConnections=int(db.query('source',"SHOW GLOBAL STATUS LIKE 'Threads_connected';").split('\t')[-1]),targetConnections=int(db.query('target',"SHOW GLOBAL STATUS LIKE 'Threads_connected';").split('\t')[-1]),
                  flywaySource=db.query('source','SELECT version FROM yeodam_v1_source.flyway_schema_history WHERE success=1 ORDER BY installed_rank DESC LIMIT 1;'))
         elif a.action=='fence':
+            if a.budget_started_at is not None:
+                if a.at is not None or not 0<=time.time()-a.budget_started_at<=10:
+                    raise RuntimeError('Invalid shared cutover budget origin')
             if a.at is not None:
                 if not 0 <= a.at-time.time() <= 900:raise RuntimeError('Cutover schedule outside this Run')
                 while time.time()<a.at:time.sleep(max(0,min(1,a.at-time.time())))
@@ -99,7 +102,7 @@ def main():
             save(a.run_id,'fence_intent')
             app=source_app()
             first=app.source_control(a.run_id,True)
-            instance=first['instance'];deadline=(a.at if a.at is not None else time.time())+40
+            instance=first['instance'];deadline=(a.budget_started_at if a.budget_started_at is not None else a.at if a.at is not None else time.time())+40
             app.mode(a.run_id,'queue')
             save(a.run_id,'requests_queued',drainStartedAt=time.time(),sourceInstance=instance)
             while True:
