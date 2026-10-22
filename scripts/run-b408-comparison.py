@@ -64,7 +64,7 @@ def ensure_e2e_prepared(label):
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('init','configure-limited','deploy','execute','stream-evidence'))
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('init','configure-limited','deploy','execute','resume-preparation','stream-evidence'))
     p.add_argument('--case',choices=('control','limited'));args=p.parse_args()
     if args.action=='init':initialize();return
     if args.action=='configure-limited':configure_limited();return
@@ -73,10 +73,11 @@ def main():
     if m.ssm.aws('sts','get-caller-identity')['Account']!='483175530259':raise RuntimeError('Wrong account')
     case=json.loads((m.EVIDENCE/'plan.json').read_text())['rates'][0]
     if args.action=='deploy':m.deploy()
-    elif args.action=='execute':
+    elif args.action in ('execute','resume-preparation'):
         ensure_e2e_prepared(args.case)
         if 'snapshotBytesPerSecond' not in case:raise RuntimeError('Dump rate not fixed before input')
-        m.execute(case,case['connectorIndex'])
+        action=m.resume_preparation if args.action=='resume-preparation' else m.execute
+        action(case,case['connectorIndex'])
     else:
         command="python3 - <<'READONLY'\nfrom pathlib import Path\nprint((Path('/run/yeodam-b391')/"+repr(case['runId'])+"/'snapshot-stream.json').read_text())\nREADONLY"
         result=m.records(m.raw('source',[command],bound=60))[-1]

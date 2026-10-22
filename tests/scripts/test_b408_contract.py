@@ -41,5 +41,19 @@ class ComparisonContract(unittest.TestCase):
             with self.assertRaises(ValueError):m.start_snapshot({'snapshotBytesPerSecond':-1})
             raw.assert_not_called()
 
+    def test_measured_run_cannot_resume_preparation(self):
+        m=load('resume408','b-integration376-run.py')
+        with tempfile.TemporaryDirectory() as folder,patch.object(m,'EVIDENCE',Path(folder)),patch.object(m,'raw') as raw:
+            (Path(folder)/'r.state.json').write_text(json.dumps({'phase':'preparing','startedAt':100}))
+            with self.assertRaises(RuntimeError):m.resume_preparation({'runId':'r','rate':30},0)
+            raw.assert_not_called()
+
+    def test_finished_run_cannot_resume_preparation(self):
+        m=load('resume408','b-integration376-run.py')
+        with tempfile.TemporaryDirectory() as folder,patch.object(m,'EVIDENCE',Path(folder)),patch.object(m,'raw') as raw:
+            (Path(folder)/'r.state.json').write_text(json.dumps({'phase':'completed'}))
+            with self.assertRaises(RuntimeError):m.resume_preparation({'runId':'r','rate':30},0)
+            raw.assert_not_called()
+
 
 if __name__=='__main__':unittest.main()

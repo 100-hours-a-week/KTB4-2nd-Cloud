@@ -194,6 +194,8 @@ def execute(case,index):
     latest=case.get('latestFenceSeconds',360)
     if type(latest) is not int or not 360<=latest<=600:raise ValueError('Invalid preparation budget')
     state={'runId':run,'rate':rate,'duration':900,'phase':'preparing','latestFenceSeconds':latest}
+    state_path.write_text(json.dumps(state,indent=2))
+    disk_ready()
     def checkpoint(phase_name,**values):
         state.update(phase=phase_name,**values);state_path.write_text(json.dumps(state,indent=2));log(phase_name,runId=run,rate=rate,**values)
     phase('source','b-integration376-control.py',run,'preflight')
@@ -213,6 +215,30 @@ def execute(case,index):
     auth(run,'configure')
     phase('source','b-integration376-app.py',run,'auth-files')
     phase('source','b-integration376-app.py',run,'start-app')
+    return execute_prepared(case,index,state,state_path)
+
+def disk_ready():
+    for host in ('source','target'):
+        raw(host,["python3 - <<'DISK'\nimport shutil,json\nfree=shutil.disk_usage('/').free\nprint(json.dumps({'rootFreeBytes':free,'minimumBytes':2147483648}))\nif free<2147483648:raise RuntimeError('Insufficient root disk headroom before input')\nDISK"])
+
+def resume_preparation(case,index):
+    run=case['runId'];state_path=EVIDENCE/(run+'.state.json')
+    state=json.loads(state_path.read_text()) if state_path.exists() else {'runId':run,'rate':case['rate'],'duration':900,'phase':'preparing','latestFenceSeconds':case.get('latestFenceSeconds',360)}
+    if state['phase']!='preparing' or 'startedAt' in state or 'k6Command' in state:
+        raise RuntimeError('Only an unstarted prepared app can resume')
+    disk_ready()
+    image=json.loads((EVIDENCE/'plan.json').read_text())['backendImage']
+    code="from importlib.machinery import SourceFileLoader\nfrom pathlib import Path\nimport json\nm=SourceFileLoader('guard408','/run/yeodam-b391/image-pull.py').load_module()\np=m.inspect('yeodam-b391-app')\nassert p['State']['Running'] and p['Config']['Labels'].get('yeodam.run')=="+repr(run)+"\nassert p['Config']['Image']=="+repr(image)+"\nassert m.existing('yeodam-b391-consumer') is None\nassert json.loads((Path('/var/lib/yeodam/b391')/("+repr(run)+"+'.original.json')).read_text())['runId']=="+repr(run)+"\nprint('PREPARED_APP_OWNERSHIP_CONFIRMED')"
+    raw('source',["python3 - <<'GUARD'\n"+code+"\nGUARD"])
+    code="from pathlib import Path\nimport subprocess\nassert not (Path('/run/yeodam-b391')/"+repr(run)+"/'k6.json').exists()\nassert subprocess.run(['pgrep','-x','k6'],capture_output=True).returncode!=0\nprint('NO_MEASURED_INPUT_STARTED')"
+    raw('generator',["python3 - <<'GUARD'\n"+code+"\nGUARD"])
+    state['preparationResumedAt']=time.time();state_path.write_text(json.dumps(state,indent=2))
+    return execute_prepared(case,index,state,state_path)
+
+def execute_prepared(case,index,state,state_path):
+    run=case['runId'];rate=case['rate'];latest=state['latestFenceSeconds']
+    def checkpoint(phase_name,**values):
+        state.update(phase=phase_name,**values);state_path.write_text(json.dumps(state,indent=2));log(phase_name,runId=run,rate=rate,**values)
     # One bounded health wait, before the measured load.
     raw('source',["python3 - <<'CHECK'\nimport time,urllib.request\nend=time.monotonic()+100\nwhile time.monotonic()<end:\n try:\n  r=urllib.request.urlopen('http://127.0.0.1:8080/api/actuator/health',timeout=2)\n  if r.status==200:print('B380_APP_HEALTH_200');break\n except Exception:pass\n time.sleep(2)\nelse:raise RuntimeError('Rehearsal BE did not become healthy')\nCHECK"])
     phase('source','b-integration376-app.py',run,'route-status')
