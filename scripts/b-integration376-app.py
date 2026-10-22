@@ -160,10 +160,17 @@ def collect_completions(name,run,include_smoke=False):
     def numbers(value):return {int(k):int(v) for k,v in re.findall(r'(\d+)=(\d+)',value)}
     for match in batch_pattern.finditer(text):
         origin,at,thread,assigned,counts,first,last,active,queued=match.groups()
-        batches.append({'origin':origin,'atMs':int(at),'thread':thread,
+        batches.append({'event':'start','origin':origin,'atMs':int(at),'thread':thread,
                         'assignedPartitions':[int(v) for v in re.findall(r'-(\d+)(?:,|\])',assigned)],
                         'counts':numbers(counts),'firstOffsets':numbers(first),'lastOffsets':numbers(last),
                         'active':int(active),'queued':int(queued)})
+    done_pattern=re.compile(r'migration_trip_batch_done origin=(source|target) at_ms=(\d+) thread=(\S+) wait_us=(\d+) unfinished=(.*?) active=(\d+) queued=(\d+)')
+    for match in done_pattern.finditer(text):
+        origin,at,thread,wait,unfinished,active,queued=match.groups()
+        batches.append({'event':'done','origin':origin,'atMs':int(at),'thread':thread,
+                        'waitUs':int(wait),'unfinishedPartitions':[int(v) for v in re.findall(r'-(\d+)(?:,|\])',unfinished)],
+                        'active':int(active),'queued':int(queued)})
+    batches.sort(key=lambda r:(r['atMs'],r['thread']))
     batch_path.write_text(json.dumps(batches));batch_path.chmod(0o600)
     path.write_text(json.dumps(rows));path.chmod(0o600)
     def percentiles(values):

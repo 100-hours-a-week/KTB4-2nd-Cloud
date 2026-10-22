@@ -46,7 +46,8 @@ class TimingEvidenceTests(unittest.TestCase):
         rid='4199673b-0fe2-4fe7-a68c-9bf8b31105c7'
         line=(f'migration_trip_completed request_id={rid} origin=source queued_at_ms=1000 committed_at_ms=1100 '
               'consumer_started_at_ms=1050 apply_elapsed_us=50000 partition=7 diagnostic=received_ms=1001 scheduler_wait_us=49000 connection_count=1 sql_secret=42\n'
-              'migration_trip_batch origin=source at_ms=1001 thread=listener-1 assigned=[topic-6, topic-7] counts={7=1} first={7=20} last={7=20} active=4 queued=8\n')
+              'migration_trip_batch origin=source at_ms=1001 thread=listener-1 assigned=[topic-6, topic-7] counts={7=1} first={7=20} last={7=20} active=4 queued=8\n'
+              'migration_trip_batch_done origin=source at_ms=1100 thread=listener-1 wait_us=99000 unfinished=[] active=3 queued=0\n')
         payload=line.encode();framed=b'\x01\x00\x00\x00'+len(payload).to_bytes(4,'big')+payload
         connection=MagicMock();response=connection.getresponse.return_value;response.status=200;response.read.return_value=framed
         with tempfile.TemporaryDirectory() as folder:
@@ -56,7 +57,9 @@ class TimingEvidenceTests(unittest.TestCase):
             row=json.loads((root/run/'completions.json').read_text())[rid]
             self.assertEqual(row['diagnostic']['connection_count'],1)
             self.assertNotIn('sql_secret',row['diagnostic'])
-            batch=json.loads((root/run/'diagnostic-batches.json').read_text())[0]
+            batches=json.loads((root/run/'diagnostic-batches.json').read_text());batch=batches[0]
+            self.assertEqual(batches[1]['event'],'done')
+            self.assertEqual(batches[1]['waitUs'],99000)
             self.assertEqual(batch['assignedPartitions'],[6,7])
             self.assertEqual(batch['counts'],{'7':1})
 
