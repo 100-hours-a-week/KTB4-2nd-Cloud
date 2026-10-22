@@ -15,7 +15,7 @@ from urllib.request import Request,urlopen
 from urllib.parse import quote
 from uuid import UUID
 
-IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:ac3307602681f2195e1ee02208ed04f3d86547001318d0f3098ee79f753bfc1f'
+IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:89b24d02225c8fb6143a4ee323e9b3221c18676c0ab14056b38a6edc608ad4e1'
 ORIGINAL='yeodam-app-backend-1'
 BASE=Path('/var/lib/yeodam/b391')
 class Connection(http.client.HTTPConnection):
@@ -183,6 +183,23 @@ def collect_completions(name,run,include_smoke=False):
         detail[origin]={'count':len(selected),'queueWaitMs':percentiles([v['consumerStartedAtMs']-v['queuedAtMs'] for v in selected]),'applyElapsedUs':percentiles([v['applyElapsedUs'] for v in selected]),'partitionCounts':{str(p):sum(v['partition']==p for v in selected) for p in range(8)}}
     return {'timingCount':len(timed),'timingByOrigin':detail,'count':len(rows),'origins':{origin:sum(v['origin']==origin for v in rows.values()) for origin in ('source','target')},'commandCreatedToCommitObservedMs':percentiles([v['committedAtMs']-v['queuedAtMs'] for v in rows.values()])}
 
+def consumer_config_ready(run):
+    configurations=[]
+    for name, concurrency in (('yeodam-b391-app',4),('yeodam-b391-consumer',8)):
+        owned=inspect(name)
+        if owned['Config'].get('Labels',{}).get('yeodam.run')!=run:
+            raise RuntimeError('Consumer configuration ownership differs')
+        c=Connection('localhost',timeout=15)
+        c.request('GET','/containers/'+name+'/logs?stdout=1&stderr=1')
+        response=c.getresponse();raw=response.read();c.close()
+        if response.status!=200:raise RuntimeError('Consumer configuration log unavailable')
+        # Only the fixed configuration marker is retained, never the surrounding logs.
+        marker=('migration_trip_consumer_config max_poll_records=32 '
+                'enable_auto_commit=false concurrency='+str(concurrency)).encode()
+        if marker not in raw:raise RuntimeError('Actual Listener configuration not attested before input')
+        configurations.append({'container':name,'maxPollRecords':32,'autoCommit':False,'concurrency':concurrency})
+    print(json.dumps({'phase':'consumer_config_ready','runId':run,'configurations':configurations}))
+
 def diagnostic_ready(run):
     collect_completions('yeodam-b391-app',run,include_smoke=True)
     rows=json.loads((Path('/run/yeodam-b391')/run/'smoke-completions.json').read_text())
@@ -252,10 +269,11 @@ def restore_original():
         time.sleep(1)
     raise RuntimeError('Original V1 startup did not become healthy; do not start next Run')
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('diagnostic-ready','auth-files','start-app','start-consumer','queue','source-queue','source-ready','direct','stop-app','stop-consumer','enable-consumer','restore-original','status','route-status','restore-route'))
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('consumer-config-ready','diagnostic-ready','auth-files','start-app','start-consumer','queue','source-queue','source-ready','direct','stop-app','stop-consumer','enable-consumer','restore-original','status','route-status','restore-route'))
     p.add_argument('--run-id',required=True);p.add_argument('--deadline',type=float);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id or '10.30.0.174' not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Unexpected host or UUID')
-    if a.action=='diagnostic-ready':diagnostic_ready(a.run_id)
+    if a.action=='consumer-config-ready':consumer_config_ready(a.run_id)
+    elif a.action=='diagnostic-ready':diagnostic_ready(a.run_id)
     elif a.action=='auth-files':auth_files(a.run_id)
     elif a.action in ('route-status','restore-route'):status_route(a.run_id,a.action=='restore-route')
     elif a.action=='enable-consumer':
