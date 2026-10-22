@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import ast
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -49,6 +50,29 @@ class SuccessfulVersion(unittest.TestCase):
             finally:
                 subject.EVIDENCE = old
                 subject.LEGACY = legacy
+
+    def test_bulk_wait_releases_naturally_and_timeout_prevents_import(self):
+        template = (ROOT / 'scripts/b-integration376-bulk.py').read_text()
+        patched = subject.render_bulk(template)
+        # The import/backup body is byte-identical after the original guard.
+        tail = "    if mysql(\"SELECT COUNT(*) FROM performance_schema.replication_connection_status"
+        self.assertEqual(patched[patched.index(tail):], template[template.index(tail):])
+        module = ast.parse(patched)
+        fn = next(n for n in module.body if isinstance(n, ast.FunctionDef) and n.name == 'import_snapshot')
+        namespace = {'json': json, 'time': SimpleNamespace(monotonic=lambda: 0, sleep=lambda _: None)}
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), '<bulk>', 'exec'), namespace)
+        answers = iter(['2\t1\t1', '1', '0'])
+        def mysql(query):
+            try: return next(answers)
+            except StopIteration: raise ValueError('Reached unchanged native replication guard')
+        namespace['mysql'] = mysql
+        with self.assertRaisesRegex(ValueError, 'unchanged native'):
+            namespace['import_snapshot']('run', 'marker')
+        clock = iter([0, 46])
+        namespace['time'] = SimpleNamespace(monotonic=lambda: next(clock), sleep=lambda _: None)
+        namespace['mysql'] = lambda q: '2\t1\t1' if '@@server_id' in q else '1'
+        with self.assertRaisesRegex(RuntimeError, 'import not started'):
+            namespace['import_snapshot']('run', 'marker')
 
     def test_modified_successful_checkout_is_refused_before_import(self):
         with patch.object(subject.subprocess, 'check_output', side_effect=['abc', 'abc', ' M scripts/runner.py']):
