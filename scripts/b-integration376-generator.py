@@ -51,8 +51,10 @@ def read(run,do_audit=False):
     network=Counter();trip_vus=set();max_in_vu=0
     event_files=[file]
     if (file.parent/'completion-events.jsonl').exists():event_files.append(file.parent/'completion-events.jsonl')
-    lines=(line for event_file in event_files for line in event_file.open())
-    for line in lines:
+    def event_lines():
+        for event_file in event_files:
+            with event_file.open() as stream:yield from stream
+    for line in event_lines():
             if '{' not in line:continue
             try:e=json.loads(line[line.index('{'):])
             except ValueError:continue
@@ -84,14 +86,16 @@ def read(run,do_audit=False):
             for row in sorted(rows):h.update(json.dumps(row,ensure_ascii=False,separators=(',',':')).encode());h.update(b'\n')
             return h.hexdigest()
         projected=[(str(e['userId']),e['tripName'],e['request']['startDate'],e['request']['endDate'],'PROCESSING',str(code)) for e in started.values() for code in e['request']['regionCodes']]
-        non202=[e for e in started.values() if first_status.get(e['requestId']) in (0,201)]
+        non202=[e for e in started.values() if first_status.get(e['requestId']) != 202]
         non202_projected=[(str(e['userId']),e['tripName'],e['request']['startDate'],e['request']['endDate'],'PROCESSING',str(code)) for e in non202 for code in e['request']['regionCodes']]
         def stats(values):
             values=sorted(values)
             return {k:values[min(len(values)-1,int((len(values)-1)*q))] for k,q in [('p50',.5),('p95',.95),('p99',.99),('max',1)]} if values else {}
+        state['expectedRefreshes']=state['expectedCsrf']=expected_actors*14
+        state['authInjectionComplete']=(sum(refreshes.values())==state['expectedRefreshes'] and sum(csrf.values())==state['expectedCsrf'])
         state['connectionObservation']={**dict(network),'usedTripVUs':len(trip_vus),'maxRequestsInOneTripVU':max_in_vu,'preAllocatedVUs':plan.get('preAllocatedVUs') if plan else None,'maxVUs':plan.get('maxVUs') if plan else None}
         state.update(completedAfterDeadline=sum(e.get('outcome')=='confirmed' and e.get('withinDeadline') is False for e in final.values()),
-                     started=len(started),final=len(final),retryRecovered=dict(recovered),confirmed=sum(e['outcome']=='confirmed' for e in final.values()),
+                     started=len(started),uniqueTripUsers=len({e['userId'] for e in started.values()}),final=len(final),retryRecovered=dict(recovered),confirmed=sum(e['outcome']=='confirmed' for e in final.values()),
                      firstStatuses=dict(statuses),refreshes=dict(refreshes),csrf=dict(csrf),missingFinal=0,acceptedNotIndividuallyPolled=statuses.get(202,0),completionObservation="fixed aggregate checkpoints; no completion latency percentile",
                      requestProjectionSha256=digest(projected),non202Requests=len(non202),non202ProjectionSha256=digest(non202_projected),
                      firstResponseMs=stats(first),finalObservationMs=stats(latencies))

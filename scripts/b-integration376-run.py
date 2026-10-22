@@ -182,7 +182,9 @@ def execute(case,index):
     raw('source',["python3 - <<'CHECK'\nimport time,urllib.request\nend=time.monotonic()+100\nwhile time.monotonic()<end:\n try:\n  r=urllib.request.urlopen('http://127.0.0.1:8080/api/actuator/health',timeout=2)\n  if r.status==200:print('B380_APP_HEALTH_200');break\n except Exception:pass\n time.sleep(2)\nelse:raise RuntimeError('Rehearsal BE did not become healthy')\nCHECK"])
     phase('source','b-integration376-app.py',run,'route-status')
     phase('source','b-integration376-app.py',run,'source-ready')
-    try:phase('source','b-integration376-smoke.py',run)
+    try:
+        phase('source','b-integration376-smoke.py',run)
+        phase('source','b-integration376-app.py',run,'diagnostic-ready')
     finally:phase('source','b-integration376-app.py',run,'source-queue')
     # Start and assign paused Consumers while Source is still idle, not during live Bulk.
     phase('source','b-integration376-app.py',run,'start-consumer')
