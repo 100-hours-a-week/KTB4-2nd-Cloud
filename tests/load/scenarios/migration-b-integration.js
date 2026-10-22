@@ -13,7 +13,10 @@ const dataset = requiredEnv('K6_TRIP_DATASET_ID');
 const rate = positiveIntegerEnv('K6_TRIP_RATE', 10);
 const duration = positiveIntegerEnv('K6_TRIP_DURATION_SECONDS', 900);
 const actors = ({ 10: 40, 30: 120, 50: 200 })[rate];
-const vus = ({ 10: 64, 30: 900, 50: 1000 })[rate];
+// Logical users do not depend on VUs. Observed trip VUs grew to 466 at 50 RPS;
+// reserve 600 before input. Together with 200 auth actors this stays below the
+// previous 1200-client setup; Source, Nginx limits and maximum VUs are unchanged.
+const vus = ({ 10: 40, 30: 120, 50: 600 })[rate];
 const maxVus = rate * 120; // Keep the 100s response capacity plus 20% arrival scheduling headroom.
 if (base !== 'https://v1-staging.yeodam-2gether.com' || !/^[0-9a-f-]{36}$/.test(runId) ||
     !vus || duration !== 900) throw new Error('B integration requires staging, canonical Run, 10/30/50 RPS and 900s');
@@ -47,7 +50,7 @@ export function setup() {
   console.log(JSON.stringify({ source: 'migration-b391', event: 'run_started', runId,
     rate, duration, vus, preAllocatedVUs: vus, maxVUs: maxVus, authActors: actors, startedAt: Date.now(), completionObserver: false }));
 }
-function initialSession() { return { ...pool[1 + ((__VU - 1) % actors)] }; }
+function tripSession(iteration) { return { ...pool[1 + (iteration % actors)] }; }
 export function authFlow() {
   // One iteration owns one authentication session for the entire input window.
   const actorIndex = exec.scenario.iterationInTest;
@@ -61,7 +64,9 @@ export function authFlow() {
     if (Date.now() < nextRefresh) sleep(Math.max(0, Math.min(nextRefresh, end) - Date.now()) / 1000);
     if (Date.now() >= end) break;
   for (const operation of ['refresh', 'csrf']) {
-    if (Date.now() >= end) break;
+    // A refresh begun within the input window owns its following CSRF request.
+    // Complete that pair in the existing 1005s actor window; do not omit it at 900s.
+    if (operation === 'refresh' && Date.now() >= end) break;
     const invoke = () => operation === 'refresh'
       ? http.post(`${base}/api/auth/token/refresh`, null, {
           cookies: { refreshToken: { value: session.refreshToken }, CSRF_CONTEXT: { value: session.csrfContext } },
@@ -91,7 +96,7 @@ export function authFlow() {
 export default function () {
   const iteration = exec.scenario.iterationInTest;
   tripRequestsInVU += 1;
-  const s = initialSession();
+  const s = tripSession(iteration);
   const hex = crypto.sha256(`${runId}:${iteration}`, 'hex').slice(0, 32);
   const requestId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   const tripName = `t${crypto.sha256(runId, 'hex').slice(0, 5)}${iteration.toString(36).padStart(4, '0')}`;

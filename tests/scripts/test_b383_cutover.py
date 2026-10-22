@@ -14,7 +14,7 @@ class CutoverTests(unittest.TestCase):
    if 'SHOW BINARY LOG STATUS' in sql:return 'binlog.000010\t100'
    return ''
   db.query.side_effect=query
-  app=Mock();app.source_control.return_value={'instance':'same','runId':run,'fencing':True,'activeDirect':0,'sourceConsumerStopped':True,'sourceConsumerRunning':False}
+  app=Mock();app.source_control.return_value={'instance':'same','runId':run,'fencing':True,'activeDirect':0,'activeTrip':0,'queuedTrip':0,'sourceConsumerStopped':True,'sourceConsumerRunning':False}
   with tempfile.TemporaryDirectory() as d,patch.object(m,'source_app',return_value=app),patch.object(m,'BASE',Path(d)),patch.object(m,'database',return_value=db),patch.object(m,'ensure_prepared'),patch.object(m.subprocess,'check_output',return_value='10.30.0.174'),patch.object(m.subprocess,'run'),patch.object(m,'audit',side_effect=AssertionError('Full hash on critical path')),patch.object(sys,'argv',['control','fence','--run-id',run]):
    m.main();state=json.loads((Path(d)/(run+'.json')).read_text())
    self.assertEqual(state['phase'],'source_fenced');self.assertEqual([e['phase'] for e in state['events']],['fence_intent','requests_queued','source_drained','source_read_only','source_fenced'])

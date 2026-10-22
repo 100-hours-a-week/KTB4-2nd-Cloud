@@ -105,7 +105,7 @@ def main():
             while True:
                 drained=app.source_control(a.run_id)
                 if drained['runId']!=a.run_id or drained['instance']!=instance or not drained['fencing']:raise RuntimeError('Source fence instance changed')
-                if drained['activeDirect']==0 and drained['sourceConsumerStopped'] and not drained['sourceConsumerRunning']:break
+                if drained['activeDirect']==0 and drained['activeTrip']==0 and drained['queuedTrip']==0 and drained['sourceConsumerStopped'] and not drained['sourceConsumerRunning']:break
                 if time.time()>=deadline:
                     save(a.run_id,'write_drain_failed',sourceControl=drained)
                     raise RuntimeError('Existing BE work did not drain within cutover budget; Source not frozen')

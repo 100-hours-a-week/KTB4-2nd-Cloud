@@ -15,7 +15,7 @@ from urllib.request import Request,urlopen
 from urllib.parse import quote
 from uuid import UUID
 
-IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:452b07df31ab368270bdfa481744b462909e89b80c246f03d01f4ef5dee2e03d'
+IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:ac3307602681f2195e1ee02208ed04f3d86547001318d0f3098ee79f753bfc1f'
 ORIGINAL='yeodam-app-backend-1'
 BASE=Path('/var/lib/yeodam/b391')
 class Connection(http.client.HTTPConnection):
@@ -44,6 +44,7 @@ def create(run,consumer):
       'MIGRATION_TRIP_CONSUMER_GROUP':'yeodam-b391-'+run,
       'MIGRATION_TRIP_CONCURRENCY':'8' if consumer else '4',
       'MIGRATION_TRIP_PARTITIONS':'8',
+      'MIGRATION_DIAGNOSTICS_ENABLED':'true',
       # The public service owns housekeeping; the dedicated request executor must
       # not run a second copy or reopen Target connections before Bulk import.
       'MIGRATION_SERVICE_SCHEDULERS_ENABLED':'false' if consumer else 'true',
@@ -119,29 +120,58 @@ def source_ready(run):
         time.sleep(.5)
     raise RuntimeError('Source Consumer not assigned before input')
 
-def collect_completions(name,run):
+def collect_completions(name,run,include_smoke=False):
     # Docker's stdout multiplexing frames are binary; decode only matching safe records.
     c=Connection('localhost',timeout=30);c.request('GET','/containers/'+name+'/logs?stdout=1&stderr=1');r=c.getresponse();raw=r.read();c.close()
     if r.status!=200:raise RuntimeError('Completion log read failed')
-    chunks=[]
-    while len(raw)>=8:
-        length=int.from_bytes(raw[4:8],'big');chunks.append(raw[8:8+length]);raw=raw[8+length:]
+    chunks=[];offset=0;view=memoryview(raw)
+    while offset+8<=len(raw):
+        length=int.from_bytes(view[offset+4:offset+8],'big')
+        if offset+8+length>len(raw):raise RuntimeError('Incomplete Docker log frame')
+        chunks.append(view[offset+8:offset+8+length]);offset+=8+length
+    if offset!=len(raw):raise RuntimeError('Incomplete Docker log header')
     pattern=re.compile(r'migration_trip_completed request_id=([0-9a-f-]{36}) origin=(source|target) queued_at_ms=(\d+) committed_at_ms=(\d+)')
     timing_pattern=re.compile(r'consumer_started_at_ms=(\d+) apply_elapsed_us=(\d+) partition=(\d+)')
-    path=Path('/run/yeodam-b391')/run/'completions.json'
+    path=Path('/run/yeodam-b391')/run/('smoke-completions.json' if include_smoke else 'completions.json')
     rows=json.loads(path.read_text()) if path.exists() else {}
     from uuid import uuid5
     smoke=str(uuid5(UUID(run),'public-b2-smoke'))
     text=b''.join(chunks).decode(errors='replace')
     for match in pattern.finditer(text):
         rid,origin,queued,committed=match.groups()
-        if rid!=smoke and int(queued)>0:
+        if (rid!=smoke or include_smoke) and int(queued)>0:
             row={'origin':origin,'queuedAtMs':int(queued),'committedAtMs':int(committed)}
             timing=timing_pattern.match(text,match.end()+1)
             if timing:
                 received,elapsed,partition=map(int,timing.groups())
                 row.update(consumerStartedAtMs=received,applyElapsedUs=elapsed,partition=partition)
+                # Only fixed numeric diagnostic fields, never arbitrary log data.
+                suffix=text[timing.end():timing.end()+1800].split('\n',1)[0]
+                allowed={'received_ms','scheduler_wait_us','tx_entry_us'}
+                for category in ('connection','journal_read','trip_lookup','trip_write','region_write','journal_write','other_sql','commit','rollback'):
+                    allowed.update((category+'_us',category+'_count'))
+                diagnostic={k:int(v) for k,v in re.findall(r'([a-z_]+)=(-?\d+)',suffix) if k in allowed}
+                if diagnostic:row['diagnostic']=diagnostic
             rows.setdefault(rid,row)
+    # Whitelisted metadata only; payloads/keys/SQL never leave the container log.
+    batch_path=path.with_name('smoke-batches.json' if include_smoke else 'diagnostic-batches.json')
+    batches=json.loads(batch_path.read_text()) if batch_path.exists() else []
+    batch_pattern=re.compile(r'migration_trip_batch origin=(source|target) at_ms=(\d+) thread=(\S+) assigned=(.*?) counts=(\{[^}]*\}) first=(\{[^}]*\}) last=(\{[^}]*\}) active=(\d+) queued=(\d+)')
+    def numbers(value):return {int(k):int(v) for k,v in re.findall(r'(\d+)=(\d+)',value)}
+    for match in batch_pattern.finditer(text):
+        origin,at,thread,assigned,counts,first,last,active,queued=match.groups()
+        batches.append({'event':'start','origin':origin,'atMs':int(at),'thread':thread,
+                        'assignedPartitions':[int(v) for v in re.findall(r'-(\d+)(?:,|\])',assigned)],
+                        'counts':numbers(counts),'firstOffsets':numbers(first),'lastOffsets':numbers(last),
+                        'active':int(active),'queued':int(queued)})
+    done_pattern=re.compile(r'migration_trip_batch_done origin=(source|target) at_ms=(\d+) thread=(\S+) wait_us=(\d+) unfinished=(.*?) active=(\d+) queued=(\d+)')
+    for match in done_pattern.finditer(text):
+        origin,at,thread,wait,unfinished,active,queued=match.groups()
+        batches.append({'event':'done','origin':origin,'atMs':int(at),'thread':thread,
+                        'waitUs':int(wait),'unfinishedPartitions':[int(v) for v in re.findall(r'-(\d+)(?:,|\])',unfinished)],
+                        'active':int(active),'queued':int(queued)})
+    batches.sort(key=lambda r:(r['atMs'],r['thread']))
+    batch_path.write_text(json.dumps(batches));batch_path.chmod(0o600)
     path.write_text(json.dumps(rows));path.chmod(0o600)
     def percentiles(values):
         values=sorted(values)
@@ -152,6 +182,16 @@ def collect_completions(name,run):
         selected=[v for v in timed if v['origin']==origin]
         detail[origin]={'count':len(selected),'queueWaitMs':percentiles([v['consumerStartedAtMs']-v['queuedAtMs'] for v in selected]),'applyElapsedUs':percentiles([v['applyElapsedUs'] for v in selected]),'partitionCounts':{str(p):sum(v['partition']==p for v in selected) for p in range(8)}}
     return {'timingCount':len(timed),'timingByOrigin':detail,'count':len(rows),'origins':{origin:sum(v['origin']==origin for v in rows.values()) for origin in ('source','target')},'commandCreatedToCommitObservedMs':percentiles([v['committedAtMs']-v['queuedAtMs'] for v in rows.values()])}
+
+def diagnostic_ready(run):
+    collect_completions('yeodam-b391-app',run,include_smoke=True)
+    rows=json.loads((Path('/run/yeodam-b391')/run/'smoke-completions.json').read_text())
+    from uuid import uuid5
+    smoke=str(uuid5(UUID(run),'public-b2-smoke'))
+    diagnostic=rows.get(smoke,{}).get('diagnostic',{})
+    if any(diagnostic.get(k,0)<1 for k in ('connection_count','journal_read_count','journal_write_count','commit_count')):
+        raise RuntimeError('JDBC diagnostics missing from existing smoke; no measured input allowed')
+    print(json.dumps({'phase':'diagnostic_ready','runId':run,'jdbcObserved':True,'counts':{k:diagnostic[k] for k in ('connection_count','journal_read_count','journal_write_count','commit_count')}}))
 
 def remove(name,run):
     v=inspect(name)
@@ -212,10 +252,11 @@ def restore_original():
         time.sleep(1)
     raise RuntimeError('Original V1 startup did not become healthy; do not start next Run')
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('auth-files','start-app','start-consumer','queue','source-queue','source-ready','direct','stop-app','stop-consumer','enable-consumer','restore-original','status','route-status','restore-route'))
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('diagnostic-ready','auth-files','start-app','start-consumer','queue','source-queue','source-ready','direct','stop-app','stop-consumer','enable-consumer','restore-original','status','route-status','restore-route'))
     p.add_argument('--run-id',required=True);p.add_argument('--deadline',type=float);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id or '10.30.0.174' not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Unexpected host or UUID')
-    if a.action=='auth-files':auth_files(a.run_id)
+    if a.action=='diagnostic-ready':diagnostic_ready(a.run_id)
+    elif a.action=='auth-files':auth_files(a.run_id)
     elif a.action in ('route-status','restore-route'):status_route(a.run_id,a.action=='restore-route')
     elif a.action=='enable-consumer':
         path=Path('/run/yeodam-b391')/a.run_id/'container-auth'/'apply-enabled';path.touch(mode=0o444,exist_ok=False)
