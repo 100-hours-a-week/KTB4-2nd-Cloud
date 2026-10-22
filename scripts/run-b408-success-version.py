@@ -15,6 +15,7 @@ PIN = '2a2907f'
 IMAGE = 'ghcr.io/100-hours-a-week/yeodam-backend@sha256:d39fd16fc92e77d9c51be9056a2d0c79e355fdf0ad81e38a8d463ab554fd2010'
 EVIDENCE = ROOT.parent / 'KTB4-2nd-Cloud/.local-docs/evidence/408-snapshot-contention/success391-limited'
 RATE = 7276913
+CASES = {'success391-limited': RATE, 'success391-limited-9mb': 9000000}
 
 
 def load():
@@ -30,14 +31,14 @@ def load():
     return m
 
 
-def initialize():
+def initialize(rate=RATE):
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     path = EVIDENCE / 'plan.json'
     if path.exists():
         raise RuntimeError('Run already initialized; preserve evidence')
     old = json.loads((ROOT.parent / 'KTB4-2nd-Cloud/.local-docs/evidence/391-b-integration/plan.json').read_text())
     case = {'rate': 30, 'runId': str(uuid.uuid4()), 'preAllocatedVUs': 900, 'maxVUs': 3600}
-    old.update(rates=[case], snapshotBytesPerSecond=RATE, baselineCloudCommit=PIN,
+    old.update(rates=[case], snapshotBytesPerSecond=rate, baselineCloudCommit=PIN,
                comparisonBaselineRun='56f1a134-7867-42d6-84df-1c19f030916e',
                observationOnly='Source proc CPU sampler; no BE instrumentation or added GET load',
                historicalDataRows=2021037, dataNotReset=True)
@@ -60,7 +61,7 @@ def instrument(m, case):
                 spec = importlib.util.spec_from_file_location('pace408', ROOT / 'scripts/b-integration408-snapshot.py')
                 pacing = importlib.util.module_from_spec(spec); spec.loader.exec_module(pacing)
                 template = (LEGACY / 'terraform/v2/staging/files/capture-mysql-replication-source.sh').read_text()
-                shell = pacing.render(template, case['runId'], RATE)
+                shell = pacing.render(template, case['runId'], case.get('snapshotBytesPerSecond', RATE))
                 data = base64.b64encode((ROOT / 'scripts/b-integration408-snapshot.py').read_bytes()).decode()
                 commands = ["printf '%s' '" + data + "' | base64 -d > /run/yeodam-b391/b-integration408-snapshot.py",
                             'export BACKUP_BUCKET=yeodam-v2-staging-mysql-backup-483175530259-ap-northeast-2',
@@ -106,20 +107,23 @@ def instrument(m, case):
 
 
 def main():
-    p = argparse.ArgumentParser(); p.add_argument('action', choices=('init', 'deploy', 'execute')); args = p.parse_args()
+    global EVIDENCE
+    p = argparse.ArgumentParser(); p.add_argument('action', choices=('init', 'deploy', 'execute'))
+    p.add_argument('--case', choices=CASES, default='success391-limited'); args = p.parse_args()
+    EVIDENCE = EVIDENCE.parent / args.case
     if args.action == 'init':
-        initialize(); return
+        initialize(CASES[args.case]); return
     m = load()
     if m.ssm.aws('sts', 'get-caller-identity')['Account'] != '483175530259':
         raise RuntimeError('Wrong account')
     plan = json.loads((EVIDENCE / 'plan.json').read_text())
-    assert plan['backendImage'] == IMAGE and plan['snapshotBytesPerSecond'] == RATE
+    assert plan['backendImage'] == IMAGE and plan['snapshotBytesPerSecond'] == CASES[args.case]
     if args.action == 'deploy':
         m.deploy()
         data = base64.b64encode((ROOT / 'scripts/b-integration393-resources.py').read_bytes()).decode()
         m.raw('source', ["printf '%s' '" + data + "' | base64 -d > /run/yeodam-b391/b-integration393-resources.py"])
     else:
-        instrument(m, plan['rates'][0])
+        instrument(m, {**plan['rates'][0], 'snapshotBytesPerSecond': plan['snapshotBytesPerSecond']})
         m.execute(plan['rates'][0], 0)
 
 

@@ -12,6 +12,10 @@ subject = importlib.util.module_from_spec(spec); spec.loader.exec_module(subject
 
 
 class SuccessfulVersion(unittest.TestCase):
+    def test_retry_uses_a_separate_predeclared_case(self):
+        self.assertEqual(subject.CASES['success391-limited'], 7276913)
+        self.assertEqual(subject.CASES['success391-limited-9mb'], 9000000)
+
     def test_only_snapshot_submission_is_replaced(self):
         with tempfile.TemporaryDirectory() as d:
             old, legacy = subject.EVIDENCE, subject.LEGACY
