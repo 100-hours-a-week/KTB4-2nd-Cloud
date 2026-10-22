@@ -13,9 +13,9 @@ const dataset = requiredEnv('K6_TRIP_DATASET_ID');
 const rate = positiveIntegerEnv('K6_TRIP_RATE', 10);
 const duration = positiveIntegerEnv('K6_TRIP_DURATION_SECONDS', 900);
 const actors = ({ 10: 40, 30: 120, 50: 200 })[rate];
-// Initial trip VUs cover four seconds of arrivals; logical users are assigned per trip iteration.
-// This is four seconds of arrivals; real slow replies can still grow VUs up to maxVus.
-const vus = actors;
+// Logical users do not depend on VUs. The first 50 RPS run needed 319 in-flight
+// trip requests: reserve its already observed 320 VUs before input, not during it.
+const vus = ({ 10: 40, 30: 120, 50: 320 })[rate];
 const maxVus = rate * 120; // Keep the 100s response capacity plus 20% arrival scheduling headroom.
 if (base !== 'https://v1-staging.yeodam-2gether.com' || !/^[0-9a-f-]{36}$/.test(runId) ||
     !vus || duration !== 900) throw new Error('B integration requires staging, canonical Run, 10/30/50 RPS and 900s');
