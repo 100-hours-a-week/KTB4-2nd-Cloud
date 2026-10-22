@@ -13,7 +13,7 @@ const dataset = requiredEnv('K6_TRIP_DATASET_ID');
 const rate = positiveIntegerEnv('K6_TRIP_RATE', 10);
 const duration = positiveIntegerEnv('K6_TRIP_DURATION_SECONDS', 900);
 const actors = ({ 10: 40, 30: 120, 50: 200 })[rate];
-// One initial trip VU per existing user preserves the full 40/120/200-user workload.
+// Initial trip VUs cover four seconds of arrivals; logical users are assigned per trip iteration.
 // This is four seconds of arrivals; real slow replies can still grow VUs up to maxVus.
 const vus = actors;
 const maxVus = rate * 120; // Keep the 100s response capacity plus 20% arrival scheduling headroom.
@@ -49,7 +49,7 @@ export function setup() {
   console.log(JSON.stringify({ source: 'migration-b391', event: 'run_started', runId,
     rate, duration, vus, preAllocatedVUs: vus, maxVUs: maxVus, authActors: actors, startedAt: Date.now(), completionObserver: false }));
 }
-function initialSession() { return { ...pool[1 + ((__VU - 1) % actors)] }; }
+function tripSession(iteration) { return { ...pool[1 + (iteration % actors)] }; }
 export function authFlow() {
   // One iteration owns one authentication session for the entire input window.
   const actorIndex = exec.scenario.iterationInTest;
@@ -93,7 +93,7 @@ export function authFlow() {
 export default function () {
   const iteration = exec.scenario.iterationInTest;
   tripRequestsInVU += 1;
-  const s = initialSession();
+  const s = tripSession(iteration);
   const hex = crypto.sha256(`${runId}:${iteration}`, 'hex').slice(0, 32);
   const requestId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   const tripName = `t${crypto.sha256(runId, 'hex').slice(0, 5)}${iteration.toString(36).padStart(4, '0')}`;
