@@ -58,7 +58,7 @@ def cutover(run,position,marker_timeout=30,*,cutover_at=None,on_proof=None):
         mark('marker_wait');marker_deadline=time.monotonic()+marker_timeout
         for topic in [p+'.yeodam_v1_source.migration_cutover_barrier',a+'.source.yeodam_v1_source.migration_cutover_barrier']:
             marker_seen(audit,topic,run,marker_deadline)
-        started=time.time();deadline=(cutover_at if cutover_at is not None else started)+CDC_BUDGET_SECONDS
+        started=time.time();deadline=(cutover_at() if callable(cutover_at) else cutover_at if cutover_at is not None else started)+CDC_BUDGET_SECONDS
         state['startedAt']=started;state['deadlineAt']=deadline
         # Source BE has gracefully stopped its trip listener before emitting the DB marker.
         # New requests keep accumulating: preserve committed positions, never require request Lag0.
