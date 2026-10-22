@@ -151,7 +151,8 @@ def service_stop(old):
     end=time.monotonic()+420
     while time.monotonic()<end:
         service=ssm.aws('ecs','describe-services','--cluster',CLUSTER,'--services',SERVICE)['services'][0]
-        stopped=not tasks or all(t['lastStatus']=='STOPPED' for t in ssm.aws('ecs','describe-tasks','--cluster',CLUSTER,'--tasks',*tasks)['tasks'])
+        stopped=all(t['lastStatus']=='STOPPED' for offset in range(0,len(tasks),100)
+                    for t in ssm.aws('ecs','describe-tasks','--cluster',CLUSTER,'--tasks',*tasks[offset:offset+100])['tasks'])
         if service['runningCount']==0 and stopped:return
         time.sleep(3)
     raise RuntimeError('Isolated E2E task is still stopping; do not reset Target')
@@ -169,10 +170,30 @@ def handoff_flags(case):
     if case.get('candidate')=='finite-watermark':return ' --when-ready --finite-watermark'
     return ' --when-ready' if case.get('candidate')=='readiness-cutover' else ''
 
+def start_snapshot(case):
+    if 'snapshotBytesPerSecond' in case:
+        rate=case['snapshotBytesPerSecond']
+        if type(rate) is not int or rate<0:raise ValueError('Invalid fixed snapshot rate')
+        spec=importlib.util.spec_from_file_location('snapshot408',ROOT/'scripts/b-integration408-snapshot.py')
+        helper=importlib.util.module_from_spec(spec);spec.loader.exec_module(helper)
+        template=(ROOT/'terraform/v2/staging/files/capture-mysql-replication-source.sh').read_text()
+        script=helper.render(template,case['runId'],rate)
+        commands=ssm.deploy('scripts/b-integration408-snapshot.py','/run/yeodam-b391/b-integration408-snapshot.py')
+        commands+=['export BACKUP_BUCKET=yeodam-v2-staging-mysql-backup-483175530259-ap-northeast-2',
+                   "bash -s <<'SNAPSHOT408'\n"+script+"\nSNAPSHOT408"]
+        return raw('source',commands,sync=False)
+    request={'InstanceIds':[ssm.HOSTS['source']],'DocumentName':'yeodam-v2-staging-mysql-source-snapshot','Parameters':{}}
+    import tempfile
+    with tempfile.NamedTemporaryFile('w',suffix='.json') as f:
+        json.dump(request,f);f.flush()
+        return ssm.aws('ssm','send-command','--cli-input-json','file://'+f.name)['Command']['CommandId']
+
 def execute(case,index):
     run=case['runId'];rate=case['rate'];state_path=EVIDENCE/(run+'.state.json')
     if state_path.exists():raise RuntimeError('This Run already has execution evidence; do not rerun it')
-    state={'runId':run,'rate':rate,'duration':900,'phase':'preparing'}
+    latest=case.get('latestFenceSeconds',360)
+    if type(latest) is not int or not 360<=latest<=600:raise ValueError('Invalid preparation budget')
+    state={'runId':run,'rate':rate,'duration':900,'phase':'preparing','latestFenceSeconds':latest}
     def checkpoint(phase_name,**values):
         state.update(phase=phase_name,**values);state_path.write_text(json.dumps(state,indent=2));log(phase_name,runId=run,rate=rate,**values)
     phase('source','b-integration376-control.py',run,'preflight')
@@ -221,18 +242,15 @@ def execute(case,index):
             checkpoint('auth_actor_mapping_failed',k6Command=load_id,authActorAssignments=info.get('authActorAssignments'))
             raise RuntimeError('Authentication actor mapping invalid; no Snapshot or cutover scheduled')
     started=info['actualStartedAt'];checkpoint('load_started',k6Command=load_id,startedAt=started,authActorMappingValid=True)
-    kafka_standby=raw('kafka',['/opt/yeodam-b383/venv/bin/python3 /run/yeodam-b391/b-integration386-handoff.py kafka --run-id '+run+' --at '+str(started+360)+handoff_flags(case)],sync=False,bound=1200)
-    fence_id=raw('source',['/opt/yeodam-cdc-auth368/venv/bin/python3 /run/yeodam-b391/b-integration386-handoff.py source --run-id '+run+' --at '+str(started+360)+handoff_flags(case)],sync=False,bound=1000)
+    kafka_standby=raw('kafka',['/opt/yeodam-b383/venv/bin/python3 /run/yeodam-b391/b-integration386-handoff.py kafka --run-id '+run+' --at '+str(started+latest)+handoff_flags(case)],sync=False,bound=1200)
+    fence_id=raw('source',['/opt/yeodam-cdc-auth368/venv/bin/python3 /run/yeodam-b391/b-integration386-handoff.py source --run-id '+run+' --at '+str(started+latest)+handoff_flags(case)],sync=False,bound=1000)
     state.update(fenceCommand=fence_id,kafkaHandoffCommand=kafka_standby,connectionSamplerCommand=raw('source',['python3 /run/yeodam-b391/b-integration388-connections.py --run-id '+run+' --started-at '+str(started)],sync=False,bound=1000));state_path.write_text(json.dumps(state,indent=2))
     state['resourceSamplerCommand']=raw('source',['python3 /run/yeodam-b391/b-integration393-resources.py --run-id '+run+' --started-at '+str(started)],sync=False,bound=1000)
     state_path.write_text(json.dumps(state,indent=2))
     kafka(run,'trips',index);kafka(run,'auth-source',index)
     kafka(run,'ready-trips',index);kafka(run,'ready-auth-source',index)
     # Capture full consistent data only after live requests and no_data CDC started.
-    request={'InstanceIds':[ssm.HOSTS['source']],'DocumentName':'yeodam-v2-staging-mysql-source-snapshot','Parameters':{}}
-    import tempfile
-    with tempfile.NamedTemporaryFile('w',suffix='.json') as f:
-        json.dump(request,f);f.flush();snapshot_id=ssm.aws('ssm','send-command','--cli-input-json','file://'+f.name)['Command']['CommandId']
+    snapshot_id=start_snapshot(case)
     state['snapshotCommand']=snapshot_id;state_path.write_text(json.dumps(state,indent=2))
     checkpoint('snapshot_started',snapshotCommand=snapshot_id)
     snapshot=wait('source',snapshot_id)
