@@ -33,11 +33,12 @@ def start(run,rate):
     fixtures=directory/'read-fixtures.json'
     if fixtures.exists():env['K6_READ_FIXTURES_FILE']=str(fixtures)
     if fixtures.exists():
-        inspect_cmd=['runuser','-u','ubuntu','--','env',*[k+'='+v for k,v in env.items()],'k6','inspect','scenarios/migration-b-integration.js']
+        inspect_cmd=['runuser','-u','ubuntu','--','env',*[k+'='+v for k,v in env.items()],'k6','inspect','--include-system-env-vars','scenarios/migration-b-integration.js']
         clean_env={k:v for k,v in os.environ.items() if not k.startswith('K6_')}
         checked=subprocess.run(inspect_cmd,cwd=BASE,capture_output=True,text=True,env=clean_env)
         if checked.returncode:raise RuntimeError('Read scenario inspect failed before input')
-        config=json.loads(checked.stdout)['options']
+        inspected=json.loads(checked.stdout)
+        config=inspected.get('options',inspected)
         if config.get('noConnectionReuse') is not False or config.get('noVUConnectionReuse') is not False:raise RuntimeError('Connection reuse differs before input')
         for key in ('read_list','read_detail'):
             spec=config['scenarios'][key]
@@ -54,7 +55,10 @@ def start(run,rate):
     save(path,state);print(json.dumps(state))
 
 def read(run,do_audit=False):
-    directory,root=paths(run);state=json.loads((directory/'k6.json').read_text())
+    directory,root=paths(run)
+    if not (directory/'k6.json').exists():
+        print(json.dumps({'runId':run,'initializing':True}));return
+    state=json.loads((directory/'k6.json').read_text())
     files=list(root.glob('*/trip-events.jsonl'))
     if len(files)>1:raise RuntimeError('More than one event file for a one-use Run')
     if not files:print(json.dumps(state));return

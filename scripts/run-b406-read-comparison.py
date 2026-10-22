@@ -37,12 +37,14 @@ def initialize():
     (EVIDENCE/'contract.json').write_text(json.dumps(value,indent=2));print(json.dumps(value))
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('init','baseline-deploy','baseline-start','baseline-observe','baseline-finish','migration-deploy','migration-execute'));a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('init','baseline-deploy','baseline-start','baseline-resume','baseline-resume-input','baseline-observe','baseline-finish','migration-deploy','migration-execute'));a=p.parse_args()
     if a.action=='init':initialize()
     elif a.action.startswith('baseline-'):
         m=baseline()
         if m.b.ssm.aws('sts','get-caller-identity')['Account']!='483175530259':raise RuntimeError('Wrong account')
-        getattr(m,a.action.split('-',1)[1])()
+        if a.action=='baseline-resume-input':m.start_input(json.loads((m.EVIDENCE/'state.json').read_text()))
+        elif a.action=='baseline-resume':m.start(resume_preparation=True)
+        else:getattr(m,a.action.split('-',1)[1])()
     else:
         m=migration()
         if m.ssm.aws('sts','get-caller-identity')['Account']!='483175530259':raise RuntimeError('Wrong account')

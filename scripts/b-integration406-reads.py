@@ -22,6 +22,7 @@ def prepare(run):
     if set(trips)!=set(ids):raise RuntimeError('Existing completed read fixture missing; no rows modified')
     value={'runId':run,'fixtures':[{'poolIndex':120+i,'userId':u,'tripId':trips[u]} for i,u in enumerate(ids)]}
     path=Path('/run/yeodam-b391')/run/'read-fixtures.json'
+    path.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
     if path.exists():raise RuntimeError('Read fixture already exists')
     path.write_text(json.dumps(value));path.chmod(0o600)
     print(json.dumps({'readFixturesPrepared':20,'existingTripsReused':True,'businessRowsChanged':0}))
