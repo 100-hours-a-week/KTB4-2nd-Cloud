@@ -55,11 +55,12 @@ def initialize(rate=RATE, rps=30, wait_clients=False):
     if path.exists():
         raise RuntimeError('Run already initialized; preserve evidence')
     old = json.loads((ROOT.parent / 'KTB4-2nd-Cloud/.local-docs/evidence/391-b-integration/plan.json').read_text())
-    case = {'rate': rps, 'runId': str(uuid.uuid4()), 'preAllocatedVUs': rps * 30, 'maxVUs': rps * 120}
+    baseline = next(case for case in old['rates'] if case['rate'] == rps)
+    case = {**baseline, 'runId': str(uuid.uuid4())}
     old.update(rates=[case], snapshotBytesPerSecond=rate, baselineCloudCommit=PIN,
-               comparisonBaselineRun='56f1a134-7867-42d6-84df-1c19f030916e',
+               comparisonBaselineRun=baseline['runId'],
                observationOnly='Source proc CPU sampler; no BE instrumentation or added GET load',
-               historicalDataRows=2021037, dataNotReset=True)
+               historicalDataRows=2021037 if rps == 30 else None, dataNotReset=True)
     old['bulkClientWaitSeconds'] = 45 if wait_clients else 0
     assert old['backendImage'] == IMAGE
     path.write_text(json.dumps(old, indent=2))
