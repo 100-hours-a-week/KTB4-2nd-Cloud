@@ -13,6 +13,13 @@ def message(m,value):
     msg=Mock();msg.error.return_value=None;msg.value.return_value=json.dumps(value).encode();return msg
 
 class ReadinessTests(unittest.TestCase):
+    def test_existing_candidates_keep_fixed_cutover(self):
+        spec=importlib.util.spec_from_file_location('runner402test',ROOT/'scripts/b-integration376-run.py')
+        runner=importlib.util.module_from_spec(spec);spec.loader.exec_module(runner)
+        self.assertEqual(runner.handoff_flags({'candidate':'readiness-cutover'}),' --when-ready')
+        self.assertEqual(runner.handoff_flags({'candidate':'consumer-batch-config'}),'')
+        self.assertEqual(runner.handoff_flags({}),'')
+
     def test_prepared_signal_still_checks_auth_projection_readiness(self):
         m=load();control=Mock();control.ensure_prepared.side_effect=[RuntimeError('projection pending'),None]
         with tempfile.TemporaryDirectory() as tmp:

@@ -164,6 +164,10 @@ def kafka(run,action,index,**kwargs):return phase('kafka','b-integration376-kafk
 def sleep_until(at):
     while time.time()<at:time.sleep(min(2,at-time.time()))
 
+def handoff_flags(case):
+    # The early policy is an explicit experiment candidate, never the baseline default.
+    return ' --when-ready' if case.get('candidate')=='readiness-cutover' else ''
+
 def execute(case,index):
     run=case['runId'];rate=case['rate'];state_path=EVIDENCE/(run+'.state.json')
     if state_path.exists():raise RuntimeError('This Run already has execution evidence; do not rerun it')
@@ -206,8 +210,8 @@ def execute(case,index):
             checkpoint('auth_actor_mapping_failed',k6Command=load_id,authActorAssignments=info.get('authActorAssignments'))
             raise RuntimeError('Authentication actor mapping invalid; no Snapshot or cutover scheduled')
     started=info['actualStartedAt'];checkpoint('load_started',k6Command=load_id,startedAt=started,authActorMappingValid=True)
-    kafka_standby=raw('kafka',['/opt/yeodam-b383/venv/bin/python3 /run/yeodam-b391/b-integration386-handoff.py kafka --run-id '+run+' --at '+str(started+360)+' --when-ready'],sync=False,bound=1200)
-    fence_id=raw('source',['/opt/yeodam-cdc-auth368/venv/bin/python3 /run/yeodam-b391/b-integration386-handoff.py source --run-id '+run+' --at '+str(started+360)+' --when-ready'],sync=False,bound=1000)
+    kafka_standby=raw('kafka',['/opt/yeodam-b383/venv/bin/python3 /run/yeodam-b391/b-integration386-handoff.py kafka --run-id '+run+' --at '+str(started+360)+handoff_flags(case)],sync=False,bound=1200)
+    fence_id=raw('source',['/opt/yeodam-cdc-auth368/venv/bin/python3 /run/yeodam-b391/b-integration386-handoff.py source --run-id '+run+' --at '+str(started+360)+handoff_flags(case)],sync=False,bound=1000)
     state.update(fenceCommand=fence_id,kafkaHandoffCommand=kafka_standby,connectionSamplerCommand=raw('source',['python3 /run/yeodam-b391/b-integration388-connections.py --run-id '+run+' --started-at '+str(started)],sync=False,bound=1000));state_path.write_text(json.dumps(state,indent=2))
     state['resourceSamplerCommand']=raw('source',['python3 /run/yeodam-b391/b-integration393-resources.py --run-id '+run+' --started-at '+str(started)],sync=False,bound=1000)
     state_path.write_text(json.dumps(state,indent=2))
