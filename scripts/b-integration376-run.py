@@ -50,7 +50,7 @@ def records(result):
     return values
 
 def deploy():
-    source=['b-integration376-app.py','b-integration376-control.py','b-integration376-auth.py','b-integration376-e2e.py','b-integration376-reset.py','b-integration376-smoke.py','b-integration386-handoff.py','b-integration388-connections.py','b-integration393-resources.py']
+    source=['b-integration376-app.py','b-integration376-control.py','b-integration376-auth.py','b-integration376-e2e.py','b-integration376-reset.py','b-integration376-smoke.py','b-integration386-handoff.py','b-integration388-connections.py','b-integration393-resources.py','b-integration406-reads.py']
     for host,files in [('source',source),('target',['b-integration376-bulk.py','b-integration376-reset.py']),('kafka',['b-integration376-kafka.py','b-integration383-cutover.py','b-integration386-handoff.py']),('generator',['b-integration376-generator.py'])]:
         commands=[]
         for name in files:commands+=ssm.deploy('scripts/'+name,'/run/yeodam-b391/'+name)
@@ -66,7 +66,7 @@ def deploy():
             ddl+='\nCREATE TABLE IF NOT EXISTS yeodam_v1_source.migration_auth_request_result(request_id CHAR(64) PRIMARY KEY, encrypted_result MEDIUMTEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);\n'
             commands+=["printf '%s' '"+base64.b64encode(ddl.encode()).decode()+"' | base64 -d > /run/yeodam-b391/journal.sql"]
         if host=='generator':
-            for name in ('scenarios/migration-b-integration.js','scripts/run-k6.sh'):
+            for name in ('scenarios/migration-b-integration.js','scripts/run-k6.sh','lib/migration-read-probes.mjs'):
                 commands+=ssm.deploy('tests/load/'+name,'/opt/yeodam-load/source/tests/load/'+name)
                 commands+=['chown ubuntu:ubuntu /opt/yeodam-load/source/tests/load/'+name]
             commands+=ssm.deploy('tests/load/scripts/private-pool-transfer.py','/run/yeodam-b391/pool-transfer.py')
@@ -166,6 +166,7 @@ def sleep_until(at):
 
 def handoff_flags(case):
     # The early policy is an explicit experiment candidate, never the baseline default.
+    if case.get('candidate')=='finite-watermark':return ' --when-ready --finite-watermark'
     return ' --when-ready' if case.get('candidate')=='readiness-cutover' else ''
 
 def execute(case,index):
@@ -178,6 +179,15 @@ def execute(case,index):
     kafka(run,'topics',index)
     prepared=subprocess.run(['python3',str(ROOT/'tests/load/scripts/run-synthetic-pool-ssm.py'),'prepare-existing','--instance-id',ssm.HOSTS['source'],'--run-id',run,'--dataset-id',DATASET,'--count',str(VUS[rate]+20)],capture_output=True,text=True)
     if prepared.returncode:raise RuntimeError('Synthetic pool preparation failed; no load started')
+    if case.get('readProbes'):
+        phase('source','b-integration406-reads.py',run,'prepare')
+        fixtures=records(phase('source','b-integration406-reads.py',run,'metadata'))[-1]
+        payload=base64.b64encode(json.dumps(fixtures).encode()).decode()
+        raw('generator',['install -d -m 0700 /run/yeodam-b391/'+run,
+                         "printf '%s' '"+payload+"' | base64 -d > /run/yeodam-b391/"+run+"/read-fixtures.json",
+                         'chown ubuntu:ubuntu /run/yeodam-b391/'+run,
+                         'chown ubuntu:ubuntu /run/yeodam-b391/'+run+'/read-fixtures.json',
+                         'chmod 0600 /run/yeodam-b391/'+run+'/read-fixtures.json'])
     transfer_pool(run)
     auth(run,'configure')
     phase('source','b-integration376-app.py',run,'auth-files')
@@ -186,6 +196,7 @@ def execute(case,index):
     raw('source',["python3 - <<'CHECK'\nimport time,urllib.request\nend=time.monotonic()+100\nwhile time.monotonic()<end:\n try:\n  r=urllib.request.urlopen('http://127.0.0.1:8080/api/actuator/health',timeout=2)\n  if r.status==200:print('B380_APP_HEALTH_200');break\n except Exception:pass\n time.sleep(2)\nelse:raise RuntimeError('Rehearsal BE did not become healthy')\nCHECK"])
     phase('source','b-integration376-app.py',run,'route-status')
     phase('source','b-integration376-app.py',run,'source-ready')
+    if case.get('readProbes'):phase('source','b-integration406-reads.py',run,'verify')
     try:
         phase('source','b-integration376-smoke.py',run)
         phase('source','b-integration376-app.py',run,'diagnostic-ready')

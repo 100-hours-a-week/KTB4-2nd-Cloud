@@ -30,11 +30,24 @@ def start(run,rate):
     env={'K6_BASE_URL':'https://v1-staging.yeodam-2gether.com','K6_TRIP_RUN_ID':run,'K6_TRIP_DATASET_ID':DATASET,
          'K6_TRIP_RATE':str(rate),'K6_TRIP_DURATION_SECONDS':'900',
          'K6_SESSION_POOL_FILE':str(BASE/'private'/(run+'.json')),'K6_RESULTS_DIRECTORY':str(root)}
+    fixtures=directory/'read-fixtures.json'
+    if fixtures.exists():env['K6_READ_FIXTURES_FILE']=str(fixtures)
+    if fixtures.exists():
+        inspect_cmd=['runuser','-u','ubuntu','--','env',*[k+'='+v for k,v in env.items()],'k6','inspect','--include-system-env-vars','scenarios/migration-b-integration.js']
+        clean_env={k:v for k,v in os.environ.items() if not k.startswith('K6_')}
+        checked=subprocess.run(inspect_cmd,cwd=BASE,capture_output=True,text=True,env=clean_env)
+        if checked.returncode:raise RuntimeError('Read scenario inspect failed before input')
+        inspected=json.loads(checked.stdout)
+        config=inspected.get('options',inspected)
+        if config.get('noConnectionReuse') is not False or config.get('noVUConnectionReuse') is not False:raise RuntimeError('Connection reuse differs before input')
+        for key in ('read_list','read_detail'):
+            spec=config['scenarios'][key]
+            if spec['rate']!=1 or spec['preAllocatedVUs']!=5 or spec['maxVUs']!=120:raise RuntimeError('Read scenario rate or VUs differ')
     state={'runId':run,'rate':rate,'startedAt':time.time(),'scenarioSha256':hashlib.sha256((BASE/'scenarios/migration-b-integration.js').read_bytes()).hexdigest()}
     path=directory/'k6.json';save(path,state)
     with (directory/'wrapper.log').open('w') as log:
         cmd=['runuser','-u','ubuntu','--','env',*[k+'='+v for k,v in env.items()],'bash','scripts/run-k6.sh','scenarios/migration-b-integration.js']
-        p=subprocess.run(cmd,cwd=BASE,stdout=log,stderr=subprocess.STDOUT,env={k:v for k,v in os.environ.items() if k not in ('K6_HTTP_DEBUG','K6_LOG_FORMAT')})
+        p=subprocess.run(cmd,cwd=BASE,stdout=log,stderr=subprocess.STDOUT,env={k:v for k,v in os.environ.items() if not k.startswith('K6_')})
     state.update(finishedAt=time.time(),k6ExitCode=p.returncode)
     save(path,state)
     state['observerExitCode']=None
@@ -42,7 +55,10 @@ def start(run,rate):
     save(path,state);print(json.dumps(state))
 
 def read(run,do_audit=False):
-    directory,root=paths(run);state=json.loads((directory/'k6.json').read_text())
+    directory,root=paths(run)
+    if not (directory/'k6.json').exists():
+        print(json.dumps({'runId':run,'initializing':True}));return
+    state=json.loads((directory/'k6.json').read_text())
     files=list(root.glob('*/trip-events.jsonl'))
     if len(files)>1:raise RuntimeError('More than one event file for a one-use Run')
     if not files:print(json.dumps(state));return
@@ -107,7 +123,7 @@ def read(run,do_audit=False):
         if not native.exists() and custom.exists():native=custom
         if native.exists():
             data=json.loads(native.read_text()).get('metrics',{})
-            state['native']={k:data[k].get('values',data[k]) for k in ('dropped_iterations','http_req_failed','b_request_admitted','b_request_completed','b_completion_ms','b_first_response_ms','b_refresh_failures') if k in data}
+            state['native']={k:data[k].get('values',data[k]) for k in ('dropped_iterations','http_req_failed','b_request_admitted','b_request_completed','b_completion_ms','b_first_response_ms','b_refresh_failures','b_read_list_requests','b_read_detail_requests','b_read_list_ok','b_read_detail_ok','b_read_list_ms','b_read_detail_ms') if k in data}
         else:
             state['summaryLimitation']='Aggregate JSON missing; exact dropped_iterations count unavailable. Retain raw events and threshold output.'
         (directory/'result.json').write_text(json.dumps(state))
