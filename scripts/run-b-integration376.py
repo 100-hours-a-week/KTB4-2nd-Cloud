@@ -12,7 +12,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 HOSTS = {'source':'i-05d320e3a87200d5a','target':'i-05535ae6ff812972c',
          'kafka':'i-0b86e517fda2cfafc','generator':'i-0c53b65eb35dd2b42'}
-EVIDENCE = ROOT.parent/'KTB4-2nd-Cloud/.local-docs/evidence/396-latency-diagnostics'
+EVIDENCE = ROOT.parent/'KTB4-2nd-Cloud/.local-docs/evidence/398-consumer-batch-config'
 
 def aws(*args):
     p=subprocess.run(['aws',*args,'--profile','yeodam-admin','--region','ap-northeast-2','--output','json'],capture_output=True,text=True)
@@ -21,7 +21,7 @@ def aws(*args):
 
 def send(host,commands,timeout=1800):
     request={'InstanceIds':[HOSTS[host]],'DocumentName':'AWS-RunShellScript',
-             'Comment':'Cloud #396 latency diagnostics '+host,
+             'Comment':'Cloud #398 consumer batch config '+host,
              'Parameters':{'commands':['set -eu','umask 077',*commands],'executionTimeout':[str(timeout)]}}
     with tempfile.NamedTemporaryFile('w',suffix='.json') as f:
         json.dump(request,f);f.flush()
