@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Two public ACKs with one UUID; no Source trip write, one eventual Target trip."""
+"""Two public ACKs with one UUID; one Source trip and a completed Journal before measured input."""
 import argparse
 import json
 from pathlib import Path
 import subprocess
+import time
 from urllib.error import HTTPError
 from urllib.request import Request,urlopen
 from uuid import UUID,uuid5
@@ -23,7 +24,11 @@ def main():
         except HTTPError as e:status=e.code;data={}
         results.append({'status':status,'requestId':data.get('requestId')})
         if status!=202 or data.get('requestId')!=request_id:raise RuntimeError('Public B2 UUID/ACK contract failed with HTTP '+str(status))
-    p=subprocess.run(['mysql','--protocol=socket','-uroot','-N','-B','-e',"SELECT COUNT(*) FROM yeodam_v1_source.trips WHERE trip_name='"+name+"';"],capture_output=True,text=True)
-    if p.returncode or p.stdout.strip()!='0':raise RuntimeError('Public queue wrote a Source trip')
-    print(json.dumps({'runId':run,'phase':'public_smoke','responses':results,'sourceTripRows':0,'excludedFromRps':True}))
+    end=time.monotonic()+15
+    while True:
+        p=subprocess.run(['mysql','--protocol=socket','-uroot','-N','-B','-e',"SELECT (SELECT COUNT(*) FROM yeodam_v1_source.trips WHERE trip_name='"+name+"'),(SELECT COUNT(*) FROM yeodam_v1_source.migration_trip_request_result WHERE request_id='"+request_id+"' AND status='COMPLETED');"],capture_output=True,text=True)
+        if p.returncode==0 and p.stdout.strip()=='1\t1':break
+        if time.monotonic()>end:raise RuntimeError('Source queue did not apply one deduplicated smoke request')
+        time.sleep(.2)
+    print(json.dumps({'runId':run,'phase':'public_smoke','responses':results,'sourceTripRows':1,'sourceJournalCompleted':1,'excludedFromRps':True}))
 if __name__=='__main__':main()
