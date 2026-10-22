@@ -161,6 +161,19 @@ try:print(json.dumps({'source':m.audit(d,RUN,'source'),'target':m.audit(d,RUN,'t
 finally:d.close()
 """.replace('RUN',repr(run))
     state['database']=b.records(remote('source',code,bound=240))[-1]
+    code="""import json
+from confluent_kafka import Consumer,TopicPartition
+run=RUN;topic='staging.yeodam.migration.b391.'+run+'.requests'
+c=Consumer({'bootstrap.servers':'10.30.10.95:9092','group.id':'yeodam-b391-'+run,'enable.auto.commit':False,'enable.auto.offset.store':False})
+try:
+ ps=[TopicPartition(topic,p) for p in range(8)]
+ ends={p.partition:c.get_watermark_offsets(p,timeout=5,cached=False)[1] for p in ps}
+ committed={p.partition:p.offset for p in c.committed(ps,timeout=5)}
+ assert all(v>=0 for v in committed.values()),'Missing committed partition'
+ print(json.dumps({'end':ends,'committed':committed,'pending':sum(ends[p]-committed[p] for p in ends),'offsetsWritten':False}))
+finally:c.close()
+""".replace('RUN',repr(run))
+    state['offsets']=b.records(remote('kafka',code,'/opt/yeodam-b383/venv/bin/python3',bound=90))[-1]
     # Whitelisted completion metadata already strips SQL, parameters and secrets.
     code="""import pathlib,base64,zlib,json
 from importlib.machinery import SourceFileLoader
@@ -168,6 +181,10 @@ m=SourceFileLoader('analyzer404','/run/yeodam-b391/b-integration396-analyze.py')
 p=pathlib.Path('/run/yeodam-b391')/RUN
 rows=json.loads((p/'completions.json').read_text())
 value=m.analyze(rows,START,EXPECTED)
+value['fixedCheckpointCompleted']=sum(v['committedAtMs'] <= (START+1020)*1000 for v in rows.values())
+value['fixedCheckpointPending']=EXPECTED-value['fixedCheckpointCompleted']
+first={k:v for k,v in rows.items() if v['committedAtMs'] <= (START+360)*1000}
+value['sourceFirst360']=m.analyze(first,START,10800) if first else None
 batches=json.loads((p/'diagnostic-batches.json').read_text())
 starts=[v for v in batches if v['event']=='start' and v['atMs']>=START*1000]
 value['actualBatchMax']=max([sum(v['counts'].values()) for v in starts] or [0])
