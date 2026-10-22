@@ -19,4 +19,18 @@ class QueueEvidenceTests(unittest.TestCase):
    with patch.object(m,'paths',return_value=(directory,root)),redirect_stdout(io.StringIO()):m.read(run,True)
    state=json.loads((directory/'result.json').read_text())
    self.assertEqual(state['non202Requests'],2);self.assertEqual(state['firstStatuses'],{'202':1,'500':1})
+ def test_last_two_csrf_omissions_are_reported_even_without_http_errors(self):
+  m=load('b-integration376-generator.py');run='26b45888-9b29-4afb-b090-ff2acbfc3ab6'
+  with tempfile.TemporaryDirectory() as folder:
+   directory=Path(folder)/'state';directory.mkdir();root=Path(folder)/'results';result=root/'once';result.mkdir(parents=True)
+   (directory/'k6.json').write_text(json.dumps({'runId':run,'rate':10,'startedAt':1}))
+   records=[{'event':'auth_refresh','runId':run,'ok':True} for _ in range(560)]+[{'event':'auth_csrf','runId':run,'ok':True} for _ in range(558)]
+   events=result/'trip-events.jsonl'
+   for missing in (True,False):
+    if not missing:records.extend([{'event':'auth_csrf','runId':run,'ok':True}]*2)
+    events.write_text('\n'.join(json.dumps(v) for v in records))
+    with patch.object(m,'paths',return_value=(directory,root)),redirect_stdout(io.StringIO()):m.read(run,True)
+    state=json.loads((directory/'result.json').read_text())
+    self.assertEqual(state['authInjectionComplete'],not missing)
+    self.assertEqual(state['expectedCsrf'],560)
 if __name__=='__main__':unittest.main()

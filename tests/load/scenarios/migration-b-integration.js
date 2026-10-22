@@ -13,9 +13,10 @@ const dataset = requiredEnv('K6_TRIP_DATASET_ID');
 const rate = positiveIntegerEnv('K6_TRIP_RATE', 10);
 const duration = positiveIntegerEnv('K6_TRIP_DURATION_SECONDS', 900);
 const actors = ({ 10: 40, 30: 120, 50: 200 })[rate];
-// Logical users do not depend on VUs. The first 50 RPS run needed 319 in-flight
-// trip requests: reserve its already observed 320 VUs before input, not during it.
-const vus = ({ 10: 40, 30: 120, 50: 320 })[rate];
+// Logical users do not depend on VUs. Observed trip VUs grew to 466 at 50 RPS;
+// reserve 600 before input. Together with 200 auth actors this stays below the
+// previous 1200-client setup; Source, Nginx limits and maximum VUs are unchanged.
+const vus = ({ 10: 40, 30: 120, 50: 600 })[rate];
 const maxVus = rate * 120; // Keep the 100s response capacity plus 20% arrival scheduling headroom.
 if (base !== 'https://v1-staging.yeodam-2gether.com' || !/^[0-9a-f-]{36}$/.test(runId) ||
     !vus || duration !== 900) throw new Error('B integration requires staging, canonical Run, 10/30/50 RPS and 900s');
@@ -63,7 +64,9 @@ export function authFlow() {
     if (Date.now() < nextRefresh) sleep(Math.max(0, Math.min(nextRefresh, end) - Date.now()) / 1000);
     if (Date.now() >= end) break;
   for (const operation of ['refresh', 'csrf']) {
-    if (Date.now() >= end) break;
+    // A refresh begun within the input window owns its following CSRF request.
+    // Complete that pair in the existing 1005s actor window; do not omit it at 900s.
+    if (operation === 'refresh' && Date.now() >= end) break;
     const invoke = () => operation === 'refresh'
       ? http.post(`${base}/api/auth/token/refresh`, null, {
           cookies: { refreshToken: { value: session.refreshToken }, CSRF_CONTEXT: { value: session.csrfContext } },
