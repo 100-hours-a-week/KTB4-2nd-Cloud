@@ -26,6 +26,16 @@ class InstrumentationTest(unittest.TestCase):
         for source in ['server { listen 80; }', 'log_format yeodam_json escape=json \'"connection":"$connection",\';']:
             with self.assertRaises(ValueError): obs.instrument_site(source)
 
+    def test_upgrade_existing_connection_fields_without_replacing_routing(self):
+        source = (ROOT/'nginx/yeodam.conf').read_text()
+        complete = obs.instrument_site(source)
+        old = '\n'.join(line for line in complete.splitlines()
+                        if not any('"'+k+'"' in line for k in obs.MEASUREMENT_FIELDS))+'\n'
+        self.assertEqual(obs.instrument_site(old).count('"peer_addr":"$remote_addr"'), 1)
+        self.assertEqual(obs.instrument_site(complete), complete)
+        with self.assertRaises(ValueError):
+            obs.instrument_site(complete.replace('$remote_addr', '$http_x_forwarded_for'))
+
     def test_scrape_preserves_existing_file_readers(self):
         source = 'loki.source.file "existing" {}\nprometheus.remote_write "staging" {}\n'
         result = obs.instrument_alloy(source)
