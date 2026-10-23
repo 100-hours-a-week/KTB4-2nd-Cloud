@@ -32,10 +32,14 @@ class ReadDemandTest(unittest.TestCase):
         row = {'msec': '101.150', 'request_time': '0.200', 'method': 'GET',
                'normalized_route': '/api/trips/:tripId', 'peer_addr': '192.0.2.5',
                'request_id': 'a'*32, 'status': '200', 'cookie': 'secret-token',
-               'request_uri': '/api/trips/7?private=true'}
+               'request_uri': '/api/trips/7?private=true', 'limit_req_status': 'REJECTED_DRY_RUN'}
         events, _ = d.sanitize([row], meta, 102000, b'test-key')
         self.assertEqual(events[0]['start_ms'], 100950)
         self.assertEqual(events[0]['phase'], 'single-1')
+        self.assertEqual(events[0]['limit_req_status'], 'REJECTED_DRY_RUN')
+        self.assertEqual(d.statistics(events, [5])[0]['limit_req_statuses'], {'REJECTED_DRY_RUN': 1})
+        with self.assertRaises(ValueError):
+            d.sanitize([{**row, 'limit_req_status': 'unexpected-secret'}], meta, 102000, b'key')
         text = json.dumps(events)
         for secret in ['192.0.2.5', 'secret-token', 'private=true', 'peer_addr', 'cookie']:
             self.assertNotIn(secret, text)
