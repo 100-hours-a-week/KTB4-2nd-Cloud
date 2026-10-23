@@ -54,7 +54,8 @@ def validate_pair_receipt(plan, receipt):
     if {row.get('role') for row in receipt} != {'source', 'target'} or len(receipt) != 2:
         raise RuntimeError('Both rehearsal databases must be restored before paired input')
     for row in receipt:
-        if (row.get('baselineId') != plan['commonBaseline']['baselineId'] or
+        if (row.get('attempt') != plan['pairedRestoreAttempt'] or
+                row.get('baselineId') != plan['commonBaseline']['baselineId'] or
                 row.get('baselineSha256') != plan['commonBaseline']['sha256'] or
                 row.get('fingerprint') != plan['commonBaseline']['fingerprint']):
             raise RuntimeError('Paired initial data differs; no measured input')
@@ -76,6 +77,7 @@ def initialize(rate=RATE, rps=30, wait_clients=False, paired=False):
     if paired:
         old['commonBaseline'] = json.loads((EVIDENCE.parent / 'matched391-baseline.json').read_text())
         old['dataNotReset'] = False
+        old['pairedRestoreAttempt'] = 'control' if rate == 0 else 'limited'
         old['comparisonBaselineRun'] = None
         old['historicalDataRows'] = None
         old['comparisonScope'] = 'Same immutable schema restore before both runs; only pacing0 versus9000000 differs'

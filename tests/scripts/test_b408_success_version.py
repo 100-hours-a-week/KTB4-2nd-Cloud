@@ -19,12 +19,16 @@ class SuccessfulVersion(unittest.TestCase):
 
     def test_paired_input_requires_both_matching_restores(self):
         baseline = {'baselineId': 'id', 'sha256': 'digest', 'fingerprint': {'rows': 1}}
-        plan = {'commonBaseline': baseline}
-        receipt = [{'role': role, 'baselineId': 'id', 'baselineSha256': 'digest', 'fingerprint': {'rows': 1}}
+        plan = {'commonBaseline': baseline, 'pairedRestoreAttempt': 'control'}
+        receipt = [{'role': role, 'attempt': 'control', 'baselineId': 'id', 'baselineSha256': 'digest', 'fingerprint': {'rows': 1}}
                    for role in ('source', 'target')]
         subject.validate_pair_receipt(plan, receipt)
         with self.assertRaisesRegex(RuntimeError, 'Both'):
             subject.validate_pair_receipt(plan, receipt[:1])
+        receipt[1]['attempt'] = 'limited'
+        with self.assertRaisesRegex(RuntimeError, 'differs'):
+            subject.validate_pair_receipt(plan, receipt)
+        receipt[1]['attempt'] = 'control'
         receipt[1]['fingerprint']['rows'] = 2
         with self.assertRaisesRegex(RuntimeError, 'differs'):
             subject.validate_pair_receipt(plan, receipt)
