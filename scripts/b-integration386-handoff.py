@@ -22,7 +22,7 @@ def wait_prepared(run,latest):
                 if observed<=latest:return observed
             except (OSError,RuntimeError,subprocess.CalledProcessError):pass
         time.sleep(.1)
-    raise RuntimeError('Preparation not ready by original +360s limit')
+    raise RuntimeError('Preparation not ready by fixed latest-fence deadline')
 
 def wait_cdc_watermark(run, latest):
     """Catch a finite frontier while Source keeps serving; never join or commit groups."""
