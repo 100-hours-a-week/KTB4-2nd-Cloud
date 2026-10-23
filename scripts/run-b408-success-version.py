@@ -18,7 +18,8 @@ EVIDENCE = ROOT.parent / 'KTB4-2nd-Cloud/.local-docs/evidence/408-snapshot-conte
 RATE = 7276913
 CASES = {'success391-limited': RATE, 'success391-limited-9mb': 9000000,
          'success391-9mb-wait-30': 9000000, 'success391-9mb-wait-10': 9000000,
-         'success391-9mb-wait-50': 9000000}
+         'success391-9mb-wait-50': 9000000,
+         'paired391-unlimited-30': 0, 'paired391-limited-30': 9000000}
 
 
 def load():
@@ -49,7 +50,17 @@ def render_bulk(template):
     return template.replace('import subprocess', 'import subprocess\nimport time', 1).replace(guard, replacement, 1)
 
 
-def initialize(rate=RATE, rps=30, wait_clients=False):
+def validate_pair_receipt(plan, receipt):
+    if {row.get('role') for row in receipt} != {'source', 'target'} or len(receipt) != 2:
+        raise RuntimeError('Both rehearsal databases must be restored before paired input')
+    for row in receipt:
+        if (row.get('baselineId') != plan['commonBaseline']['baselineId'] or
+                row.get('baselineSha256') != plan['commonBaseline']['sha256'] or
+                row.get('fingerprint') != plan['commonBaseline']['fingerprint']):
+            raise RuntimeError('Paired initial data differs; no measured input')
+
+
+def initialize(rate=RATE, rps=30, wait_clients=False, paired=False):
     EVIDENCE.mkdir(parents=True, exist_ok=True)
     path = EVIDENCE / 'plan.json'
     if path.exists():
@@ -62,6 +73,14 @@ def initialize(rate=RATE, rps=30, wait_clients=False):
                observationOnly='Source proc CPU sampler; no BE instrumentation or added GET load',
                historicalDataRows=2021037 if rps == 30 else None, dataNotReset=True)
     old['bulkClientWaitSeconds'] = 45 if wait_clients else 0
+    if paired:
+        old['commonBaseline'] = json.loads((EVIDENCE.parent / 'matched391-baseline.json').read_text())
+        old['dataNotReset'] = False
+        old['comparisonBaselineRun'] = None
+        old['historicalDataRows'] = None
+        old['comparisonScope'] = 'Same immutable schema restore before both runs; only pacing0 versus9000000 differs'
+        old['cachePolicy'] = 'Same logical restore and application preparation; no cache flush or database restart'
+        old['preservePreviousData'] = 'Private S3 archive and previous Kafka topics/offsets retained'
     assert old['backendImage'] == IMAGE
     path.write_text(json.dumps(old, indent=2))
 
@@ -132,7 +151,8 @@ def main():
     p.add_argument('--case', choices=CASES, default='success391-limited'); args = p.parse_args()
     EVIDENCE = EVIDENCE.parent / args.case
     if args.action == 'init':
-        initialize(CASES[args.case], int(args.case.rsplit('-', 1)[-1]) if '-wait-' in args.case else 30, '-wait-' in args.case); return
+        initialize(CASES[args.case], int(args.case.rsplit('-', 1)[-1]) if '-wait-' in args.case else 30,
+                   '-wait-' in args.case or args.case.startswith('paired391-'), args.case.startswith('paired391-')); return
     m = load()
     if m.ssm.aws('sts', 'get-caller-identity')['Account'] != '483175530259':
         raise RuntimeError('Wrong account')
@@ -140,6 +160,10 @@ def main():
     assert plan['backendImage'] == IMAGE and plan['snapshotBytesPerSecond'] == CASES[args.case]
     if args.action == 'deploy':
         m.deploy()
+        if plan.get('commonBaseline'):
+            baseline_data = base64.b64encode((ROOT / 'scripts/b-integration408-baseline.py').read_bytes()).decode()
+            for host in ('source', 'target'):
+                m.raw(host, ["printf '%s' '" + baseline_data + "' | base64 -d > /run/yeodam-b391/b-integration408-baseline.py"])
         if plan.get('bulkClientWaitSeconds') == 45:
             template = (LEGACY / 'scripts/b-integration376-bulk.py').read_text()
             patched = render_bulk(template)
@@ -153,6 +177,8 @@ def main():
         data = base64.b64encode((ROOT / 'scripts/b-integration393-resources.py').read_bytes()).decode()
         m.raw('source', ["printf '%s' '" + data + "' | base64 -d > /run/yeodam-b391/b-integration393-resources.py"])
     else:
+        if plan.get('commonBaseline'):
+            validate_pair_receipt(plan, json.loads((EVIDENCE / 'baseline-restored.json').read_text()))
         if plan.get('bulkClientWaitSeconds') == 45 and not (EVIDENCE / 'bulk-preparation.json').exists():
             raise RuntimeError('Bounded client wait was not deployed')
         instrument(m, {**plan['rates'][0], 'snapshotBytesPerSecond': plan['snapshotBytesPerSecond']})

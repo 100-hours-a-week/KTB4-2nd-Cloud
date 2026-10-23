@@ -17,6 +17,20 @@ class SuccessfulVersion(unittest.TestCase):
         self.assertEqual(subject.CASES['success391-limited'], 7276913)
         self.assertEqual(subject.CASES['success391-limited-9mb'], 9000000)
 
+    def test_paired_input_requires_both_matching_restores(self):
+        baseline = {'baselineId': 'id', 'sha256': 'digest', 'fingerprint': {'rows': 1}}
+        plan = {'commonBaseline': baseline}
+        receipt = [{'role': role, 'baselineId': 'id', 'baselineSha256': 'digest', 'fingerprint': {'rows': 1}}
+                   for role in ('source', 'target')]
+        subject.validate_pair_receipt(plan, receipt)
+        with self.assertRaisesRegex(RuntimeError, 'Both'):
+            subject.validate_pair_receipt(plan, receipt[:1])
+        receipt[1]['fingerprint']['rows'] = 2
+        with self.assertRaisesRegex(RuntimeError, 'differs'):
+            subject.validate_pair_receipt(plan, receipt)
+        self.assertEqual(subject.CASES['paired391-unlimited-30'], 0)
+        self.assertEqual(subject.CASES['paired391-limited-30'], 9000000)
+
     def test_only_snapshot_submission_is_replaced(self):
         with tempfile.TemporaryDirectory() as d:
             old, legacy = subject.EVIDENCE, subject.LEGACY
