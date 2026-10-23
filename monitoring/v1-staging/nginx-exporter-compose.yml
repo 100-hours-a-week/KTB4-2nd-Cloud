@@ -1,0 +1,18 @@
+name: yeodam-v1-nginx-observability
+services:
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.5.3@sha256:85666e7fde7e253f1c6d978f9a961245df4c9cdb7677e1866d9bb28e8f9ee41d
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 64m
+    cpus: 0.25
+    command:
+      - --nginx.scrape-uri=http://127.0.0.1:8086/stub_status
+      - --nginx.timeout=2s
+      - --web.listen-address=127.0.0.1:9113
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}

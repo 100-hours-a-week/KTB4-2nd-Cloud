@@ -1,65 +1,444 @@
 {
   "uid": "yeodam-v1-source",
   "title": "V1 staging source",
-  "tags": ["yeodam", "staging", "migration"],
+  "tags": [
+    "yeodam",
+    "staging",
+    "migration",
+    "nginx"
+  ],
   "timezone": "browser",
   "schemaVersion": 41,
-  "refresh": "30s",
-  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "panels": [
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Nginx client connections",
+      "description": "Active includes idle Waiting. Client connections only; upstream sockets and total worker FD usage are not included. The local status scrape itself is also counted.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "nginx_connections_active{job=\"v1-nginx\",environment=\"staging\"}",
+          "legendFormat": "Active"
+        },
+        {
+          "refId": "B",
+          "expr": "nginx_connections_reading{job=\"v1-nginx\",environment=\"staging\"}",
+          "legendFormat": "Reading"
+        },
+        {
+          "refId": "C",
+          "expr": "nginx_connections_writing{job=\"v1-nginx\",environment=\"staging\"}",
+          "legendFormat": "Writing"
+        },
+        {
+          "refId": "D",
+          "expr": "nginx_connections_waiting{job=\"v1-nginx\",environment=\"staging\"}",
+          "legendFormat": "Waiting"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Nginx observation health",
+      "description": "Both must be 1. If samples disappear, check timestamp freshness; no data is not zero.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"v1-nginx\",environment=\"staging\"}",
+          "legendFormat": "Alloy → exporter"
+        },
+        {
+          "refId": "B",
+          "expr": "nginx_up{job=\"v1-nginx\",environment=\"staging\"}",
+          "legendFormat": "Exporter → Nginx"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Accepted / handled connections per second",
+      "description": "Counters reset on restart. Includes the local status scrape connection every 15 seconds; use public request logs to measure application traffic.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(nginx_connections_accepted{job=\"v1-nginx\",environment=\"staging\"}[1m])",
+          "legendFormat": "accepted"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(nginx_connections_handled{job=\"v1-nginx\",environment=\"staging\"}[1m])",
+          "legendFormat": "handled"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Accepted minus handled per second",
+      "description": "A positive gap suggests resource limits; it is not a count of lost HTTP requests or proof of a specific bottleneck. Correlate Nginx error logs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_min(rate(nginx_connections_accepted{job=\"v1-nginx\",environment=\"staging\"}[1m]) - rate(nginx_connections_handled{job=\"v1-nginx\",environment=\"staging\"}[1m]), 0)",
+          "legendFormat": "not handled"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      }
+    },
     {
       "id": 1,
       "type": "timeseries",
       "title": "Nginx requests per second",
-      "datasource": {"type": "loki", "uid": "staging-loki"},
-      "targets": [{"refId": "A", "expr": "sum(rate({service_name=\"v1-nginx\",stream=\"access\"}[1m]))"}],
-      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      "datasource": {
+        "type": "loki",
+        "uid": "staging-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({service_name=\"v1-nginx\",stream=\"access\"}[1m]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      }
     },
     {
       "id": 2,
       "type": "timeseries",
       "title": "Nginx 5xx per second",
-      "datasource": {"type": "loki", "uid": "staging-loki"},
-      "targets": [{"refId": "A", "expr": "sum(rate({service_name=\"v1-nginx\",stream=\"access\"} | json | status >= 500 [1m]))"}],
-      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      "datasource": {
+        "type": "loki",
+        "uid": "staging-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({service_name=\"v1-nginx\",stream=\"access\"} | json | status >= 500 [1m]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      }
     },
     {
       "id": 3,
       "type": "timeseries",
       "title": "Nginx request p95",
-      "datasource": {"type": "loki", "uid": "staging-loki"},
-      "targets": [{"refId": "A", "expr": "quantile_over_time(0.95, {service_name=\"v1-nginx\",stream=\"access\"} | json request_time=\"request_time\" | unwrap request_time [5m])"}],
-      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      "datasource": {
+        "type": "loki",
+        "uid": "staging-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, {service_name=\"v1-nginx\",stream=\"access\"} | json request_time=\"request_time\" | unwrap request_time [5m])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      }
     },
     {
       "id": 4,
       "type": "timeseries",
       "title": "V1 App host memory used",
-      "datasource": {"type": "prometheus", "uid": "staging-prometheus"},
-      "targets": [{"refId": "A", "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"v1-app-node\"} / node_memory_MemTotal_bytes{job=\"v1-app-node\"})"}],
-      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=\"v1-app-node\"} / node_memory_MemTotal_bytes{job=\"v1-app-node\"})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      }
     },
     {
       "id": 5,
       "type": "timeseries",
       "title": "Trip create requests per second",
-      "datasource": {"type": "loki", "uid": "staging-loki"},
-      "targets": [{"refId": "A", "expr": "sum(rate({service_name=\"v1-nginx\",stream=\"access\"} | json | method = \"POST\" | normalized_route = \"/api/trips\" [1m]))"}],
-      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      "datasource": {
+        "type": "loki",
+        "uid": "staging-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({service_name=\"v1-nginx\",stream=\"access\"} | json | method = \"POST\" | normalized_route = \"/api/trips\" [1m]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      }
     },
     {
       "id": 6,
       "type": "timeseries",
       "title": "Initial attachment upload p95",
-      "datasource": {"type": "loki", "uid": "staging-loki"},
-      "targets": [{"refId": "A", "expr": "quantile_over_time(0.95, {service_name=\"v1-nginx\",stream=\"access\"} | json normalized_route=\"normalized_route\", request_time=\"request_time\" | normalized_route = \"/api/trips/:tripId/initial-attachments\" | unwrap request_time [5m])"}],
-      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      "datasource": {
+        "type": "loki",
+        "uid": "staging-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, {service_name=\"v1-nginx\",stream=\"access\"} | json normalized_route=\"normalized_route\", request_time=\"request_time\" | normalized_route = \"/api/trips/:tripId/initial-attachments\" | unwrap request_time [5m])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "V1 App CPU busy",
+      "description": "Host CPU includes MySQL, BE, FE and collection overhead.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{job=\"v1-app-node\",environment=\"staging\",mode=\"idle\"}[1m])))",
+          "legendFormat": "CPU"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "V1 App root disk used",
+      "description": "Baseline/load stop criterion: 80%. MySQL data uses a separate volume.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - node_filesystem_avail_bytes{job=\"v1-app-node\",environment=\"staging\",mountpoint=\"/\",fstype!=\"rootfs\"} / node_filesystem_size_bytes{job=\"v1-app-node\",environment=\"staging\",mountpoint=\"/\",fstype!=\"rootfs\"})",
+          "legendFormat": "root"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      }
+    },
+    {
+      "id": 13,
+      "type": "logs",
+      "title": "V1 Nginx access logs — connection fields",
+      "datasource": {
+        "type": "loki",
+        "uid": "staging-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{environment=\"staging\",service_name=\"v1-nginx\",stream=\"access\"} | json"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "description": "Expand a new log entry for connection / connection_requests / worker_pid / http_protocol. These fields are log payloads, not stream labels. Existing records do not have these fields."
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Nginx connection slot errors per second",
+      "datasource": {
+        "type": "loki",
+        "uid": "staging-loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({environment=\"staging\",service_name=\"v1-nginx\",stream=\"error\"} |= \"worker_connections are not enough\" [1m]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "description": "Error log occurrences, not unique requests. No matching entries may be no-data; correlate stream freshness and observation health."
     }
   ]
 }
