@@ -66,6 +66,7 @@ python3 -m unittest discover -s tests/load/tests -p 'test_cdc_331_bulk_contract.
 python3 -m unittest discover -s tests/load/tests -p 'test_cdc_336_shards_contract.py'
 python3 -m unittest tests/test_cdc_auth368.py
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_defense.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_token_window.py'
 node --test tests/load/tests/nginx-defense.test.mjs
 node --check tests/load/scenarios/nginx-request-repeat.js
 node --test tests/load/tests/migration-probe.test.mjs
