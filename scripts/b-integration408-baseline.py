@@ -15,12 +15,27 @@ from uuid import UUID
 BUCKET = 'yeodam-v2-staging-mysql-backup-483175530259-ap-northeast-2'
 SCHEMA = 'yeodam_v1_source'
 BASE = Path('/var/lib/yeodam/b408-baseline')
+HISTORICAL_KEY = 'migration/rehearsal-reset/3502031b-0040-4333-9a8c-9ce63d9a2ce8/b391-target.sql.gz'
+HISTORICAL_SHA = 'ab1a0935f6335f0385f5df2cfb2eb4c75c9fce4f05a742d9e81bed3bfe2cfae6'
 
 
 def legacy():
     spec = importlib.util.spec_from_file_location('reset391', '/run/yeodam-b391/b-integration376-reset.py')
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
     return module
+
+
+def preserve(module, role, path):
+    """Keep the legacy dump settings and retain private stderr on failure."""
+    error_path = path.with_suffix(path.suffix + '.stderr')
+    with path.open('xb') as file, gzip.GzipFile(fileobj=file, mode='wb', mtime=0) as compressed, error_path.open('xb') as errors:
+        path.chmod(0o600); error_path.chmod(0o600)
+        process = subprocess.Popen(module.command(role, 'mysqldump') + [
+            '--single-transaction', '--quick', '--set-gtid-purged=OFF', '--hex-blob',
+            '--routines', '--events', '--triggers', '--default-character-set=utf8mb4', SCHEMA],
+            stdout=subprocess.PIPE, stderr=errors)
+        for block in iter(lambda: process.stdout.read(65536), b''):compressed.write(block)
+        if process.wait():raise RuntimeError('Preservation dump failed; inspect private stderr before any database replacement')
 
 
 def protected(module, role):
@@ -60,7 +75,7 @@ def capture(module, baseline, directory):
     if archive.exists() or marker.exists():raise RuntimeError('Immutable baseline already exists')
     if shutil.disk_usage('/').free < 2 * 1024**3:
         raise RuntimeError('Source root requires2GiB free before baseline preservation')
-    module.snapshot('source', archive)
+    preserve(module, 'source', archive)
     value = {'baselineId': baseline, 'bucket': BUCKET,
              'key': 'migration/rehearsal-reset/' + baseline + '/b408-baseline.sql.gz',
              'sha256': module.sha(archive), 'bytes': archive.stat().st_size,
@@ -79,6 +94,59 @@ def validate_marker(value, baseline):
         raise RuntimeError('Missing baseline digest or fingerprint')
 
 
+def adopt_historical(module, baseline, directory):
+    """Restore the verified pre-30RPS archive; preserve the current Source first."""
+    protected(module, 'source')
+    archive = directory / 'baseline.sql.gz'
+    done = directory / 'source-control.restored.json'
+    before = directory / 'source-control-before.sql.gz'
+    if archive.exists() or before.exists() or done.exists():
+        raise RuntimeError('Historical adoption already attempted; inspect checkpoint')
+    module.transfer('s3://' + BUCKET + '/' + HISTORICAL_KEY, str(archive))
+    archive.chmod(0o600)
+    if module.sha(archive) != HISTORICAL_SHA:
+        raise RuntimeError('Historical archive digest differs; no database change')
+    if shutil.disk_usage('/').free < 2 * 1024**3:
+        raise RuntimeError('Requires2GiB free before historical restoration')
+    preserve(module, 'source', before)
+    backup = 'migration/rehearsal-reset/' + baseline + '/b408-source-control-before.sql.gz'
+    module.transfer(str(before), 's3://' + BUCKET + '/' + backup)
+    meta = {'role': 'source', 'attempt': 'control', 'key': backup,
+            'sha256': module.sha(before), 'bytes': before.stat().st_size}
+    preservation = directory / 'source-control-before.ready'
+    preservation.write_text(json.dumps(meta)); preservation.chmod(0o600)
+    module.transfer(str(preservation), 's3://' + BUCKET + '/' + backup + '.ready')
+    protected(module, 'source')
+    module.query('source', 'SET PERSIST super_read_only=OFF; SET PERSIST read_only=OFF;')
+    try:
+        with gzip.open(archive, 'rb') as content, (directory / 'source-control.stderr').open('wb') as errors:
+            process = subprocess.Popen(module.command('source') + ['--default-character-set=utf8mb4'],
+                                       stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=errors)
+            process.stdin.write(('SET SESSION sql_log_bin=0; DROP DATABASE `' + SCHEMA + '`; CREATE DATABASE `' + SCHEMA + '` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci; USE `' + SCHEMA + '`;\n').encode())
+            for block in iter(lambda: content.read(65536), b''):process.stdin.write(block)
+            process.stdin.close()
+            if process.wait():raise RuntimeError('Historical import failed; preserve backups and private stderr')
+        observed = fingerprint(module, 'source')
+        if observed['trips'] != 2021037 or observed['journal'] != 219511 or len(observed['tables']) != 33:
+            raise RuntimeError('Historical data differs; no measured input')
+        if module.query('source', 'SELECT COUNT(*) FROM ' + SCHEMA + '.trip_regions;') != '2021037':
+            raise RuntimeError('Historical region rows differ; no measured input')
+    finally:
+        module.query('source', 'SET PERSIST read_only=ON; SET PERSIST super_read_only=ON;')
+    key = 'migration/rehearsal-reset/' + baseline + '/b408-baseline.sql.gz'
+    value = {'baselineId': baseline, 'bucket': BUCKET, 'key': key, 'sha256': HISTORICAL_SHA,
+             'bytes': archive.stat().st_size, 'fingerprint': observed, 'gtidReset': False,
+             'historicalOriginKey': HISTORICAL_KEY, 'historical30RpsRun': '56f1a134-7867-42d6-84df-1c19f030916e'}
+    marker = directory / 'baseline.ready'; marker.write_text(json.dumps(value)); marker.chmod(0o600)
+    module.transfer(str(archive), 's3://' + BUCKET + '/' + key)
+    module.transfer(str(marker), 's3://' + BUCKET + '/' + key + '.ready')
+    result = {'phase': 'baseline_restored', 'role': 'source', 'baselineId': baseline, 'attempt': 'control',
+              'baselineSha256': HISTORICAL_SHA, 'beforePreserved': meta, 'fingerprint': observed,
+              'gtidReset': False, 'binlogImportEnabled': False}
+    done.write_text(json.dumps(result)); done.chmod(0o600)
+    print(json.dumps({'phase': 'historical_baseline_adopted', 'baseline': value, 'receipt': result}), flush=True)
+
+
 def restore(module, baseline, attempt, role, directory):
     protected(module, role)
     marker = directory / ('download-' + attempt + '.ready')
@@ -94,7 +162,7 @@ def restore(module, baseline, attempt, role, directory):
     done = directory / (role + '-' + attempt + '.restored.json')
     before = directory / (role + '-' + attempt + '-before.sql.gz')
     if done.exists() or before.exists():raise RuntimeError('Restore already attempted; preserve checkpoint')
-    module.snapshot(role, before)
+    preserve(module, role, before)
     backup = 'migration/rehearsal-reset/' + baseline + '/b408-' + role + '-' + attempt + '-before.sql.gz'
     module.transfer(str(before), 's3://' + BUCKET + '/' + backup)
     meta = {'role': role, 'attempt': attempt, 'key': backup, 'sha256': module.sha(before), 'bytes': before.stat().st_size}
@@ -124,7 +192,7 @@ def restore(module, baseline, attempt, role, directory):
 
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument('action', choices=('capture', 'restore'))
+    parser = argparse.ArgumentParser(); parser.add_argument('action', choices=('capture', 'restore', 'adopt-historical'))
     parser.add_argument('--baseline-id', required=True); parser.add_argument('--role', choices=('source', 'target'), required=True)
     parser.add_argument('--attempt', choices=('control', 'limited')); args = parser.parse_args()
     if str(UUID(args.baseline_id)) != args.baseline_id:raise ValueError('Canonical baseline required')
@@ -132,7 +200,10 @@ def main():
     if address not in subprocess.check_output(['hostname', '-I'], text=True).split():raise RuntimeError('Wrong rehearsal host')
     directory = BASE / args.baseline_id; directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     module = legacy()
-    if args.action == 'capture':
+    if args.action == 'adopt-historical':
+        if args.role != 'source' or args.attempt != 'control':raise ValueError('Historical baseline starts with Source control restoration')
+        adopt_historical(module, args.baseline_id, directory)
+    elif args.action == 'capture':
         if args.role != 'source':raise ValueError('Baseline captured from authoritative Source only')
         capture(module, args.baseline_id, directory)
     else:

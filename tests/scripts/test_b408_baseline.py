@@ -13,6 +13,17 @@ BASELINE = '72d49f82-ff47-46bd-9b12-0dd307a68fb2'
 
 
 class BaselineSafety(unittest.TestCase):
+    def test_historical_digest_mismatch_preserves_current_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            module = SimpleNamespace(query=Mock(side_effect=['1\t1\t1', '0', '0']),
+                                     transfer=lambda source, target: Path(target).write_bytes(b'wrong'),
+                                     sha=Mock(return_value='0' * 64), snapshot=Mock())
+            with self.assertRaisesRegex(RuntimeError, 'Historical archive digest differs'):
+                subject.adopt_historical(module, BASELINE, Path(directory))
+            module.snapshot.assert_not_called()
+            self.assertTrue(all('SET ' not in call.args[1] and 'DROP ' not in call.args[1]
+                                for call in module.query.call_args_list))
+
     def test_wrong_roles_refuse_before_database_mutation(self):
         module = SimpleNamespace(query=Mock(return_value='1\t0\t0'))
         with self.assertRaisesRegex(RuntimeError, 'fenced'):

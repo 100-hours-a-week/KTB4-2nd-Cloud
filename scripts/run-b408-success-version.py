@@ -19,7 +19,8 @@ RATE = 7276913
 CASES = {'success391-limited': RATE, 'success391-limited-9mb': 9000000,
          'success391-9mb-wait-30': 9000000, 'success391-9mb-wait-10': 9000000,
          'success391-9mb-wait-50': 9000000,
-         'paired391-unlimited-30': 0, 'paired391-limited-30': 9000000}
+         'paired391-unlimited-30': 0, 'paired391-limited-30': 9000000,
+         'historic391-unlimited-30': 0, 'historic391-limited-30': 9000000}
 
 
 def load():
@@ -75,7 +76,8 @@ def initialize(rate=RATE, rps=30, wait_clients=False, paired=False):
                historicalDataRows=2021037 if rps == 30 else None, dataNotReset=True)
     old['bulkClientWaitSeconds'] = 45 if wait_clients else 0
     if paired:
-        old['commonBaseline'] = json.loads((EVIDENCE.parent / 'matched391-baseline.json').read_text())
+        baseline_file = 'historical391-baseline.json' if EVIDENCE.name.startswith('historic391-') else 'matched391-baseline.json'
+        old['commonBaseline'] = json.loads((EVIDENCE.parent / baseline_file).read_text())
         old['dataNotReset'] = False
         old['pairedRestoreAttempt'] = 'control' if rate == 0 else 'limited'
         old['comparisonBaselineRun'] = None
@@ -154,7 +156,8 @@ def main():
     EVIDENCE = EVIDENCE.parent / args.case
     if args.action == 'init':
         initialize(CASES[args.case], int(args.case.rsplit('-', 1)[-1]) if '-wait-' in args.case else 30,
-                   '-wait-' in args.case or args.case.startswith('paired391-'), args.case.startswith('paired391-')); return
+                   '-wait-' in args.case or args.case.startswith(('paired391-', 'historic391-')),
+                   args.case.startswith(('paired391-', 'historic391-'))); return
     m = load()
     if m.ssm.aws('sts', 'get-caller-identity')['Account'] != '483175530259':
         raise RuntimeError('Wrong account')
