@@ -27,6 +27,7 @@ LOG = Path('/var/log/nginx/yeodam-access.json')
 EXCLUDED = {'/api/auth/csrf', '/api/auth/kakao/authorize',
             '/api/auth/kakao/callback', '/api/actuator/health'}
 PHASES = ['single-1', 'single-2', 'single-3', 'multi-tab']
+CAPTURE_PHASES = PHASES + ['normal-before', 'enforced-load', 'normal-after', 'upload-10', 'upload-150']
 
 
 def utc(ms):
@@ -117,6 +118,7 @@ def statistics(events, rates):
                        'max_10s_rps': peaks['10']/10, 'max_30s_rps': peaks['30']/30,
                        'routes': dict(Counter(x['route'] for x in selected)),
                        'statuses': dict(Counter(str(x['status']) for x in selected)),
+                       'upstream_statuses': dict(Counter(x.get('upstream_status', 'not_logged') for x in selected)),
                        'limit_req_statuses': dict(Counter(x.get('limit_req_status', 'not_logged') for x in selected)),
                        'rate_burst_tradeoffs': frontier})
     return result
@@ -166,6 +168,9 @@ def sanitize(rows, meta, end, key):
             continue
         if row.get('limit_req_status', 'not_logged') not in ('not_logged', '', '-', 'PASSED', 'DELAYED', 'REJECTED', 'DELAYED_DRY_RUN', 'REJECTED_DRY_RUN'):
             raise ValueError('Unknown limit decision; row contents withheld')
+        upstream = str(row.get('upstream_status', 'not_logged'))
+        if upstream not in ('not_logged', '') and not re.fullmatch(r'(?:-|[1-5][0-9]{2})(?:[, :]+(?:-|[1-5][0-9]{2}))*', upstream):
+            raise ValueError('Invalid upstream status; row contents withheld')
         address = ipaddress.ip_address(row.get('peer_addr', ''))
         peer = str(address)
         scope = 'loopback' if address.is_loopback else ('private' if address.is_private else 'public')
@@ -183,6 +188,7 @@ def sanitize(rows, meta, end, key):
                        'route': row['normalized_route'], 'method': row['method'],
                        'status': int(row['status']),
                        'limit_req_status': row.get('limit_req_status', 'not_logged'),
+                       'upstream_status': upstream,
                        'request_time_ms': done-start})
     return sorted(events, key=lambda x: (x['start_ms'], x['request_id'])), dict(skipped)
 
@@ -229,8 +235,9 @@ def main():
     sub = p.add_subparsers(dest='mode', required=True)
     begin = sub.add_parser('begin')
     begin.add_argument('--abandon-current', action='store_true')
+    begin.add_argument('--phase', choices=CAPTURE_PHASES, default='single-1')
     mark = sub.add_parser('mark')
-    mark.add_argument('--phase', choices=PHASES, required=True)
+    mark.add_argument('--phase', choices=CAPTURE_PHASES, required=True)
     sub.add_parser('finish')
     offline = sub.add_parser('analyze')
     offline.add_argument('--input', type=Path, required=True)
@@ -257,7 +264,7 @@ def main():
         start = now_ms()
         meta = {'run_id': str(uuid.uuid4()), 'start_ms': start, 'start_utc': utc(start),
                 'site_sha256': hashlib.sha256(site.encode()).hexdigest(),
-                'phases': [{'name': 'single-1', 'start_ms': start}]}
+                'phases': [{'name': a.phase, 'start_ms': start}]}
         BASE.mkdir(parents=True, exist_ok=True, mode=0o700)
         BASE.chmod(0o700)
         directory = BASE/meta['run_id']
@@ -267,7 +274,7 @@ def main():
         (directory/'peer.key').chmod(0o600)
         (BASE/'current').write_text(meta['run_id'])
         (BASE/'current').chmod(0o600)
-        print(json.dumps({'run_id': meta['run_id'], 'phase': 'single-1', 'start_utc': utc(start)}))
+        print(json.dumps({'run_id': meta['run_id'], 'phase': a.phase, 'start_utc': utc(start)}))
         return
     directory, meta = current()
     if a.mode == 'mark':
