@@ -3,6 +3,9 @@
 import argparse
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "monitoring/v1-staging"))
+from nginx_observability import instrument_site
 
 PROBE_ROUTE = '/api/internal/migration-write-probe'
 
@@ -29,7 +32,7 @@ map "$request_method:$uri:$http_x_migration_run_id" $yeodam_staging_probe_run_id
 }
 
 '''
-    return prefix + content
+    return instrument_site(prefix + content)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

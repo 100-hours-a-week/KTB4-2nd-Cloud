@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+bash -n monitoring/v1-staging/install-nginx-logrotate.sh
+python3 -m unittest discover -s tests/ci -p 'test_v1_nginx_observability.py'
+python3 -c 'import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path("monitoring/v1-staging").glob("*.py")]'
+docker compose -f monitoring/v1-staging/nginx-exporter-compose.yml config --quiet
+
 python3 -m unittest discover -s tests/ci -p 'test_cloud_pr_scope.py'
 python3 -m unittest discover -s tests/scripts -p 'test_b3*.py'
+python3 -m unittest discover -s tests/scripts -p 'test_b408*.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_observability.py'
@@ -60,6 +66,8 @@ python3 -m unittest discover -s tests/load/tests -p 'test_cdc_331_bulk_contract.
 python3 -m unittest discover -s tests/load/tests -p 'test_cdc_336_shards_contract.py'
 python3 -m unittest tests/test_cdc_auth368.py
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_defense.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_token_window.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_read_demand.py'
 node --test tests/load/tests/nginx-defense.test.mjs
 node --check tests/load/scenarios/nginx-request-repeat.js
 node --test tests/load/tests/migration-probe.test.mjs

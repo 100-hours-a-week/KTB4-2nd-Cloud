@@ -33,13 +33,13 @@ def deploy():
         'source': ['b-integration376-app.py', 'b-integration376-control.py',
                    'b-integration376-auth.py', 'b-integration376-smoke.py',
                    'b-integration388-connections.py', 'b-integration393-resources.py',
-                   'b-integration396-analyze.py'],
+                   'b-integration396-analyze.py', 'b-integration406-reads.py'],
         'generator': ['b-integration376-generator.py'],
     }
     for host, names in files.items():
         for name in names:
             b.raw(host, b.ssm.deploy('scripts/'+name, '/run/yeodam-b391/'+name))
-    for name in ('scenarios/migration-b-integration.js', 'scripts/run-k6.sh'):
+    for name in ('scenarios/migration-b-integration.js', 'scripts/run-k6.sh', 'lib/migration-read-probes.mjs'):
         target = '/opt/yeodam-load/source/tests/load/'+name
         b.raw('generator', b.ssm.deploy('tests/load/'+name, target)+['chown ubuntu:ubuntu '+target])
     b.raw('generator', b.ssm.deploy('tests/load/scripts/private-pool-transfer.py', '/run/yeodam-b391/pool-transfer.py'))
@@ -76,21 +76,27 @@ finally:d.close()
     return b.records(remote('source', code))[-1]
 
 
-def start():
-    if (EVIDENCE/'state.json').exists():
-        raise RuntimeError('Run already prepared; use observe/finish, never rerun its ID')
-    run = str(uuid.uuid4())
-    state = {'runId':run, 'phase':'preparing', 'rate':30, 'duration':900,
-             'checkpointSeconds':1020, 'image':IMAGE, 'sourceConcurrency':4,
-             'maxPollRecords':32, 'logicalUsers':120, 'migrationEnabled':False}
-    save(state)
-    state['before'] = source_observation(run); save(state)
-    topics(run)
-    prepared = subprocess.run(['python3',str(ROOT/'tests/load/scripts/run-synthetic-pool-ssm.py'),
-        'prepare-existing','--instance-id',b.ssm.HOSTS['source'],'--run-id',run,
-        '--dataset-id',b.DATASET,'--count','140'],capture_output=True,text=True)
-    if prepared.returncode:
-        raise RuntimeError('Pool preparation failed; no input started')
+def start(resume_preparation=False):
+    path=EVIDENCE/'state.json'
+    if resume_preparation:
+        state=json.loads(path.read_text());run=state['runId']
+        if state['phase']!='preparing' or state.get('k6Command') or state.get('startedAt'):
+            raise RuntimeError('Only a preparation failure before any BE/load start may resume')
+        remote('source',"from importlib.machinery import SourceFileLoader\nm=SourceFileLoader('app404','/run/yeodam-b391/b-integration376-app.py').load_module()\nassert m.inspect(m.ORIGINAL)['State']['Running']\nprint('ORIGINAL_STILL_RUNNING_BEFORE_PREPARATION_RESUME')")
+    else:
+        if path.exists():
+            raise RuntimeError('Run already prepared; use observe/finish, never rerun its ID')
+        run=str(uuid.uuid4())
+        state={'runId':run,'phase':'preparing','rate':30,'duration':900,
+               'checkpointSeconds':1020,'image':IMAGE,'sourceConcurrency':4,
+               'maxPollRecords':32,'logicalUsers':120,'migrationEnabled':False}
+        save(state)
+        state['before']=source_observation(run);save(state)
+        topics(run)
+        prepared=subprocess.run(['python3',str(ROOT/'tests/load/scripts/run-synthetic-pool-ssm.py'),
+            'prepare-existing','--instance-id',b.ssm.HOSTS['source'],'--run-id',run,
+            '--dataset-id',b.DATASET,'--count','140'],capture_output=True,text=True)
+        if prepared.returncode:raise RuntimeError('Pool preparation failed; no input started')
     reference=json.loads((EVIDENCE/'reference.json').read_text())
     expected=sorted({int(v['userId']) for v in reference['actors']})
     code="""import json,pathlib,statistics
@@ -106,6 +112,15 @@ try:
 finally:d.close()
 """.replace('RUN',repr(run)).replace('EXPECTED',repr(expected))
     state['userDistribution']=b.records(remote('source',code))[-1];save(state)
+    if (EVIDENCE/'enable-read-probes').exists():
+        b.phase('source','b-integration406-reads.py',run,'prepare')
+        fixture=b.records(b.phase('source','b-integration406-reads.py',run,'metadata'))[-1]
+        payload=base64.b64encode(json.dumps(fixture).encode()).decode()
+        b.raw('generator',['install -d -m 0700 /run/yeodam-b391/'+run,
+                         "printf '%s' '"+payload+"' | base64 -d > /run/yeodam-b391/"+run+"/read-fixtures.json",
+                         'chown ubuntu:ubuntu /run/yeodam-b391/'+run,
+                         'chown ubuntu:ubuntu /run/yeodam-b391/'+run+'/read-fixtures.json',
+                         'chmod 0600 /run/yeodam-b391/'+run+'/read-fixtures.json'])
     b.transfer_pool(run)
     b.auth(run,'configure')
     b.phase('source','b-integration376-app.py',run,'auth-files')
@@ -114,10 +129,22 @@ finally:d.close()
     b.raw('source',["python3 - <<'HEALTH'\nimport time,urllib.request\nend=time.monotonic()+100\nwhile time.monotonic()<end:\n try:\n  if urllib.request.urlopen('http://127.0.0.1:8080/api/actuator/health',timeout=2).status==200:break\n except OSError:pass\n time.sleep(1)\nelse:raise RuntimeError('Baseline BE not healthy')\nHEALTH"])
     b.phase('source','b-integration376-app.py',run,'route-status')
     b.phase('source','b-integration376-app.py',run,'source-ready')
+    if (EVIDENCE/'enable-read-probes').exists():b.phase('source','b-integration406-reads.py',run,'verify')
     b.phase('source','b-integration376-smoke.py',run)
     b.phase('source','b-integration376-app.py',run,'diagnostic-ready')
     # No Target container: attest the actual Source listener, not configuration intent.
     remote('source', "from importlib.machinery import SourceFileLoader\nimport json\nm=SourceFileLoader('app404','/run/yeodam-b391/b-integration376-app.py').load_module()\nx=m.inspect('yeodam-b391-app')\nassert x['Config']['Labels']['yeodam.run']=="+repr(run)+"\nc=m.Connection('localhost',timeout=15);c.request('GET','/containers/yeodam-b391-app/logs?stdout=1&stderr=1');r=c.getresponse();data=r.read();c.close()\nassert r.status==200 and b'migration_trip_consumer_config max_poll_records=32 enable_auto_commit=false concurrency=4' in data\nprint(json.dumps({'actualMaxPollRecords':32,'autoCommit':False,'sourceConcurrency':4,'targetContainerStarted':False}))")
+    return start_input(state)
+
+
+def start_input(state):
+    if state['phase']!='app_started' or state.get('startedAt'):
+        raise RuntimeError('Input resume requires app ready and no actual input start')
+    run=state['runId']
+    if state.get('k6Command'):
+        previous=b.ssm.result('generator',state['k6Command'])
+        if previous['Status']!='Failed':raise RuntimeError('Previous start may still be active; do not duplicate input')
+        state.setdefault('preInputFailedCommands',[]).append(state['k6Command'])
     state['k6Command'] = b.phase('generator','b-integration376-generator.py',run,'start','--rate','30',sync=False)
     save(state)
     until = time.monotonic()+100

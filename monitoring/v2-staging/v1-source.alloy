@@ -49,3 +49,10 @@ prometheus.remote_write "staging" {
     url = "http://plg.staging.yeodam.internal:9090/api/v1/write"
   }
 }
+
+prometheus.scrape "v1_nginx" {
+  targets = [{__address__ = "127.0.0.1:9113", job = "v1-nginx", environment = "staging"}]
+  scrape_interval = "15s"
+  scrape_timeout = "5s"
+  forward_to = [prometheus.remote_write.staging.receiver]
+}

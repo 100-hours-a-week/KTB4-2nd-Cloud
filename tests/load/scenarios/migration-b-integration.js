@@ -5,6 +5,7 @@ import exec from 'k6/execution';
 import { SharedArray } from 'k6/data';
 import { Counter, Rate, Trend } from 'k6/metrics';
 import { requiredEnv, positiveIntegerEnv } from '../lib/config.mjs';
+import { createReadProbes } from '../lib/migration-read-probes.mjs';
 import { summaryOutput } from '../lib/summary.mjs';
 
 const base = requiredEnv('K6_BASE_URL').replace(/\/+$/, '');
@@ -27,6 +28,11 @@ const pool = new SharedArray('b376-sessions', () => {
 if (pool[0].runId !== runId || pool[0].datasetId !== dataset || pool.length - 1 < actors + 20) {
   throw new Error('Pool identity or count invalid');
 }
+const readFixtures = __ENV.K6_READ_FIXTURES_FILE ? JSON.parse(open(__ENV.K6_READ_FIXTURES_FILE)) : null;
+if (readFixtures && rate !== 30) throw new Error('Read comparison requires fixed 30 RPS');
+const reads = createReadProbes(base, runId, pool, readFixtures);
+export function readList() { reads.list(); }
+export function readDetail() { reads.detail(); }
 const admitted = new Rate('b_request_admitted');
 const accepted = new Counter('b_request_202');
 const authFailures = new Counter('b_refresh_failures');
@@ -35,12 +41,13 @@ let session = null;
 let nextRefresh = 0;
 let tripRequestsInVU = 0;
 export const options = {
+  noConnectionReuse: false, noVUConnectionReuse: false,
   tags: { testid: runId, kind: 'migration_b_integration' },
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(95)', 'p(99)'],
-  scenarios: { trip_load: { executor: 'constant-arrival-rate', rate, timeUnit: '1s',
+  scenarios: { ...reads.scenarios, trip_load: { executor: 'constant-arrival-rate', rate, timeUnit: '1s',
     duration: '900s', preAllocatedVUs: vus, maxVUs: maxVus, gracefulStop: '105s' },
     auth_load: { executor: 'per-vu-iterations', exec: 'authFlow', vus: actors, iterations: 1, maxDuration: '1005s', gracefulStop: '0s' } },
-  thresholds: { b_request_admitted: ['rate==1'], dropped_iterations: ['count==0'], b_refresh_failures: ['count==0'] },
+  thresholds: { ...reads.thresholds, b_request_admitted: ['rate==1'], dropped_iterations: ['count==0'], b_refresh_failures: ['count==0'] },
 };
 export function setup() {
   // k6 initializes the module again for handleSummary after the timed run.

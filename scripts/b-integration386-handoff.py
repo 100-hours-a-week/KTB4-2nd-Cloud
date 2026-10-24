@@ -22,7 +22,50 @@ def wait_prepared(run,latest):
                 if observed<=latest:return observed
             except (OSError,RuntimeError,subprocess.CalledProcessError):pass
         time.sleep(.1)
-    raise RuntimeError('Preparation not ready by original +360s limit')
+    raise RuntimeError('Preparation not ready by fixed latest-fence deadline')
+
+def wait_cdc_watermark(run, latest):
+    """Catch a finite frontier while Source keeps serving; never join or commit groups."""
+    wait_prepared(run, latest)
+    prefix='staging.yeodam.migration.b391.'+run
+    name='yeodam-b391-'+run[:8]
+    pairs=[('connect-'+name+'-sink',prefix+'.trips'),
+           ('connect-'+name+'-sink-journal',prefix+'.yeodam_v1_source.migration_trip_request_result'),
+           ('yeodam-auth368-b391-'+run,'staging.yeodam.migration.auth368.b391-'+run+'-encrypted')]
+    clients=[];vectors=[]
+    state={'runId':run,'capturedAt':time.time(),'latestFenceAt':latest,'groups':[]}
+    path=ROOT/run/'readiness-watermark.json'
+    def timeout():
+        remaining=latest-time.time()
+        if remaining<=0:raise RuntimeError('Finite CDC readiness deadline exceeded; Source not fenced')
+        return min(2,remaining)
+    try:
+        for group, topic_name in pairs:
+            c=Consumer({'bootstrap.servers':'10.30.10.95:9092','group.id':group,
+                        'enable.auto.commit':False,'enable.auto.offset.store':False,'socket.timeout.ms':5000})
+            clients.append(c)
+            metadata=c.list_topics(topic_name,timeout=timeout()).topics[topic_name]
+            if metadata.error:raise RuntimeError('Readiness topic metadata unavailable')
+            parts=[TopicPartition(topic_name,p) for p in sorted(metadata.partitions)]
+            expected={p.partition:c.get_watermark_offsets(p,timeout=timeout(),cached=False)[1] for p in parts}
+            vectors.append((parts,expected))
+            state['groups'].append({'group':group,'topic':topic_name,'end':expected})
+        state['capturedFinishedAt']=time.time();store(path,state)
+        while time.time()<latest:
+            ready=True
+            for c,(parts,expected),record in zip(clients,vectors,state['groups']):
+                current={p.partition:p.offset for p in c.committed(parts,timeout=timeout())}
+                record['current']=current
+                # Passing the fixed frontier is valid; it is NOT a moving Lag0 test.
+                ready=ready and all(current.get(p,-1)>=offset for p,offset in expected.items())
+            state['observedAt']=time.time()
+            if ready and state['observedAt']<=latest:
+                state['ready']=True;store(path,state);return state['observedAt']
+            time.sleep(min(.25,max(0,latest-time.time())))
+        raise RuntimeError('Finite CDC readiness deadline exceeded; Source not fenced')
+    finally:
+        state.setdefault('ready',False);store(path,state)
+        for c in clients:c.close()
 
 def publish_start(run,at):
     value={'runId':run,'kind':'cutover_start','fenceAt':at}
@@ -69,7 +112,7 @@ def kafka(run,at,ready=False):
         publish(e.proof(run))
     finally:
         if trigger is not None:trigger.close()
-def source(run,at,ready=False):
+def source(run,at,ready=False,finite=False):
     directory=ROOT/run;directory.mkdir(parents=True,exist_ok=True)
     c=Consumer({'bootstrap.servers':'10.30.10.95:9092','group.id':'yeodam-b391-proof-'+run,'enable.auto.commit':False})
     c.assign([TopicPartition(topic(run),0,0)])
@@ -80,7 +123,7 @@ def source(run,at,ready=False):
     try:
         if ready:
             result['latestFenceAt']=at
-            at=wait_prepared(run,at)
+            at=wait_cdc_watermark(run,at) if finite else wait_prepared(run,at)
             result.update(readyObservedAt=at,plannedFenceAt=at,budgetStartedAt=at,cdcDeadlineAt=at+45,activationDeadlineAt=at+50)
             # A signed start shares the SAME budget origin with the prearmed Kafka host.
             # Broker delivery and Source drain are both charged to this budget.
@@ -119,10 +162,11 @@ def source(run,at,ready=False):
     finally:
         c.close();result['finishedAt']=time.time();store(directory/'handoff-result.json',result);print(json.dumps(result),flush=True)
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('role',choices=('source','kafka'));p.add_argument('--run-id',required=True);p.add_argument('--at',type=float);p.add_argument('--when-ready',action='store_true');a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('role',choices=('source','kafka'));p.add_argument('--run-id',required=True);p.add_argument('--at',type=float);p.add_argument('--when-ready',action='store_true');p.add_argument('--finite-watermark',action='store_true');a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id:raise ValueError('Canonical Run required')
     expected='10.30.0.174' if a.role=='source' else '10.30.10.95'
     if expected not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Wrong migration host')
     if a.at is None:raise ValueError('Fixed handoff time required')
-    if a.role=='source':source(a.run_id,a.at,a.when_ready)
+    if a.finite_watermark and not a.when_ready:raise ValueError('Finite readiness requires --when-ready')
+    if a.role=='source':source(a.run_id,a.at,a.when_ready,a.finite_watermark)
     else:kafka(a.run_id,a.at,a.when_ready)
