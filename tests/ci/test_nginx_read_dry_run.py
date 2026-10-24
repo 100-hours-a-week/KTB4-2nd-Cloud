@@ -30,13 +30,13 @@ class ReadDryRunTest(unittest.TestCase):
             with self.subTest(source=source[-80:]), self.assertRaises(ValueError):
                 instrument_read_dry_run(source)
 
-    def test_staging_renderer_includes_dry_run_and_preserves_request_id(self):
+    def test_staging_renderer_includes_reviewed_policy_and_preserves_request_id(self):
         spec = importlib.util.spec_from_file_location('staging_renderer', ROOT/'scripts/render-v1-staging-nginx.py')
         mod = importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
         result = mod.render((ROOT/'nginx/yeodam.conf').read_text(), 'a'*40)
-        self.assertIn(PREFIX, result)
+        self.assertIn('zone=yeodam_staging_reads:10m rate=5r/s;', result)
         self.assertIn('proxy_set_header X-Request-ID $yeodam_staging_request_id;', result)
-        self.assertIn('limit_req_dry_run on;', result)
+        self.assertIn('limit_req_dry_run off;', result)
 
 
 if __name__ == '__main__':

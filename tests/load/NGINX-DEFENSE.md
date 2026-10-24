@@ -94,3 +94,10 @@ Run ID/시각, Cloud Commit, FE·BE·AI Digest, Nginx 버전과 실효 설정 Ha
 미적용이며 전체 방어가 완료된 것은 아니다. 이전 절의 사용자 직접 실행·로컬 준비만이라는
 설명은 최초 준비 이력이다. 현재 수치·제외 범위·원복·측정 한계는
 [Dry Run 실행 기록](../../monitoring/v1-staging/NGINX-READ-DRY-RUN.md)을 따른다.
+
+## #420 실제 차단 검증
+
+#418과 같은5r/s·burst30·nodelay를 실제429 모드로 전환한다. 현재 staging renderer도
+이를 생성한다. 적용 전 SHA 확인, 별도 백업과 Dry Run 원복, 정상FE·실제 업로드·AI 완료·S3 대조,
+비공개 업로더 세션 발급/폐기 절차는 [실제 제한 안내](../../monitoring/v1-staging/NGINX-READ-ENFORCEMENT.md)를 따른다.
+#418은 당시 관찰 모드의 비교 기록으로 보존한다. 운영 설정이나 다른 방어까지 적용했다는 뜻은 아니다.

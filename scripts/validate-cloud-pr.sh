@@ -4,6 +4,7 @@ set -Eeuo pipefail
 bash -n monitoring/v1-staging/install-nginx-logrotate.sh
 python3 -m unittest discover -s tests/ci -p 'test_v1_nginx_observability.py'
 python3 -m unittest discover -s tests/ci -p 'test_nginx_read_dry_run.py'
+python3 -m unittest discover -s tests/ci -p 'test_nginx_read_enforcement.py'
 python3 -c 'import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path("monitoring/v1-staging").glob("*.py")]'
 docker compose -f monitoring/v1-staging/nginx-exporter-compose.yml config --quiet
 
@@ -70,6 +71,7 @@ python3 -m unittest discover -s tests/load/tests -p 'test_nginx_defense.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_token_window.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_read_demand.py'
 node --test tests/load/tests/nginx-defense.test.mjs
+node --test tests/load/tests/single-staging-session.test.mjs
 node --check tests/load/scenarios/nginx-request-repeat.js
 node --test tests/load/tests/migration-probe.test.mjs
 node --check tests/load/scenarios/migration-write.js

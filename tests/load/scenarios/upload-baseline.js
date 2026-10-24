@@ -16,11 +16,15 @@ import {
   utcDateOffset,
 } from '../lib/config.mjs';
 import { loadDataset, splitBatches } from '../lib/dataset.mjs';
+import { singleStagingSession } from '../lib/single-staging-session.mjs';
 import { businessFailures, successfulJourneys } from '../lib/metrics.mjs';
 import { emitRunEvent, summaryOutput } from '../lib/summary.mjs';
 
 const baseUrl = normalizeBaseUrl(requiredEnv('K6_BASE_URL'));
-const accessToken = requiredEnv('K6_ACCESS_TOKEN');
+const session = __ENV.K6_SESSION_POOL_FILE
+  ? singleStagingSession(open(__ENV.K6_SESSION_POOL_FILE), baseUrl)
+  : null;
+const accessToken = session ? session.accessToken : requiredEnv('K6_ACCESS_TOKEN');
 const manifestPath = requiredEnv('K6_DATA_MANIFEST');
 const dataset = loadDataset(manifestPath);
 const batches = splitBatches(dataset.files, 10);
@@ -71,7 +75,7 @@ export function uploadBaseline() {
   });
 
   try {
-    requestIds.push(initializeAuthenticatedSession(baseUrl, accessToken));
+    requestIds.push(initializeAuthenticatedSession(baseUrl, accessToken, session?.csrfContext));
     const createCsrfToken = issueCsrfToken(baseUrl);
     const created = createTrip(baseUrl, createCsrfToken, {
       tripName,
