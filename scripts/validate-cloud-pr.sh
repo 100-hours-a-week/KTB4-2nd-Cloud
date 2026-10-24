@@ -70,6 +70,9 @@ python3 -m unittest discover -s tests/load/tests -p 'test_cdc_336_shards_contrac
 python3 -m unittest tests/test_cdc_auth368.py
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_defense.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_connection_observer.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_rehearsal.py'
+node --check tests/load/scripts/capture-nginx-rehearsal.mjs
+python3 -c 'import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path("tests/load/scripts").glob("*nginx-rehearsal*.py")]'
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("tests/load/scripts/nginx-keepalive-reconnect.py").read_text())'
 python3 -m unittest discover -s tests/load/tests -p 'test_token_window.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_read_demand.py'

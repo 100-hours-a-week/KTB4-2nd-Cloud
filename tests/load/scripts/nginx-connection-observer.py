@@ -63,14 +63,16 @@ def main():
     parser.add_argument('--seconds', type=int, required=True)
     parser.add_argument('--session-run-id', required=True)
     parser.add_argument('--expected-site-sha256', default=SITE_SHA)
-    parser.add_argument('--experiment', choices=['422','424'], default='422')
+    parser.add_argument('--experiment', choices=['422','424','426'], default='422')
+    parser.add_argument('--normal-only', action='store_true')
     args = parser.parse_args()
     UUID(args.run_id);UUID(args.session_run_id)
     if not re.fullmatch(r"[a-f0-9]{64}",args.expected_site_sha256):
         parser.error("Expected explicit SHA256")
-    if (not 10 <= args.seconds <= 180 or os.geteuid() != 0 or
+    maximum_seconds = 1500 if args.experiment == '426' and args.normal_only else 180
+    if (not 10 <= args.seconds <= maximum_seconds or os.geteuid() != 0 or
             Path('/var/lib/cloud/data/instance-id').read_text().strip() != INSTANCE):
-        parser.error('Root on exact V1 staging App, duration10..180s only')
+        parser.error('Root on exact V1 staging App; bounded duration required')
     if hashlib.sha256(Path('/etc/nginx/sites-enabled/yeodam-v1-staging').read_bytes()).hexdigest() != args.expected_site_sha256:
         parser.error('Read policy changed; inspect before starting')
     pool_path = Path('/run/yeodam-nginx-read-fixture')/(args.session_run_id+'.json')
@@ -91,29 +93,32 @@ def main():
             time.sleep(max(0,start+index-time.monotonic()))
             row={'utc':datetime.now(timezone.utc).isoformat()}
             try:
-                status,_,_,body=request('/stub_status',loopback=True)
-                if status != 200:raise ValueError('Stub unavailable')
-                row.update(parse_stub(body.decode()))
-                after=cpu();delta=after[0]-before[0]
-                row['cpuPercent']=round(100*(1-(after[1]-before[1])/delta),2) if delta else 0
-                before=after;disk=shutil.disk_usage('/');row['diskPercent']=round(100*disk.used/disk.total,2)
-                row['httpsEstablished']=len(subprocess.check_output(['ss','-Htn','state','established','sport','=',':443'],text=True,timeout=2).splitlines())
+                if not args.normal_only:
+                    status,_,_,body=request('/stub_status',loopback=True)
+                    if status != 200:raise ValueError('Stub unavailable')
+                    row.update(parse_stub(body.decode()))
+                    after=cpu();delta=after[0]-before[0]
+                    row['cpuPercent']=round(100*(1-(after[1]-before[1])/delta),2) if delta else 0
+                    before=after;disk=shutil.disk_usage('/');row['diskPercent']=round(100*disk.used/disk.total,2)
+                    row['httpsEstablished']=len(subprocess.check_output(['ss','-Htn','state','established','sport','=',':443'],text=True,timeout=2).splitlines())
                 if index % 2 == 0:
                     path=ROUTES[(index//2)%len(ROUTES)]
                     code,rid,ms,_=request(path,cookie)
                     item={'utc':row['utc'],'route':path,'status':code,'requestId':rid,'durationMs':round(ms,3)}
                     normal.append(item);row['normal']=item
-                    if code != 200:raise ValueError('Normal authenticated request failed')
-                if row['diskPercent'] >= 80:raise ValueError('Disk stop threshold')
+                    if code != 200 or (args.normal_only and ms > 1000):raise ValueError('Normal request failed or exceeded initial one-second guard')
+                if row.get('diskPercent',0) >= 80:raise ValueError('Disk stop threshold')
             except Exception as error:
                 failure=type(error).__name__;row['failureType']=failure
             rows.append(row);stream.write(json.dumps(row)+'\n');stream.flush()
             if failure or (root/'STOP').exists():break
-    complete=failure is None and len(rows)==args.seconds
+    complete=failure is None and (len(rows)==args.seconds or (args.normal_only and (root/'STOP').exists()))
     summary={'runId':args.run_id,'complete':complete,'sampleCount':len(rows),'normalRequests':len(normal),
              'normalStatuses':dict(Counter(str(r['status']) for r in normal)),
              'failureType':failure,'siteUnchanged':hashlib.sha256(Path('/etc/nginx/sites-enabled/yeodam-v1-staging').read_bytes()).hexdigest()==args.expected_site_sha256,
-             'peaks':peak_values(rows),
+             'peaks':None if args.normal_only else peak_values(rows),
+             'mode':'normal-only' if args.normal_only else 'observer',
+             'endedReason':'requested-stop' if (root/'STOP').exists() else ('error' if failure else 'duration'),
              'normalProbeSource':'V1 App via public HTTPS; distinct from EC2 load generator',
              'normalScope':'Authenticated API probes, not browser UI or uploaded photo/AI validation'}
     (root/'summary.json').write_text(json.dumps(summary,indent=2));print(json.dumps(summary),flush=True)
