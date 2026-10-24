@@ -117,6 +117,7 @@ def statistics(events, rates):
                        'max_10s_rps': peaks['10']/10, 'max_30s_rps': peaks['30']/30,
                        'routes': dict(Counter(x['route'] for x in selected)),
                        'statuses': dict(Counter(str(x['status']) for x in selected)),
+                       'limit_req_statuses': dict(Counter(x.get('limit_req_status', 'not_logged') for x in selected)),
                        'rate_burst_tradeoffs': frontier})
     return result
 
@@ -163,6 +164,8 @@ def sanitize(rows, meta, end, key):
         if start < meta['start_ms']:
             skipped['started_before_capture'] += 1
             continue
+        if row.get('limit_req_status', 'not_logged') not in ('not_logged', '', '-', 'PASSED', 'DELAYED', 'REJECTED', 'DELAYED_DRY_RUN', 'REJECTED_DRY_RUN'):
+            raise ValueError('Unknown limit decision; row contents withheld')
         address = ipaddress.ip_address(row.get('peer_addr', ''))
         peer = str(address)
         scope = 'loopback' if address.is_loopback else ('private' if address.is_private else 'public')
@@ -179,6 +182,7 @@ def sanitize(rows, meta, end, key):
                        'peer_scope': scope,
                        'route': row['normalized_route'], 'method': row['method'],
                        'status': int(row['status']),
+                       'limit_req_status': row.get('limit_req_status', 'not_logged'),
                        'request_time_ms': done-start})
     return sorted(events, key=lambda x: (x['start_ms'], x['request_id'])), dict(skipped)
 

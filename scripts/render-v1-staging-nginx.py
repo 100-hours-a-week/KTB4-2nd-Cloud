@@ -6,6 +6,7 @@ import re
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "monitoring/v1-staging"))
 from nginx_observability import instrument_site
+from nginx_read_dry_run import instrument_read_dry_run
 
 PROBE_ROUTE = '/api/internal/migration-write-probe'
 
@@ -32,7 +33,7 @@ map "$request_method:$uri:$http_x_migration_run_id" $yeodam_staging_probe_run_id
 }
 
 '''
-    return instrument_site(prefix + content)
+    return instrument_read_dry_run(instrument_site(prefix + content))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
