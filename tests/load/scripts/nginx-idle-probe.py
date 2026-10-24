@@ -27,10 +27,10 @@ def validate(args):
         raise ValueError('Only the exact registered V1 staging origin is allowed')
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', args.run_id):
         raise ValueError('Explicit safe run ID required')
-    for value, low, high in ((args.connections, 1, 64), (args.hold_seconds, 1, 60),
+    for value, low, high in ((args.connections, 1, 64), (args.hold_seconds, 1, 90),
                              (args.open_interval, 0.05, 5), (args.request_timeout, 1, 10)):
         if not math.isfinite(value) or not low <= value <= high:
-            raise ValueError('Outside preparation bounds: connections1..64, idle1..60s, interval0.05..5s, timeout1..10s')
+            raise ValueError('Outside preparation bounds: connections1..64, idle1..90s, interval0.05..5s, timeout1..10s')
     if args.execute and (args.confirm_target != ORIGIN or not args.output):
         raise ValueError('Execution requires matching confirmation and a new output file')
     return {'runId': args.run_id, 'target': ORIGIN, 'path': PATH,

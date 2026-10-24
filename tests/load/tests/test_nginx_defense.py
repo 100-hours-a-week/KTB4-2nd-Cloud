@@ -34,10 +34,11 @@ class NginxDefenseTest(unittest.TestCase):
     def test_plan_and_bounds_open_no_connection(self):
         with patch.object(idle.http.client, 'HTTPSConnection', side_effect=AssertionError('network forbidden')):
             self.assertFalse(idle.validate(self.args())['executionEnabled'])
+            self.assertEqual(idle.validate(self.args(hold_seconds=90))['holdSeconds'], 90)
             with self.assertRaises(ValueError):
                 idle.run_probe(idle.validate(self.args()))
             for change in ({'target': 'https://yeodam-2gether.com'}, {'connections': 65},
-                           {'hold_seconds': float('nan')}, {'open_interval': 0}, {'execute': True}):
+                           {'hold_seconds': float('nan')}, {'hold_seconds': 91}, {'open_interval': 0}, {'execute': True}):
                 with self.subTest(change=change), self.assertRaises(ValueError):
                     idle.validate(self.args(**change))
 
