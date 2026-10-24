@@ -5,6 +5,7 @@ bash -n monitoring/v1-staging/install-nginx-logrotate.sh
 python3 -m unittest discover -s tests/ci -p 'test_v1_nginx_observability.py'
 python3 -m unittest discover -s tests/ci -p 'test_nginx_read_dry_run.py'
 python3 -m unittest discover -s tests/ci -p 'test_nginx_read_enforcement.py'
+python3 -m unittest discover -s tests/ci -p 'test_nginx_keepalive.py'
 python3 -c 'import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path("monitoring/v1-staging").glob("*.py")]'
 docker compose -f monitoring/v1-staging/nginx-exporter-compose.yml config --quiet
 
@@ -69,6 +70,7 @@ python3 -m unittest discover -s tests/load/tests -p 'test_cdc_336_shards_contrac
 python3 -m unittest tests/test_cdc_auth368.py
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_defense.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_connection_observer.py'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("tests/load/scripts/nginx-keepalive-reconnect.py").read_text())'
 python3 -m unittest discover -s tests/load/tests -p 'test_token_window.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_read_demand.py'
 node --test tests/load/tests/nginx-defense.test.mjs

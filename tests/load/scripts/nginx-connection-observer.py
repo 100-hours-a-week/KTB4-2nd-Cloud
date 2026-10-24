@@ -62,12 +62,16 @@ def main():
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--seconds', type=int, required=True)
     parser.add_argument('--session-run-id', required=True)
+    parser.add_argument('--expected-site-sha256', default=SITE_SHA)
+    parser.add_argument('--experiment', choices=['422','424'], default='422')
     args = parser.parse_args()
     UUID(args.run_id);UUID(args.session_run_id)
+    if not re.fullmatch(r"[a-f0-9]{64}",args.expected_site_sha256):
+        parser.error("Expected explicit SHA256")
     if (not 10 <= args.seconds <= 180 or os.geteuid() != 0 or
             Path('/var/lib/cloud/data/instance-id').read_text().strip() != INSTANCE):
         parser.error('Root on exact V1 staging App, duration10..180s only')
-    if hashlib.sha256(Path('/etc/nginx/sites-enabled/yeodam-v1-staging').read_bytes()).hexdigest() != SITE_SHA:
+    if hashlib.sha256(Path('/etc/nginx/sites-enabled/yeodam-v1-staging').read_bytes()).hexdigest() != args.expected_site_sha256:
         parser.error('Read policy changed; inspect before starting')
     pool_path = Path('/run/yeodam-nginx-read-fixture')/(args.session_run_id+'.json')
     if pool_path.stat().st_mode & 0o077:
@@ -79,7 +83,7 @@ def main():
         parser.error('Expected current single synthetic fixture session')
     cookie = 'accessToken='+pool['sessions'][0]['accessToken']
     os.umask(0o077)
-    root = Path('/var/lib/yeodam/nginx-connections-422')/args.run_id
+    root = Path('/var/lib/yeodam/nginx-connections-'+args.experiment)/args.run_id
     root.mkdir(parents=True, exist_ok=False)
     rows=[];normal=[];before=cpu();start=time.monotonic();failure=None
     with (root/'samples.jsonl').open('x') as stream:
@@ -108,7 +112,7 @@ def main():
     complete=failure is None and len(rows)==args.seconds
     summary={'runId':args.run_id,'complete':complete,'sampleCount':len(rows),'normalRequests':len(normal),
              'normalStatuses':dict(Counter(str(r['status']) for r in normal)),
-             'failureType':failure,'siteUnchanged':hashlib.sha256(Path('/etc/nginx/sites-enabled/yeodam-v1-staging').read_bytes()).hexdigest()==SITE_SHA,
+             'failureType':failure,'siteUnchanged':hashlib.sha256(Path('/etc/nginx/sites-enabled/yeodam-v1-staging').read_bytes()).hexdigest()==args.expected_site_sha256,
              'peaks':peak_values(rows),
              'normalProbeSource':'V1 App via public HTTPS; distinct from EC2 load generator',
              'normalScope':'Authenticated API probes, not browser UI or uploaded photo/AI validation'}
