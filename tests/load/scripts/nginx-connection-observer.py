@@ -34,10 +34,10 @@ def peak_values(rows):
             for key in ['active','waiting','httpsEstablished','cpuPercent','diskPercent']}
 
 
-def request(path, cookie=None, loopback=False):
+def request(path, cookie=None, loopback=False, timeout=3):
     started = time.monotonic()
-    connection = (http.client.HTTPConnection('127.0.0.1', 8086, timeout=3) if loopback else
-                  http.client.HTTPSConnection(HOST, timeout=3, context=ssl.create_default_context()))
+    connection = (http.client.HTTPConnection('127.0.0.1', 8086, timeout=timeout) if loopback else
+                  http.client.HTTPSConnection(HOST, timeout=timeout, context=ssl.create_default_context()))
     try:
         headers = {'User-Agent': 'yeodam-nginx422-normal-observer'}
         if cookie:

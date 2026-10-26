@@ -100,10 +100,38 @@ class Sampler:
                     'openFds': len(list((directory/'fd').iterdir())), 'fdSoftLimit': limits[0],
                     'readBytes': int(io['read_bytes']), 'writeBytes': int(io['write_bytes']),
                     'containerName': container['name'] if container else None})
+                status = dict(line.split(':', 1) for line in (directory/'status').read_text().splitlines() if ':' in line)
+                rows[-1]['rssKiB'] = int(status.get('VmRSS', '0').split()[0])
+                rows[-1]['swapKiB'] = int(status.get('VmSwap', '0').split()[0])
             except (FileNotFoundError, ProcessLookupError, PermissionError, StopIteration, ValueError):
                 continue
         self.previous, self.at = current, at
         result = {'processes': rows, 'processCpuUnit': '100%=one logical CPU; first/reused PID sample null'}
+        result['kernelMemory'] = {}
+        for filename in ['sockstat', 'sockstat6']:
+            for line in (Path('/proc/net')/filename).read_text().splitlines():
+                label, *items = line.split()
+                result['kernelMemory'][label.rstrip(':')] = dict(zip(items[::2], map(int, items[1::2])))
+        result['pageBytes'] = os.sysconf('SC_PAGE_SIZE')
+        for key in ['count', 'max']:
+            path = Path('/proc/sys/net/netfilter/nf_conntrack_'+key)
+            result['kernelMemory']['conntrack_'+key] = int(path.read_text()) if path.exists() else None
+        vm = dict(line.split() for line in Path('/proc/vmstat').read_text().splitlines())
+        result['vmCounters'] = {k: int(vm[k]) for k in ['pswpin', 'pswpout', 'pgmajfault', 'oom_kill']}
+        result['memoryPressure'] = Path('/proc/pressure/memory').read_text().strip()
+        if self.calls % 5 == 0:
+            policy = subprocess.run(['nft', '-j', 'list', 'counters', 'table', 'inet', 'yeodam_tcp436'],
+                                    capture_output=True, text=True, timeout=1)
+            if policy.returncode == 0:
+                import json
+                result['tcpGuardCounters'] = [x['counter'] for x in json.loads(policy.stdout)['nftables'] if 'counter' in x]
+        result['tcpCounters'] = {}
+        wanted = {'ListenOverflows','ListenDrops','SyncookiesSent','TCPReqQFullDoCookies','TCPReqQFullDrop','TCPSynRetrans',
+                  'PassiveOpens','AttemptFails','EstabResets'}
+        for filename in ['netstat', 'snmp']:
+            lines = (Path('/proc/net')/filename).read_text().splitlines()
+            for names, values in zip(lines[::2], lines[1::2]):
+                result['tcpCounters'].update({k:int(v) for k,v in zip(names.split()[1:],values.split()[1:]) if k in wanted})
         modes = list(map(int, Path('/proc/stat').read_text().splitlines()[0].split()[1:9]))
         result['cpuModesPercent'] = cpu_modes(self.previous_modes, modes)
         self.previous_modes = modes

@@ -5,6 +5,7 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 def module(name, filename):
@@ -20,6 +21,23 @@ fetcher = module('fetch426', 'fetch-nginx-rehearsal.py')
 
 
 class RehearsalTest(unittest.TestCase):
+    def test_stub_failure_keeps_host_cpu_and_process_sample(self):
+        class Detail:
+            def sample(self):
+                return {'processes': [{'pid': 1, 'rssKiB': 123}]}
+        with patch.object(capture, 'resources', return_value={'memoryAvailableKiB': 5000}), \
+             patch.object(capture.observer, 'cpu', return_value=(200, 150)), \
+             patch.object(capture.subprocess, 'check_output', return_value='0 0 local:443 peer:1234\n'), \
+             patch.object(capture.observer, 'request', side_effect=ConnectionResetError):
+            row, before = capture.independent_sample(Detail(), (100, 75))
+        self.assertEqual(row['memoryAvailableKiB'], 5000)
+        self.assertEqual(row['cpuPercent'], 25)
+        self.assertEqual(row['httpsEstablished'], 1)
+        self.assertEqual(row['processes'][0]['rssKiB'], 123)
+        self.assertEqual(row['componentErrors'], {'stub': 'ConnectionResetError'})
+        self.assertNotIn('active', row)
+        self.assertEqual(before, (200, 150))
+
     def test_rotation_drains_old_inode_then_new_file_without_copytruncate(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
