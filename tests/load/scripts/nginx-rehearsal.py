@@ -97,6 +97,12 @@ def resources():
 
 def collect(root, seconds):
     plan = json.loads((root/'plan.json').read_text())
+    detailed = None
+    if plan.get('detailedProcesses'):
+        detail_spec = importlib.util.spec_from_file_location('create_resources', Path(__file__).with_name('nginx-create-resources.py'))
+        module = importlib.util.module_from_spec(detail_spec)
+        detail_spec.loader.exec_module(module)
+        detailed = module.Sampler()
     followers = {name: LogFollower('/var/log/nginx/'+filename, root/(name+'.private.raw'))
                  for name, filename in [('access', 'yeodam-access.json'), ('error', 'yeodam-error.log')]}
     stopped = False
@@ -124,6 +130,8 @@ def collect(root, seconds):
                     _, _, _, body = observer.request('/stub_status', loopback=True)
                     row.update(observer.parse_stub(body.decode()))
                     row.update(resources())
+                    if detailed:
+                        row.update(detailed.sample())
                     after = observer.cpu()
                     delta = after[0]-before[0]
                     row['cpuPercent'] = None if index == 0 or not delta else round(100*(1-(after[1]-before[1])/delta), 3)
@@ -181,6 +189,7 @@ def main():
     p.add_argument('--expected-site-sha256')
     p.add_argument('--phase', choices=PHASES)
     p.add_argument('--session-run-id')
+    p.add_argument('--detailed-processes', action='store_true', help='Optional #428 process CPU/FD and existing MySQL counters')
     a = p.parse_args()
     UUID(a.run_id)
     os.umask(0o077)
@@ -199,7 +208,8 @@ def main():
         root.mkdir(parents=True, exist_ok=False)
         save(root/'plan.json', {'schema': 1, 'runId': a.run_id, 'requestedAt': utc(), 'seconds': a.seconds,
              'siteSha256': sha, 'instanceId': INSTANCE, 'unit': unit, 'archiveBudgetBytes': MAX_BYTES,
-             'sourceSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
+             'sourceSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+             'detailedProcesses': a.detailed_processes})
         (root/'marks.jsonl').touch(mode=0o600)
         subprocess.run(['systemd-run', '--quiet', '--collect', '--unit='+unit,
             '--property=RuntimeMaxSec='+str(a.seconds+30), '--property=Nice=10',
