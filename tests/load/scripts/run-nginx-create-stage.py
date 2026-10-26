@@ -25,6 +25,7 @@ def main():
     p.add_argument('--rate', type=int, choices=[1, 5, 10, 20, 30, 50, 75, 100], default=1)
     p.add_argument('--seconds', type=int, choices=[60, 120], default=60)
     p.add_argument('--session-count', type=int, choices=[1, 3], default=1)
+    p.add_argument('--expect-rejection', action='store_true', help='Only the excess-load cohort may expect 201 or429')
     a = p.parse_args(); UUID(a.run_id); os.umask(0o077)
     if os.geteuid() != 0 or Path('/var/lib/cloud/data/instance-id').read_text().strip() != 'i-0c53b65eb35dd2b42':
         p.error('Exact existing staging generator root only')
@@ -39,6 +40,7 @@ def main():
         'K6_CREATE_CONFIRM_TARGET': 'https://v1-staging.yeodam-2gether.com', 'K6_CREATE_RUN_ID': a.run_id,
         'K6_CREATE_MODE': a.mode, 'K6_CREATE_RPS': str(a.rate), 'K6_CREATE_SECONDS': str(a.seconds),
         'K6_CREATE_SESSION_COUNT': str(a.session_count), 'K6_CREATE_NO_REUSE': 'false',
+        'K6_CREATE_EXPECT_REJECTION': 'true' if a.expect_rejection else 'false',
         'K6_SESSION_POOL_FILE': '/run/yeodam-nginx-create-428/create.json',
         'K6_READ_POOL_FILE': '/run/yeodam-nginx-create-428/read.json', 'K6_SUMMARY_PATH': str(result/'summary.json')}
     for key in ['K6_SESSION_POOL_FILE', 'K6_READ_POOL_FILE']:
@@ -48,7 +50,7 @@ def main():
     plan = {'runId': a.run_id, 'mode': a.mode, 'rate': a.rate, 'seconds': a.seconds,
         'sessionCount': a.session_count, 'startedAt': utc(), 'k6Version': version,
         'sourceSha256': hashlib.sha256((ROOT/'scenarios/nginx-trip-create.js').read_bytes()).hexdigest(),
-        'oneSecondGuardIsNotSlo': True, 'noRetryOrCleanup': True}
+        'oneSecondGuardIsNotSlo': True, 'noRetryOrCleanup': True, 'expectRejection': a.expect_rejection}
     (result/'plan.json').write_text(json.dumps(plan, indent=2))
     args = ['/usr/bin/time', '--verbose', '--output='+str(result/'runner-time.txt'), 'k6', 'run',
         '--no-color', '--log-format', 'raw', '--console-output', str(result/'events.jsonl'),

@@ -81,7 +81,10 @@ def main():
     p.add_argument('--from', dest='start')
     p.add_argument('--to', dest='end')
     p.add_argument('--loki-lookahead-seconds', type=int, default=60)
+    p.add_argument('--ops-directory', choices=['/opt/yeodam/ops/nginx-rehearsal-426', '/opt/yeodam/ops/nginx-create-433'],
+                   default='/opt/yeodam/ops/nginx-rehearsal-426')
     a = p.parse_args()
+    ops = a.ops_directory+'/nginx-rehearsal-archive.py'
     UUID(a.run_id)
     if not 0 <= a.loki_lookahead_seconds <= 3600:
         p.error('Loki padding must be0..3600s')
@@ -125,7 +128,7 @@ def main():
         with socket.socket() as check:
             check.bind(('127.0.0.1', 0))
             local_port = check.getsockname()[1]
-        cid = send(instance, 'python3 '+OPS+' serve --archive '+info['archive'])
+        cid = send(instance, 'python3 '+ops+' serve --archive '+info['archive'])
         log_path = a.output/(name+'-tunnel.log')
         with log_path.open('w') as log:
             tunnel = subprocess.Popen(aws+['ssm', 'start-session', '--target', instance,
@@ -160,10 +163,10 @@ def main():
     if a.start:
         index = {'from':a.start,'to':a.end}
     else:
-        app_info = remote(archive.APP, 'python3 '+OPS+' app --run-id '+a.run_id)
+        app_info = remote(archive.APP, 'python3 '+ops+' app --run-id '+a.run_id)
         transfers['app'] = pull(archive.APP, app_info, 'app')
         index = json.loads((a.output/'app/index.json').read_text())
-    plg_info = remote(archive.PLG, shlex.join(['python3', OPS, 'plg', '--run-id', a.run_id,
+    plg_info = remote(archive.PLG, shlex.join(['python3', ops, 'plg', '--run-id', a.run_id,
         '--from', index['from'], '--to', index['to'], '--loki-lookahead-seconds', str(a.loki_lookahead_seconds)]))
     transfers['plg'] = pull(archive.PLG, plg_info, 'plg')
     result = {'runId': a.run_id, 'from':index['from'],'to':index['to'],'hostCaptureAvailable':not bool(a.start), 'transfers': transfers, 'cloudwatch': {},

@@ -19,6 +19,14 @@ class ResourceTest(unittest.TestCase):
         fields[11], fields[12], fields[19] = '100', '20', '999'
         self.assertEqual(resources.parse_stat('123 (a worker (thread)) '+' '.join(fields)), (120, 999))
 
+    def test_host_modes_and_container_counters_have_distinct_denominators(self):
+        self.assertEqual(resources.cpu_modes([0]*8, [20, 0, 10, 50, 5, 0, 5, 10]),
+                         {'user':20, 'nice':0, 'system':10, 'idle':50, 'iowait':5, 'irq':0, 'softirq':5, 'steal':10})
+        self.assertIsNone(resources.cpu_modes([2]*8, [1]*8))
+        self.assertIsNone(resources.cpu_modes(None, [1]*8))
+        self.assertEqual(resources.container_usage(100, 2000100, 1), 200)
+        self.assertIsNone(resources.container_usage(100, 99, 1))
+
 
 if __name__ == '__main__':
     unittest.main()

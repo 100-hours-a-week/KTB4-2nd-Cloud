@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "monitoring/v1-stag
 from nginx_observability import instrument_site
 from nginx_read_enforcement import instrument_read_enforcement
 from nginx_keepalive import instrument_keepalive
-from nginx_create_dry_run import instrument_create_dry_run
+from nginx_create_enforcement import instrument_create_enforcement
 
 PROBE_ROUTE = '/api/internal/migration-write-probe'
 
@@ -36,7 +36,7 @@ map "$request_method:$uri:$http_x_migration_run_id" $yeodam_staging_probe_run_id
 
 '''
     # #424: verified idle cleanup and authenticated reads plus real150-photo completion.
-    return instrument_create_dry_run(instrument_keepalive(instrument_read_enforcement(instrument_site(prefix + content)), 15))
+    return instrument_create_enforcement(instrument_keepalive(instrument_read_enforcement(instrument_site(prefix + content)), 15))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
