@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import time
 from uuid import UUID
 
 BUCKET='yeodam-v2-staging-mysql-backup-483175530259-ap-northeast-2'
@@ -39,11 +40,15 @@ def main():
     role='target' if a.action=='target-snapshot' else 'source'
     address='10.30.10.28' if role=='target' else '10.30.0.174'
     if address not in subprocess.check_output(['hostname','-I'],text=True).split():raise RuntimeError('Wrong maintenance host')
-    directory=Path('/var/lib/yeodam/b376')/a.run_id;directory.mkdir(mode=0o700,parents=True,exist_ok=True)
-    prefix='migration/rehearsal-reset/'+a.run_id+'/b376-'
+    directory=Path('/var/lib/yeodam/b391')/a.run_id;directory.mkdir(mode=0o700,parents=True,exist_ok=True)
+    prefix='migration/rehearsal-reset/'+a.run_id+'/b391-'
     if role=='target':
         if query(role,'SELECT @@server_id;')!='2':raise RuntimeError('Wrong Target ID')
-        if query(role,"SELECT COUNT(*) FROM information_schema.processlist WHERE USER NOT IN ('root','event_scheduler','system user') AND ID!=CONNECTION_ID();")!='0':raise RuntimeError('Stop rehearsal apps and CDC clients before reset')
+        # Stop acknowledgements can precede MySQL socket teardown.
+        end=time.monotonic()+15
+        while query(role,"SELECT COUNT(*) FROM information_schema.processlist WHERE USER NOT IN ('root','event_scheduler','system user') AND ID!=CONNECTION_ID();")!='0':
+            if time.monotonic()>=end:raise RuntimeError('Stop rehearsal apps and CDC clients before reset')
+            time.sleep(.5)
         query(role,'SET PERSIST read_only=ON; SET PERSIST super_read_only=ON;')
         path=directory/'completed-target.sql.gz'
         if path.exists():raise RuntimeError('Target already preserved; inspect checkpoint')

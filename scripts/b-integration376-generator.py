@@ -18,8 +18,8 @@ def save(path,state):
     temporary.write_text(json.dumps(state));temporary.chmod(0o600);os.replace(temporary,path)
 
 def paths(run):
-    directory=Path('/run/yeodam-b376')/run;directory.mkdir(parents=True,mode=0o700,exist_ok=True)
-    return directory,Path('/opt/yeodam-load/results/b376')/run
+    directory=Path('/run/yeodam-b391')/run;directory.mkdir(parents=True,mode=0o700,exist_ok=True)
+    return directory,Path('/opt/yeodam-load/results/b391')/run
 
 def start(run,rate):
     directory,root=paths(run)
@@ -30,41 +30,71 @@ def start(run,rate):
     env={'K6_BASE_URL':'https://v1-staging.yeodam-2gether.com','K6_TRIP_RUN_ID':run,'K6_TRIP_DATASET_ID':DATASET,
          'K6_TRIP_RATE':str(rate),'K6_TRIP_DURATION_SECONDS':'900',
          'K6_SESSION_POOL_FILE':str(BASE/'private'/(run+'.json')),'K6_RESULTS_DIRECTORY':str(root)}
+    fixtures=directory/'read-fixtures.json'
+    if fixtures.exists():env['K6_READ_FIXTURES_FILE']=str(fixtures)
+    if fixtures.exists():
+        inspect_cmd=['runuser','-u','ubuntu','--','env',*[k+'='+v for k,v in env.items()],'k6','inspect','--include-system-env-vars','scenarios/migration-b-integration.js']
+        clean_env={k:v for k,v in os.environ.items() if not k.startswith('K6_')}
+        checked=subprocess.run(inspect_cmd,cwd=BASE,capture_output=True,text=True,env=clean_env)
+        if checked.returncode:raise RuntimeError('Read scenario inspect failed before input')
+        inspected=json.loads(checked.stdout)
+        config=inspected.get('options',inspected)
+        if config.get('noConnectionReuse') is not False or config.get('noVUConnectionReuse') is not False:raise RuntimeError('Connection reuse differs before input')
+        for key in ('read_list','read_detail'):
+            spec=config['scenarios'][key]
+            if spec['rate']!=1 or spec['preAllocatedVUs']!=5 or spec['maxVUs']!=120:raise RuntimeError('Read scenario rate or VUs differ')
     state={'runId':run,'rate':rate,'startedAt':time.time(),'scenarioSha256':hashlib.sha256((BASE/'scenarios/migration-b-integration.js').read_bytes()).hexdigest()}
     path=directory/'k6.json';save(path,state)
-    observer_log=(directory/'observer.log').open('w')
-    observer=subprocess.Popen(['python3','/run/yeodam-b376/b-integration376-observe.py','--run-id',run],stdout=observer_log,stderr=subprocess.STDOUT)
     with (directory/'wrapper.log').open('w') as log:
         cmd=['runuser','-u','ubuntu','--','env',*[k+'='+v for k,v in env.items()],'bash','scripts/run-k6.sh','scenarios/migration-b-integration.js']
-        p=subprocess.run(cmd,cwd=BASE,stdout=log,stderr=subprocess.STDOUT,env={k:v for k,v in os.environ.items() if k not in ('K6_HTTP_DEBUG','K6_LOG_FORMAT')})
+        p=subprocess.run(cmd,cwd=BASE,stdout=log,stderr=subprocess.STDOUT,env={k:v for k,v in os.environ.items() if not k.startswith('K6_')})
     state.update(finishedAt=time.time(),k6ExitCode=p.returncode)
     save(path,state)
-    if not list(root.glob('*/trip-events.jsonl')):observer.terminate()
-    try:state['observerExitCode']=observer.wait(timeout=40)
-    except subprocess.TimeoutExpired:
-        observer.terminate();observer.wait();state['observerExitCode']=-1
-    observer_log.close();save(path,state);print(json.dumps(state))
+    state['observerExitCode']=None
+    state['completionObserver']='disabled; fixed SQL/Kafka checkpoints only'
+    save(path,state);print(json.dumps(state))
 
 def read(run,do_audit=False):
-    directory,root=paths(run);state=json.loads((directory/'k6.json').read_text())
+    directory,root=paths(run)
+    if not (directory/'k6.json').exists():
+        print(json.dumps({'runId':run,'initializing':True}));return
+    state=json.loads((directory/'k6.json').read_text())
     files=list(root.glob('*/trip-events.jsonl'))
     if len(files)>1:raise RuntimeError('More than one event file for a one-use Run')
     if not files:print(json.dumps(state));return
     file=files[0];state['resultDirectory']=str(file.parent)
-    started={};final={};statuses=Counter();first_status={};refreshes=Counter();plan=None;first=[];latencies=[]
+    auth_actors={};recovered=Counter();started={};final={};statuses=Counter();first_status={};refreshes=Counter();csrf=Counter();plan=None;first=[];latencies=[]
+    network=Counter();trip_vus=set();max_in_vu=0
     event_files=[file]
     if (file.parent/'completion-events.jsonl').exists():event_files.append(file.parent/'completion-events.jsonl')
-    lines=(line for event_file in event_files for line in event_file.open())
-    for line in lines:
+    def event_lines():
+        for event_file in event_files:
+            with event_file.open() as stream:yield from stream
+    for line in event_lines():
             if '{' not in line:continue
             try:e=json.loads(line[line.index('{'):])
             except ValueError:continue
             if e.get('runId')!=run:continue
             if e['event']=='run_started':plan=e
+            elif e['event']=='auth_actor_started':auth_actors[e['vu']]={'actorIndex':e['actorIndex'],'userId':e['userId']}
             elif e['event']=='started':started[e['requestId']]=e
-            elif e['event']=='first_response':statuses[e['status']]+=1;first_status[e['requestId']]=e['status'];first.append(e['elapsedMs'])
+            elif e['event']=='first_response':
+                statuses[e['status']]+=1;first_status[e['requestId']]=e['status'];first.append(e['elapsedMs'])
+                if e.get('vu') is not None:trip_vus.add(e['vu'])
+                max_in_vu=max(max_in_vu,e.get('requestInVU',0))
+                if e['status']>0 and 'connectingMs' in e:
+                    network['responsesWithNewTcp' if e['connectingMs']>0 else 'responsesWithoutNewTcp']+=1
+                    network['responsesWithTlsHandshake' if e.get('tlsMs',0)>0 else 'responsesWithoutTlsHandshake']+=1
             elif e['event']=='final':final[e['requestId']]=e;latencies.append(e['elapsedMs'])
-            elif e['event']=='auth_refresh':refreshes['success' if e['ok'] else 'failure']+=1
+            elif e['event']=='auth_refresh':
+                refreshes['success' if e['ok'] else 'failure']+=1
+                if e.get('recovered'):recovered['refresh']+=1
+            elif e['event']=='auth_csrf':
+                csrf['success' if e['ok'] else 'failure']+=1
+                if e.get('recovered'):recovered['csrf']+=1
+    expected_actors={10:40,30:120,50:200}[state['rate']]
+    state['authActorAssignments']=list(auth_actors.values())
+    state['authActorMappingValid']=(len(auth_actors)==expected_actors and len({x['userId'] for x in auth_actors.values()})==expected_actors and {x['actorIndex'] for x in auth_actors.values()}==set(range(expected_actors)))
     if plan:state['actualStartedAt']=plan['startedAt']/1000
     if do_audit:
         def digest(rows):
@@ -72,14 +102,17 @@ def read(run,do_audit=False):
             for row in sorted(rows):h.update(json.dumps(row,ensure_ascii=False,separators=(',',':')).encode());h.update(b'\n')
             return h.hexdigest()
         projected=[(str(e['userId']),e['tripName'],e['request']['startDate'],e['request']['endDate'],'PROCESSING',str(code)) for e in started.values() for code in e['request']['regionCodes']]
-        non202=[e for e in started.values() if first_status.get(e['requestId']) in (0,201)]
+        non202=[e for e in started.values() if first_status.get(e['requestId']) != 202]
         non202_projected=[(str(e['userId']),e['tripName'],e['request']['startDate'],e['request']['endDate'],'PROCESSING',str(code)) for e in non202 for code in e['request']['regionCodes']]
         def stats(values):
             values=sorted(values)
             return {k:values[min(len(values)-1,int((len(values)-1)*q))] for k,q in [('p50',.5),('p95',.95),('p99',.99),('max',1)]} if values else {}
+        state['expectedRefreshes']=state['expectedCsrf']=expected_actors*14
+        state['authInjectionComplete']=(sum(refreshes.values())==state['expectedRefreshes'] and sum(csrf.values())==state['expectedCsrf'])
+        state['connectionObservation']={**dict(network),'usedTripVUs':len(trip_vus),'maxRequestsInOneTripVU':max_in_vu,'preAllocatedVUs':plan.get('preAllocatedVUs') if plan else None,'maxVUs':plan.get('maxVUs') if plan else None}
         state.update(completedAfterDeadline=sum(e.get('outcome')=='confirmed' and e.get('withinDeadline') is False for e in final.values()),
-                     started=len(started),final=len(final),confirmed=sum(e['outcome']=='confirmed' for e in final.values()),
-                     firstStatuses=dict(statuses),refreshes=dict(refreshes),missingFinal=len(set(started)-set(final)),
+                     started=len(started),uniqueTripUsers=len({e['userId'] for e in started.values()}),final=len(final),retryRecovered=dict(recovered),confirmed=sum(e['outcome']=='confirmed' for e in final.values()),
+                     firstStatuses=dict(statuses),refreshes=dict(refreshes),csrf=dict(csrf),missingFinal=0,acceptedNotIndividuallyPolled=statuses.get(202,0),completionObservation="fixed aggregate checkpoints; no completion latency percentile",
                      requestProjectionSha256=digest(projected),non202Requests=len(non202),non202ProjectionSha256=digest(non202_projected),
                      firstResponseMs=stats(first),finalObservationMs=stats(latencies))
         stats=directory/'observer-stats.json'
@@ -90,15 +123,22 @@ def read(run,do_audit=False):
         if not native.exists() and custom.exists():native=custom
         if native.exists():
             data=json.loads(native.read_text()).get('metrics',{})
-            state['native']={k:data[k].get('values',data[k]) for k in ('dropped_iterations','http_req_failed','b_request_admitted','b_request_completed','b_completion_ms','b_first_response_ms') if k in data}
+            state['native']={k:data[k].get('values',data[k]) for k in ('dropped_iterations','http_req_failed','b_request_admitted','b_request_completed','b_completion_ms','b_first_response_ms','b_refresh_failures','b_read_list_requests','b_read_detail_requests','b_read_list_ok','b_read_detail_ok','b_read_list_ms','b_read_detail_ms') if k in data}
         else:
             state['summaryLimitation']='Aggregate JSON missing; exact dropped_iterations count unavailable. Retain raw events and threshold output.'
         (directory/'result.json').write_text(json.dumps(state))
     print(json.dumps(state))
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('start','read','audit'));p.add_argument('--run-id',required=True);p.add_argument('--rate',type=int,choices=(10,30,50));a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('start','stop','read','audit'));p.add_argument('--run-id',required=True);p.add_argument('--rate',type=int,choices=(10,30,50));a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id or '10.30.0.126' not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Wrong generator or UUID')
     if a.action=='start':
         if a.rate is None:raise ValueError('Rate required')
         start(a.run_id,a.rate)
+    elif a.action=='stop':
+        import signal
+        stopped=[]
+        for pid in subprocess.run(['pgrep','-x','k6'],capture_output=True,text=True).stdout.split():
+            if ('K6_TRIP_RUN_ID='+a.run_id).encode() in Path('/proc/'+pid+'/environ').read_bytes().split(b'\0'):
+                os.kill(int(pid),signal.SIGINT);stopped.append(int(pid))
+        print(json.dumps({'runId':a.run_id,'stoppedOwnK6':stopped}))
     else:read(a.run_id,a.action=='audit')

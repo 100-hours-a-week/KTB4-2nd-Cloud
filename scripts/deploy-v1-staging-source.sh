@@ -64,6 +64,7 @@ done
 [[ "${scope}" == app || "${scope}" == worker ]] || fail 'Scope must be app or worker.'
 if [[ "${scope}" == app ]]; then
   [[ -f "$(dirname -- "${BASH_SOURCE[0]}")/render-v1-staging-nginx.py" ]] || fail 'Staging Nginx renderer is missing.'
+  [[ -f "$(dirname -- "${BASH_SOURCE[0]}")/../monitoring/v1-staging/nginx_observability.py" ]] || fail 'Staging Nginx observation helper is missing.'
 fi
 [[ "${release_dir}" == /opt/yeodam/releases/* ]] || fail 'Release must be under /opt/yeodam/releases.'
 [[ -f "${image_env}" ]] || fail "Image file does not exist: ${image_env}"

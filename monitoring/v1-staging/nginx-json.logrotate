@@ -1,0 +1,15 @@
+# JSON is not matched by Ubuntu's /var/log/nginx/*.log rule.
+# Uses the existing daily logrotate.timer. This is retention, not a size cap.
+/var/log/nginx/yeodam-access.json {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0640 www-data adm
+    sharedscripts
+    postrotate
+        /usr/sbin/invoke-rc.d nginx rotate
+    endscript
+}

@@ -10,12 +10,14 @@ import subprocess
 import time
 import hashlib
 import re
+import secrets
+from urllib.request import Request,urlopen
 from urllib.parse import quote
 from uuid import UUID
 
-IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:ba8db015a928afd8eb32626e9765d20152fc60d65a5430cca844c09bf0a7b0d5'
+IMAGE='ghcr.io/100-hours-a-week/yeodam-backend@sha256:89b24d02225c8fb6143a4ee323e9b3221c18676c0ab14056b38a6edc608ad4e1'
 ORIGINAL='yeodam-app-backend-1'
-BASE=Path('/var/lib/yeodam/b376')
+BASE=Path('/var/lib/yeodam/b391')
 class Connection(http.client.HTTPConnection):
     def connect(self):
         self.sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);self.sock.connect('/var/run/docker.sock')
@@ -26,30 +28,56 @@ def docker(method,path,data=None):
     return json.loads(b) if b else {}
 def inspect(name):return docker('GET','/containers/'+quote(name,safe='')+'/json')
 def mode(run,value):
-    d=Path('/run/yeodam-b376')/run;d.mkdir(mode=0o755,exist_ok=True)
+    d=Path('/run/yeodam-b391')/run;d.mkdir(mode=0o755,exist_ok=True)
     d.chmod(0o755)
     p=d/'mode';q=d/'mode.next'
     with q.open('w') as f:f.write(value+'\n');f.flush();os.fsync(f.fileno())
     q.chmod(0o644);os.replace(q,p)
     print(json.dumps({'mode':value,'runId':run}),flush=True)
 def create(run,consumer):
-    role='consumer' if consumer else 'app';name='yeodam-b376-'+role
+    role='consumer' if consumer else 'app';name='yeodam-b391-'+role
     base=inspect(ORIGINAL)
     if 'migration-probe-v1-sha-816d69ba' not in base['Config']['Image']:raise RuntimeError('Original V1 image differs')
     env=dict(s.split('=',1) for s in base['Config']['Env'] if '=' in s)
     env.update({'MIGRATION_KAFKA_BOOTSTRAP_SERVERS':'10.30.10.95:9092',
-      'MIGRATION_TRIP_TOPIC':'staging.yeodam.migration.b376.'+run+'.requests',
-      'MIGRATION_TRIP_CONSUMER_GROUP':'yeodam-b376-'+run,
-      'MIGRATION_TRIP_CONSUMER_ENABLED':'true' if consumer else 'false','SPRING_FLYWAY_ENABLED':'false',
+      'MIGRATION_TRIP_TOPIC':'staging.yeodam.migration.b391.'+run+'.requests',
+      'MIGRATION_TRIP_CONSUMER_GROUP':'yeodam-b391-'+run,
+      'MIGRATION_TRIP_CONCURRENCY':'8' if consumer else '4',
+      'MIGRATION_TRIP_PARTITIONS':'8',
+      'MIGRATION_DIAGNOSTICS_ENABLED':'true',
+      # The public service owns housekeeping; the dedicated request executor must
+      # not run a second copy or reopen Target connections before Bulk import.
+      'MIGRATION_SERVICE_SCHEDULERS_ENABLED':'false' if consumer else 'true',
+      'MIGRATION_AUTH_ENABLED':'true',
+      'MIGRATION_AUTH_TOPIC':'staging.yeodam.migration.b391.'+run+'.auth-requests',
+      'MIGRATION_AUTH_CONSUMER_ENABLED':'false',
+      'MIGRATION_AUTH_RESULTS_ENABLED':'false' if consumer else 'true',
+      'MIGRATION_AUTH_CONSUMER_GROUP':'yeodam-b391-auth-'+run,
+      'MIGRATION_AUTH_RESULT_GROUP':'yeodam-b391-auth-result-'+run,
+      'MIGRATION_AUTH_KEY_FILE':'/run/migration-auth/aes.hex',
+      'MIGRATION_AUTH_REDIS_FILE':'/run/migration-auth/redis.json',
+      'MIGRATION_TRIP_CONSUMER_ENABLED':'false' if consumer else 'true','MIGRATION_TRIP_APPLY_ROLE':'target' if consumer else 'source','SPRING_FLYWAY_ENABLED':'false',
+      # A synchronous Kafka reply wait must not retain a request-scoped JPA connection.
+      'SPRING_JPA_OPEN_IN_VIEW':'false',
+      # Nginx auth read timeout is 60s; reserve 5s for returning the response.
+      'MIGRATION_AUTH_RESPONSE_TIMEOUT_MS':'55000',
       'JAVA_TOOL_OPTIONS':'-Xms128m -Xmx512m -XX:ActiveProcessorCount=2'})
     hc={'NetworkMode':'yeodam-app-network','RestartPolicy':{'Name':'no'},
         'PortBindings':{'8080/tcp':[{'HostIp':'127.0.0.1','HostPort':'18081' if consumer else '8080'}]}}
     if consumer:
         env['MYSQL_URL']='jdbc:mysql://10.30.10.28:3306/yeodam_v1_source';env['MIGRATION_TRIP_MODE_FILE']=''
+        # Release idle Target connections before live Snapshot/Bulk import.
+        env['SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE']='0'
+        env['SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT']='10000'
+        env['MIGRATION_CONSUMER_ENABLE_FILE']='/run/migration-auth/apply-enabled'
+        env['MIGRATION_CONSUMER_DEFER_TRIP']='true'
     else:
-        mode(run,'direct');d='/run/yeodam-b376/'+run
+        mode(run,'source-queue');d='/run/yeodam-b391/'+run
         env['MIGRATION_TRIP_MODE_FILE']=d+'/mode';hc['Binds']=[d+':'+d+':ro']
-    payload={'Image':IMAGE,'Env':[k+'='+v for k,v in env.items()],'HostConfig':hc,'ExposedPorts':{'8080/tcp':{}},'Labels':{'yeodam.issue':'376','yeodam.run':run}}
+        env.update(MIGRATION_SOURCE_CONTROL_PORT='8091',MIGRATION_SOURCE_CONTROL_RUN_ID=run,MIGRATION_SOURCE_CONTROL_TOKEN_FILE='/run/migration-auth/control.token')
+        hc['PortBindings']['8091/tcp']=[{'HostIp':'127.0.0.1','HostPort':'18082'}]
+    hc.setdefault('Binds',[]).append('/run/yeodam-b391/'+run+'/container-auth:/run/migration-auth:ro')
+    payload={'Image':IMAGE,'Env':[k+'='+v for k,v in env.items()],'HostConfig':hc,'ExposedPorts':{'8080/tcp':{}},'Labels':{'yeodam.issue':'391','yeodam.run':run}}
     if not consumer:
         if not base['State']['Running']:raise RuntimeError('Original V1 BE must be running before replacement')
         BASE.mkdir(mode=0o700,parents=True,exist_ok=True)
@@ -63,12 +91,132 @@ def create(run,consumer):
         if not consumer:docker('POST','/containers/'+ORIGINAL+'/start')
         raise
     print(json.dumps({'started':name,'runId':run,'consumerEnabled':consumer}),flush=True)
+def auth_files(run):
+    import shutil
+    config=json.loads((Path('/run/yeodam-b391')/run/'auth.json').read_text())
+    result=subprocess.run(['aws','secretsmanager','get-secret-value','--secret-id','yeodam-v2-staging/redis-auth-token','--region','ap-northeast-2','--output','json'],capture_output=True,text=True,check=True)
+    redis=dict(config['redis']);redis['password']=json.loads(result.stdout)['SecretString']
+    directory=Path('/run/yeodam-b391')/run/'container-auth';directory.mkdir(mode=0o750)
+    shutil.copyfile('/run/yeodam-cdc-auth368/aes.hex',directory/'aes.hex')
+    (directory/'redis.json').write_text(json.dumps(redis))
+    (directory/'control.token').write_text(secrets.token_hex(32))
+    for path in directory.iterdir():path.chmod(0o400);os.chown(path,1001,1001)
+    os.chown(directory,1001,1001)
+    print(json.dumps({'phase':'auth_private_files_prepared','runId':run}))
+
+def source_control(run,fence=False):
+    token=(Path('/run/yeodam-b391')/run/'container-auth'/'control.token').read_text().strip()
+    request=Request('http://127.0.0.1:18082/'+('fence' if fence else 'state'),method='POST' if fence else 'GET',headers={'X-Migration-Control-Token':token,'X-Migration-Run':run})
+    with urlopen(request,timeout=3) as response:return json.load(response)
+
+def source_ready(run):
+    end=time.monotonic()+40
+    while time.monotonic()<end:
+        try:state=source_control(run)
+        except OSError:
+            time.sleep(.5);continue
+        if state['runId']==run and not state['fencing'] and state['sourceConsumerRunning'] and state['sourceAssignedPartitions']==8:
+            print(json.dumps(state));return
+        time.sleep(.5)
+    raise RuntimeError('Source Consumer not assigned before input')
+
+def collect_completions(name,run,include_smoke=False):
+    # Docker's stdout multiplexing frames are binary; decode only matching safe records.
+    c=Connection('localhost',timeout=30);c.request('GET','/containers/'+name+'/logs?stdout=1&stderr=1');r=c.getresponse();raw=r.read();c.close()
+    if r.status!=200:raise RuntimeError('Completion log read failed')
+    chunks=[];offset=0;view=memoryview(raw)
+    while offset+8<=len(raw):
+        length=int.from_bytes(view[offset+4:offset+8],'big')
+        if offset+8+length>len(raw):raise RuntimeError('Incomplete Docker log frame')
+        chunks.append(view[offset+8:offset+8+length]);offset+=8+length
+    if offset!=len(raw):raise RuntimeError('Incomplete Docker log header')
+    pattern=re.compile(r'migration_trip_completed request_id=([0-9a-f-]{36}) origin=(source|target) queued_at_ms=(\d+) committed_at_ms=(\d+)')
+    timing_pattern=re.compile(r'consumer_started_at_ms=(\d+) apply_elapsed_us=(\d+) partition=(\d+)')
+    path=Path('/run/yeodam-b391')/run/('smoke-completions.json' if include_smoke else 'completions.json')
+    rows=json.loads(path.read_text()) if path.exists() else {}
+    from uuid import uuid5
+    smoke=str(uuid5(UUID(run),'public-b2-smoke'))
+    text=b''.join(chunks).decode(errors='replace')
+    for match in pattern.finditer(text):
+        rid,origin,queued,committed=match.groups()
+        if (rid!=smoke or include_smoke) and int(queued)>0:
+            row={'origin':origin,'queuedAtMs':int(queued),'committedAtMs':int(committed)}
+            timing=timing_pattern.match(text,match.end()+1)
+            if timing:
+                received,elapsed,partition=map(int,timing.groups())
+                row.update(consumerStartedAtMs=received,applyElapsedUs=elapsed,partition=partition)
+                # Only fixed numeric diagnostic fields, never arbitrary log data.
+                suffix=text[timing.end():timing.end()+1800].split('\n',1)[0]
+                allowed={'received_ms','scheduler_wait_us','tx_entry_us'}
+                for category in ('connection','journal_read','trip_lookup','trip_write','region_write','journal_write','other_sql','commit','rollback'):
+                    allowed.update((category+'_us',category+'_count'))
+                diagnostic={k:int(v) for k,v in re.findall(r'([a-z_]+)=(-?\d+)',suffix) if k in allowed}
+                if diagnostic:row['diagnostic']=diagnostic
+            rows.setdefault(rid,row)
+    # Whitelisted metadata only; payloads/keys/SQL never leave the container log.
+    batch_path=path.with_name('smoke-batches.json' if include_smoke else 'diagnostic-batches.json')
+    batches=json.loads(batch_path.read_text()) if batch_path.exists() else []
+    batch_pattern=re.compile(r'migration_trip_batch origin=(source|target) at_ms=(\d+) thread=(\S+) assigned=(.*?) counts=(\{[^}]*\}) first=(\{[^}]*\}) last=(\{[^}]*\}) active=(\d+) queued=(\d+)')
+    def numbers(value):return {int(k):int(v) for k,v in re.findall(r'(\d+)=(\d+)',value)}
+    for match in batch_pattern.finditer(text):
+        origin,at,thread,assigned,counts,first,last,active,queued=match.groups()
+        batches.append({'event':'start','origin':origin,'atMs':int(at),'thread':thread,
+                        'assignedPartitions':[int(v) for v in re.findall(r'-(\d+)(?:,|\])',assigned)],
+                        'counts':numbers(counts),'firstOffsets':numbers(first),'lastOffsets':numbers(last),
+                        'active':int(active),'queued':int(queued)})
+    done_pattern=re.compile(r'migration_trip_batch_done origin=(source|target) at_ms=(\d+) thread=(\S+) wait_us=(\d+) unfinished=(.*?) active=(\d+) queued=(\d+)')
+    for match in done_pattern.finditer(text):
+        origin,at,thread,wait,unfinished,active,queued=match.groups()
+        batches.append({'event':'done','origin':origin,'atMs':int(at),'thread':thread,
+                        'waitUs':int(wait),'unfinishedPartitions':[int(v) for v in re.findall(r'-(\d+)(?:,|\])',unfinished)],
+                        'active':int(active),'queued':int(queued)})
+    batches.sort(key=lambda r:(r['atMs'],r['thread']))
+    batch_path.write_text(json.dumps(batches));batch_path.chmod(0o600)
+    path.write_text(json.dumps(rows));path.chmod(0o600)
+    def percentiles(values):
+        values=sorted(values)
+        return {k:values[int((len(values)-1)*q)] for k,q in [('p50',.5),('p95',.95),('p99',.99),('max',1)]} if values else {}
+    timed=[v for v in rows.values() if 'consumerStartedAtMs' in v]
+    detail={}
+    for origin in ('source','target'):
+        selected=[v for v in timed if v['origin']==origin]
+        detail[origin]={'count':len(selected),'queueWaitMs':percentiles([v['consumerStartedAtMs']-v['queuedAtMs'] for v in selected]),'applyElapsedUs':percentiles([v['applyElapsedUs'] for v in selected]),'partitionCounts':{str(p):sum(v['partition']==p for v in selected) for p in range(8)}}
+    return {'timingCount':len(timed),'timingByOrigin':detail,'count':len(rows),'origins':{origin:sum(v['origin']==origin for v in rows.values()) for origin in ('source','target')},'commandCreatedToCommitObservedMs':percentiles([v['committedAtMs']-v['queuedAtMs'] for v in rows.values()])}
+
+def consumer_config_ready(run):
+    configurations=[]
+    for name, concurrency in (('yeodam-b391-app',4),('yeodam-b391-consumer',8)):
+        owned=inspect(name)
+        if owned['Config'].get('Labels',{}).get('yeodam.run')!=run:
+            raise RuntimeError('Consumer configuration ownership differs')
+        c=Connection('localhost',timeout=15)
+        c.request('GET','/containers/'+name+'/logs?stdout=1&stderr=1')
+        response=c.getresponse();raw=response.read();c.close()
+        if response.status!=200:raise RuntimeError('Consumer configuration log unavailable')
+        # Only the fixed configuration marker is retained, never the surrounding logs.
+        marker=('migration_trip_consumer_config max_poll_records=32 '
+                'enable_auto_commit=false concurrency='+str(concurrency)).encode()
+        if marker not in raw:raise RuntimeError('Actual Listener configuration not attested before input')
+        configurations.append({'container':name,'maxPollRecords':32,'autoCommit':False,'concurrency':concurrency})
+    print(json.dumps({'phase':'consumer_config_ready','runId':run,'configurations':configurations}))
+
+def diagnostic_ready(run):
+    collect_completions('yeodam-b391-app',run,include_smoke=True)
+    rows=json.loads((Path('/run/yeodam-b391')/run/'smoke-completions.json').read_text())
+    from uuid import uuid5
+    smoke=str(uuid5(UUID(run),'public-b2-smoke'))
+    diagnostic=rows.get(smoke,{}).get('diagnostic',{})
+    if any(diagnostic.get(k,0)<1 for k in ('connection_count','journal_read_count','journal_write_count','commit_count')):
+        raise RuntimeError('JDBC diagnostics missing from existing smoke; no measured input allowed')
+    print(json.dumps({'phase':'diagnostic_ready','runId':run,'jdbcObserved':True,'counts':{k:diagnostic[k] for k in ('connection_count','journal_read_count','journal_write_count','commit_count')}}))
+
 def remove(name,run):
     v=inspect(name)
-    if v['Config'].get('Labels',{}).get('yeodam.issue')!='376' or v['Config']['Labels'].get('yeodam.run')!=run:raise RuntimeError('Container ownership differs')
+    if v['Config'].get('Labels',{}).get('yeodam.issue')!='391' or v['Config']['Labels'].get('yeodam.run')!=run:raise RuntimeError('Container ownership differs')
     if v['State']['Running']:docker('POST','/containers/'+name+'/stop?t=30')
+    metrics=collect_completions(name,run)
     docker('DELETE','/containers/'+name)
-    print(json.dumps({'removed':name}))
+    print(json.dumps({'removed':name,'completionMetrics':metrics}))
 def status_route(run,restore=False):
     directory=BASE/run;directory.mkdir(mode=0o700,parents=True,exist_ok=True)
     record=directory/'nginx-route.json';backup=directory/'nginx.before'
@@ -108,17 +256,44 @@ def status_route(run,restore=False):
         raise RuntimeError('Nginx candidate invalid; original retained')
     subprocess.run(['systemctl','reload','nginx'],check=True,capture_output=True)
     print(json.dumps({'statusRoute':'restored' if restore else 'installed','runId':run}))
+
+def restore_original():
+    docker('POST','/containers/'+ORIGINAL+'/start')
+    end=time.monotonic()+100
+    while time.monotonic()<end:
+        try:
+            with urlopen('http://127.0.0.1:8080/api/actuator/health',timeout=2) as response:
+                if response.status==200:
+                    print('ORIGINAL_STARTED_HEALTH_200');return
+        except OSError:pass
+        time.sleep(1)
+    raise RuntimeError('Original V1 startup did not become healthy; do not start next Run')
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('action',choices=('start-app','start-consumer','queue','direct','stop-app','stop-consumer','restore-original','status','route-status','restore-route'))
-    p.add_argument('--run-id',required=True);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=('consumer-config-ready','diagnostic-ready','auth-files','start-app','start-consumer','queue','source-queue','source-ready','direct','stop-app','stop-consumer','enable-consumer','restore-original','status','route-status','restore-route'))
+    p.add_argument('--run-id',required=True);p.add_argument('--deadline',type=float);a=p.parse_args()
     if str(UUID(a.run_id))!=a.run_id or '10.30.0.174' not in subprocess.check_output(['hostname','-I'],text=True).split():raise ValueError('Unexpected host or UUID')
-    if a.action in ('route-status','restore-route'):status_route(a.run_id,a.action=='restore-route')
+    if a.action=='consumer-config-ready':consumer_config_ready(a.run_id)
+    elif a.action=='diagnostic-ready':diagnostic_ready(a.run_id)
+    elif a.action=='auth-files':auth_files(a.run_id)
+    elif a.action in ('route-status','restore-route'):status_route(a.run_id,a.action=='restore-route')
+    elif a.action=='enable-consumer':
+        path=Path('/run/yeodam-b391')/a.run_id/'container-auth'/'apply-enabled';path.touch(mode=0o444,exist_ok=False)
+        end=a.deadline if a.deadline is not None else time.time()+30
+        while time.time()<end:
+            try:
+                with urlopen('http://127.0.0.1:18081/api/actuator/health',timeout=1) as response:
+                    if response.status==200:break
+            except Exception:pass
+            time.sleep(.05)
+        else:raise RuntimeError('Target listener activation exceeded fixed budget')
+        print(json.dumps({'consumerApplyEnabled':True,'runId':a.run_id,'activatedAt':time.time()}))
     elif a.action.startswith('start-'):create(a.run_id,a.action=='start-consumer')
-    elif a.action in ('queue','direct'):mode(a.run_id,a.action)
-    elif a.action.startswith('stop-'):remove('yeodam-b376-'+a.action[5:],a.run_id)
-    elif a.action=='restore-original':docker('POST','/containers/'+ORIGINAL+'/start');print('ORIGINAL_STARTED')
+    elif a.action=='source-ready':source_ready(a.run_id)
+    elif a.action in ('queue','source-queue','direct'):mode(a.run_id,a.action)
+    elif a.action.startswith('stop-'):remove('yeodam-b391-'+a.action[5:],a.run_id)
+    elif a.action=='restore-original':restore_original()
     else:
-        for name in (ORIGINAL,'yeodam-b376-app','yeodam-b376-consumer'):
+        for name in (ORIGINAL,'yeodam-b391-app','yeodam-b391-consumer'):
             try:
                 s=inspect(name);print(json.dumps({'container':name,'status':s['State']['Status'],'health':s['State'].get('Health',{}).get('Status')}))
             except RuntimeError:print(json.dumps({'container':name,'status':'absent'}))

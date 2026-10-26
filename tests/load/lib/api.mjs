@@ -39,12 +39,14 @@ function requireStatus(response, expected, operation) {
   }
 }
 
-export function initializeAuthenticatedSession(baseUrl, accessToken) {
+export function initializeAuthenticatedSession(baseUrl, accessToken, csrfContext = null) {
   const jar = http.cookieJar();
   jar.set(baseUrl, 'accessToken', accessToken, {
     path: '/',
     secure: true,
   });
+
+  if (csrfContext) jar.set(baseUrl, 'CSRF_CONTEXT', csrfContext, { path: '/', secure: true });
 
   const response = http.get(`${baseUrl}/api/users/me`, {
     responseType: 'none',
