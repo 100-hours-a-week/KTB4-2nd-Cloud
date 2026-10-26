@@ -31,6 +31,9 @@ mkdir -p "${result_dir}"
 
 export K6_SUMMARY_PATH="${result_dir}/summary.json"
 k6_args=(--no-color)
+if [[ "${script_path}" == scenarios/upload-baseline.js ]]; then
+  k6_args+=(--summary-export "${result_dir}/native-summary.json")
+fi
 if [[ "${script_path}" == scenarios/migration-write.js || ( "${script_path}" == scenarios/migration-trip-create.js || "${script_path}" == scenarios/migration-b-integration.js ) ]]; then
   [[ -z "${K6_HTTP_DEBUG:-}" ]] || { echo 'Disable K6_HTTP_DEBUG to keep session credentials out of logs.' >&2; exit 2; }
   event_name="probe-events.jsonl"

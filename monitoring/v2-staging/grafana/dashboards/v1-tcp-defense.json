@@ -1,0 +1,280 @@
+{
+  "uid": "yeodam-v1-tcp-defense",
+  "title": "V1 연결 보호 검증",
+  "tags": [
+    "yeodam",
+    "staging",
+    "nginx"
+  ],
+  "timezone": "Asia/Seoul",
+  "schemaVersion": 41,
+  "refresh": "15s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Nginx 연결과 설정된 수용 한도",
+      "description": "슬롯에는 upstream도 포함된다. 클라이언트 Active를 나눠 정확한 슬롯 점유율로 해석하지 않는다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "nginx_connections_active{job=\"v1-nginx\",environment=\"staging\"}",
+          "legendFormat": "클라이언트 활성 연결"
+        },
+        {
+          "refId": "B",
+          "expr": "nginx_connections_waiting{job=\"v1-nginx\",environment=\"staging\"}",
+          "legendFormat": "유휴 연결"
+        },
+        {
+          "refId": "C",
+          "expr": "yeodam_nginx_connection_slots{environment=\"staging\"}",
+          "legendFormat": "설정 슬롯 합계"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "출처별 TCP 차단 패킷",
+      "description": "SYN 재전송이 포함된다. 실패한 사용자 수나 차단된 고유 연결 수가 아니다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(yeodam_nginx_tcp_guard_packets_total{environment=\"staging\",reason=\"concurrent\",family=\"ipv4\"}[1m])",
+          "legendFormat": "동시 한도 / IPv4"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(yeodam_nginx_tcp_guard_packets_total{environment=\"staging\",reason=\"concurrent\",family=\"ipv6\"}[1m])",
+          "legendFormat": "동시 한도 / IPv6"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(yeodam_nginx_tcp_guard_packets_total{environment=\"staging\",reason=\"rate\",family=\"ipv4\"}[1m])",
+          "legendFormat": "신규 유입 / IPv4"
+        },
+        {
+          "refId": "D",
+          "expr": "rate(yeodam_nginx_tcp_guard_packets_total{environment=\"staging\",reason=\"rate\",family=\"ipv6\"}[1m])",
+          "legendFormat": "신규 유입 / IPv6"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "TCP 보호 적용과 수집 상태",
+      "description": "수집 시간도 확인한다. 값이 없으면 0으로 간주하지 않는다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_nginx_tcp_guard_enforced{environment=\"staging\"}",
+          "legendFormat": "실제 차단 적용"
+        },
+        {
+          "refId": "B",
+          "expr": "yeodam_nginx_tcp_guard_up{environment=\"staging\"}",
+          "legendFormat": "테이블 조회 성공"
+        },
+        {
+          "refId": "C",
+          "expr": "time()-yeodam_nginx_tcp_guard_sample_timestamp_seconds{environment=\"staging\"}",
+          "legendFormat": "표본 경과 초"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "App CPU 사용률",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100*(1-avg(rate(node_cpu_seconds_total{job=\"v1-app-node\",environment=\"staging\",mode=\"idle\"}[1m])))",
+          "legendFormat": "CPU 사용률"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "App 가용 메모리",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "node_memory_MemAvailable_bytes{job=\"v1-app-node\",environment=\"staging\"}",
+          "legendFormat": "가용 메모리"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "설정된 출처별 한도",
+      "description": "현재 후보와 최종 채택값은 별도 시험 기록으로 확인한다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "staging-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_nginx_tcp_guard_per_source{environment=\"staging\"}",
+          "legendFormat": "연결 추적 한도"
+        },
+        {
+          "refId": "B",
+          "expr": "yeodam_nginx_tcp_guard_syn_rate{environment=\"staging\"}",
+          "legendFormat": "신규 SYN / 초"
+        },
+        {
+          "refId": "C",
+          "expr": "yeodam_nginx_tcp_guard_syn_burst{environment=\"staging\"}",
+          "legendFormat": "신규 SYN burst"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    }
+  ],
+  "version": 1
+}

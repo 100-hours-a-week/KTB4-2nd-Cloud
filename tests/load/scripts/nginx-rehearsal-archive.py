@@ -26,7 +26,7 @@ FIELDS = ['timestamp', 'msec', 'request_id', 'method', 'normalized_route', 'stat
           'request_time', 'upstream_connect_time', 'upstream_header_time', 'upstream_response_time', 'request_length', 'body_bytes_sent',
           'connection', 'connection_requests', 'worker_pid', 'http_protocol', 'limit_req_status']
 ERRORS = ['worker_connections are not enough', 'too many open files', 'upstream timed out',
-          'connect() failed', 'upstream prematurely closed connection']
+          'connect() failed', 'upstream prematurely closed connection', 'limiting requests', 'limiting connections']
 
 
 def utc():
@@ -140,10 +140,17 @@ def app_archive(run):
     for name in ['plan.json', 'result.json', 'checkpoint.json', 'marks.jsonl', 'samples.jsonl', 'journey-audit.json']:
         if (source/name).exists():
             shutil.copyfile(source/name, destination/name)
-    normal = Path('/var/lib/yeodam/nginx-connections-426')/run
-    for name in ['samples.jsonl', 'summary.json']:
-        if (normal/name).exists():
-            shutil.copyfile(normal/name, destination/('normal-'+name))
+    normal_runs = list(dict.fromkeys([run] + plan.get('normalRunIds', [])))
+    if len(normal_runs) > 16:
+        raise ValueError('Normal capture reference budget exceeded')
+    for normal_run in normal_runs:
+        if str(UUID(normal_run)) != normal_run:
+            raise ValueError('Only canonical normal capture UUIDs are allowed')
+        normal = Path('/var/lib/yeodam/nginx-connections-426')/normal_run
+        prefix = 'normal-' if normal_run == run else 'normal-'+normal_run+'-'
+        for name in ['samples.jsonl', 'summary.json', 'checkpoint.json']:
+            if (normal/name).exists():
+                shutil.copyfile(normal/name, destination/(prefix+name))
     start, end = ns(state['startedAt']), ns(state.get('endedAt', state['updatedAt']))
     statuses, error_counts = Counter(), Counter()
     parsed = 0
@@ -187,8 +194,14 @@ def plg_archive(run, start_text, end_text, lookahead=60):
     key = secrets.token_bytes(32)
     dashboard = json.loads(Path('/opt/yeodam/plg/grafana/dashboards/v1-source.json').read_text())
     dump(folder/'dashboard.json', dashboard)
+    panels = list(dashboard['panels'])
+    tcp_path = Path('/opt/yeodam/plg/grafana/dashboards/v1-tcp-defense.json')
+    if tcp_path.is_file():
+        tcp_dashboard = json.loads(tcp_path.read_text())
+        dump(folder/'tcp-dashboard.json', tcp_dashboard)
+        panels += [dict(panel, archivePrefix='tcp-') for panel in tcp_dashboard['panels']]
     report = {'runId': run, 'from': start_text, 'to': end_text, 'exportedAt': utc(), 'queries': [], 'errors': []}
-    for panel in dashboard['panels']:
+    for panel in panels:
         if panel.get('type') == 'logs':
             continue
         for index, target in enumerate(panel.get('targets', [])):
@@ -200,7 +213,7 @@ def plg_archive(run, start_text, end_text, lookahead=60):
             params = {'query': expr, 'start': str(start) if engine == 'loki' else str(start/1e9),
                       'end': str(end) if engine == 'loki' else str(end/1e9), 'step': '15'}
             prefix = 'http://127.0.0.1:3100/loki/api/v1/query_range' if engine == 'loki' else 'http://127.0.0.1:9090/api/v1/query_range'
-            filename = 'panel-'+str(panel['id'])+'-'+str(index)+'.json'
+            filename = panel.get('archivePrefix','')+'panel-'+str(panel['id'])+'-'+str(index)+'.json'
             entry = {'panelId': panel['id'], 'title': panel['title'], 'expression': expr, 'engine': engine, 'file': filename}
             try:
                 data = get(prefix+'?'+urllib.parse.urlencode(params))

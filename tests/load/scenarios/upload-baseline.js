@@ -21,9 +21,9 @@ import { businessFailures, successfulJourneys } from '../lib/metrics.mjs';
 import { emitRunEvent, summaryOutput } from '../lib/summary.mjs';
 
 const baseUrl = normalizeBaseUrl(requiredEnv('K6_BASE_URL'));
-const session = __ENV.K6_SESSION_POOL_FILE
-  ? singleStagingSession(open(__ENV.K6_SESSION_POOL_FILE), baseUrl)
-  : null;
+const rawSession = __ENV.K6_SESSION_POOL_FILE ? open(__ENV.K6_SESSION_POOL_FILE) : null;
+// k6 evaluates init again for handleSummary. Time-dependent admission belongs in setup.
+const session = rawSession ? singleStagingSession(rawSession, baseUrl, Date.now(), null) : null;
 const accessToken = session ? session.accessToken : requiredEnv('K6_ACCESS_TOKEN');
 const manifestPath = requiredEnv('K6_DATA_MANIFEST');
 const dataset = loadDataset(manifestPath);
@@ -49,6 +49,10 @@ export const options = {
     yeodam_successful_journeys: ['rate==1'],
   },
 };
+
+export function setup() {
+  if (rawSession) singleStagingSession(rawSession, baseUrl);
+}
 
 export function uploadBaseline() {
   businessFailures.add(0, { operation: 'journey' });

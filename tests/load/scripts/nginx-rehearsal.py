@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Detached, bounded evidence capture on the exact V1 staging App. No load or policy changes."""
 import argparse
+from collections import Counter
 from datetime import datetime, timezone
 import hashlib
 import importlib.util
@@ -95,6 +96,43 @@ def resources():
             'nginxFdTotal': sum(fds.values()), 'loadAverage': os.getloadavg()}
 
 
+def independent_sample(detailed, before, first=False):
+    """A failing HTTP observer must not erase host/CPU/process evidence."""
+    row, failures = {}, {}
+    def component(name, action):
+        try:
+            row.update(action())
+        except Exception as error:
+            failures[name] = type(error).__name__
+    component('host', resources)
+    if detailed:
+        component('processes', detailed.sample)
+    try:
+        after = observer.cpu()
+        delta = after[0]-before[0]
+        row['cpuPercent'] = None if first or not delta else round(100*(1-(after[1]-before[1])/delta), 3)
+        before = after
+    except Exception as error:
+        failures['cpu'] = type(error).__name__
+    def https():
+        lines = subprocess.check_output(['ss', '-Htn', 'state', 'established', 'sport', '=', ':443'], text=True, timeout=1).splitlines()
+        # Retain occupancy distributions, never export raw peer addresses.
+        peers = Counter(line.split()[3].rsplit(':', 1)[0] for line in lines)
+        return {'httpsEstablished': len(lines), 'establishedPeerCount': len(peers),
+                'largestPeerEstablished': max(peers.values(), default=0)}
+    component('https', https)
+    def stub():
+        code, _, _, body = observer.request('/stub_status', loopback=True, timeout=.25)
+        if code != 200:
+            raise ValueError('Non-200 stub response')
+        return observer.parse_stub(body.decode())
+    component('stub', stub)
+    if failures:
+        row['componentErrors'] = failures
+        row['errorType'] = 'PartialSample'
+    return row, before
+
+
 def collect(root, seconds):
     plan = json.loads((root/'plan.json').read_text())
     detailed = None
@@ -116,6 +154,7 @@ def collect(root, seconds):
     before = observer.cpu()
     count = 0
     errors = 0
+    component_counts = Counter()
     written = 0
     maximum_lag = 0
     reason = 'duration'
@@ -127,31 +166,29 @@ def collect(root, seconds):
                 maximum_lag = max(maximum_lag, lag)
                 row = {'utc': utc(), 'monotonicSeconds': time.monotonic()-start, 'schedulingLagSeconds': lag}
                 try:
-                    _, _, _, body = observer.request('/stub_status', loopback=True)
-                    row.update(observer.parse_stub(body.decode()))
-                    row.update(resources())
-                    if detailed:
-                        row.update(detailed.sample())
-                    after = observer.cpu()
-                    delta = after[0]-before[0]
-                    row['cpuPercent'] = None if index == 0 or not delta else round(100*(1-(after[1]-before[1])/delta), 3)
-                    before = after
-                    row['httpsEstablished'] = len(subprocess.check_output(
-                        ['ss', '-Htn', 'state', 'established', 'sport', '=', ':443'], text=True, timeout=2).splitlines())
+                    sample, before = independent_sample(detailed, before, first=index == 0)
+                    row.update(sample)
+                    if row.get('componentErrors'):
+                        errors += 1
+                        component_counts.update(row['componentErrors'])
                     disk = shutil.disk_usage('/')
                     row['diskPercent'] = round(disk.used/disk.total*100, 3)
                     if row['diskPercent'] >= 80:
                         reason = 'disk-limit'
                         stopped = True
-                    for follower in followers.values():
-                        if written >= MAX_BYTES:
-                            reason = 'archive-budget'
-                            stopped = True
-                            break
-                        written += follower.drain(MAX_BYTES-written)
                 except Exception as error:
                     errors += 1
                     row['errorType'] = type(error).__name__
+                # HTTP and host failures never skip source log preservation.
+                for name, follower in followers.items():
+                    if written >= MAX_BYTES:
+                        reason, stopped = 'archive-budget', True
+                        break
+                    try:
+                        written += follower.drain(MAX_BYTES-written)
+                    except Exception as error:
+                        errors += 1
+                        row.setdefault('logErrors', {})[name] = type(error).__name__
                 output.write(json.dumps(row)+'\n')
                 output.flush()
                 if index % 5 == 0:
@@ -159,6 +196,7 @@ def collect(root, seconds):
                 count += 1
                 checkpoint = {'runId': plan['runId'], 'startedAt': started, 'updatedAt': utc(),
                               'sampleCount': count, 'sampleErrors': errors, 'maximumSchedulingLagSeconds': maximum_lag,
+                              'componentErrorCounts': dict(component_counts),
                               'logs': {k: v.state() for k, v in followers.items()}, 'pid': os.getpid()}
                 save(root/'checkpoint.json', checkpoint)
                 if stopped or (root/'STOP').exists():
@@ -173,6 +211,8 @@ def collect(root, seconds):
                     and all(not s['unreadBytes'] and not s['copyTruncateDetected'] for s in logs.values()))
         save(root/'result.json', {**checkpoint, 'endedAt': utc(), 'reason': reason, 'logs': logs,
              'collectionComplete': complete,
+             'hostComponentsComplete': not any(v for k,v in component_counts.items() if k != 'stub'),
+             'stubComplete': not component_counts.get('stub'),
              'siteUnchanged': hashlib.sha256(SITE.read_bytes()).hexdigest() == plan['siteSha256'],
              'precisionWarning': maximum_lag > 1,
              'scope': 'Host observation only; no assertion of normal-user success or attacker request loss'})
@@ -198,8 +238,8 @@ def main():
     root = BASE/a.run_id
     unit = 'yeodam-nginx426-'+a.run_id
     if a.mode == 'start':
-        if not 10 <= a.seconds <= 3600:
-            p.error('Duration must be10..3600 seconds')
+        if not 10 <= a.seconds <= 14400:
+            p.error('Duration must be10..14400 seconds')
         sha = hashlib.sha256(SITE.read_bytes()).hexdigest()
         if sha != a.expected_site_sha256:
             p.error('Inspect the current site before capture')
