@@ -34,8 +34,8 @@ class CreateDryRunTest(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('renderer430', ROOT/'scripts/render-v1-staging-nginx.py')
         mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
         result = mod.render((ROOT/'nginx/yeodam.conf').read_text(), 'a'*40)
-        self.assertEqual(result.count('limit_req_dry_run off;'), 1)
-        self.assertEqual(result.count('limit_req_dry_run on;'), 1)
+        self.assertEqual(result.count('limit_req_dry_run off;'), 2)
+        self.assertEqual(result.count('limit_req_dry_run on;'), 0)
         self.assertIn('"POST:/api/trips" $binary_remote_addr;', result)
         self.assertIn('location /api/trips {\n        proxy_pass http://yeodam_backend;\n        proxy_read_timeout 600s;', result)
 

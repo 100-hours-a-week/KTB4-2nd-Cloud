@@ -1,5 +1,8 @@
 # V1 여행 생성 제한 Dry Run — #430
 
+> #430 당시의 관측 모드 기록이다. #433 이후의 실제 차단과 최신 수집·원복은
+> [생성 실제 차단](NGINX-CREATE-ENFORCEMENT.md)을 따른다.
+
 대상은 서울 Account `483175530259`, V1 App `i-05d320e3a87200d5a`,
 `https://v1-staging.yeodam-2gether.com`과 기존 전용 발생기다.
 #428에서 확인한 정상 생성 한 여정 1 POST, 실제 3탭의 3 POST와 사진 재시도 추가 생성 0을

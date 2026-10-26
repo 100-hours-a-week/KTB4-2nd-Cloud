@@ -23,7 +23,7 @@ APP = 'i-05d320e3a87200d5a'
 PLG = 'i-05c76ccb2b53f9279'
 ROOT = Path('/var/lib/yeodam/nginx-rehearsal')
 FIELDS = ['timestamp', 'msec', 'request_id', 'method', 'normalized_route', 'status', 'upstream_status',
-          'request_time', 'upstream_response_time', 'request_length', 'body_bytes_sent',
+          'request_time', 'upstream_connect_time', 'upstream_header_time', 'upstream_response_time', 'request_length', 'body_bytes_sent',
           'connection', 'connection_requests', 'worker_pid', 'http_protocol', 'limit_req_status']
 ERRORS = ['worker_connections are not enough', 'too many open files', 'upstream timed out',
           'connect() failed', 'upstream prematurely closed connection']
