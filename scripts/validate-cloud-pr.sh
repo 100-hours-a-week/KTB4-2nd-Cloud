@@ -71,6 +71,11 @@ python3 -m unittest tests/test_cdc_auth368.py
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_defense.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_connection_observer.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_rehearsal.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_create_resources.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_create_analysis.py'
+node --test tests/load/tests/nginx-create.test.mjs
+node --check tests/load/scenarios/nginx-trip-create.js
+python3 -c 'import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path("tests/load/scripts").glob("*nginx-create*.py")]'
 node --check tests/load/scripts/capture-nginx-rehearsal.mjs
 python3 -c 'import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path("tests/load/scripts").glob("*nginx-rehearsal*.py")]'
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("tests/load/scripts/nginx-keepalive-reconnect.py").read_text())'
