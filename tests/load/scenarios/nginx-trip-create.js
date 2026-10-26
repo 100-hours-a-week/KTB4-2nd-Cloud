@@ -16,6 +16,8 @@ if (pools[0].sessions.length !== 3 || pools[1].sessions.length !== 1 || pools[1]
 }
 const started = new Counter('create_started');
 const confirmed = new Rate('create_confirmed');
+const expectedResponse = new Rate('create_expected_response');
+const rejected = new Counter('create_rejected');
 const normalOk = new Rate('normal_read_ok');
 const elapsed = new Trend('create_elapsed_ms', true);
 const readElapsed = new Trend('normal_read_elapsed_ms', true);
@@ -33,7 +35,8 @@ export const options = {
       duration: c.mode === 'rate' ? `${c.seconds}s` : '4s', preAllocatedVUs: 2, maxVUs: 2, gracefulStop: '5s' },
   },
   thresholds: {
-    create_confirmed: ['rate==1'], normal_read_ok: ['rate==1'],
+    ...(!c.expectRejection ? { create_confirmed: ['rate==1'] } : {}),
+    create_expected_response: ['rate==1'], normal_read_ok: ['rate==1'],
     dropped_iterations: [{ threshold: 'count==0', abortOnFail: true, delayAbortEval: '5s' }],
   },
 };
@@ -41,16 +44,17 @@ export const options = {
 function params(s, operation) {
   return { cookies: { accessToken: { value: s.accessToken }, CSRF_CONTEXT: { value: s.csrfContext } },
     headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': s.csrfToken },
-    redirects: 0, timeout: '10s', tags: { operation }, responseCallback: http.expectedStatuses(operation === 'trip_create' ? 201 : 200) };
+    redirects: 0, timeout: '10s', tags: { operation }, responseCallback: operation === 'trip_create'
+      ? (c.expectRejection ? http.expectedStatuses(201, 429) : http.expectedStatuses(201)) : http.expectedStatuses(200) };
 }
 function rid(r) { return Object.entries(r.headers || {}).find(([k]) => k.toLowerCase() === 'x-request-id')?.[1] || null; }
 function event(value) { console.log(JSON.stringify({ source: 'nginx-create-428', runId: c.runId, ...value })); }
 
 export function setup() {
   event({ event: 'run_started', utc: new Date().toISOString(), mode: c.mode, rate: c.rate,
-    seconds: c.seconds, sessionCount: c.sessionCount, fixedVus: c.fixedVus, noReuse: c.noReuse,
+    seconds: c.seconds, sessionCount: c.sessionCount, fixedVus: c.fixedVus, noReuse: c.noReuse, expectRejection: c.expectRejection,
     payload: { regionCodes: ['50110'], dates: ['2025-01-01', '2025-01-03'] },
-    noPhotoUploadOrAI: true, guard: 'first non201/non200, read >1s, create >1s or dropped iteration aborts; not a service SLO' });
+    noPhotoUploadOrAI: true, guard: 'only explicit excess cohort may accept429; read >1s, create >1s or dropped iteration aborts; not a service SLO' });
 }
 export function create() {
   const i = exec.scenario.iterationInTest;
@@ -62,11 +66,13 @@ export function create() {
   const r = http.post(c.origin + '/api/trips', JSON.stringify({ tripName, startDate: '2025-01-01', endDate: '2025-01-03', regionCodes: ['50110'] }), params(s, 'trip_create'));
   let tripId = null; try { tripId = r.json()?.data?.tripId; } catch (_) { /* Keep ambiguous requests for DB reconciliation. */ }
   const ms = Date.now() - at, ok = r.status === 201 && Number.isInteger(tripId);
+  const blocked = c.expectRejection && r.status === 429 && tripId === null;
   confirmed.add(ok); elapsed.add(ms);
+  expectedResponse.add(ok || blocked); if (blocked) rejected.add(1);
   event({ event: 'final', iteration: i, userId: s.userId, tripName, status: r.status, tripId,
     atMs: Date.now(), elapsedMs: ms, httpDurationMs: r.timings.duration, requestId: rid(r), protocol: r.proto,
-    outcome: ok ? 'confirmed' : 'unconfirmed' });
-  if (!ok || ms > 1000 || r.proto !== 'HTTP/2.0') exec.test.abort('Create response, initial one-second or protocol guard; preserve data');
+    outcome: ok ? 'confirmed' : blocked ? 'rejected' : 'unconfirmed' });
+  if ((!ok && !blocked) || ms > 1000 || r.proto !== 'HTTP/2.0') exec.test.abort('Create response, initial one-second or protocol guard; preserve data');
 }
 export function normal() {
   const s = pools[1].sessions[0];

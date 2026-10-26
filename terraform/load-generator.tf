@@ -104,54 +104,5 @@ resource "aws_vpc_security_group_egress_rule" "load_generator_all_ipv4" {
   cidr_ipv4         = "0.0.0.0/0"
 }
 
-resource "aws_instance" "load_generator" {
-  count = var.enable_load_generator ? 1 : 0
-
-  ami                         = data.aws_ami.ubuntu_2404.id
-  instance_type               = var.load_generator_instance_type
-  subnet_id                   = aws_subnet.public.id
-  vpc_security_group_ids      = [aws_security_group.load_generator[0].id]
-  iam_instance_profile        = aws_iam_instance_profile.load_generator[0].name
-  associate_public_ip_address = true
-
-  monitoring                           = true
-  disable_api_termination              = false
-  instance_initiated_shutdown_behavior = "stop"
-
-  metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 1
-    http_protocol_ipv6          = "disabled"
-    instance_metadata_tags      = "disabled"
-  }
-
-  root_block_device {
-    volume_type           = "gp3"
-    volume_size           = var.load_generator_root_volume_size
-    iops                  = 3000
-    throughput            = 125
-    encrypted             = true
-    delete_on_termination = true
-  }
-
-  user_data                   = file("${path.module}/../scripts/bootstrap-load-generator.sh")
-  user_data_replace_on_change = true
-
-  volume_tags = {
-    Name      = "${local.name_prefix}-load-generator-root"
-    Role      = "load-generator"
-    Temporary = "true"
-  }
-
-  tags = {
-    Name      = "${local.name_prefix}-load-generator"
-    Role      = "load-generator"
-    Temporary = "true"
-  }
-
-  depends_on = [
-    aws_iam_role_policy_attachment.load_generator_ssm,
-    aws_iam_role_policy.load_generator_s3,
-  ]
-}
+# The V1 load-generator EC2 and its root volume were retired after snapshots.
+# Keep IAM and network resources in this change to avoid affecting other users.

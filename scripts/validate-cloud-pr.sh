@@ -6,6 +6,10 @@ python3 -m unittest discover -s tests/ci -p 'test_v1_nginx_observability.py'
 python3 -m unittest discover -s tests/ci -p 'test_nginx_read_dry_run.py'
 python3 -m unittest discover -s tests/ci -p 'test_nginx_read_enforcement.py'
 python3 -m unittest discover -s tests/ci -p 'test_nginx_keepalive.py'
+python3 -m unittest discover -s tests/ci -p 'test_nginx_create_dry_run.py'
+python3 tests/ci/check-nginx-create-dry-run.py
+python3 -m unittest discover -s tests/ci -p 'test_nginx_create_enforcement.py'
+python3 tests/ci/check-nginx-create-dry-run.py --enforce
 python3 -c 'import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path("monitoring/v1-staging").glob("*.py")]'
 docker compose -f monitoring/v1-staging/nginx-exporter-compose.yml config --quiet
 
