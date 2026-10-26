@@ -169,59 +169,14 @@ resource "aws_iam_instance_profile" "mysql_cdc_test" {
   tags = merge(local.common_tags, { Role = "database-migration" })
 }
 
-resource "aws_ebs_volume" "mysql_cdc_test_data" {
-  availability_zone = var.app_availability_zone
-  size              = 40
-  type              = "gp3"
-  encrypted         = true
-  tags              = merge(local.common_tags, { Name = "${local.mysql_cdc_test_name}-data", Role = "database-migration" })
-  lifecycle { prevent_destroy = true }
-}
-
-resource "aws_instance" "mysql_cdc_test" {
-  ami                         = var.mysql_ami_id
-  instance_type               = "t4g.xlarge"
-  subnet_id                   = module.network.private_app_subnet_id
-  vpc_security_group_ids      = [aws_security_group.mysql_cdc_test.id]
-  iam_instance_profile        = aws_iam_instance_profile.mysql_cdc_test.name
-  associate_public_ip_address = false
-  disable_api_termination     = true
-  user_data = templatefile("${path.module}/mysql-cdc-test-bootstrap.sh.tftpl", {
-    volume_id      = aws_ebs_volume.mysql_cdc_test_data.id
-    region         = var.aws_region
-    root_parameter = local.mysql_cdc_root_parameter
-    sink_parameter = local.mysql_cdc_sink_parameter
-    ca_parameter   = local.mysql_cdc_ca_parameter
-    kafka_host     = aws_instance.kafka.private_ip
-  })
-  credit_specification { cpu_credits = "standard" }
-  metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 1
-  }
-  root_block_device {
-    volume_type           = "gp3"
-    volume_size           = 16
-    encrypted             = true
-    delete_on_termination = true
-  }
-  tags       = merge(local.common_tags, { Name = local.mysql_cdc_test_name, Role = "database-migration" })
-  depends_on = [module.network, aws_iam_role_policy_attachment.mysql_cdc_test_ssm, aws_iam_role_policy.mysql_cdc_test_parameters]
-}
-
-resource "aws_volume_attachment" "mysql_cdc_test_data" {
-  device_name = "/dev/sdf"
-  volume_id   = aws_ebs_volume.mysql_cdc_test_data.id
-  instance_id = aws_instance.mysql_cdc_test.id
-}
-
+# The CDC test EC2 and both volumes were retired after snapshots.
+# Preserve the existing DNS record in this cleanup; it is not an active DB endpoint.
 resource "aws_route53_record" "mysql_cdc_test_private" {
   zone_id = aws_route53_zone.staging_private.zone_id
   name    = "mysql-cdc-test.staging.yeodam.internal"
   type    = "A"
   ttl     = 30
-  records = [aws_instance.mysql_cdc_test.private_ip]
+  records = ["10.30.10.127"]
 }
 
 resource "aws_ssm_document" "mysql_cdc_test_source_account" {
@@ -245,7 +200,6 @@ resource "aws_ssm_document" "mysql_cdc_test_source_account" {
   tags = local.common_tags
 }
 
-output "mysql_cdc_test_instance_id" { value = aws_instance.mysql_cdc_test.id }
 output "mysql_cdc_test_private_hostname" { value = aws_route53_record.mysql_cdc_test_private.fqdn }
 output "mysql_cdc_test_root_parameter_name" { value = local.mysql_cdc_root_parameter }
 output "mysql_cdc_test_sink_parameter_name" { value = local.mysql_cdc_sink_parameter }
