@@ -1,4 +1,11 @@
 // CDP evidence allowlist: no cookies, request headers, bodies or URL query strings.
+export function canCapturePage(observed, attempted) {
+  const origin='https://v1-staging.yeodam-2gether.com';
+  if (new URL(observed).origin === origin) return true;
+  return Boolean(attempted && new URL(attempted).origin === origin &&
+    (observed === 'about:blank' || observed.startsWith('chrome-error://chromewebdata/')));
+}
+
 export function safeUrl(value) {
   try {
     const u = new URL(value);

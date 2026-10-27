@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { safeUrl, safeText, sanitizeEvents, har, failureStage } from '../lib/browser-evidence.mjs';
+import { safeUrl, safeText, sanitizeEvents, har, failureStage, canCapturePage } from '../lib/browser-evidence.mjs';
+
+test('failed staging navigation can retain the browser error page without exporting another site',()=>{
+  const attempted='https://v1-staging.yeodam-2gether.com/login';
+  assert.equal(canCapturePage('chrome-error://chromewebdata/',attempted),true);
+  assert.equal(canCapturePage('about:blank',attempted),true);
+  assert.equal(canCapturePage('about:blank'),false);
+  assert.equal(canCapturePage('https://another-user-site.test/',attempted),false);
+  assert.equal(canCapturePage('chrome-error://chromewebdata/','https://yeodam-2gether.com/'),false);
+});
 
 test('URL query, userinfo and S3 object names are not evidence output', () => {
   assert.equal(safeUrl('https://user:secret@a.test/api?token=private#x'), 'https://a.test/api');
