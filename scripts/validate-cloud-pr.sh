@@ -88,6 +88,11 @@ python3 -c 'import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path(
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("tests/load/scripts/nginx-keepalive-reconnect.py").read_text())'
 python3 -m unittest discover -s tests/load/tests -p 'test_token_window.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_read_demand.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_external_diagnosis.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_http_tls_load.py'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("tests/load/scripts/run-nginx-http-tls-trials.py").read_text())'
+python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("tests/load/scripts/run-nginx-external-trials.py").read_text())'
+node --check tests/load/scenarios/nginx-edge-replay.js
 node --test tests/load/tests/nginx-defense.test.mjs
 node --test tests/load/tests/single-staging-session.test.mjs
 node --check tests/load/scenarios/nginx-request-repeat.js
