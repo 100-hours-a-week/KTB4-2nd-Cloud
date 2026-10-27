@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { singleStagingAccessToken } from '../lib/single-staging-session.mjs';
+import { singleStagingAccessToken, singleStagingSession } from '../lib/single-staging-session.mjs';
 const origin = 'https://v1-staging.yeodam-2gether.com';
 const now = Date.parse('2026-10-24T01:00:00Z');
 const pool = {version: 1, baseUrl: origin, expiresAt: '2026-10-24T01:30:00Z', sessions: [{accessToken:'private-test-token',csrfContext:'11111111-1111-4111-a111-111111111111'}]};
@@ -14,4 +14,11 @@ test('wrong origin, multiple sessions, short remaining life and malformed conten
   }
   assert.throws(()=>singleStagingAccessToken('{private-test-token', origin, now));
   assert.throws(()=>singleStagingAccessToken(JSON.stringify(pool),'https://yeodam-2gether.com',now));
+});
+
+test('summary init validates structure after elapsed time while setup still rejects short admission', () => {
+  const later = now + 20 * 60 * 1000;
+  assert.equal(singleStagingSession(JSON.stringify(pool), origin, later, null).accessToken, 'private-test-token');
+  assert.throws(() => singleStagingSession(JSON.stringify(pool), origin, later));
+  assert.throws(() => singleStagingSession(JSON.stringify({ ...pool, sessions: [] }), origin, later, null));
 });
