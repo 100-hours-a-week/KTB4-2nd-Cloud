@@ -1,0 +1,20 @@
+#!/bin/bash
+set -Eeuo pipefail
+umask 077
+
+# The copied OS may start enabled units before cloud-init. New SGs have no
+# ingress and no Kafka/Redis/MySQL egress, and the new IAM role cannot write
+# original backups or read original application parameter paths.
+for service in nginx mysql yeodam-mysql yeodam-mysql-alloy yeodam-nginx-tcp436; do
+  systemctl disable --now "$service.service" 2>/dev/null || true
+done
+systemctl list-unit-files --no-legend | awk '$1 ~ /^yeodam-.*\.timer$/ {print $1}' | while read -r unit; do
+  systemctl disable --now "$unit"
+done
+if systemctl is-active --quiet docker; then
+  docker ps -q | xargs -r docker stop --time 30 >/dev/null
+  docker ps -aq | xargs -r docker update --restart=no >/dev/null
+fi
+install -d -m 0700 /var/lib/yeodam/migration444
+printf '{"issue":444,"role":"${role}","state":"quarantined","applicationsEnabled":false}\n' > /var/lib/yeodam/migration444/identity.json
+chmod 0600 /var/lib/yeodam/migration444/identity.json
