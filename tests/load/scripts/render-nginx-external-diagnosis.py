@@ -37,7 +37,8 @@ def main():
          'HTTP450 uses 5s preparation + 5s ramp + 20s target, not 30s constant 450RPS.',
          'Mixed HTTP aborted during 20RPS preparation on generator-source timeout; never reached 450RPS.',
          'Original instructor lifetime ENA counters cannot be attributed to the original load.',
-         'No raw SYN-only traffic or precise original generator pattern was replayed.']}
+         'No raw SYN-only traffic or precise original generator pattern was replayed.',
+         'External probe uses HTTP/1.1; browser HTTP/2 behavior is not covered.']}
     for f in sorted((a.archive/'generator').glob('*-tcp.json')):
         v=json.loads(f.read_text());summary['tcp'][f.name]={k:v[k] for k in ['attempted','opened','httpStatuses','errors','peakGeneratorSockets','recoveryProbes']}
     for f in sorted((a.archive/'generator').glob('*-http-summary.json')):

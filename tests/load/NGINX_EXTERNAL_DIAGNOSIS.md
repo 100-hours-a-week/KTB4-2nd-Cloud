@@ -22,7 +22,7 @@ probe 는 별도 curl 프로세스를 실행한다. 브라우저 캐시·쿠키�
 
 App 에는 `nginx-rehearsal.py`, `nginx-rehearsal-archive.py`, `nginx-connection-observer.py`, `nginx-create-resources.py`, `synthetic-session-pool.py`, `nginx-tcp-normal-monitor.py`, `nginx-external-diagnosis.py`가 필요하다. PLG 에는 같은 버전의 archive 도구, 발생기에는 capacity 도구와 edge-replay 시나리오를 둔다. SSM 문서 97KB 제한에 걸리면 코드를 나누거나 압축 전송하고 파일 SHA256 을 대조한다. 압축에 인증 파일을 섞지 않는다.
 
-부하 전에 AWS 계정 `483175530259`·서울 Region 과 실제 인스턴스를 확인한다. App=`i-05d320e3a87200d5a`, 발생기=`i-0c53b65eb35dd2b42`, PLG=`i-05c76ccb2b53f9279`다. V1 사이트·main SHA 가 이전 방어 설정과 같은지 확인하고 새 UUID 로 호스트 수집을 시작한다. 별도 정상 monitor UUID 를 capture 의 `plan.normalRunIds`에 연결해야 함께 내보낼 수 있다.
+부하 전에 승인된 AWS 계정·서울 Region 과 실제 인스턴스를 확인한다. App=`i-05d320e3a87200d5a`, 발생기=`i-0c53b65eb35dd2b42`, PLG=`i-05c76ccb2b53f9279`다. V1 사이트·main SHA 가 이전 방어 설정과 같은지 확인하고 새 UUID 로 호스트 수집을 시작한다. 별도 정상 monitor UUID 를 capture 의 `plan.normalRunIds`에 연결해야 함께 내보낼 수 있다.
 
 외부 probe 의 예시다. `edge438_external_id`는 새 UUID, 출력 디렉터리는 새 경로여야 한다. 실행 전에는 `--execute`를 빼서 대상과 시간 제한을 검사할 수 있다.
 
