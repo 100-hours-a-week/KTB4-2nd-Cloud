@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run #442 real HTTP/2 POST stages with unchanged defenses and independent external guards."""
 import argparse
+import importlib.util
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -16,6 +17,8 @@ ORIGIN = 'https://v1-staging.yeodam-2gether.com'
 LOAD_OPS = '/opt/yeodam-load/nginx-h2-442'
 STAGES = [('smoke1', 1, 1), ('small16', 64, 30), ('medium64', 256, 30),
           ('instructor141', 0, 299), ('instructor128', 0, 299)]
+spec = importlib.util.spec_from_file_location('browser_guard447', Path(__file__).with_name('nginx-browser-guard.py'))
+browser_guard = importlib.util.module_from_spec(spec);spec.loader.exec_module(browser_guard)
 
 
 def main():
@@ -23,6 +26,7 @@ def main():
     p.add_argument('--context', type=Path, required=True)
     p.add_argument('--external', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--browser', type=Path, help='Require fresh, baseline-ready browser checkpoint and no sticky failure')
     p.add_argument('--stages', nargs='+', choices=[x[0] for x in STAGES], default=[x[0] for x in STAGES])
     p.add_argument('--execute', action='store_true')
     a = p.parse_args()
@@ -63,6 +67,8 @@ def main():
         raise TimeoutError('Stage did not finish; stop requested')
     def external_ok():
         try:
+            if a.browser and not browser_guard.healthy(a.browser, c['captureId']):
+                return False
             x = json.loads((a.external/'checkpoint.json').read_text())
             age = (datetime.now(timezone.utc)-datetime.fromisoformat(x['updatedAt'])).total_seconds()
             return age < 10 and x['errors'] == 0 and x['failures'] == 0 and not x['guardTriggered']
@@ -114,6 +120,7 @@ print(json.dumps({{'ok':ok,'capture':cap,'ena':ena,'normal':normal}}))
                 '--unit='+unit,'--property=RuntimeMaxSec='+str(seconds+45),'--property=MemoryMax=768M',
                 '--property=CPUQuota=150%','/bin/bash','-c',inner])
             began=datetime.now(timezone.utc).isoformat();cid=send(GENERATOR,command)
+            (a.output/'active-stage.json').write_text(json.dumps({'stage':name,'startedAt':began,'unit':unit}))
             print(json.dumps({'stage':name,'startedAt':began,'commandId':cid}),flush=True)
             r, stopped = wait(GENERATOR,cid,unit)
             (a.output/(name+'-command.json')).write_text(json.dumps(r,indent=2))
@@ -135,6 +142,8 @@ print(json.dumps({{'ok':ok,'capture':cap,'ena':ena,'normal':normal}}))
         raise
     finally:
         (a.output/'stages.json').write_text(json.dumps(trials,indent=2))
+        (a.output/'finished.json').write_text(json.dumps({'endedAt':datetime.now(timezone.utc).isoformat(),
+            'browserGuardEnabled':bool(a.browser), 'scope':'Controller finished; inspect each workload and browser result separately'}))
 
 
 if __name__ == '__main__':

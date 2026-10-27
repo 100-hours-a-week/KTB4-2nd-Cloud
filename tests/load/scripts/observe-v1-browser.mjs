@@ -1,4 +1,4 @@
-import { sanitizeEvents, har, safeUrl, safeText, failureStage } from '../lib/browser-evidence.mjs';
+import { sanitizeEvents, har, safeUrl, safeText, failureStage, canCapturePage } from '../lib/browser-evidence.mjs';
 
 // Invoke in ego-browser nodejs with its documented Page handle, not a separate browser driver.
 export async function begin(page) {
@@ -8,10 +8,12 @@ export async function begin(page) {
   await page.cdp('Network.enable');await page.cdp('Runtime.enable');
 }
 
-export async function saveRound({ page, directory, round, expected }) {
+export async function saveRound({ page, directory, round, expected, attemptedUrl }) {
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
-  if (new URL(await page.url()).origin !== 'https://v1-staging.yeodam-2gether.com') {
+  const observedUrl=await page.url();
+  const failedNavigation=new URL(observedUrl).origin !== 'https://v1-staging.yeodam-2gether.com';
+  if (!canCapturePage(observedUrl,attemptedUrl)) {
     throw new Error('Page left the exact staging origin; do not export another site');
   }
   if (!path.isAbsolute(directory) || !/^[a-z0-9-]{1,50}$/.test(round)) throw new Error('Absolute output and safe round label required');
@@ -26,7 +28,8 @@ export async function saveRound({ page, directory, round, expected }) {
   const report = sanitizeEvents(events);
   report.requests.forEach(r => { r.outcomeStage = failureStage(r); });
   report.round = round;report.capturedAt = new Date().toISOString();report.expected = expected;
-  report.url = safeUrl(await page.url());
+  report.url = safeUrl(observedUrl);report.failedNavigationPage=failedNavigation;
+  if (attemptedUrl) report.attemptedUrl=safeUrl(attemptedUrl);
   report.viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
   report.applicationRequests = report.requests.filter(r => r.url.startsWith('https://v1-staging.yeodam-2gether.com/'));
   report.httpErrors = report.applicationRequests.filter(r => r.status >= 400);
