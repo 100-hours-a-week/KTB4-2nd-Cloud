@@ -216,7 +216,7 @@ def generator_archive(run, tls=False, h2=False):
             raise ValueError('Unexpected generator stage')
         names = (['plan.json', 'result.json', 'events.jsonl', 'source.js', 'source-lib.mjs', 'run.log', 'native-summary.json',
                   'generator.jsonl', 'runner-time.txt'] if h2 else ['result.json', 'load.log'] if tls
-                 else ['http-summary.json', 'tcp.json', 'http.log', 'tcp.log'])
+                 else ['http-summary.json', 'tcp.json', 'http.log', 'tcp.log','http-start.txt','http-end.txt'])
         for name in names:
             if (stage/name).is_file():
                 shutil.copyfile(stage/name, destination/(stage.name+'-'+name))
