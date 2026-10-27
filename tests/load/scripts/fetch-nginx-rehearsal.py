@@ -79,6 +79,7 @@ def main():
     p.add_argument('--output', required=True, type=Path)
     p.add_argument('--profile', default='yeodam-admin')
     p.add_argument('--include-edge-generator', action='store_true', help='Only credential-free #438 generator results')
+    p.add_argument('--include-tls-generator', action='store_true', help='Only credential-free #440 generator results')
     p.add_argument('--from', dest='start')
     p.add_argument('--to', dest='end')
     p.add_argument('--loki-lookahead-seconds', type=int, default=60)
@@ -174,6 +175,11 @@ def main():
         if a.ops_directory != '/opt/yeodam/ops/nginx-edge438':
             raise ValueError('Generator export requires the isolated #438 helper')
         gen_info = remote(archive.GENERATOR, 'python3 '+ops+' generator --run-id '+a.run_id)
+        transfers['generator'] = pull(archive.GENERATOR, gen_info, 'generator')
+    if a.include_tls_generator:
+        if a.include_edge_generator or a.ops_directory != '/opt/yeodam/ops/nginx-edge438':
+            raise ValueError('TLS export requires isolated archive helper and separate generator selection')
+        gen_info = remote(archive.GENERATOR, 'python3 '+ops+' tls-generator --run-id '+a.run_id)
         transfers['generator'] = pull(archive.GENERATOR, gen_info, 'generator')
     result = {'runId': a.run_id, 'from':index['from'],'to':index['to'],'hostCaptureAvailable':not bool(a.start), 'transfers': transfers, 'cloudwatch': {},
               'note': 'No final user-success claim; attach normal probe, journey and DB/S3 audit results'}
