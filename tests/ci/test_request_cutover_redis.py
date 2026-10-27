@@ -11,6 +11,23 @@ import redis
 
 
 class ProjectionIntegration(unittest.TestCase):
+    def test_verification_checks_every_batch_and_detects_changed_value(self):
+        client = redis.Redis(host=os.environ['CUTOVER_TEST_REDIS_HOST'], decode_responses=True)
+        prefix = 'isolated-test:' + str(uuid4()) + ':'
+        now = client.time()[0] * 1000
+        entries = {prefix + str(index): Entry('string', str(index), now + 60000)
+                   for index in range(601)}
+        try:
+            replace_inactive(client, entries, prefix)
+            self.assertEqual(verify(client, entries, prefix, now)['keys'], 601)
+            client.set(prefix + '600', 'changed')
+            with self.assertRaisesRegex(ValueError, 'Redis fields'):
+                verify(client, entries, prefix, now)
+        finally:
+            keys = list(client.scan_iter(match=prefix + '*'))
+            if keys:
+                client.delete(*keys)
+
     def test_expiry_types_deletions_and_rotated_reverse_index(self):
         client = redis.Redis(host=os.environ['CUTOVER_TEST_REDIS_HOST'], decode_responses=True)
         prefix = 'isolated-test:' + str(uuid4()) + ':'

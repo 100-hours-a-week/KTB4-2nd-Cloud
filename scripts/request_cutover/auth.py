@@ -126,22 +126,35 @@ def replace_inactive(redis, entries, prefix):
 def verify(redis, entries, prefix, now_ms):
     expected = {k: v for k, v in entries.items() if v.expires > now_ms}
     actual = {}
-    for key in redis.scan_iter(match=prefix + '*', count=500):
-        if redis.type(key) == 'none':
-            continue
-        end = redis.pexpiretime(key)
-        if end <= now_ms:
-            continue
-        kind = redis.type(key)
-        if kind == 'hash':
-            value = redis.hgetall(key)
-        elif kind == 'zset':
-            value = {member: int(score) for member, score in redis.zrange(key, 0, -1, withscores=True)}
-        elif kind == 'string':
-            value = redis.get(key)
-        else:
-            raise ValueError('unexpected target key type')
-        actual[key] = Entry(kind, value, end)
+    keys = list(redis.scan_iter(match=prefix + '*', count=500))
+    for start in range(0, len(keys), 500):
+        batch = keys[start:start + 500]
+        with redis.pipeline(transaction=False) as pipe:
+            for key in batch:
+                pipe.type(key)
+                pipe.pexpiretime(key)
+            metadata = pipe.execute()
+        live = []
+        for index, key in enumerate(batch):
+            kind, end = metadata[index * 2:index * 2 + 2]
+            if kind == 'none' or end <= now_ms:
+                continue
+            if kind not in ('hash', 'zset', 'string'):
+                raise ValueError('unexpected target key type')
+            live.append((key, kind, end))
+        with redis.pipeline(transaction=False) as pipe:
+            for key, kind, _ in live:
+                if kind == 'hash':
+                    pipe.hgetall(key)
+                elif kind == 'zset':
+                    pipe.zrange(key, 0, -1, withscores=True)
+                else:
+                    pipe.get(key)
+            values = pipe.execute()
+        for (key, kind, end), value in zip(live, values):
+            if kind == 'zset':
+                value = {member: int(score) for member, score in value}
+            actual[key] = Entry(kind, value, end)
     if actual != expected:
         raise ValueError('Redis fields, deletion reconciliation, index or expiration mismatch')
     return {'keys': len(actual), 'fingerprint': fingerprint(actual)}
