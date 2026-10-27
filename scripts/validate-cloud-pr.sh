@@ -93,6 +93,10 @@ python3 -m unittest discover -s tests/load/tests -p 'test_nginx_http_tls_load.py
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("tests/load/scripts/run-nginx-http-tls-trials.py").read_text())'
 python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("tests/load/scripts/run-nginx-external-trials.py").read_text())'
 node --check tests/load/scenarios/nginx-edge-replay.js
+node --test tests/load/tests/nginx-h2-replay.test.mjs
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_h2_audit.py'
+node --check tests/load/scenarios/nginx-h2-trip-replay.js
+python3 -c 'import ast,pathlib; [ast.parse(pathlib.Path("tests/load/scripts/"+n).read_text()) for n in ["run-nginx-h2-stage.py", "run-nginx-h2-trials.py"]]'
 node --test tests/load/tests/nginx-defense.test.mjs
 node --test tests/load/tests/single-staging-session.test.mjs
 node --check tests/load/scenarios/nginx-request-repeat.js
