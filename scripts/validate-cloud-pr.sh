@@ -93,7 +93,8 @@ python3 -m unittest discover -s tests/load/tests -p 'test_nginx_tcp_stage_captur
 node --test tests/load/tests/browser-evidence.test.mjs
 node --test tests/load/tests/browser-journey-guard.test.mjs
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_browser_guard.py'
-python3 -c 'import ast,pathlib; ast.parse(pathlib.Path("tests/load/scripts/analyze-nginx-browser-load.py").read_text())'
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_connection_trials.py'
+python3 -c 'import ast,pathlib; [ast.parse(pathlib.Path("tests/load/scripts/"+n).read_text()) for n in ["analyze-nginx-browser-load.py", "analyze-nginx-connection-browser.py"]]'
 node --check tests/load/scripts/observe-v1-browser.mjs
 node --check tests/load/scripts/analyze-nginx-browser.mjs
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_http_tls_load.py'
