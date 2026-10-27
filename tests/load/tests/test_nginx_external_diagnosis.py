@@ -10,7 +10,7 @@ edge = importlib.util.module_from_spec(spec);spec.loader.exec_module(edge)
 
 
 class DiagnosisTest(unittest.TestCase):
-    def test_http2_probe_rejects_silent_http11_fallback(self):
+    def test_requested_http2_fallback_is_not_success(self):
         data = {'status': '200', 'dns': '0.01', 'tcp': '0.02', 'tls': '0.03',
                 'ttfb': '0.04', 'total': '0.05', 'httpVersion': '1.1', 'remoteIp': '127.0.0.1'}
         result = SimpleNamespace(returncode=0, stdout=json.dumps(data), stderr='')

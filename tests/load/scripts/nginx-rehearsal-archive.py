@@ -145,6 +145,14 @@ def app_archive(run):
     for name in ['samples.jsonl', 'summary.json']:
         if (source/'ena'/name).is_file():
             shutil.copyfile(source/'ena'/name, destination/('ena-'+name))
+    # #445 has pseudonymized TCP metadata only. Never export tcpdump stderr/raw source filters.
+    tcp = source/'tcp445'
+    if tcp.exists():
+        if not (tcp/'summary.json').is_file():
+            raise ValueError('Stop the TCP observer before exporting its evidence')
+        for name in ['plan.json', 'checkpoint.json', 'packets.jsonl', 'summary.json']:
+            if (tcp/name).is_file():
+                shutil.copyfile(tcp/name, destination/('tcp445-'+name))
     normal_runs = list(dict.fromkeys([run] + plan.get('normalRunIds', [])))
     if len(normal_runs) > 16:
         raise ValueError('Normal capture reference budget exceeded')
