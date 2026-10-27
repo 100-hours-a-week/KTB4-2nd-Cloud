@@ -1,9 +1,9 @@
 import importlib.util
 from pathlib import Path
 import unittest
-from types import SimpleNamespace
 from unittest.mock import patch
 import json
+from types import SimpleNamespace
 
 spec = importlib.util.spec_from_file_location('edge438', Path(__file__).parents[1]/'scripts/nginx-external-diagnosis.py')
 edge = importlib.util.module_from_spec(spec);spec.loader.exec_module(edge)
@@ -11,13 +11,16 @@ edge = importlib.util.module_from_spec(spec);spec.loader.exec_module(edge)
 
 class DiagnosisTest(unittest.TestCase):
     def test_requested_http2_fallback_is_not_success(self):
-        data = {'status':'200','dns':'0.01','tcp':'0.02','tls':'0.03',
-                'ttfb':'0.04','total':'0.05','httpVersion':'1.1','remoteIp':'127.0.0.1'}
+        data = {'status': '200', 'dns': '0.01', 'tcp': '0.02', 'tls': '0.03',
+                'ttfb': '0.04', 'total': '0.05', 'httpVersion': '1.1', 'remoteIp': '127.0.0.1'}
+        result = SimpleNamespace(returncode=0, stdout=json.dumps(data), stderr='')
+        with patch.object(edge.subprocess, 'run', return_value=result) as run:
+            self.assertFalse(edge.probe('/login', http_version='2')['ok'])
+            self.assertIn('--http2', run.call_args.args[0])
+        data['httpVersion'] = '2'
         with patch.object(edge.subprocess, 'run', return_value=SimpleNamespace(
-                stdout=json.dumps(data), stderr='', returncode=0)) as run:
-            row = edge.probe('/login', http_version='2')
-        self.assertFalse(row['ok'])
-        self.assertIn('--http2', run.call_args.args[0])
+            returncode=0, stdout=json.dumps(data), stderr='')):
+            self.assertTrue(edge.probe('/login', http_version='2')['ok'])
 
     def test_unsupported_curl_is_not_a_server_tls_failure(self):
         self.assertEqual(edge.failure_stage(4, {}), 'probe-tool')
