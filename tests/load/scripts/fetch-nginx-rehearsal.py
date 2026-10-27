@@ -78,10 +78,11 @@ def main():
     p.add_argument('--run-id', required=True)
     p.add_argument('--output', required=True, type=Path)
     p.add_argument('--profile', default='yeodam-admin')
+    p.add_argument('--include-edge-generator', action='store_true', help='Only credential-free #438 generator results')
     p.add_argument('--from', dest='start')
     p.add_argument('--to', dest='end')
     p.add_argument('--loki-lookahead-seconds', type=int, default=60)
-    p.add_argument('--ops-directory', choices=['/opt/yeodam/ops/nginx-rehearsal-426', '/opt/yeodam/ops/nginx-create-433', '/opt/yeodam/ops/nginx-tcp436'],
+    p.add_argument('--ops-directory', choices=['/opt/yeodam/ops/nginx-rehearsal-426', '/opt/yeodam/ops/nginx-create-433', '/opt/yeodam/ops/nginx-tcp436', '/opt/yeodam/ops/nginx-edge438'],
                    default='/opt/yeodam/ops/nginx-rehearsal-426')
     a = p.parse_args()
     ops = a.ops_directory+'/nginx-rehearsal-archive.py'
@@ -169,6 +170,11 @@ def main():
     plg_info = remote(archive.PLG, shlex.join(['python3', ops, 'plg', '--run-id', a.run_id,
         '--from', index['from'], '--to', index['to'], '--loki-lookahead-seconds', str(a.loki_lookahead_seconds)]))
     transfers['plg'] = pull(archive.PLG, plg_info, 'plg')
+    if a.include_edge_generator:
+        if a.ops_directory != '/opt/yeodam/ops/nginx-edge438':
+            raise ValueError('Generator export requires the isolated #438 helper')
+        gen_info = remote(archive.GENERATOR, 'python3 '+ops+' generator --run-id '+a.run_id)
+        transfers['generator'] = pull(archive.GENERATOR, gen_info, 'generator')
     result = {'runId': a.run_id, 'from':index['from'],'to':index['to'],'hostCaptureAvailable':not bool(a.start), 'transfers': transfers, 'cloudwatch': {},
               'note': 'No final user-success claim; attach normal probe, journey and DB/S3 audit results'}
     import secrets
