@@ -149,7 +149,7 @@ def main():
         if name not in stages:continue
         start=at(stages[name]['replayStartUtc']);end=start.timestamp()+299
         for ax in axes:ax.axvspan(start,datetime.fromtimestamp(end,kst),color='#2256c5',alpha=.06)
-        axes[0].text(start,1.02,name,transform=axes[0].get_xaxis_transform(),fontsize=9)
+        axes[0].text(start,1.02,'141개 연결 시도' if name == 'instructor141' else '128개 연결 분리 시험',transform=axes[0].get_xaxis_transform(),fontsize=9)
     for ax in axes:
         ax.grid(axis='y',alpha=.2);ax.set_ylim(bottom=0)
         ax.xaxis.set_major_formatter(dates.DateFormatter('%H:%M',tz=kst))
