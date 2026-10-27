@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 
 APP = 'i-05d320e3a87200d5a'
 PLG = 'i-05c76ccb2b53f9279'
+GENERATOR = 'i-0c53b65eb35dd2b42'
 ROOT = Path('/var/lib/yeodam/nginx-rehearsal')
 FIELDS = ['timestamp', 'msec', 'request_id', 'method', 'normalized_route', 'status', 'upstream_status',
           'request_time', 'upstream_connect_time', 'upstream_header_time', 'upstream_response_time', 'request_length', 'body_bytes_sent',
@@ -140,6 +141,10 @@ def app_archive(run):
     for name in ['plan.json', 'result.json', 'checkpoint.json', 'marks.jsonl', 'samples.jsonl', 'journey-audit.json']:
         if (source/name).exists():
             shutil.copyfile(source/name, destination/name)
+    # #438 opt-in ENA observer; absence is not interpreted as zero allowance drops.
+    for name in ['samples.jsonl', 'summary.json']:
+        if (source/'ena'/name).is_file():
+            shutil.copyfile(source/'ena'/name, destination/('ena-'+name))
     normal_runs = list(dict.fromkeys([run] + plan.get('normalRunIds', [])))
     if len(normal_runs) > 16:
         raise ValueError('Normal capture reference budget exceeded')
@@ -182,6 +187,25 @@ def app_archive(run):
          'siteUnchanged': state.get('siteUnchanged'), 'accessEvents': parsed, 'statuses': statuses,
          'errorCounts': error_counts, 'malformedAccessLines': malformed,
          'privateOriginalsExported': False, 'normalUserSuccessVerified': False})
+    seal(destination)
+
+
+def generator_archive(run):
+    source = Path('/var/lib/yeodam/nginx-edge438')/run
+    destination = ROOT/run/'exports'/str(uuid4())
+    destination.mkdir(parents=True)
+    # Only #438's credential-free scenarios, never generic k6 output or session pools.
+    allowed = {'http100', 'http100-csrf-stop', 'http450', 'http450-startup-drop',
+               'hold192', 'churn120', 'mixed450'}
+    for stage in source.iterdir():
+        if stage.name not in allowed or not stage.is_dir():
+            raise ValueError('Unexpected generator stage')
+        for name in ['http-summary.json', 'tcp.json', 'http.log', 'tcp.log']:
+            if (stage/name).is_file():
+                shutil.copyfile(stage/name, destination/(stage.name+'-'+name))
+    replay = Path('/opt/yeodam/ops/nginx-edge438/nginx-edge-replay.js')
+    shutil.copyfile(replay, destination/'replay-source.js')
+    dump(destination/'index.json', {'runId':run, 'scope':'Credential-free #438 generator results only'})
     seal(destination)
 
 
@@ -284,7 +308,7 @@ def serve(path):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode', choices=['app', 'plg', 'serve'])
+    p.add_argument('mode', choices=['app', 'plg', 'generator', 'serve'])
     p.add_argument('--run-id')
     p.add_argument('--from', dest='start')
     p.add_argument('--to', dest='end')
@@ -297,14 +321,16 @@ def main():
     if a.mode != 'serve' and shutil.disk_usage('/').used/shutil.disk_usage('/').total >= .8:
         p.error('Disk exceeds80%; preserve source and export after review')
     instance = Path('/var/lib/cloud/data/instance-id').read_text().strip()
-    if os.geteuid() != 0 or instance not in [APP, PLG]:
-        p.error('Only the exact staging App or PLG root is allowed')
+    if os.geteuid() != 0 or instance not in [APP, PLG, GENERATOR]:
+        p.error('Only the exact staging App, PLG or generator root is allowed')
     if a.mode != 'serve':
         UUID(a.run_id)
     if a.mode == 'app' and instance == APP:
         app_archive(a.run_id)
     elif a.mode == 'plg' and instance == PLG:
         plg_archive(a.run_id, a.start, a.end, a.loki_lookahead_seconds)
+    elif a.mode == 'generator' and instance == GENERATOR:
+        generator_archive(a.run_id)
     elif a.mode == 'serve' and a.archive:
         serve(a.archive)
     else:
