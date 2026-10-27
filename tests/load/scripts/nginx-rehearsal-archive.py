@@ -21,12 +21,13 @@ from uuid import UUID, uuid4
 
 APP = 'i-05d320e3a87200d5a'
 PLG = 'i-05c76ccb2b53f9279'
+GENERATOR = 'i-0c53b65eb35dd2b42'
 ROOT = Path('/var/lib/yeodam/nginx-rehearsal')
 FIELDS = ['timestamp', 'msec', 'request_id', 'method', 'normalized_route', 'status', 'upstream_status',
           'request_time', 'upstream_connect_time', 'upstream_header_time', 'upstream_response_time', 'request_length', 'body_bytes_sent',
           'connection', 'connection_requests', 'worker_pid', 'http_protocol', 'limit_req_status']
 ERRORS = ['worker_connections are not enough', 'too many open files', 'upstream timed out',
-          'connect() failed', 'upstream prematurely closed connection']
+          'connect() failed', 'upstream prematurely closed connection', 'limiting requests', 'limiting connections']
 
 
 def utc():
@@ -140,10 +141,21 @@ def app_archive(run):
     for name in ['plan.json', 'result.json', 'checkpoint.json', 'marks.jsonl', 'samples.jsonl', 'journey-audit.json']:
         if (source/name).exists():
             shutil.copyfile(source/name, destination/name)
-    normal = Path('/var/lib/yeodam/nginx-connections-426')/run
+    # #438 opt-in ENA observer; absence is not interpreted as zero allowance drops.
     for name in ['samples.jsonl', 'summary.json']:
-        if (normal/name).exists():
-            shutil.copyfile(normal/name, destination/('normal-'+name))
+        if (source/'ena'/name).is_file():
+            shutil.copyfile(source/'ena'/name, destination/('ena-'+name))
+    normal_runs = list(dict.fromkeys([run] + plan.get('normalRunIds', [])))
+    if len(normal_runs) > 16:
+        raise ValueError('Normal capture reference budget exceeded')
+    for normal_run in normal_runs:
+        if str(UUID(normal_run)) != normal_run:
+            raise ValueError('Only canonical normal capture UUIDs are allowed')
+        normal = Path('/var/lib/yeodam/nginx-connections-426')/normal_run
+        prefix = 'normal-' if normal_run == run else 'normal-'+normal_run+'-'
+        for name in ['samples.jsonl', 'summary.json', 'checkpoint.json']:
+            if (normal/name).exists():
+                shutil.copyfile(normal/name, destination/(prefix+name))
     start, end = ns(state['startedAt']), ns(state.get('endedAt', state['updatedAt']))
     statuses, error_counts = Counter(), Counter()
     parsed = 0
@@ -178,6 +190,32 @@ def app_archive(run):
     seal(destination)
 
 
+def generator_archive(run, tls=False):
+    source = Path('/var/lib/yeodam/nginx-tls440' if tls else '/var/lib/yeodam/nginx-edge438')/run
+    destination = ROOT/run/'exports'/str(uuid4())
+    destination.mkdir(parents=True)
+    # Only #438's credential-free scenarios, never generic k6 output or session pools.
+    allowed = {'http100', 'http100-csrf-stop', 'http450', 'http450-startup-drop',
+               'hold192', 'churn120', 'mixed450'}
+    if tls:
+        allowed = {'reuse10a', 'fresh10a', 'fresh10b', 'reuse10b',
+                   'reuse100', 'reuse450', 'tls10', 'fresh20'}
+    for stage in source.iterdir():
+        if stage.name not in allowed or not stage.is_dir():
+            raise ValueError('Unexpected generator stage')
+        for name in (['result.json', 'load.log'] if tls else ['http-summary.json', 'tcp.json', 'http.log', 'tcp.log']):
+            if (stage/name).is_file():
+                shutil.copyfile(stage/name, destination/(stage.name+'-'+name))
+    replay = Path('/opt/yeodam/ops/nginx-tls440/nginx-http-tls-load.py' if tls else
+                  '/opt/yeodam/ops/nginx-edge438/nginx-edge-replay.js')
+    shutil.copyfile(replay, destination/('load-source.py' if tls else 'replay-source.js'))
+    if tls:
+        shutil.copyfile(replay.with_name('nginx-tcp-capacity.py'), destination/'protocol-source.py')
+    dump(destination/'index.json', {'runId':run, 'scope':'Credential-free #440 generator results only' if tls
+                                  else 'Credential-free #438 generator results only'})
+    seal(destination)
+
+
 def plg_archive(run, start_text, end_text, lookahead=60):
     start, end = ns(start_text), ns(end_text)
     if not 0 < end-start <= 7200*1e9 or end > int(datetime.now(timezone.utc).timestamp()*1e9)+1e9:
@@ -187,8 +225,14 @@ def plg_archive(run, start_text, end_text, lookahead=60):
     key = secrets.token_bytes(32)
     dashboard = json.loads(Path('/opt/yeodam/plg/grafana/dashboards/v1-source.json').read_text())
     dump(folder/'dashboard.json', dashboard)
+    panels = list(dashboard['panels'])
+    tcp_path = Path('/opt/yeodam/plg/grafana/dashboards/v1-tcp-defense.json')
+    if tcp_path.is_file():
+        tcp_dashboard = json.loads(tcp_path.read_text())
+        dump(folder/'tcp-dashboard.json', tcp_dashboard)
+        panels += [dict(panel, archivePrefix='tcp-') for panel in tcp_dashboard['panels']]
     report = {'runId': run, 'from': start_text, 'to': end_text, 'exportedAt': utc(), 'queries': [], 'errors': []}
-    for panel in dashboard['panels']:
+    for panel in panels:
         if panel.get('type') == 'logs':
             continue
         for index, target in enumerate(panel.get('targets', [])):
@@ -200,7 +244,7 @@ def plg_archive(run, start_text, end_text, lookahead=60):
             params = {'query': expr, 'start': str(start) if engine == 'loki' else str(start/1e9),
                       'end': str(end) if engine == 'loki' else str(end/1e9), 'step': '15'}
             prefix = 'http://127.0.0.1:3100/loki/api/v1/query_range' if engine == 'loki' else 'http://127.0.0.1:9090/api/v1/query_range'
-            filename = 'panel-'+str(panel['id'])+'-'+str(index)+'.json'
+            filename = panel.get('archivePrefix','')+'panel-'+str(panel['id'])+'-'+str(index)+'.json'
             entry = {'panelId': panel['id'], 'title': panel['title'], 'expression': expr, 'engine': engine, 'file': filename}
             try:
                 data = get(prefix+'?'+urllib.parse.urlencode(params))
@@ -271,7 +315,7 @@ def serve(path):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode', choices=['app', 'plg', 'serve'])
+    p.add_argument('mode', choices=['app', 'plg', 'generator', 'tls-generator', 'serve'])
     p.add_argument('--run-id')
     p.add_argument('--from', dest='start')
     p.add_argument('--to', dest='end')
@@ -284,14 +328,18 @@ def main():
     if a.mode != 'serve' and shutil.disk_usage('/').used/shutil.disk_usage('/').total >= .8:
         p.error('Disk exceeds80%; preserve source and export after review')
     instance = Path('/var/lib/cloud/data/instance-id').read_text().strip()
-    if os.geteuid() != 0 or instance not in [APP, PLG]:
-        p.error('Only the exact staging App or PLG root is allowed')
+    if os.geteuid() != 0 or instance not in [APP, PLG, GENERATOR]:
+        p.error('Only the exact staging App, PLG or generator root is allowed')
     if a.mode != 'serve':
         UUID(a.run_id)
     if a.mode == 'app' and instance == APP:
         app_archive(a.run_id)
     elif a.mode == 'plg' and instance == PLG:
         plg_archive(a.run_id, a.start, a.end, a.loki_lookahead_seconds)
+    elif a.mode == 'generator' and instance == GENERATOR:
+        generator_archive(a.run_id)
+    elif a.mode == 'tls-generator' and instance == GENERATOR:
+        generator_archive(a.run_id, tls=True)
     elif a.mode == 'serve' and a.archive:
         serve(a.archive)
     else:
