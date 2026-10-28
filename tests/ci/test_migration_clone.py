@@ -85,5 +85,13 @@ class RestoreGuardTests(unittest.TestCase):
             prepare.guard('source', self.instance, self.volume, self.document, self.marker, 'vol-another')
 
 
+class SourceAddressTests(unittest.TestCase):
+    def test_new_source_only(self):
+        self.assertEqual(prepare.validate_source_address('10.30.0.245'), '10.30.0.245')
+        for value in ['10.30.0.174', '10.30.10.45', '127.0.0.1', "10.30.0.1'; DROP USER x", '::1']:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                prepare.validate_source_address(value)
+
+
 if __name__ == '__main__':
     unittest.main()

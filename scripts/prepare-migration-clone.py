@@ -150,6 +150,32 @@ def verify(role):
             'settings': settings}
 
 
+def validate_source_address(value):
+    address = ipaddress.ip_address(value)
+    if address not in ipaddress.ip_network('10.30.0.0/24') or str(address) == '10.30.0.174':
+        raise ValueError('Expected the new Source clone address')
+    return str(address)
+
+
+def remap_source_host(value):
+    address = validate_source_address(value)
+    old = '10.30.0.174'
+    rows = query('target', "SELECT user FROM mysql.user WHERE host='" + old + "' ORDER BY user;").splitlines()
+    if not rows or not all(re.fullmatch(r'[A-Za-z0-9_]+', name) for name in rows):
+        raise ValueError('Expected copied old-Source accounts; inspect without changing grants')
+    if query('target', "SELECT COUNT(*) FROM mysql.user WHERE host='" + address + "';") != '0':
+        raise ValueError('New Source accounts already exist; inspect instead of overwriting')
+    clauses = ["'" + name + "'@'" + old + "' TO '" + name + "'@'" + address + "'" for name in rows]
+    previous = query('target', 'SELECT @@super_read_only;')
+    try:
+        query('target', 'SET GLOBAL super_read_only=OFF;')
+        query('target', 'RENAME USER ' + ', '.join(clauses) + ';')
+    finally:
+        query('target', 'SET GLOBAL super_read_only=' + previous + ';')
+    print(json.dumps({'phase': 'clone_source_hosts_remapped', 'accounts': rows,
+                      'oldHost': old, 'newHost': address, 'privilegesAndPasswordsUnchanged': True}))
+
+
 def prepare_nginx():
     # Only the guarded clone reaches this function. Never change the original
     # Nginx defense work; restore the pre-defense files copied in its AMI.
@@ -274,11 +300,12 @@ def source_app(target_address, source_address):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['restore-data', 'verify', 'prepare-source-app', 'prepare-nginx'])
+    parser.add_argument('action', choices=['restore-data', 'verify', 'prepare-source-app', 'prepare-nginx', 'remap-source-host'])
     parser.add_argument('--role', choices=['source', 'target'], required=True)
     parser.add_argument('--instance-id', required=True)
     parser.add_argument('--data-volume-id', required=True)
     parser.add_argument('--target-address')
+    parser.add_argument('--source-address')
     args = parser.parse_args()
     os.umask(0o077)
     if os.geteuid() != 0 or not re.fullmatch(r'i-[0-9a-f]{17}', args.instance_id) or not re.fullmatch(r'vol-[0-9a-f]{17}', args.data_volume_id):
@@ -294,6 +321,10 @@ def main():
         restore(args.role)
     elif args.action == 'verify':
         print(json.dumps(verify(args.role)), flush=True)
+    elif args.action == 'remap-source-host':
+        if args.role != 'target' or not args.source_address:
+            raise ValueError('Target role and exact new Source address required')
+        remap_source_host(args.source_address)
     elif args.action == 'prepare-nginx':
         if args.role != 'source':
             raise ValueError('Nginx belongs to the Source clone')
