@@ -119,6 +119,7 @@ bash -n tests/load/scripts/run-k6.sh
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_observability.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_staging_cutover.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_rehearsal_reset.py'
+python3 -m unittest discover -s tests/ci -p 'test_cdc461.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_seed.py'
 bash -n terraform/v2/staging/files/initialize-mysql-replica.sh
 bash -n scripts/provision-staging-cutover-account.sh
