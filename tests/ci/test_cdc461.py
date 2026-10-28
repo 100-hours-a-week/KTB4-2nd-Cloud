@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT=Path(__file__).parents[2]
 SPEC=importlib.util.spec_from_file_location('diag461',ROOT/'scripts/diagnose-cdc461.py')
@@ -26,6 +27,21 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(actual,before)
     def test_poll_overlay_refuses_changed_batch(self):
         with self.assertRaises(ValueError):m.poll_configs([{'consumer.override.max.poll.records':'1','batch.size':'50'},{}],50)
+    def test_initialized_poll50_contract_is_deployed_not_baseline_fixture(self):
+        class DeploymentObserved(Exception):pass
+        contract=copy.deepcopy(self.c);contract['tripPoll']=50
+        seen=[]
+        class FakeRuntime:
+            def __init__(self,directory):pass
+            def aws(self,*args):return {'Account':contract['account']}
+            def deploy(self,role,source,destination):
+                seen.append(json.loads(source.read_text()))
+                raise DeploymentObserved()
+        with tempfile.TemporaryDirectory() as d:
+            directory=Path(d);(directory/'contract.json').write_text(json.dumps(contract))
+            with patch.object(m,'Runtime',FakeRuntime),patch.object(m,'DOCS',directory),self.assertRaises(DeploymentObserved):
+                m.execute(directory,'00000000-0000-4000-8000-000000000000',contract)
+        self.assertEqual(seen,[contract])
     def test_other_destination_rejected(self):
         for key in ['targetInstance','kafkaInstance','account','region']:
             c=copy.deepcopy(self.c);c[key]='other'

@@ -138,7 +138,7 @@ def execute(directory,run,c):
             raise RuntimeError('Another diagnostic is unfinished; inspect it before any artifact deployment')
     if rt.aws('sts','get-caller-identity')['Account']!=c['account']:raise RuntimeError('Wrong AWS account')
     for role in HOSTS:
-        rt.deploy(role,ROOT/'tests/load/fixtures/cdc461-contract.json',REMOTE+'/contract.json')
+        rt.deploy(role,directory/'contract.json',REMOTE+'/contract.json')
         rt.deploy(role,ROOT/'scripts/cdc461'/str(role+'.py'),REMOTE+'/'+role+'.py')
     with tempfile.TemporaryDirectory() as temporary:
         subprocess.run(['javac','--release','17','-d',temporary,str(ROOT/'scripts/cdc461/Metrics461.java')],check=True,capture_output=True)
