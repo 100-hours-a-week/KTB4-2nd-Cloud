@@ -66,7 +66,7 @@ def failure_stage(exit_code, timings):
     return 'transport-other'
 
 
-def probe(path, curl='curl'):
+def probe(path, curl='curl', http_version='1.1'):
     # A new curl process means a fresh TCP/TLS connection, no browser cookies or credentials.
     with tempfile.TemporaryDirectory(prefix='nginx438-header-') as folder:
         headers = Path(folder)/'headers'
@@ -75,7 +75,7 @@ def probe(path, curl='curl'):
                           'ttfb': '%{time_starttransfer}', 'total': '%{time_total}',
                           'httpVersion': '%{http_version}', 'remoteIp': '%{remote_ip}'})
         started = now()
-        result = subprocess.run([curl, '-q', '--noproxy', '*', '--http1.1',
+        result = subprocess.run([curl, '-q', '--noproxy', '*', '--http2' if http_version == '2' else '--http1.1',
             '--connect-timeout', '3', '--max-time', '5', '--max-redirs', '0',
             '-sS', '-D', str(headers), '-o', os.devnull, '-w', fmt,
             '-H', 'User-Agent: yeodam-external438', ORIGIN+path],
@@ -90,7 +90,9 @@ def probe(path, curl='curl'):
         return {'utc': started, 'endedAt': now(), 'path': path, 'exitCode': result.returncode,
                 'stage': failure_stage(result.returncode, data), 'timings': data,
                 'requestId': ids[-1] if ids else None,
-                'ok': result.returncode == 0 and data['status'] == 200 and data['total'] <= 2,
+                'requestedHttpVersion': http_version,
+                'ok': result.returncode == 0 and data['status'] == 200 and data['total'] <= 2
+                      and (http_version != '2' or data['httpVersion'] == '2'),
                 'stderr': result.stderr[:500]}
 
 
@@ -114,6 +116,7 @@ def main():
     p.add_argument('--confirm-target', required=True)
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--stop-file', type=Path)
+    p.add_argument('--http-version', choices=['1.1', '2'], default='1.1')
     p.add_argument('--execute', action='store_true')
     a = p.parse_args()
     try:
@@ -153,7 +156,7 @@ def main():
                         first = latest
                     previous = latest
                 else:
-                    row = probe(['/login', '/api/actuator/health'][index % 2])
+                    row = probe(['/login', '/api/actuator/health'][index % 2], http_version=a.http_version)
                     stages[row['stage']] += 1
                     if not row['ok']:
                         failures += 1

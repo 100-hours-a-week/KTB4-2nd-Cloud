@@ -80,6 +80,7 @@ def main():
     p.add_argument('--profile', default='yeodam-admin')
     p.add_argument('--include-edge-generator', action='store_true', help='Only credential-free #438 generator results')
     p.add_argument('--include-tls-generator', action='store_true', help='Only credential-free #440 generator results')
+    p.add_argument('--include-h2-generator', action='store_true', help='Only credential-free #442 replay output')
     p.add_argument('--from', dest='start')
     p.add_argument('--to', dest='end')
     p.add_argument('--loki-lookahead-seconds', type=int, default=60)
@@ -92,6 +93,8 @@ def main():
         p.error('Loki padding must be0..3600s')
     if bool(a.start) != bool(a.end):
         p.error('Historical recovery requires --from and --to together')
+    if sum([a.include_edge_generator, a.include_tls_generator, a.include_h2_generator]) > 1:
+        p.error('Select only one isolated generator output kind')
     os.umask(0o077)
     a.output.mkdir(parents=True, exist_ok=False)
     aws = ['aws', '--profile', a.profile, '--region', 'ap-northeast-2']
@@ -180,6 +183,11 @@ def main():
         if a.include_edge_generator or a.ops_directory != '/opt/yeodam/ops/nginx-edge438':
             raise ValueError('TLS export requires isolated archive helper and separate generator selection')
         gen_info = remote(archive.GENERATOR, 'python3 '+ops+' tls-generator --run-id '+a.run_id)
+        transfers['generator'] = pull(archive.GENERATOR, gen_info, 'generator')
+    if a.include_h2_generator:
+        if a.ops_directory != '/opt/yeodam/ops/nginx-edge438':
+            raise ValueError('HTTP2 export requires the isolated archive helper')
+        gen_info = remote(archive.GENERATOR, 'python3 '+ops+' h2-generator --run-id '+a.run_id)
         transfers['generator'] = pull(archive.GENERATOR, gen_info, 'generator')
     result = {'runId': a.run_id, 'from':index['from'],'to':index['to'],'hostCaptureAvailable':not bool(a.start), 'transfers': transfers, 'cloudwatch': {},
               'note': 'No final user-success claim; attach normal probe, journey and DB/S3 audit results'}
