@@ -36,12 +36,16 @@
   },
   "baseline50": {
     "key": "migration/rehearsal-reset/56f1a134-7867-42d6-84df-1c19f030916e/b391-target.sql.gz",
-    "status": "archive-receipt-known-content-fingerprint-pending",
+    "status": "verified",
     "bytes": 76059147,
     "sha256": "51474607af2aae8212b32bf4093fcde164dfcbda8f01345e88e8eac595559cb3",
     "historicalTrips": 2048038,
     "historicalMaxTripId": 2048041,
-    "receipt": "391-b-integration/371c6fe8-a4f5-4bbf-a6ca-54ecef08065a.result.json"
+    "receipt": "391-b-integration/371c6fe8-a4f5-4bbf-a6ca-54ecef08065a.result.json",
+    "trips": 2048038,
+    "regions": 2048038,
+    "journal": 246512,
+    "tables": 33
   },
   "index": {
     "name": "IDX_TRIPS_USER_NAME_DELETED",
