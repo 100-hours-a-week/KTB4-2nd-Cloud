@@ -144,9 +144,36 @@ def execute(case):
     m.execute(plan['rates'][0],PROFILES[case]['index'])
 
 
+def summarize():
+    rows=[]
+    for case,path in [('rate10',BASE/'rate10'),('rate30',BASE/'rate30'),('rate50',PARENT/'index50')]:
+        plan=json.loads((path/'plan.json').read_text());report=json.loads((path/'report.json').read_text())
+        analysis=json.loads((path/'analysis.json').read_text());acceptance=json.loads((path/'acceptance.json').read_text())
+        baseline=plan['commonBaseline']
+        if baseline['sha256']!=BASELINE or baseline['trips']!=2048038 or baseline['journal']!=246512:
+            raise RuntimeError('Do not mix different starting data in the final matrix')
+        if report['phase']!='completed':raise RuntimeError('No final result for an unfinished Run')
+        rows.append({'rate':report['rate'],'runId':report['runId'],'passed':acceptance['passed'],
+                     'input':report['started'],'statuses':report['firstStatuses'],'committed':report['targetRows'],
+                     'pending':analysis['requestOffsets']['pending'],'dropped':report['dropped'],
+                     'firstResponseP95Ms':report['firstResponseMs'].get('p95'),
+                     'commandToCommitP95Ms':report['completions'].get('commandCreatedToCommitObservedMs',{}).get('p95'),
+                     'activationSeconds':report['cutoverFromPlannedSeconds'],
+                     'beforeFenceCpuMean':analysis['resources']['beforeFence']['cpuMean'],
+                     'refresh':report['refreshes'],'csrf':report['csrf'],'redisKeys':report['redisKeys'],
+                     'redisEqual':report['redisEqual'],'v1E2E':report['v1E2E'],'v2E2E':report['v2E2E']})
+    result={'commonBaselineSha256':BASELINE,'initialTrips':2048038,'initialJournal':246512,
+            'workloadCodeChangesFrom463':False,'uiFinalDisplayMeasured':False,'rows':rows,
+            'limitations':['One Run per rate, not a repeated statistical capacity benchmark.',
+                           'Authentication actor loops are response-dependent; total calls can differ.',
+                           'Backend command-to-commit timestamps do not measure final browser display.']}
+    (BASE/'final-matrix.json').write_text(json.dumps(result,indent=2));print(json.dumps(result))
+
+
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=['init','deploy','execute']);p.add_argument('--case',choices=PROFILES);args=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=['init','deploy','execute','summarize']);p.add_argument('--case',choices=PROFILES);args=p.parse_args()
     if args.action=='init':initialize();return
+    if args.action=='summarize':summarize();return
     if not args.case:raise ValueError('Explicit rate case required')
     (deploy if args.action=='deploy' else execute)(args.case)
 
