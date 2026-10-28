@@ -89,8 +89,18 @@ def check(directory,c,prefix):
     else:raise RuntimeError('Owned Worker not ready')
     if not any(p['class']=='io.debezium.connector.jdbc.JdbcSinkConnector' and p['version']=='3.4.3.Final' for p in plugins):
         raise RuntimeError('Expected reviewed JDBC version')
-    states=api('/connectors?expand=status')
-    if any(v['status']['connector']['state']!='STOPPED' or v['status']['tasks'] for v in states.values()):raise RuntimeError('Previous Connector activity remains')
+    # Plugin discovery becomes available before the status/config cache finishes
+    # recovering. Require two stable observations, without stopping old connectors.
+    stable=0;ready_end=time.monotonic()+60
+    with (directory/'worker-readiness.jsonl').open('w') as file:
+        while time.monotonic()<ready_end:
+            states=api('/connectors?expand=status')
+            clean=all(v['status']['connector']['state']=='STOPPED' and not v['status']['tasks'] for v in states.values())
+            stable=stable+1 if clean else 0
+            file.write(json.dumps({'at':time.time(),'connectors':len(states),'notStoppedCount':sum(v['status']['connector']['state']!='STOPPED' or bool(v['status']['tasks']) for v in states.values()),'stable':stable})+'\n');file.flush()
+            if stable>=2:break
+            time.sleep(1)
+        else:raise RuntimeError('Previous Connector state did not settle; no Target replacement')
     items=consumers(c,prefix)
     try:values=offsets(items,True)
     finally:
