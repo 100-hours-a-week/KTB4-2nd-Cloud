@@ -38,7 +38,8 @@ def replay_gate(directory):
     old=json.loads(baseline.read_text())
     if contract['tripPoll']!=50 or state.get('phase')!='completed' or not state.get('originalTargetRestored'):
         raise RuntimeError('Complete and restore Poll50 replay first')
-    if not state.get('allOffsetsAtFrozenEnd') or not analysis.get('dataEqual') or analysis['taskCounterResetObserved']:
+    if (not state.get('allOffsetsAtFrozenEnd') or not analysis.get('dataEqual') or analysis['taskCounterResetObserved'] or
+            any(v['counterReset'] for v in analysis['sinkUserStatements'].values())):
         raise RuntimeError('Replay integrity failed; no integration')
     if not (analysis['allCommittedFromRegistrationSeconds']<old['allCommittedFromRegistrationSeconds'] and
             analysis['sinkUserStatements']['statement/sql/select']['calls']<old['sinkUserStatements']['statement/sql/select']['calls']):
