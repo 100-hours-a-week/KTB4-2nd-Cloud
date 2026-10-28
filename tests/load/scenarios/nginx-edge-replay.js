@@ -7,8 +7,8 @@ const rate = Number(__ENV.K6_EDGE_RPS);
 const seconds = Number(__ENV.K6_EDGE_SECONDS);
 if (__ENV.K6_EDGE_EXECUTE !== '1' || __ENV.K6_EDGE_CONFIRM_TARGET !== origin ||
     !Number.isInteger(rate) || rate < 1 || rate > 500 ||
-    !Number.isInteger(seconds) || seconds < 15 || seconds > 30) {
-  throw new Error('Exact staging opt-in, 1..500 RPS and 15..30 seconds required');
+    !Number.isInteger(seconds) || seconds < 15 || seconds > 60) {
+  throw new Error('Exact staging opt-in, 1..500 RPS and 15..60 seconds required');
 }
 
 export const options = {
