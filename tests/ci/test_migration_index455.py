@@ -6,6 +6,9 @@ import unittest
 spec = importlib.util.spec_from_file_location('index455', Path(__file__).parents[2] / 'scripts/migration-index455.py')
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+prep_spec = importlib.util.spec_from_file_location('prepare455', Path(__file__).parents[2] / 'scripts/prepare-migration-index455.py')
+prep = importlib.util.module_from_spec(prep_spec)
+prep_spec.loader.exec_module(prep)
 
 
 class ControlReceiptTests(unittest.TestCase):
@@ -34,6 +37,19 @@ class ControlReceiptTests(unittest.TestCase):
             receipt['report'][key] = value
             with self.subTest(key=key), self.assertRaises(ValueError):
                 m.validate_control(receipt, 'source', self.host)
+
+
+class BackupIsolationTests(unittest.TestCase):
+    def test_only_backup_object_destinations_change(self):
+        text = 'key="full/${stamp}.sql.gz"\nready_key="full/${stamp}.ready"\nmysqldump --single-transaction --source-data=2\n'
+        actual = prep.render_backup(text)
+        self.assertEqual(actual.replace(prep.PREFIX, 'full/'), text)
+        self.assertEqual(prep.render_backup(actual), actual)
+
+    def test_unknown_or_ambiguous_backup_script_refused(self):
+        for text in ['', 'key="full/${stamp}.sql.gz"\n' * 2 + 'ready_key="full/${stamp}.ready"']:
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                prep.render_backup(text)
 
 
 if __name__ == '__main__':
