@@ -65,6 +65,22 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(self.m.category(['com.mysql.cj.jdbc.ConnectionImpl.setAutoCommit(File.java:1)']),'transaction state path')
 
 
+class IntegrationOverlayTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec=importlib.util.spec_from_file_location('poll463',ROOT/'scripts/cdc-poll463.py')
+        cls.m=importlib.util.module_from_spec(spec);spec.loader.exec_module(cls.m)
+    def test_only_travel_poll_changes_in_real_functions(self):
+        text="def sink():\n return {'batch.size':'1','consumer.override.max.poll.records':'1','tasks.max':'8'}\ndef journal_sink():\n d=sink();d.update({'batch.size':'100','consumer.override.max.poll.records':'100'});return d\n"
+        before={};after={};exec(text,before);exec(self.m.render_trip_poll(text),after)
+        self.assertEqual(before['journal_sink'](),after['journal_sink']())
+        changed=after['sink']();changed['consumer.override.max.poll.records']='1'
+        self.assertEqual(before['sink'](),changed)
+    def test_ambiguous_or_changed_template_refused(self):
+        for text in ['pass',"a={'batch.size':'1','consumer.override.max.poll.records':'1'}\nb={'batch.size':'1','consumer.override.max.poll.records':'1'}"]:
+            with self.assertRaises(ValueError):self.m.render_trip_poll(text)
+
+
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'),'JDK unavailable; compilation remains required before remote deployment')
 class ObserverTests(unittest.TestCase):
     @classmethod
