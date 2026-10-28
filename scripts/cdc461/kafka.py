@@ -144,7 +144,8 @@ def register(directory,c,prefix):
         name=prefix+'-'+suffix
         if config['name']!=name or name in api('/connectors'):raise RuntimeError('Diagnostic connector already exists')
         if config['connection.url']!='jdbc:mysql://10.30.10.45:3306/yeodam_v1_source?sslMode=REQUIRED' or config['errors.tolerance']!='none':raise RuntimeError('Unexpected destination/error policy')
-        expected=(8,1,1,2) if suffix=='sink' else (1,100,100,1)
+        if c['tripPoll'] not in (1,50):raise RuntimeError('Unreviewed Poll value')
+        expected=(8,1,c['tripPoll'],2) if suffix=='sink' else (1,100,100,1)
         actual=tuple(int(config[k]) for k in ['tasks.max','batch.size','consumer.override.max.poll.records','connection.pool.max_size'])
         if actual!=expected:raise RuntimeError('Frozen Sink configuration differs')
         api('/connectors','POST',{'name':name,'config':config})
