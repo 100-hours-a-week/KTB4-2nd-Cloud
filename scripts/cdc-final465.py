@@ -149,6 +149,9 @@ def summarize():
     for case,path in [('rate10',BASE/'rate10'),('rate30',BASE/'rate30'),('rate50',PARENT/'index50')]:
         plan=json.loads((path/'plan.json').read_text());report=json.loads((path/'report.json').read_text())
         analysis=json.loads((path/'analysis.json').read_text());acceptance=json.loads((path/'acceptance.json').read_text())
+        expected=50 if case=='rate50' else PROFILES[case]['rate']
+        if report['rate']!=expected or report['runId']!=plan['rates'][0]['runId']:
+            raise RuntimeError('Report does not belong to this rate/Run')
         baseline=plan['commonBaseline']
         if baseline['sha256']!=BASELINE or baseline['trips']!=2048038 or baseline['journal']!=246512:
             raise RuntimeError('Do not mix different starting data in the final matrix')

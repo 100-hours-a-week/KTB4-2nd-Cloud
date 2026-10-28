@@ -37,6 +37,14 @@ class FinalRunContractTests(unittest.TestCase):
         after=m.render_assess(before)
         self.assertEqual(after,"assert all(other_checks)\nx=("+repr(m.BASELINE)+")\n")
         with self.assertRaises(ValueError):m.render_assess('different template')
+    def test_final_matrix_refuses_other_starting_data(self):
+        with tempfile.TemporaryDirectory() as t,patch.object(m,'BASE',Path(t)):
+            p=Path(t)/'rate10';p.mkdir()
+            plan=self.plan('rate10');plan['rates'][0]['runId']='one';plan['commonBaseline']['sha256']=m.OLD30
+            for name,value in [('plan',plan),('report',{'rate':10,'runId':'one'}),('analysis',{}),('acceptance',{})]:
+                (p/(name+'.json')).write_text(json.dumps(value))
+            with self.assertRaisesRegex(RuntimeError,'starting data'):m.summarize()
+            self.assertFalse((Path(t)/'final-matrix.json').exists())
     def test_strategy_failure_can_continue_after_complete_restoration(self):
         with tempfile.TemporaryDirectory() as t,patch.object(m,'BASE',Path(t)):
             p=Path(t)/'rate10';p.mkdir();(p/'plan.json').write_text(json.dumps({'rates':[{'runId':'one'}]}))
