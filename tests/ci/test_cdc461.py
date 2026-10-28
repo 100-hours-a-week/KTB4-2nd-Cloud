@@ -15,6 +15,17 @@ m=importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(m)
 class ContractTests(unittest.TestCase):
     def setUp(self): self.c=json.loads((ROOT/'tests/load/fixtures/cdc461-contract.json').read_text())
     def test_exact_contract(self):m.validate(self.c)
+    def test_poll50_changes_only_travel_poll(self):
+        c=copy.deepcopy(self.c);c['tripPoll']=50;m.validate(c)
+        configs=[{'consumer.override.max.poll.records':'1','batch.size':'1','tasks.max':'8'},
+                 {'consumer.override.max.poll.records':'100','batch.size':'100'}]
+        before=copy.deepcopy(configs);actual=m.poll_configs(configs,50)
+        self.assertEqual(configs,before)
+        self.assertEqual(actual[1],before[1])
+        actual[0]['consumer.override.max.poll.records']='1'
+        self.assertEqual(actual,before)
+    def test_poll_overlay_refuses_changed_batch(self):
+        with self.assertRaises(ValueError):m.poll_configs([{'consumer.override.max.poll.records':'1','batch.size':'50'},{}],50)
     def test_other_destination_rejected(self):
         for key in ['targetInstance','kafkaInstance','account','region']:
             c=copy.deepcopy(self.c);c[key]='other'

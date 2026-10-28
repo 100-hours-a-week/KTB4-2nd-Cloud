@@ -3,6 +3,7 @@
 import argparse
 import base64
 import concurrent.futures
+import copy
 import gzip
 import hashlib
 import importlib.util
@@ -29,7 +30,7 @@ class PendingInvocation(RuntimeError):pass
 def validate(c):
     if c['account']!='483175530259' or c['region']!='ap-northeast-2' or c['targetInstance']!=HOSTS['target'] or c['kafkaInstance']!=HOSTS['kafka']:
         raise ValueError('Only the existing diagnostic clone/Kafka are allowed')
-    if (c['tripTaskLimit'],c['tripBatch'],c['tripPoll'],c['journalBatch'],c['workerCpuLimit'],c['workerMemoryLimit'])!=(8,1,1,100,1000000000,939524096):
+    if (c['tripTaskLimit'],c['tripBatch'],c['journalBatch'],c['workerCpuLimit'],c['workerMemoryLimit'])!=(8,1,100,1000000000,939524096) or c['tripPoll'] not in (1,50):
         raise ValueError('Frozen resources/concurrency differ')
     if c['initialTrips']!=2048196 or c['finalTrips']!=2065718 or sum(c['tripEnd'].values())!=35212 or c['journalEnd']!={'0':35212}:
         raise ValueError('Unexpected immutable replay data')
@@ -41,7 +42,17 @@ def module(name,path):
     spec=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
 
 
-def pinned_sink_configs(run):
+def poll_configs(configs, trip_poll):
+    if trip_poll not in (1,50) or len(configs)!=2:
+        raise ValueError('Only baseline or reviewed Poll50 is allowed')
+    if configs[0]['consumer.override.max.poll.records']!='1' or configs[0]['batch.size']!='1':
+        raise ValueError('Frozen travel Sink differs')
+    result=copy.deepcopy(configs)
+    result[0]['consumer.override.max.poll.records']=str(trip_poll)
+    return result
+
+
+def pinned_sink_configs(run, trip_poll=1):
     manifest=json.loads((PARENT/'bundle-manifest.json').read_text())
     path=PARENT/'runtime/pinned/scripts/b-integration376-kafka.py'
     if hashlib.sha256(path.read_bytes()).hexdigest()!=manifest['files']['scripts/b-integration376-kafka.py']['renderedSha256']:
@@ -50,7 +61,7 @@ def pinned_sink_configs(run):
     prefix='yeodam-diag461-'+run[:8];values=[]
     for suffix,config in [('sink',m.sink(parent)),('sink-journal',m.journal_sink(parent))]:
         config['name']=prefix+'-'+suffix;values.append(config)
-    return values
+    return poll_configs(values,trip_poll)
 
 
 class Runtime:
@@ -121,7 +132,7 @@ def execute(directory,run,c):
     def mark(phase,**kwargs):
         state.update(phase=phase,**kwargs);(directory/'state.json').write_text(json.dumps(state,indent=2));print(json.dumps({'phase':phase,**kwargs}),flush=True)
     if (directory/'state.json').exists():raise RuntimeError('Do not replay the same diagnostic ID')
-    for path in BASE.glob('*/state.json'):
+    for path in (path for group in ('461-sink-diagnostics','463-cdc-poll') for path in (DOCS/'evidence'/group).glob('*/state.json')):
         old=json.loads(path.read_text())
         if old.get('run')!=run and old.get('phase') not in ('completed','preparation_failed_restored','failed_restored'):
             raise RuntimeError('Another diagnostic is unfinished; inspect it before any artifact deployment')
@@ -143,7 +154,7 @@ def execute(directory,run,c):
         raise
     warm=rt.raw('kafka',["python3 - <<'WARM461'\nfrom pathlib import Path\nimport json\np=Path('"+REMOTE+'/'+run+"/jmx.jsonl'); rows=[json.loads(x) for x in p.read_text().splitlines()]; assert len(rows)>=2 and all('workerCpuNanos' in r for r in rows); print(json.dumps({'jmxReadable':True,'samples':len(rows)}))\nWARM461"])
     (directory/'warmup.json').write_text(json.dumps(values(warm),indent=2))
-    configs=directory/'sink-configs.private.json';configs.write_text(json.dumps(pinned_sink_configs(run)));configs.chmod(0o600)
+    configs=directory/'sink-configs.private.json';configs.write_text(json.dumps(pinned_sink_configs(run,c['tripPoll'])));configs.chmod(0o600)
     rt.deploy('kafka',configs,REMOTE+'/'+run+'/sink-configs.private.json')
     mark('restoring_bulk_snapshot')
     rt.action('target','prepare',run)
@@ -204,8 +215,12 @@ def recover(directory,run):
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=['init','execute']);p.add_argument('--run');a=p.parse_args()
-    os.umask(0o077);c=json.loads((ROOT/'tests/load/fixtures/cdc461-contract.json').read_text());validate(c)
+    global BASE
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=['init','execute']);p.add_argument('--run');p.add_argument('--variant',choices=['baseline461','poll463'],default='baseline461');a=p.parse_args()
+    os.umask(0o077);c=json.loads((ROOT/'tests/load/fixtures/cdc461-contract.json').read_text())
+    if a.variant=='poll463':
+        c['tripPoll']=50;BASE=DOCS/'evidence/463-cdc-poll'
+    validate(c)
     if a.action=='init':
         run=str(uuid4());directory=BASE/run;directory.mkdir(parents=True,exist_ok=False)
         (directory/'contract.json').write_text(json.dumps(c,indent=2));print(json.dumps({'run':run,'directory':str(directory)}));return
