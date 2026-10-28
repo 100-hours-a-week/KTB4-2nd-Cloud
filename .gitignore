@@ -33,6 +33,7 @@ terraform.rc
 !/tests/load/config/*.example.env
 /tests/load/fixtures/*.json
 !/tests/load/fixtures/*.example.json
+!/tests/load/fixtures/migration-index455-contract.json
 /tests/load/results/*
 !/tests/load/results/.gitkeep
 /tests/load/private/

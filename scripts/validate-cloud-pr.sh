@@ -151,6 +151,7 @@ python3 -m unittest discover -s tests/ci -p 'test_v2_image_manifest.py'
 bash -n tests/ci/v2/run-integration.sh
 python3 tests/ci/v2/validate.py
 python3 -m unittest discover -s tests/ci -p 'test_migration_clone.py'
+python3 -m unittest discover -s tests/ci -p 'test_migration_index455.py'
 python3 -m json.tool monitoring/cloudwatch-agent/app.json >/dev/null
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/v1-source.json >/dev/null
 docker compose -f monitoring/v2-staging/plg-compose.yml config --quiet

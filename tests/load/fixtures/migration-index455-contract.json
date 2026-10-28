@@ -1,0 +1,87 @@
+{
+  "issue": 455,
+  "baselineSuccess": "408/historic391-limited-30",
+  "cloudCommit": "2a2907fab56e2a9f61d3faf6e069a79a38f76e01",
+  "backendCommit": "71bfa648735fbc0d14935149611ad15ea35a45e3",
+  "fixed": {
+    "backendImage": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:d39fd16fc92e77d9c51be9056a2d0c79e355fdf0ad81e38a8d463ab554fd2010",
+    "durationSeconds": 900,
+    "cutoverSeconds": 360,
+    "e2eAfterInputSeconds": 120,
+    "httpTimeoutSeconds": 100,
+    "authResponseBudgetSeconds": 55,
+    "cdcValidationBudgetSeconds": 45,
+    "activationBudgetSeconds": 50,
+    "sourceQueueFromStart": true,
+    "sourceApplyConcurrency": 4,
+    "journalCdc": true,
+    "targetTripJoinDeferred": true,
+    "drainIncludedInActivationBudget": true,
+    "sourceDrainDeadlineSeconds": 40,
+    "snapshotBytesPerSecond": 9000000,
+    "bulkClientWaitSeconds": 45
+  },
+  "targetApplyConcurrency": 4,
+  "requestPartitions": 4,
+  "nginxSha256": "3c509c7e0ca301ae9258f79a73d417c03bf0d7de6174d8a3c2d9004b2ccedffb",
+  "redisAuditSeconds": 1010,
+  "e2eEach": 30,
+  "baseline30": {
+    "key": "migration/rehearsal-reset/3502031b-0040-4333-9a8c-9ce63d9a2ce8/b391-target.sql.gz",
+    "sha256": "ab1a0935f6335f0385f5df2cfb2eb4c75c9fce4f05a742d9e81bed3bfe2cfae6",
+    "tables": 33,
+    "trips": 2021037,
+    "regions": 2021037,
+    "journal": 219511
+  },
+  "baseline50": {
+    "key": "migration/rehearsal-reset/56f1a134-7867-42d6-84df-1c19f030916e/b391-target.sql.gz",
+    "status": "archive-receipt-known-content-fingerprint-pending",
+    "bytes": 76059147,
+    "sha256": "51474607af2aae8212b32bf4093fcde164dfcbda8f01345e88e8eac595559cb3",
+    "historicalTrips": 2048038,
+    "historicalMaxTripId": 2048041,
+    "receipt": "391-b-integration/371c6fe8-a4f5-4bbf-a6ca-54ecef08065a.result.json"
+  },
+  "index": {
+    "name": "IDX_TRIPS_USER_NAME_DELETED",
+    "columns": [
+      "user_id",
+      "trip_name",
+      "deleted_at"
+    ],
+    "unique": false
+  },
+  "cases": [
+    {
+      "name": "control30",
+      "rate": 30,
+      "index": false,
+      "preAllocatedVUs": 900,
+      "maxVUs": 3600,
+      "authActors": 120,
+      "sessionPool": 140,
+      "runId": "allocate-fresh-at-execution"
+    },
+    {
+      "name": "index30",
+      "rate": 30,
+      "index": true,
+      "preAllocatedVUs": 900,
+      "maxVUs": 3600,
+      "authActors": 120,
+      "sessionPool": 140,
+      "runId": "allocate-fresh-at-execution"
+    },
+    {
+      "name": "index50",
+      "rate": 50,
+      "index": true,
+      "preAllocatedVUs": 1000,
+      "maxVUs": 6000,
+      "authActors": 200,
+      "sessionPool": 220,
+      "runId": "allocate-fresh-at-execution"
+    }
+  ]
+}
