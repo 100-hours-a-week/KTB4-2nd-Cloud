@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Run #438 bounded stages only after detached host/ENA and independent external probes are fresh."""
+"""Run bounded connection stages after host/ENA/external and optional browser guards."""
 import argparse
+import importlib.util
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -15,6 +16,8 @@ OPS = '/opt/yeodam/ops/nginx-edge438'
 ORIGIN = 'https://v1-staging.yeodam-2gether.com'
 STAGES = [('http100', 100, None), ('http450', 450, None),
           ('hold192', 0, 'hold'), ('churn120', 0, 'churn'), ('mixed450', 450, 'churn')]
+spec=importlib.util.spec_from_file_location('browser_guard449',Path(__file__).with_name('nginx-browser-guard.py'))
+browser_guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(browser_guard)
 
 
 def main():
@@ -22,6 +25,8 @@ def main():
     p.add_argument('--context', type=Path, required=True)
     p.add_argument('--external', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--browser',type=Path,help='Require the independent browser baseline and fresh healthy checkpoint')
+    p.add_argument('--seconds',type=int,choices=[30,60],default=30)
     p.add_argument('--stages', nargs='+', choices=[x[0] for x in STAGES], default=[x[0] for x in STAGES])
     p.add_argument('--execute', action='store_true')
     a = p.parse_args()
@@ -30,7 +35,7 @@ def main():
     if c['app'] != APP or c['generator'] != GENERATOR or c['ops'] != OPS:
         p.error('Exact existing staging resources only')
     if not a.execute:
-        print(json.dumps({'execute': False, 'stages': STAGES}));return
+        print(json.dumps({'execute': False, 'stages': STAGES, 'seconds':a.seconds,'browserGuardEnabled':bool(a.browser)}));return
     a.output.mkdir(parents=True, exist_ok=False)
     aws = ['aws', '--profile', 'yeodam-admin', '--region', 'ap-northeast-2']
     def call(args):
@@ -40,14 +45,14 @@ def main():
     def send(instance, command):
         return call(['ssm', 'send-command', '--instance-ids', instance, '--document-name', 'AWS-RunShellScript',
             '--comment', 'Cloud438 bounded observation/replay', '--parameters',
-            json.dumps({'commands':['set -eu\n'+command], 'executionTimeout':['90']})])['Command']['CommandId']
+            json.dumps({'commands':['set -eu\n'+command], 'executionTimeout':['120']})])['Command']['CommandId']
     def result(instance, cid):
         try:
             return call(['ssm', 'get-command-invocation', '--instance-id', instance, '--command-id', cid])
         except subprocess.CalledProcessError:
             return {'Status':'Pending'}
     def wait(instance, cid, unit=None):
-        deadline = time.monotonic()+100
+        deadline = time.monotonic()+135
         stopped = False
         while time.monotonic() < deadline:
             if unit and not external_ok() and not stopped:
@@ -62,6 +67,8 @@ def main():
         raise TimeoutError('Stage did not finish; stop requested')
     def external_ok():
         try:
+            if a.browser and not browser_guard.healthy(a.browser,c['captureId']):
+                return False
             x = json.loads((a.external/'checkpoint.json').read_text())
             age = (datetime.now(timezone.utc)-datetime.fromisoformat(x['updatedAt'])).total_seconds()
             return age < 10 and x['errors'] == 0 and x['failures'] == 0 and not x['guardTriggered']
@@ -103,17 +110,18 @@ print(json.dumps({{'ok':ok,'capture':cap,'ena':ena,'normal':normal}}))
                 continue
             if not external_ok():raise RuntimeError('External probe failed or stale; no more load')
             host_guard(name+'-before')
+            if not external_ok():raise RuntimeError('External/browser guard changed during preflight; no load')
             unit='yeodam-edge438-'+c['captureId'][:8]+'-'+name
             folder='/var/lib/yeodam/nginx-edge438/'+c['captureId']+'/'+name
             tasks=[]
             if rate:
-                tasks.append(shlex.join(['env','K6_EDGE_EXECUTE=1','K6_EDGE_CONFIRM_TARGET='+ORIGIN,
-                    'K6_EDGE_RPS='+str(rate),'K6_EDGE_SECONDS=30','GODEBUG=http2client=0','k6','run',
+                tasks.append('(date -u +%Y-%m-%dT%H:%M:%S.%NZ > '+shlex.quote(folder+'/http-start.txt')+'\n'+shlex.join(['env','K6_EDGE_EXECUTE=1','K6_EDGE_CONFIRM_TARGET='+ORIGIN,
+                    'K6_EDGE_RPS='+str(rate),'K6_EDGE_SECONDS='+str(a.seconds),'GODEBUG=http2client=0','k6','run',
                     '--summary-export',folder+'/http-summary.json',OPS+'/nginx-edge-replay.js'])+
-                    ' > '+shlex.quote(folder+'/http.log')+' 2>&1 & hp=$!')
+                    ' > '+shlex.quote(folder+'/http.log')+' 2>&1\nrc=$?\ndate -u +%Y-%m-%dT%H:%M:%S.%NZ > '+shlex.quote(folder+'/http-end.txt')+'\nexit "$rc") & hp=$!')
             if mode:
                 tasks.append(shlex.join(['python3',OPS+'/nginx-tcp-capacity.py','--mode',mode,
-                    '--connections','192','--rate','20' if mode=='hold' else '120','--seconds','30',
+                    '--connections','192','--rate','20' if mode=='hold' else '120','--seconds',str(a.seconds),
                     '--confirm-target',ORIGIN,'--output',folder+'/tcp.json','--execute'])+
                     ' > '+shlex.quote(folder+'/tcp.log')+' 2>&1 & tp=$!')
             # Always wait both children; a failed workload does not orphan the other.
@@ -123,22 +131,28 @@ print(json.dumps({{'ok':ok,'capture':cap,'ena':ena,'normal':normal}}))
             tasks.append('exit "$code"')
             inner='\n'.join(tasks)
             command='mkdir -p '+shlex.quote(folder)+'\n'+shlex.join(['systemd-run','--quiet','--wait','--collect',
-                '--unit='+unit,'--property=RuntimeMaxSec=45','--property=MemoryMax=512M',
+                '--unit='+unit,'--property=RuntimeMaxSec='+str(a.seconds+30),'--property=MemoryMax=512M',
                 '--property=CPUQuota=150%','/bin/bash','-c',inner])
             began=datetime.now(timezone.utc).isoformat();cid=send(GENERATOR,command)
+            (a.output/'active-stage.json').write_text(json.dumps({'stage':name,'startedAt':began,'unit':unit}))
             print(json.dumps({'stage':name,'startedAt':began,'commandId':cid}),flush=True)
             r, stopped = wait(GENERATOR,cid,unit)
             (a.output/(name+'-command.json')).write_text(json.dumps(r,indent=2))
             trials.append({'stage':name,'startedAt':began,'endedAt':datetime.now(timezone.utc).isoformat(),
-                           'commandId':cid,'status':r['Status'],'guardStopped':stopped,'remoteFolder':folder})
+                           'commandId':cid,'status':r['Status'],'guardStopped':stopped,'remoteFolder':folder,'seconds':a.seconds})
             (a.output/'stages.json').write_text(json.dumps(trials,indent=2))
             host_guard(name+'-after')
             print(json.dumps({'stage':name,'status':r['Status'],'externalHealthy':external_ok()}),flush=True)
             if stopped or not external_ok():raise RuntimeError('Normal external probe guard stopped load')
             if r['Status'] != 'Success':raise RuntimeError('Workload failed; inspect before escalation')
             time.sleep(5)
+    except BaseException:
+        if 'unit' in locals():send(GENERATOR,shlex.join(['systemctl','stop',unit]))
+        raise
     finally:
         (a.output/'stages.json').write_text(json.dumps(trials,indent=2))
+        (a.output/'finished.json').write_text(json.dumps({'endedAt':datetime.now(timezone.utc).isoformat(),
+            'browserGuardEnabled':bool(a.browser),'scope':'Controller ended; workload and normal user verdicts are separate'}))
 
 
 if __name__ == '__main__':

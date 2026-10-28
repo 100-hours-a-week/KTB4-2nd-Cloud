@@ -145,6 +145,14 @@ def app_archive(run):
     for name in ['samples.jsonl', 'summary.json']:
         if (source/'ena'/name).is_file():
             shutil.copyfile(source/'ena'/name, destination/('ena-'+name))
+    # #445 has pseudonymized TCP metadata only. Never export tcpdump stderr/raw source filters.
+    tcp = source/'tcp445'
+    if tcp.exists():
+        if not (tcp/'summary.json').is_file():
+            raise ValueError('Stop the TCP observer before exporting its evidence')
+        for name in ['plan.json', 'checkpoint.json', 'packets.jsonl', 'summary.json']:
+            if (tcp/name).is_file():
+                shutil.copyfile(tcp/name, destination/('tcp445-'+name))
     normal_runs = list(dict.fromkeys([run] + plan.get('normalRunIds', [])))
     if len(normal_runs) > 16:
         raise ValueError('Normal capture reference budget exceeded')
@@ -190,8 +198,9 @@ def app_archive(run):
     seal(destination)
 
 
-def generator_archive(run, tls=False):
-    source = Path('/var/lib/yeodam/nginx-tls440' if tls else '/var/lib/yeodam/nginx-edge438')/run
+def generator_archive(run, tls=False, h2=False):
+    source = Path('/var/lib/yeodam/nginx-h2-442' if h2 else
+                  '/var/lib/yeodam/nginx-tls440' if tls else '/var/lib/yeodam/nginx-edge438')/run
     destination = ROOT/run/'exports'/str(uuid4())
     destination.mkdir(parents=True)
     # Only #438's credential-free scenarios, never generic k6 output or session pools.
@@ -200,18 +209,31 @@ def generator_archive(run, tls=False):
     if tls:
         allowed = {'reuse10a', 'fresh10a', 'fresh10b', 'reuse10b',
                    'reuse100', 'reuse450', 'tls10', 'fresh20'}
+    if h2:
+        allowed = {'smoke1', 'small16', 'medium64', 'instructor141', 'instructor128', 'instructor141-scheduler-prep-stop'}
     for stage in source.iterdir():
         if stage.name not in allowed or not stage.is_dir():
             raise ValueError('Unexpected generator stage')
-        for name in (['result.json', 'load.log'] if tls else ['http-summary.json', 'tcp.json', 'http.log', 'tcp.log']):
+        names = (['plan.json', 'result.json', 'events.jsonl', 'source.js', 'source-lib.mjs', 'run.log', 'native-summary.json',
+                  'generator.jsonl', 'runner-time.txt'] if h2 else ['result.json', 'load.log'] if tls
+                 else ['http-summary.json', 'tcp.json', 'http.log', 'tcp.log','http-start.txt','http-end.txt'])
+        for name in names:
             if (stage/name).is_file():
                 shutil.copyfile(stage/name, destination/(stage.name+'-'+name))
-    replay = Path('/opt/yeodam/ops/nginx-tls440/nginx-http-tls-load.py' if tls else
+    replay = Path('/opt/yeodam-load/nginx-h2-442/scenarios/nginx-h2-trip-replay.js' if h2 else
+                  '/opt/yeodam/ops/nginx-tls440/nginx-http-tls-load.py' if tls else
                   '/opt/yeodam/ops/nginx-edge438/nginx-edge-replay.js')
     shutil.copyfile(replay, destination/('load-source.py' if tls else 'replay-source.js'))
     if tls:
         shutil.copyfile(replay.with_name('nginx-tcp-capacity.py'), destination/'protocol-source.py')
-    dump(destination/'index.json', {'runId':run, 'scope':'Credential-free #440 generator results only' if tls
+    if h2:
+        base = Path('/opt/yeodam-load/nginx-h2-442')
+        for name, path in [('profile.json', 'fixtures/nginx-instructor-20261027-profile.json'),
+                           ('replay-lib.mjs', 'lib/nginx-h2-replay.mjs'),
+                           ('runner-source.py', 'scripts/run-nginx-h2-stage.py')]:
+            shutil.copyfile(base/path, destination/name)
+    dump(destination/'index.json', {'runId':run, 'scope':'Credential-free #442 output; synthetic credentials excluded' if h2
+                                  else 'Credential-free #440 generator results only' if tls
                                   else 'Credential-free #438 generator results only'})
     seal(destination)
 
@@ -315,7 +337,7 @@ def serve(path):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode', choices=['app', 'plg', 'generator', 'tls-generator', 'serve'])
+    p.add_argument('mode', choices=['app', 'plg', 'generator', 'tls-generator', 'h2-generator', 'serve'])
     p.add_argument('--run-id')
     p.add_argument('--from', dest='start')
     p.add_argument('--to', dest='end')
@@ -340,6 +362,8 @@ def main():
         generator_archive(a.run_id)
     elif a.mode == 'tls-generator' and instance == GENERATOR:
         generator_archive(a.run_id, tls=True)
+    elif a.mode == 'h2-generator' and instance == GENERATOR:
+        generator_archive(a.run_id, h2=True)
     elif a.mode == 'serve' and a.archive:
         serve(a.archive)
     else:
