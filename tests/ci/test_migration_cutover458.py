@@ -73,5 +73,17 @@ class OverlayTests(unittest.TestCase):
         self.assertIn('if shared_db is None:db.close()', rendered)
         compile(rendered, '<rendered>', 'exec')
 
+    def test_plan_drift_is_refused_before_deployment_or_input(self):
+        spec = importlib.util.spec_from_file_location('run458', Path(__file__).parents[2] / 'scripts/run-migration-cutover458.py')
+        run = importlib.util.module_from_spec(spec); spec.loader.exec_module(run)
+        plan = dict(run.FIXED, rates=[{'rate': 50, 'preAllocatedVUs': 1000, 'maxVUs': 6000}])
+        run.validate_plan(plan)
+        for key, value in [('snapshotBytesPerSecond', 0), ('activationBudgetSeconds', 60),
+                           ('sourceApplyConcurrency', 8), ('backendCommit', 'newer-main')]:
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                run.validate_plan(dict(plan, **{key: value}))
+        plan['rates'][0]['maxVUs'] = 800
+        with self.assertRaises(RuntimeError): run.validate_plan(plan)
+
 
 if __name__ == '__main__': unittest.main()

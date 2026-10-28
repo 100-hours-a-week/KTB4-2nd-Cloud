@@ -15,6 +15,22 @@ DOCS = ROOT.parent / 'KTB4-2nd-Cloud/.local-docs'
 BASE = DOCS / 'evidence/458-sink-shutdown'
 OLD = DOCS / 'evidence/455-index-comparison'
 CASE = 'index50'
+FIXED = {'durationSeconds': 900, 'cutoverSeconds': 360, 'e2eAfterInputSeconds': 120,
+         'httpTimeoutSeconds': 100, 'authResponseBudgetSeconds': 55,
+         'cdcValidationBudgetSeconds': 45, 'activationBudgetSeconds': 50,
+         'sourceApplyConcurrency': 4, 'sourceDrainDeadlineSeconds': 40,
+         'snapshotBytesPerSecond': 9000000, 'indexApplied': True,
+         'backendCommit': '71bfa648735fbc0d14935149611ad15ea35a45e3',
+         'backendImage': 'ghcr.io/100-hours-a-week/yeodam-backend@sha256:d39fd16fc92e77d9c51be9056a2d0c79e355fdf0ad81e38a8d463ab554fd2010'}
+
+
+def validate_plan(plan):
+    if any(plan.get(key) != value for key, value in FIXED.items()):
+        raise RuntimeError('Frozen #455 workload/budgets/index differ; no input')
+    rates = plan.get('rates', [])
+    if len(rates) != 1 or any(rates[0].get(k) != v for k, v in
+                             {'rate': 50, 'preAllocatedVUs': 1000, 'maxVUs': 6000}.items()):
+        raise RuntimeError('Frozen generator allocation differs; no input')
 
 
 def module(name, path):
@@ -30,6 +46,7 @@ def initialize():
         if hashlib.sha256((OLD / 'runtime/pinned' / name).read_bytes()).hexdigest() != value['renderedSha256']:
             raise RuntimeError('Original #455 artifact differs')
     plan = json.loads((OLD / CASE / 'plan.json').read_text())
+    validate_plan(plan)
     expected = ('51474607af2aae8212b32bf4093fcde164dfcbda8f01345e88e8eac595559cb3', 2048038)
     if (plan['commonBaseline']['sha256'], plan['commonBaseline']['trips']) != expected:
         raise RuntimeError('Unexpected historical 50 baseline')
@@ -73,6 +90,7 @@ def main():
     if args.action == 'init': initialize(); return
     adapter, m, success = load()
     directory = BASE / CASE; plan = json.loads((directory / 'plan.json').read_text())
+    validate_plan(plan)
     if args.action == 'deploy':
         m.deploy()
         m.raw('kafka', m.ssm.deploy('scripts/migration-cutover458.py', '/run/yeodam-b391/migration-cutover458.py'))
