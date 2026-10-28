@@ -3,9 +3,9 @@
   "components": {
     "frontend": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-FE",
-      "sourceSha": "30418f5ab7e8c3de3c146563d8029388098d316e",
-      "image": "ghcr.io/100-hours-a-week/yeodam-frontend:sha-30418f5ab7e8c3de3c146563d8029388098d316e",
-      "digest": "sha256:6db0ec707d407030cead48f229c4461bad2b55949269041c67b8838fa8a033f2",
+      "sourceSha": "e0fab8706cd9722ddffb5ef0354015d21903e74c",
+      "image": "ghcr.io/100-hours-a-week/yeodam-frontend:sha-e0fab8706cd9722ddffb5ef0354015d21903e74c",
+      "digest": "sha256:045af03505fdc5ebe17db7a3d785a492490aaacc794dcbab14c3d6bd73ec1041",
       "platform": "linux/amd64"
     },
     "backend": {
