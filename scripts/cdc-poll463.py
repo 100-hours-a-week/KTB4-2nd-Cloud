@@ -14,6 +14,8 @@ ROOT=Path(__file__).resolve().parents[1]
 DOCS=ROOT.parent/'KTB4-2nd-Cloud/.local-docs'
 BASE=DOCS/'evidence/463-cdc-poll/integration'
 PARENT=DOCS/'evidence/458-sink-shutdown'
+OLD=DOCS/'evidence/455-index-comparison'
+CASE='index50'
 HELPER_PIN='03c93f7'
 HELPERS=('run-migration-cutover458.py','run-migration-index455.py','run-b408-success-version.py',
          'b-integration408-snapshot.py')
@@ -74,6 +76,15 @@ def initialize(replay):
     p=BASE/'helpers'/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(content)
     helper_manifest['../'+name]=hashlib.sha256(content).hexdigest()
     (BASE/'helpers-manifest.json').write_text(json.dumps({'commit':HELPER_PIN,'sha256':helper_manifest},indent=2))
+    tools={}
+    for name in ('report.py','analysis.py','query-deltas.py','assess.py'):
+        original=(PARENT/'tools'/name).read_text()
+        text=original.replace('evidence/458-sink-shutdown','evidence/463-cdc-poll/integration')
+        text=text.replace('/Users/lee-y.ch/Desktop/yeodam/KTB4-2nd-Cloud-458/scripts/run-migration-cutover458.py',str(ROOT/'scripts/cdc-poll463.py'))
+        text=text.replace('original,m,_=adapter.load()','_,original,m,_=adapter.load()')
+        compile(text,name,'exec');p=BASE/'tools'/name;p.parent.mkdir(exist_ok=True);p.write_text(text)
+        tools[name]={'before':hashlib.sha256(original.encode()).hexdigest(),'after':hashlib.sha256(text.encode()).hexdigest()}
+    (BASE/'report-tools-manifest.json').write_text(json.dumps(tools,indent=2))
     plan=json.loads((PARENT/'index50/plan.json').read_text())
     plan.update(issue=463,comparisonBaselineRun=plan['rates'][0]['runId'],commonBaseline=None,pairedRestoreAttempt=None,
                 comparisonScope='Exact458 flow with travel Poll1->50 only; replay integrity and speed gate passed')
