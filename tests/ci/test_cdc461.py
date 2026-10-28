@@ -35,6 +35,24 @@ class ContractTests(unittest.TestCase):
                 with self.subTest(role=role),self.assertRaises(ValueError):rt.send(role,[])
 
 
+class AnalysisTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec=importlib.util.spec_from_file_location('analysis461',ROOT/'scripts/cdc461/analyze.py')
+        cls.m=importlib.util.module_from_spec(spec);spec.loader.exec_module(cls.m)
+    def test_commit_picoseconds_are_not_sql_or_milliseconds(self):
+        event='statement/sql/commit'
+        result=self.m.statement_delta([[event,'10','1000000000000']],[[event,'110','3000000000000']])[event]
+        self.assertEqual(result['calls'],100);self.assertEqual(result['totalSeconds'],2);self.assertEqual(result['meanMs'],20)
+    def test_counter_reset_cannot_be_reported_as_latency(self):
+        event='statement/sql/commit'
+        result=self.m.statement_delta([[event,'100','3000']],[[event,'1','10']])[event]
+        self.assertTrue(result['counterReset']);self.assertIsNone(result['meanMs'])
+    def test_commit_stack_distinguished_from_batch_execution(self):
+        self.assertEqual(self.m.category(['com.mysql.cj.jdbc.ConnectionImpl.commit(ConnectionImpl.java:1)']),'commit path')
+        self.assertEqual(self.m.category(['com.mysql.cj.jdbc.ClientPreparedStatement.executeBatchInternal(File.java:1)']),'SQL/write path')
+
+
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'),'JDK unavailable; compilation remains required before remote deployment')
 class ObserverTests(unittest.TestCase):
     @classmethod

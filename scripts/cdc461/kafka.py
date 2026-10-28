@@ -110,21 +110,17 @@ def check(directory,c,prefix):
 
 def jmx(directory,prefix,seconds):
     subprocess.run(['docker','cp',str(ROOT/'Metrics461.class'),WORKER+':/tmp/Metrics461.class'],check=True,capture_output=True)
-    # Enter only PID/mount/network namespaces, NOT the Worker's cgroup. The
-    # existing JDK is reused without charging observer CPU/RAM to its fixed quota.
-    # Match the Connect JVM uid/gid for the local-only attach protocol.
-    v=worker();pid=v['State']['Pid']
-    if not pid:raise RuntimeError('Worker is not running')
-    status=dict(line.split(':',1) for line in (Path('/proc')/str(pid)/'status').read_text().splitlines() if ':' in line)
-    uid=status['Uid'].split()[1];gid=status['Gid'].split()[1]
+    # Run under the image's existing user/PID context for the local-only attach
+    # protocol. Observer CPU and read wall time are reported, not hidden; no
+    # cgroup limit is increased. This is a diagnostic, not a production benchmark.
+    if not worker()['State']['Running']:raise RuntimeError('Worker is not running')
     with (directory/'jmx.jsonl').open('w') as out,(directory/'jmx.stderr.private').open('w') as err:
-        cmd=['nsenter','--target',str(pid),'--mount','--pid','--net','--root','--wd','--setuid',uid,'--setgid',gid,'--',
-             '/usr/bin/java','--add-modules','jdk.attach','-Xms8m','-Xmx32m','-XX:MaxMetaspaceSize=32m',
+        cmd=['docker','exec',WORKER,'java','--add-modules','jdk.attach','-Xms8m','-Xmx32m','-XX:MaxMetaspaceSize=32m',
              '-XX:CompressedClassSpaceSize=8m','-XX:ReservedCodeCacheSize=16m','-XX:ActiveProcessorCount=1',
              '-Dsun.rmi.transport.tcp.responseTimeout=3000','-cp','/tmp','Metrics461',prefix,str(seconds),'2']
         result=subprocess.run(cmd,stdout=out,stderr=err)
     if result.returncode:raise RuntimeError('JMX observer failed; private stderr retained')
-    print(json.dumps({'observerCompleted':True,'observerInWorkerCgroup':False}),flush=True)
+    print(json.dumps({'observerCompleted':True,'observerInWorkerCgroup':True}),flush=True)
 
 
 def sample(directory,c,prefix):
