@@ -51,6 +51,7 @@ class AnalysisTests(unittest.TestCase):
     def test_commit_stack_distinguished_from_batch_execution(self):
         self.assertEqual(self.m.category(['com.mysql.cj.jdbc.ConnectionImpl.commit(ConnectionImpl.java:1)']),'commit path')
         self.assertEqual(self.m.category(['com.mysql.cj.jdbc.ClientPreparedStatement.executeBatchInternal(File.java:1)']),'SQL/write path')
+        self.assertEqual(self.m.category(['com.mysql.cj.jdbc.ConnectionImpl.setAutoCommit(File.java:1)']),'transaction state path')
 
 
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'),'JDK unavailable; compilation remains required before remote deployment')

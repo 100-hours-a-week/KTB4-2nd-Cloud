@@ -19,7 +19,8 @@ def statement_delta(first,last):
 
 def category(frames):
     text='\n'.join(frames)
-    if 'commit' in text.lower():return 'commit path'
+    if re.search(r'\.commit(?:\(|\b)',text):return 'commit path'
+    if 'setAutoCommit' in text:return 'transaction state path'
     if any(v in text for v in ['DatabaseMetaData','getTable','getColumn','TableDescriptor','checkAndApplyTable']):return 'schema/metadata path'
     if any(v in text for v in ['executeBatch','executeUpdate','RecordWriter']):return 'SQL/write path'
     if 'org.apache.kafka.clients.consumer' in text and 'poll' in text.lower():return 'Kafka poll path'
@@ -41,6 +42,8 @@ def analyze(directory):
     final=mysql[-1]
     sql=statement_delta(baseline['globalStatementCounters'],final['globalStatementCounters'])
     commits=sql.get('statement/sql/commit',{})
+    sink_statements=statement_delta(baseline['statementCounters'],final['statementCounters'])
+    sink_waits=statement_delta(baseline['waitCounters'],final['waitCounters'])
     trip_counters=[];task_details={};stacks=collections.Counter();reset=False;previous={}
     for row in jmx:
         totals={'read':0,'sent':0,'active':0};seen=False
@@ -55,7 +58,8 @@ def analyze(directory):
             task_details[name]={k:v for k,v in metrics.items() if any(s in k for s in ['put-batch','sink-record','offset-commit'])}
         if seen:trip_counters.append({'at':row['at'],**totals})
         for thread in row.get('taskThreads',[]):
-            if '-sink-journal' not in thread['thread']:stacks[(thread['state'],category(thread['stack']))]+=1
+            if thread['thread'].startswith('task-thread-') and '-sink-journal' not in thread['thread']:
+                stacks[(thread['state'],category(thread['stack']))]+=1
     if not trip_counters:raise RuntimeError('No actual Sink task JMX metrics; do not infer pipeline latency')
     first,last=jmx[0],jmx[-1];span=last['at']-first['at']
     observer_cpu=(last['observerCpuNanos']-first['observerCpuNanos'])/1e9
@@ -75,7 +79,8 @@ def analyze(directory):
             'allCommittedFromRegistrationSeconds':caught-begin if caught else None,
             'tripReadEventsPerSecond':expected/(read_done-first_read) if read_done and first_read and read_done>first_read else None,
             'taskCounterResetObserved':reset,'lastTripCounters':trip_counters[-1],
-            'serverStatements':sql,'serverCommit':commits,
+            'serverStatements':sql,'serverCommit':commits,'sinkUserStatements':sink_statements,
+            'sinkUserNonClientSocketWaits':{k:v for k,v in sink_waits.items() if 'client_connection' not in k and v['calls']>0},
             'observerCpuSeconds':observer_cpu,'observerCpuPercentOneCore':observer_cpu/span*100,
             'workerCpuSeconds':worker_cpu,'workerCpuPercentOneCore':worker_cpu/span*100,
             'jmxReadWallFractionPercent':frame_ms/(span*1000)*100,
@@ -84,6 +89,8 @@ def analyze(directory):
                            'MySQL commit statistics combine trip and Journal Sinks; timing is server-side, not full JDBC network latency.',
                            'JMX average latency uses its own moving window; do not subtract it directly from whole-run SQL means.',
                            'Thread samples classify observed stacks, not an exact per-record latency attribution.',
+                           'Sink-user SELECT totals include metadata and connection management; sampled metadata stacks do not classify every SELECT.',
+                           'Concurrent statement timer sums overlap and must not be treated as wall-clock duration.',
                            'Local JMX instrumentation remains an observer; its CPU/wall overhead is reported.']}
     (directory/'analysis.json').write_text(json.dumps(result,indent=2))
     print(json.dumps({k:v for k,v in result.items() if k not in ['taskMetricSnapshots','limitations']},ensure_ascii=False))
