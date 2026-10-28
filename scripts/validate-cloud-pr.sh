@@ -94,6 +94,8 @@ node --test tests/load/tests/browser-evidence.test.mjs
 node --test tests/load/tests/browser-journey-guard.test.mjs
 node --test tests/load/tests/nginx-mobile-har.test.mjs
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_failure_evidence.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_shared_ip_trial.py'
+python3 -m unittest discover -s tests/ci -p 'test_nginx_shared_ip_observation.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_browser_guard.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_connection_trials.py'
 python3 -c 'import ast,pathlib; [ast.parse(pathlib.Path("tests/load/scripts/"+n).read_text()) for n in ["analyze-nginx-browser-load.py", "analyze-nginx-connection-browser.py"]]'
