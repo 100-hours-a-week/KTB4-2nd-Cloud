@@ -10,10 +10,11 @@ from nginx_read_enforcement import instrument_read_enforcement
 from nginx_keepalive import instrument_keepalive
 from nginx_create_enforcement import instrument_create_enforcement
 from nginx_user_read_profile import user_read_profile
+from nginx_jwt_gate import instrument_jwt_gate
 
 PROBE_ROUTE = '/api/internal/migration-write-probe'
 
-def render(template, release, *, user_read_enabled=False, backend_digest=None):
+def render(template, release, *, user_read_enabled=False, backend_digest=None, jwt_read_gate=False):
     if not re.fullmatch('[0-9a-f]{40}', release):
         raise ValueError('Cloud release must be a full commit SHA')
     marker = 'map "$request_method:$uri" $yeodam_normalized_route {'
@@ -38,8 +39,11 @@ map "$request_method:$uri:$http_x_migration_run_id" $yeodam_staging_probe_run_id
 '''
     # #424: verified idle cleanup and authenticated reads plus real150-photo completion.
     site = instrument_create_enforcement(instrument_keepalive(instrument_read_enforcement(instrument_site(prefix + content)), 15))
+    if jwt_read_gate and not user_read_enabled:
+        raise ValueError("JWT gate requires the explicit reviewed BE user-read profile")
     if user_read_enabled:
-        return user_read_profile(site, backend_digest)
+        site = user_read_profile(site, backend_digest)
+        return instrument_jwt_gate(site, backend_digest) if jwt_read_gate else site
     if backend_digest:
         raise ValueError('Backend digest requires explicit user-limiter activation attestation')
     return site
@@ -51,7 +55,8 @@ if __name__ == '__main__':
     parser.add_argument('--release', required=True)
     parser.add_argument('--user-read-limit-enabled', action='store_true')
     parser.add_argument('--backend-digest')
+    parser.add_argument('--jwt-read-gate', action='store_true')
     args = parser.parse_args()
     args.output.write_text(render(args.template.read_text(), args.release,
                                   user_read_enabled=args.user_read_limit_enabled,
-                                  backend_digest=args.backend_digest))
+                                  backend_digest=args.backend_digest, jwt_read_gate=args.jwt_read_gate))
