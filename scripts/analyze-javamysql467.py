@@ -8,6 +8,7 @@ import subprocess
 
 DOCS=Path(__file__).resolve().parents[2]/'KTB4-2nd-Cloud/.local-docs'
 BASE=DOCS/'evidence/467-java-mysql/index50'
+ARCHIVE_NAMESPACE='diagnostics467'
 FIELDS=['COUNT_STAR','SUM_TIMER_WAIT','SUM_CPU_TIME','SUM_LOCK_TIME','SUM_ROWS_EXAMINED','SUM_ROWS_SENT']
 
 def number(value):
@@ -54,14 +55,14 @@ def summary_delta(before,after,field):
   if any(diff):result.append({'event':row[0],'delta':diff})
  return result
 
-def main():
- p=argparse.ArgumentParser();p.add_argument('--pull',action='store_true');a=p.parse_args();plan=json.loads((BASE/'plan.json').read_text());run=plan['rates'][0]['runId'];raw=BASE/'raw';raw.mkdir(exist_ok=True)
+def main(argv=None):
+ p=argparse.ArgumentParser();p.add_argument('--pull',action='store_true');a=p.parse_args(argv);plan=json.loads((BASE/'plan.json').read_text());run=plan['rates'][0]['runId'];raw=BASE/'raw';raw.mkdir(exist_ok=True)
  files=['resource-samples.jsonl','completions.json','snapshot-stream.json','app-jfr-analysis.json','consumer-jfr-analysis.json']+['mysql-'+n+'.json' for n in ['before-input','snapshot-start','snapshot-end','input-end']]
  if a.pull:
   for name in files:
    dest=raw/name
    if dest.exists():raise RuntimeError('Keep already downloaded raw evidence')
-   subprocess.run(['aws','s3','cp','s3://yeodam-v2-staging-mysql-backup-483175530259-ap-northeast-2/migration/performance455/diagnostics467/'+run+'/'+name,str(dest),'--profile','yeodam-admin','--region','ap-northeast-2','--only-show-errors'],check=True)
+   subprocess.run(['aws','s3','cp','s3://yeodam-v2-staging-mysql-backup-483175530259-ap-northeast-2/migration/performance455/'+ARCHIVE_NAMESPACE+'/'+run+'/'+name,str(dest),'--profile','yeodam-admin','--region','ap-northeast-2','--only-show-errors'],check=True)
  c={n:json.loads((raw/('mysql-'+n+'.json')).read_text()) for n in ['before-input','snapshot-start','snapshot-end','input-end']}
  windows={}
  for label,b,e in [('before_snapshot','before-input','snapshot-start'),('snapshot','snapshot-start','snapshot-end'),('after_snapshot','snapshot-end','input-end'),('all_input','before-input','input-end')]:

@@ -23,9 +23,21 @@ def preparation_source(text):
  if any(x in text for x in ['kafka_standby=','fence_id=','service_start(']):raise ValueError('Diagnostic must never arm handoff')
  compile(text,'diagnostic-preparation','exec');return text
 
-def run(root):
+def resume_preparation_source(text):
+ text=preparation_source(text)
+ begin="    phase('source','b-integration376-control.py',run,'preflight')"
+ end="    phase('source','b-integration376-app.py',run,'start-app')"
+ if text.count(begin)!=1 or text.count(end)!=1:raise ValueError('Pre-input resume anchors differ')
+ return text[:text.index(begin)]+text[text.index(end):]
+
+def run(root,resume_after_transfer=False):
  a=load_driver(root);_,adapter,m,_=a.load();p=a.BASE/a.CASE;plan=json.loads((p/'plan.json').read_text());a.validate_plan(plan);run=plan['rates'][0]['runId']
- if (p/'execute-invocation.json').exists() or (p/(run+'.state.json')).exists():raise RuntimeError('Attempted diagnosis is never replayed')
+ if (p/(run+'.state.json')).exists():raise RuntimeError('Started diagnosis is never replayed')
+ if resume_after_transfer:
+  receipt=json.loads((p/'pre-input-resume-receipt.json').read_text())
+  if receipt.get('runId')!=run or receipt.get('inputStarted') is not False or receipt.get('privatePoolAlreadyTransferred') is not True or receipt.get('resumeFrom')!='start-app':raise RuntimeError('Exact pre-input resume receipt required')
+  if not (p/'execute-invocation.json').exists() or (p/'resume-invocation.json').exists():raise RuntimeError('No repeat of resume/input')
+ elif (p/'execute-invocation.json').exists():raise RuntimeError('Attempted diagnosis is never replayed')
  ready=json.loads((p/'ready.json').read_text());approval=json.loads((a.BASE/'transfer-approval.json').read_text())
  if approval.get('runId')!=run or approval.get('sessions')!=220 or approval.get('transfersAllowed')!=1 or approval.get('approved') is not True:raise RuntimeError('Exact private transfer approval missing')
  if not all(ready.get(k) is True for k in ['verified','targetBackupReady','all33TablesAndAutoIncrementEqual','indexApplied']):raise RuntimeError('Common baseline not restored')
@@ -34,9 +46,10 @@ def run(root):
  if probe.get('exitCode')!=0 or probe.get('deniedEvents')!={}:raise RuntimeError('JFR safety probe must pass before input')
  if m.ssm.aws('sts','get-caller-identity')['Account']!='483175530259':raise RuntimeError('Wrong account')
  ready.update(privatePoolTransferApproved=True,privatePoolTransferApproval=approval);(p/'ready.json').write_text(json.dumps(ready,indent=2))
- (p/'execute-invocation.json').write_text(json.dumps({'runId':run,'at':time.time(),'diagnosticOnly':True,'writerSwitch':False}))
+ (p/('resume-invocation.json' if resume_after_transfer else 'execute-invocation.json')).write_text(json.dumps({'runId':run,'at':time.time(),'diagnosticOnly':True,'writerSwitch':False,'reuseTransferredPool':resume_after_transfer}))
  a.source_http_ready(m)
- exec(preparation_source(inspect.getsource(m.execute)),m.__dict__)
+ render=resume_preparation_source if resume_after_transfer else preparation_source
+ exec(render(inspect.getsource(m.execute)),m.__dict__)
  state=m.prepare_diagnostic(plan['rates'][0],2);started=state['startedAt'];path=p/(run+'.state.json')
  def checkpoint(phase,**values):
   state.update(phase=phase,**values);path.write_text(json.dumps(state,indent=2));m.log(phase,runId=run,**values)
