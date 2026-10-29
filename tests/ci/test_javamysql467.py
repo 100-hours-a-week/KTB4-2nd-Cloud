@@ -39,4 +39,16 @@ class DiagnosticContracts(unittest.TestCase):
   self.assertIn("gracefulStop: '105s'",result);self.assertIn('httpTimeout:100',result)
   self.assertIn('preAllocatedVUs: vus, maxVUs: maxVus',result)
   with self.assertRaises(ValueError):o.scenario('different')
+ def test_counter_reset_is_not_ranked_as_a_speedup(self):
+  an=load('analysis467','scripts/analyze-javamysql467.py')
+  def cp(n):return {'startedAt':n,'digests':[{'SCHEMA_NAME':'app','DIGEST':'one','DIGEST_TEXT':'COMMIT','COUNT_STAR':str(n),'SUM_TIMER_WAIT':str(n*1000),'SUM_CPU_TIME':'0','SUM_LOCK_TIME':'0','SUM_ROWS_EXAMINED':'0','SUM_ROWS_SENT':'0'}]}
+  result=an.digest_delta(cp(20),cp(10));self.assertEqual(result['counterResetDigests'],[['app','one']]);self.assertEqual(result['allChangedDigests'],[])
+ def test_cpu_zero_is_unknown_not_zero_cost(self):
+  an=load('analysis467b','scripts/analyze-javamysql467.py')
+  before={'startedAt':0,'digests':[]};after={'startedAt':1,'digests':[{'SCHEMA_NAME':'app','DIGEST':'one','DIGEST_TEXT':'COMMIT','COUNT_STAR':'2','SUM_TIMER_WAIT':'2000000000','SUM_CPU_TIME':'0','SUM_LOCK_TIME':'0','SUM_ROWS_EXAMINED':'0','SUM_ROWS_SENT':'0'}]}
+  result=an.digest_delta(before,after);self.assertFalse(result['cpuCounterNonzero']);self.assertEqual(result['categories']['transaction_end']['meanElapsedMs'],1)
+ def test_reader_mount_flags_do_not_become_part_of_container_paths(self):
+  code=(ROOT/'scripts/javamysql467-close.py').read_text()
+  self.assertIn('target=/run/reader,readonly',code);self.assertIn('target=/run/trace,readonly',code)
+  self.assertNotIn('target=/run/reader:ro',code);self.assertNotIn('target=/run/trace:ro',code)
 if __name__=='__main__':unittest.main()

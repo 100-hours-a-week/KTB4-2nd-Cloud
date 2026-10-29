@@ -24,8 +24,9 @@ for role in ['app','consumer']:
  f=d/role/'trace.jfr'
  if not f.is_file():raise RuntimeError('Missing '+role+' JFR; retain runtime evidence')
  f.chmod(0o600)
- # Root reads the private files after the measured interval; no network/ports.
- cmd=['docker','run','--rm','--network','none','--cpus','1','--memory','256m','--pids-limit','64','--mount','type=bind,source='+str(d/'app')+',target=/run/reader:ro','--mount','type=bind,source='+str(d/role)+',target=/run/trace:ro','--entrypoint','java',image,'-Xms8m','-Xmx96m','-cp','/run/reader','Jfr467Summary','/run/trace/trace.jfr',str(FROM),str(TO)]
+ # Offline reader only, after measured JVMs stop; recorded app heaps stay512m.
+ if int(next(x.split()[1] for x in Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemAvailable:')))*1024<1536*1024**2:raise RuntimeError('Insufficient memory for offline reader; retain files')
+ cmd=['docker','run','--rm','--network','none','--cpus','1','--memory','1024m','--pids-limit','64','--mount','type=bind,source='+str(d/'app')+',target=/run/reader,readonly','--mount','type=bind,source='+str(d/role)+',target=/run/trace,readonly','--entrypoint','java',image,'-Xms8m','-Xmx768m','-cp','/run/reader','Jfr467Summary','/run/trace/trace.jfr',str(FROM),str(TO)]
  result=subprocess.run(cmd,capture_output=True,text=True)
  if result.returncode:raise RuntimeError('JFR analysis/privacy validation failed for '+role)
  report=json.loads(result.stdout)
