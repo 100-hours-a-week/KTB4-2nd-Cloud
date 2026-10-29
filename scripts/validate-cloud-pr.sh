@@ -257,3 +257,5 @@ python3 -m unittest discover -s tests/ci -p 'test_v2_release_event.py'
 python3 -m unittest discover -s tests/ci -p 'test_v2_staging_release.py'
 
 python3 -m unittest discover -s tests/ci -p 'test_v2_production_release.py'
+
+python3 -m unittest discover -s tests/ci -p 'test_javamysql467.py'
