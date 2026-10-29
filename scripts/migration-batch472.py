@@ -12,7 +12,11 @@ import uuid
 
 ROOT=Path(__file__).resolve().parents[1]
 DOCS=ROOT.parent/'KTB4-2nd-Cloud/.local-docs'
-BASE=DOCS/'evidence/472-batch-commit/diagnostic'
+ISSUE=DOCS/'evidence/472-batch-commit'
+SELECTION=ISSUE/'selected-diagnostic.json'
+attempt=json.loads(SELECTION.read_text())['directory'] if SELECTION.exists() else 'diagnostic'
+if attempt not in ('diagnostic','diagnostic-retry1'):raise RuntimeError('Unknown diagnostic selection')
+BASE=ISSUE/attempt
 CONTROL=DOCS/'evidence/467-java-mysql'
 CASE='index50'
 OLD=DOCS/'evidence/455-index-comparison'
@@ -44,6 +48,37 @@ def driver():
 def load():return driver().load()
 
 def previous_restored(case):return driver().previous_restored(case)
+
+def verify_candidate_cached(base=None):
+ base=base or BASE;d=driver();d.BASE=base
+ _,_,m,_=d.load();plan=json.loads((base/CASE/'plan.json').read_text())
+ code='candidate='+repr(plan['backendImage'])+'\nparent='+repr(plan['runtimeImageParent'])+'\n'+'''import json,subprocess
+read=lambda image:json.loads(subprocess.check_output(['docker','image','inspect',image],text=True))[0]
+new=read(candidate);old=read(parent)
+assert candidate in new['RepoDigests'], 'Candidate digest not cached'
+assert new['RootFS']['Layers'][:len(old['RootFS']['Layers'])]==old['RootFS']['Layers']
+for key in ['Env','User','WorkingDir','Entrypoint','Cmd']:assert new['Config'].get(key)==old['Config'].get(key)
+print(json.dumps({'candidateCached':True,'image':candidate,'parentRuntimeLayersAndConfigEqual':True}))
+'''
+ compile(code,'candidate-image-check','exec')
+ values=m.records(m.raw('source',["python3 - <<'IMAGE472'\n"+code+'\nIMAGE472']))
+ (base/CASE/'candidate-image-ready.json').write_text(json.dumps(values,indent=2));return values
+
+def candidate_pull_source(text):
+ old="    SourceFileLoader('prep444', '/var/lib/yeodam/migration444/prepare.py').load_module().ensure_image()"
+ if text.count(old)!=1:raise ValueError('Pinned image helper anchor differs')
+ new="    preparation=SourceFileLoader('prep444', '/var/lib/yeodam/migration444/prepare.py').load_module()\n    preparation.IMAGE=IMAGE\n    preparation.ensure_image()"
+ return text.replace(old,new,1)
+
+def install_candidate_pull(base=None):
+ base=base or BASE
+ manifest=json.loads((base/'bundle-manifest.json').read_text());name='scripts/b2-pilot370-host.py'
+ if name in manifest['batch472Overlay']['changedRuntimeFiles']:raise RuntimeError('Already applied; keep provenance')
+ p=base/'runtime/pinned'/name;before=p.read_text();after=candidate_pull_source(before);compile(after,name,'exec');p.write_text(after)
+ manifest['files'][name]['renderedSha256']=hashlib.sha256(after.encode()).hexdigest()
+ manifest['batch472Overlay']['changedRuntimeFiles'].append(name)
+ manifest['batch472Overlay']['imagePreparationFix']={'before':hashlib.sha256(before.encode()).hexdigest(),'after':hashlib.sha256(after.encode()).hexdigest(),'reason':'Pass candidate digest into existing scoped registry preparation; no workload change'}
+ (base/'bundle-manifest.json').write_text(json.dumps(manifest,indent=2))
 
 def observer_ready():
  d=driver();_,_,m,_=d.load();plan=json.loads((BASE/CASE/'plan.json').read_text());run=plan['rates'][0]['runId']
@@ -103,18 +138,28 @@ def initialize(commit,image,workflow):
  tools=BASE/'tools';tools.mkdir()
  source=(CONTROL/'tools/prepare.py').read_text().replace('KTB4-2nd-Cloud-467','KTB4-2nd-Cloud-472').replace('scripts/diagnose-javamysql467.py','scripts/migration-batch472.py')
  compile(source,'prepare472','exec');(tools/'prepare.py').write_text(source)
+ install_candidate_pull()
+ SELECTION.write_text(json.dumps({'directory':BASE.name,'runId':plan['rates'][0]['runId']},indent=2))
  print(json.dumps({'runId':plan['rates'][0]['runId'],'inputSeconds':180,'writerSwitch':False,'runtimeChanged':False}))
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('action',choices=['init','deploy','observer-ready','run','close','analyze']);p.add_argument('--backend-commit');p.add_argument('--backend-image');p.add_argument('--workflow',type=int);p.add_argument('--pull',action='store_true');a=p.parse_args()
+ global BASE
+ p=argparse.ArgumentParser();p.add_argument('action',choices=['init','deploy','observer-ready','fix-image-pull','run','resume-before-input','close','analyze']);p.add_argument('--backend-commit');p.add_argument('--backend-image');p.add_argument('--workflow',type=int);p.add_argument('--pull',action='store_true');p.add_argument('--attempt',choices=['diagnostic','diagnostic-retry1']);a=p.parse_args()
+ if a.attempt:
+  if a.action=='init' and a.attempt=='diagnostic-retry1':
+   closed=json.loads((ISSUE/'diagnostic/index50/pre-input-failure-closeout.json').read_text())
+   if closed.get('actualInputStarted') is not False or closed.get('runtimeRestored') is not True:raise RuntimeError('Original attempt not safely closed')
+  BASE=ISSUE/a.attempt
  if a.action=='init':
   if not all((a.backend_commit,a.backend_image,a.workflow)):raise RuntimeError('Published image receipt required')
   initialize(a.backend_commit,a.backend_image,a.workflow);return
  d=driver();validate_plan(json.loads((BASE/CASE/'plan.json').read_text()))
- if a.action=='deploy':d.deploy()
+ if a.action=='deploy':d.deploy();verify_candidate_cached()
+ elif a.action=='fix-image-pull':install_candidate_pull()
  elif a.action=='observer-ready':observer_ready()
- elif a.action=='run':
-  r=module('run472',ROOT/'scripts/javamysql467-run.py');r.load_driver=lambda root:d;r.run(ROOT)
+ elif a.action in ('run','resume-before-input'):
+  verify_candidate_cached()
+  r=module('run472',ROOT/'scripts/javamysql467-run.py');r.load_driver=lambda root:d;r.run(ROOT,resume_after_transfer=a.action=='resume-before-input')
  elif a.action=='close':module('close472',ROOT/'scripts/javamysql467-close.py').main(d,'diagnostics472')
  else:
   r=module('analyze472',ROOT/'scripts/analyze-javamysql467.py');r.BASE=BASE/CASE;r.ARCHIVE_NAMESPACE='diagnostics472';r.main(['--pull'] if a.pull else [])

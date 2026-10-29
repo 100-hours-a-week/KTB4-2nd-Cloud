@@ -36,6 +36,33 @@ class FrozenBatchComparison(unittest.TestCase):
  def test_no_mutable_image_tag_or_larger_transaction(self):
   control,plan=self.plans();plan['backendImage']='ghcr.io/100-hours-a-week/yeodam-backend:latest'
   with self.assertRaises(RuntimeError):m.validate_plan(plan,control)
+ def test_candidate_digest_reaches_existing_registry_preparation(self):
+  from unittest.mock import Mock,patch
+  old="def pull_image():\n    from importlib.machinery import SourceFileLoader\n    SourceFileLoader('prep444', '/var/lib/yeodam/migration444/prepare.py').load_module().ensure_image()\n"
+  ns={'IMAGE':'candidate-digest'};preparation=Mock();preparation.ensure_image.side_effect=lambda:self.assertEqual(preparation.IMAGE,'candidate-digest')
+  loader=Mock();loader.load_module.return_value=preparation
+  exec(m.candidate_pull_source(old),ns)
+  with patch('importlib.machinery.SourceFileLoader',return_value=loader):ns['pull_image']()
+  preparation.ensure_image.assert_called_once()
+ def test_pre_input_resume_cannot_generate_or_transfer_another_pool(self):
+  r=m.module('resume472test',ROOT/'scripts/javamysql467-run.py')
+  source="def execute(case,index):\n    state={'duration':900}\n    phase('source','b-integration376-control.py',run,'preflight')\n    prepared=prepare_existing()\n    transfer_pool(run)\n    phase('source','b-integration376-app.py',run,'start-app')\n    load_id=phase('generator','b-integration376-generator.py',run,'start','--rate',str(rate),sync=False)\n    kafka_standby=raw('kafka',[])\n"
+  resumed=r.resume_preparation_source(source)
+  self.assertNotIn('transfer_pool(',resumed);self.assertNotIn('prepare_existing()',resumed)
+  self.assertIn("run,'start-app'",resumed);self.assertIn("run,'start'",resumed)
+  self.assertNotIn('kafka_standby=',resumed)
+ def test_full_integration_keeps_original_cutover_and_response_budgets(self):
+  import json,tempfile
+  f=m.module('integration472test',ROOT/'scripts/migration-batch472-integration.py')
+  control,plan=self.plans();control.update(durationSeconds=900,cutoverSeconds=360)
+  plan.update(durationSeconds=900,cutoverSeconds=360,imageWorkflow=123)
+  with tempfile.TemporaryDirectory() as directory:
+   f.ISSUE=Path(directory)
+   (f.ISSUE/'image-receipt.json').write_text(json.dumps({'backendCommit':plan['backendCommit'],'backendImage':plan['backendImage'],'workflow':123}))
+   f.validate_plan(plan,control)
+   for key in ['durationSeconds','cutoverSeconds','httpTimeoutSeconds','sourceApplyConcurrency','snapshotBytesPerSecond']:
+    changed=copy.deepcopy(plan);changed[key]+=1
+    with self.subTest(key=key),self.assertRaises(RuntimeError):f.validate_plan(changed,control)
   control,plan=self.plans();plan['maxTransactionRecords']=11
   with self.assertRaises(RuntimeError):m.validate_plan(plan,control)
 
