@@ -1,5 +1,6 @@
 from pathlib import Path
 import subprocess
+import importlib.util
 import sys
 import unittest
 
@@ -14,5 +15,12 @@ class ApprovalGuardTest(unittest.TestCase):
             self.assertNotEqual(result.returncode,0)
             self.assertIn('Explicit approved trial required',result.stderr)
             self.assertEqual(result.stdout,'')
+
+    def test_nearest_rank_p95_is_not_the_maximum_for_twenty_observations(self):
+        spec=importlib.util.spec_from_file_location('jwt_trial',SCRIPT)
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        self.assertEqual(module.percentile95(list(range(1,21))),19)
+        self.assertEqual(module.percentile95([3]),3)
+        self.assertIsNone(module.percentile95([]))
 
 if __name__=='__main__': unittest.main()

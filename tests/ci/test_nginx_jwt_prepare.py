@@ -1,6 +1,8 @@
 from pathlib import Path
 import importlib.util
 import json
+import io
+from contextlib import redirect_stdout
 import os
 import stat
 import sys
@@ -40,5 +42,18 @@ class PreparationTest(unittest.TestCase):
             with patch.multiple(prepare,SITE=site,MAIN=main,STAGE=stage),patch.object(prepare,'backend') as backend,patch.object(prepare,'run') as run:
                 with self.assertRaises(ValueError):prepare.activate(SimpleNamespace(confirm_instance=prepare.APP))
                 backend.assert_not_called();run.assert_not_called()
+
+    def test_redeploy_checks_runtime_key_without_printing_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live=Path(tmp)
+            config={'secret':'synthetic-key-for-redeploy-468','issuer':'https://issuer.test','audience':'yeodam-api','clockSkewSeconds':60}
+            (live/'config.json').write_text(json.dumps(config))
+            with patch.object(prepare,'LIVE',live),patch.object(prepare,'backend',return_value=config),patch.object(prepare,'assert_host'),patch.object(sys,'argv',['prepare.py','verify-runtime']):
+                out=io.StringIO()
+                with redirect_stdout(out):prepare.main()
+                self.assertTrue(json.loads(out.getvalue())['runtimeMatchesPreloadedConfiguration'])
+                self.assertNotIn(config['secret'],out.getvalue())
+            with patch.object(prepare,'LIVE',live),patch.object(prepare,'backend',return_value={**config,'secret':'changed-key'}),patch.object(prepare,'assert_host'),patch.object(sys,'argv',['prepare.py','verify-runtime']):
+                with self.assertRaisesRegex(ValueError,'JWT key/issuer changed'):prepare.main()
 
 if __name__=='__main__':unittest.main()

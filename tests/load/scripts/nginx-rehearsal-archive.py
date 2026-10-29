@@ -25,7 +25,9 @@ GENERATOR = 'i-0c53b65eb35dd2b42'
 ROOT = Path('/var/lib/yeodam/nginx-rehearsal')
 FIELDS = ['timestamp', 'msec', 'request_id', 'method', 'normalized_route', 'status', 'upstream_status',
           'request_time', 'upstream_connect_time', 'upstream_header_time', 'upstream_response_time', 'request_length', 'body_bytes_sent',
-          'connection', 'connection_requests', 'worker_pid', 'http_protocol', 'limit_req_status']
+          'connection', 'connection_requests', 'worker_pid', 'http_protocol', 'limit_req_status', 'jwt_gate_result']
+JWT_GATE_RESULTS = {'not_applicable', 'signature_valid', 'missing', 'malformed', 'bad_signature',
+                    'expired', 'not_yet_valid', 'bad_claims', 'error'}
 ERRORS = ['worker_connections are not enough', 'too many open files', 'upstream timed out',
           'connect() failed', 'upstream prematurely closed connection', 'limiting requests', 'limiting connections']
 
@@ -63,6 +65,8 @@ def scrub(value, key):
 
 
 def access_row(data, key):
+    if 'jwt_gate_result' in data and data['jwt_gate_result'] not in JWT_GATE_RESULTS:
+        raise ValueError('Unexpected JWT gate result; do not export arbitrary values')
     row = {k: data[k] for k in FIELDS if k in data}
     peer = data.get('peer_addr', '')
     row['sourceId'] = hmac.new(key, peer.encode(), hashlib.sha256).hexdigest()[:16]

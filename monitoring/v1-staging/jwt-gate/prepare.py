@@ -132,10 +132,15 @@ def main():
     for a in ['activate','rollback']:
         sub.add_parser(a).add_argument('--confirm-instance',required=True)
     sub.add_parser('status')
+    sub.add_parser('verify-runtime')
     args=p.parse_args();assert_host()
     if args.action == 'stage': out=stage(args)
     elif args.action == 'activate': out=activate(args)
     elif args.action == 'rollback': out=rollback(args)
+    elif args.action == 'verify-runtime':
+        if backend() != json.loads((LIVE/'config.json').read_text()):
+            raise ValueError('JWT key/issuer changed; inspect and prepare the new gate first')
+        out={'instance':APP,'runtimeMatchesPreloadedConfiguration':True}
     else:
         out={'instance':APP,'siteSha':sha(SITE),'mainSha':sha(MAIN),'staged':STAGE.is_dir(),'modulePresent':MODULE.is_file()}
         if STAGE.is_dir():out['prepared']=metadata()

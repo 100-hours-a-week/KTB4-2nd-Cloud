@@ -1,6 +1,6 @@
 # V1 조회 JWT 사전 검증과 제한 경로 분리
 
-기존 Nginx 스테이징 App 전용이다. 정상 JWT 요청과 무인증 요청이 IP 25 예산을 공유하지 않게 한다. **#468 준비 상태에서는 실제 정책을 전환하거나 부하를 실행하지 않았다.** 사용자가 발생기를 다른 시험에서 사용 중이므로 실제 활성화와 부하는 명시적 재개 확인 뒤 진행한다.
+기존 Nginx 스테이징 App 전용이다. 정상 JWT 요청과 무인증 요청이 IP 25 예산을 공유하지 않게 한다. **10/29 사용자 재개 허락 후 실제 적용과 6개 유한 시험을 완료했다.** 무인증·위조·인증 과다40RPS와 같은 IP 정상 계정1RPS를 함께 확인했고, 정상220/220건은 모두200이었다. 새 정책은 원본 App에서 활성 상태다. 아래 명령은 재실행 지시가 아니라 적용·원복 절차다.
 
 ## 제한을 적용하는 순서
 
@@ -31,11 +31,11 @@ python3 scripts/render-v1-staging-nginx.py \
 
 ## 버전과 비밀키
 
-10/29 읽기 전용 점검에서 App의 nginx/nginx-common은1.24.0-2ubuntu7.19, njs 후보는libnginx-mod-http-js0.8.2-1ubuntu1이었다. 아직 App에 모듈을 설치하지 않았다. 로컬 Ubuntu 컨테이너는 이 버전을 고정하고 실제 njs로 검증한다.
+10/29 읽기 전용 점검에서 App의 nginx/nginx-common은1.24.0-2ubuntu7.19, njs 후보는libnginx-mod-http-js0.8.2-1ubuntu1이었다. 이후 실제 설치에서 본체 업그레이드 없이 njs와 필수 의존성 libnginx-mod-stream1.24.0-2ubuntu7.19 두 패키지만 추가했다. Stream listener는 만들지 않았다. 로컬 Ubuntu 컨테이너는 이 버전을 고정하고 실제 njs로 검증한다.
 
 V1은 대칭키HS256이다. 검증 키는 발급에도 쓸 수 있으므로 Nginx worker의 키 접근 범위가 추가된다는 한계가 있다. 키는 기존 App에서만 읽고 root0600 JSON으로 준비한다. `js_preload_object`로 master가 읽어 worker에 제공하고, Cookie·키·사용자 ID는 로그에 넣지 않는다. 실사용 키/토큰은 Mac·Git·PR로 전송하지 않는다. 설정/키/암호화 오류는503으로 닫고 IP 면제나 BE 전달로 대체하지 않는다.
 
-Spring Security7.1.1의 실제 JwtTimestampValidator class에서 기본60초 오차를 확인했다. 앞단도같은60초를 사용한다. issuer는 실행 컨테이너의JWT_ISSUER, audience는고정 이미지의yeodam-api다. 임의의 JWT 설정 override가 있으면 동등성을 먼저 확인해야 한다. 사전 검증에는 캐시나 세션 DB 조회를 추가하지 않았다. 서명 검증 CPU는 실제 시험에서 측정할 항목이며 용량을 미리 주장하지 않는다.
+Spring Security7.1.1의 실제 JwtTimestampValidator class에서 기본60초 오차를 확인했다. 앞단도같은60초를 사용한다. issuer는 실행 컨테이너의JWT_ISSUER, audience는고정 이미지의yeodam-api다. 임의의 JWT 설정 override가 있으면 동등성을 먼저 확인해야 한다. 사전 검증에는 캐시나 세션 DB 조회를 추가하지 않았다. 실제 시험 구간의 호스트 CPU 평균은9.633~21.707%, 1초 최대는61.574%였다. 단기 기능 시험이며 최대 수용량이나 서명 검증만의 CPU 비용으로 해석하지 않는다.
 
 ## 호스트 준비와 실제 활성화 분리
 
@@ -54,7 +54,7 @@ sudo python3 /opt/yeodam/ops/jwt-gate468/jwt-gate/prepare.py status
 사용자 허락을 받은 실제 시험 창에서만, Account/Region/대상·다른 시험 충돌·수집기·원복을 확인한 뒤 진행한다.
 
 1. `apt-get --simulate install --no-upgrade libnginx-mod-http-js=0.8.2-1ubuntu1`에서 Nginx 교체/삭제 등 예상 밖 변경이 없는지 확인한다. 예상과 다르면 중단한다.
-2. 검토한 패키지만 설치하고 `/etc/nginx/modules-enabled`의 모듈 로드와 기존 설정의 `nginx -t`를 확인한다. 기존 Nginx 본체를 업그레이드하거나 다른 모듈을 추가하지 않는다.
+2. 검토한 패키지만 설치하고 `/etc/nginx/modules-enabled`의 모듈 로드와 기존 설정의 `nginx -t`를 확인한다. Nginx 본체를 업그레이드하거나 필수 의존성 밖의 모듈을 추가하지 않는다.
 3. 아래명령으로후보를적용한다. 원본 site/main과 staged코드 SHA·BE·JWT 설정이 변하면 거절한다. config0600을 설치하고 `nginx -t`와graceful reload한다. 실패 시 기존 site를 복원한다.
 
 ```bash
@@ -89,7 +89,7 @@ sudo python3 /opt/yeodam/ops/jwt-gate468/jwt-gate/prepare.py rollback \
 
 `tests/load/scripts/nginx-jwt-read-trial.py`는 실행 명령이 없으면 시작하지 않는다. 원본 App/발생기 고정·루트·DNS·경합 도구·합성 사용자11007/107/107의 비공개 pool·충분한 만료 시간을 확인한다. 10초 기준선 뒤20초씩unauth40/forged40/auth20/auth40/sameuser8을 개별 실행할 수 있다. 각 단계의 실행 여부는 직전 결과를 확인해 결정하고 자동 RPS 탐색은 하지 않는다.
 
-실행에는 `--execute --approved-run <동일 trial UUID>`가 필요하다. 이는 사용자 승인을 대신하는 토큰이 아니라 실수로 시작하지 못하게 하는 추가 실행 확인이다. **이번 준비에서는 실행하거나 발생기에 설치하지 않았다.** 정상 응답은200·올바른앞단scope·32자리요청ID를요구하고, 과다/무인증역할의허용상태도분리한다. 정상실패·예상밖scope·1초초과·5xx·스케줄누락·App CPU0.5초표본2회연속70%에서중단한다. App은자체실패시#468rollback으로이전IP 25정책을복구한다. 발생기측실패와상대프로세스정리는시험제어자가함께확인해야한다. 측정 중SSMpolling은하지않는다.
+실행에는 `--execute --approved-run <동일 trial UUID>`가 필요하다. 이는 사용자 승인을 대신하는 토큰이 아니라 실수로 시작하지 못하게 하는 추가 실행 확인이다. **실제 시험은 10/29 17:38:04~17:44:54 KST에 실행했으며 현재 종료됐다.** 정상 응답은200·올바른앞단scope·32자리요청ID를요구하고, 과다/무인증역할의허용상태도분리한다. 정상실패·예상밖scope·1초초과·5xx·스케줄누락·App CPU0.5초표본2회연속70%에서중단한다. App은자체실패시#468rollback으로이전IP 25정책을복구한다. 발생기측실패와상대프로세스정리는시험제어자가함께확인해야한다. 측정 중SSMpolling은하지않는다.
 
 ## 근거
 
@@ -97,3 +97,31 @@ sudo python3 /opt/yeodam/ops/jwt-gate468/jwt-gate/prepare.py rollback \
 - [njs 암호화 기능](https://nginx.org/en/docs/njs/reference.html#crypto)
 - [Nginx 실행 단계](https://nginx.org/en/docs/dev/development_guide.html#http_phases)
 - V1 e87ca5f3: JwtConfig·ActiveLoginSessionValidator·CookieAccessTokenResolver, 실제Spring Security7.1.1 JwtTimestampValidator class
+
+## 실제 결과와 재배포 시 보존할 조건
+
+| 조건 | 부하 결과 | 같은 IP 정상 | 다른 IP 대조 |
+| --- | --- | --- | --- |
+| 기준선10초 | 부하 없음 | 10/10 200 | 10/10 200 |
+| 무인증40RPS·20초 | 800건 모두 Nginx401/429, BE 미전달 | 20/20 200 | 20/20 200 |
+| 위조40RPS·20초 | 800건 모두 Nginx401/429, BE 미전달 | 20/20 200 | 20/20 200 |
+| 인증20RPS·20초 | 200 130 / 앞단 사용자429 270 | 20/20 200 | 20/20 200 |
+| 인증40RPS·20초 | 200 130 / 앞단 사용자429 670 | 20/20 200 | 20/20 200 |
+| 같은 사용자 두 SID·합산8RPS·20초 | 200 130 / 앞단 사용자429 30 | 20/20 200 | 20/20 200 |
+
+3,180개 시험 요청을 전부 Nginx 응답ID로 대조했다. App/Loki3,192건 일치, 호스트896표본 오류0, 정상429·5xx·timeout·누락0이었다. 별도 실제 SID 폐기에서 서명 통과 후 BE401, 같은 계정의 다른 SID200을 확인했다. 다른 IP 대조군은 App→자신의 공개 주소이며 LTE·독립 외부 브라우저가 아니다. HTTP/1.1 단기 시험으로 HTTP/2·연결 포화·사진 여정까지 일반화하지 않는다.
+
+공개 health200·login200·무인증 목록401, 기존5개 컨테이너 ID/이미지 유지, root0600 key를 확인했다. 이번 세션3개·pool·시험·수집기·자동 원복 타이머는 정리했고 새 정책은 유지했다. 캡처ID는854b8bda-0eda-4a43-b226-6493908fc5f2, 전체 창은2026-10-29 08:33:04.717~08:47:59.923 UTC다. 로컬 원본·판정·한국어 그림은 `.local-docs/evidence/468-jwt-edge-live-20261029/`, 설명은 `.local-docs/468-jwt-edge-read-gate.md`에 둔다.
+
+이미 설치·검증된 이 원본 App을 재배포할 때에는 두 옵션을 명시한다. 아래는 root SSM에서 실행하는 절차이며 현재 다시 실행할 필요는 없다.
+
+```bash
+sudo <release>/scripts/deploy-v1-staging-source.sh \
+  --scope app --release-dir <release> \
+  --image-env <비공개-image-env-절대경로> \
+  --user-read-limit --jwt-read-gate
+```
+
+기존 njs module·root전용 config/code와 고정 BE Digest가 필요하다. `verify-runtime`은 healthy BE의 JWT 키·issuer·audience를 preload 설정과 비공개 비교하고, 달라지면 실패한다. 키를 출력하거나 기존 키로 우회하지 않는다. 키 변경이 필요하면 새 준비·동등성 확인을 먼저 수행한다. 기본 렌더러는 기존 프로필을 유지하므로 `--jwt-read-gate` 없이 재배포하면 이 분리 정책을 보존하지 못한다.
+
+시험 클라이언트의 기존 summary p95 계산은20표본에서 최대값을 선택해 nearest-rank 방식으로 수정했다. 실제 측정 원본 summary와 실행 소스는 보존했고, 분석/그림은 요청별 원본에서 재계산했다. 이는 주입·차단·성공 개수 변경이 아니다.

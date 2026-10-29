@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Finite, explicitly approved V1 edge trial. Never invoked by CI or preparation."""
-import argparse,json,os,time,threading,signal,http.client,ssl,socket,statistics,subprocess,re
+import argparse,json,os,time,threading,signal,http.client,ssl,socket,statistics,subprocess,re,math
 from pathlib import Path
 from datetime import datetime,timezone
 from collections import Counter
@@ -10,6 +10,10 @@ HOST='v1-staging.yeodam-2gether.com'
 BASE=Path('/var/lib/yeodam/jwt-read468-trials')
 
 def utc():return datetime.now(timezone.utc).isoformat()
+
+def percentile95(values):
+ values=sorted(values)
+ return values[max(0,math.ceil(len(values)*.95)-1)] if values else None
 
 def main():
  p=argparse.ArgumentParser();p.add_argument('--case',required=True,choices=['baseline','unauth40','forged40','auth20','auth40','sameuser8']);p.add_argument('--role',choices=['app','generator'],required=True);p.add_argument('--start-at',required=True);p.add_argument('--trial',required=True);p.add_argument('--session-run-id',required=True);p.add_argument('--execute',action='store_true');p.add_argument('--approved-run',required=True);a=p.parse_args()
@@ -102,7 +106,7 @@ def main():
   subprocess.run(['python3','/opt/yeodam/ops/jwt-gate468/jwt-gate/prepare.py','rollback','--confirm-instance','i-05d320e3a87200d5a'],capture_output=True,check=True)
  stream.close()
  ms=sorted(x['durationMs'] for x in rows)
- result={'case':a.case,'role':a.role,'trial':a.trial,'startedAt':a.start_at,'endedAt':utc(),'seconds':duration,'counts':dict(counts),'requests':len(rows),'dropped':len(dropped),'guardReasons':reasons,'expectedRequests':sum(int(duration*x[2]) for x in cohorts),'completed':not reasons and len(rows)==sum(int(duration*x[2]) for x in cohorts),'p95Ms':ms[min(len(ms)-1,int(len(ms)*.95))] if ms else None,'maxMs':max(ms,default=0),'directBackend':direct,'trial':a.trial}
+ result={'case':a.case,'role':a.role,'trial':a.trial,'startedAt':a.start_at,'endedAt':utc(),'seconds':duration,'counts':dict(counts),'requests':len(rows),'dropped':len(dropped),'guardReasons':reasons,'expectedRequests':sum(int(duration*x[2]) for x in cohorts),'completed':not reasons and len(rows)==sum(int(duration*x[2]) for x in cohorts),'p95Ms':percentile95(ms),'maxMs':max(ms,default=0),'directBackend':direct,'trial':a.trial}
  (root/'summary.json').write_text(json.dumps(result,indent=2));print(json.dumps(result))
  if reasons:raise SystemExit(2)
 

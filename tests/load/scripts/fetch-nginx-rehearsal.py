@@ -84,7 +84,7 @@ def main():
     p.add_argument('--from', dest='start')
     p.add_argument('--to', dest='end')
     p.add_argument('--loki-lookahead-seconds', type=int, default=60)
-    p.add_argument('--ops-directory', choices=['/opt/yeodam/ops/nginx-rehearsal-426', '/opt/yeodam/ops/nginx-create-433', '/opt/yeodam/ops/nginx-tcp436', '/opt/yeodam/ops/nginx-edge438'],
+    p.add_argument('--ops-directory', choices=['/opt/yeodam/ops/nginx-rehearsal-426', '/opt/yeodam/ops/nginx-create-433', '/opt/yeodam/ops/nginx-tcp436', '/opt/yeodam/ops/nginx-edge438', '/opt/yeodam/ops/jwt-gate468/capture'],
                    default='/opt/yeodam/ops/nginx-rehearsal-426')
     a = p.parse_args()
     ops = a.ops_directory+'/nginx-rehearsal-archive.py'
