@@ -133,6 +133,23 @@ def deploy(case):
     m.raw('source',m.ssm.deploy('scripts/b-integration393-resources.py','/run/yeodam-b391/b-integration393-resources.py'))
 
 
+def source_http_ready(m):
+    # Baseline restoration starts the original BE asynchronously. This wait is
+    # before credential creation and the measured input, never an HTTP budget change.
+    code="""import time,urllib.request
+end=time.monotonic()+100
+while time.monotonic()<end:
+ try:
+  for url in ('http://127.0.0.1:8080/api/actuator/health','https://v1-staging.yeodam-2gether.com/api/auth/csrf'):
+   with urllib.request.urlopen(url,timeout=3) as response:
+    if response.status!=200:raise RuntimeError('HTTP not ready')
+  print('BASE_HTTP_READY');break
+ except Exception:time.sleep(2)
+else:raise RuntimeError('Source HTTP not ready; no pool/input')
+"""
+    m.raw('source',["python3 - <<'HEALTH'\n"+code+'\nHEALTH'])
+
+
 def execute(case):
     previous_restored(case);a,adapter,m,_=load(case);directory=BASE/case;plan=json.loads((directory/'plan.json').read_text())
     validate_plan(plan,case,a.FIXED,True);run=plan['rates'][0]['runId'];receipt=json.loads((directory/'ready.json').read_text())
@@ -141,6 +158,7 @@ def execute(case):
     if receipt.get('runId')!=run or receipt.get('hosts')!=adapter.HOSTS or not all(receipt.get(k) is True for k in keys):
         raise RuntimeError('Exact Run preparation and private transfer approval required')
     if m.ssm.aws('sts','get-caller-identity')['Account']!='483175530259':raise RuntimeError('Wrong account')
+    source_http_ready(m)
     m.execute(plan['rates'][0],PROFILES[case]['index'])
 
 

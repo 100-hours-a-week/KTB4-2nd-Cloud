@@ -11,6 +11,15 @@ spec=importlib.util.spec_from_file_location('final465',ROOT/'scripts/cdc-final46
 
 
 class FinalRunContractTests(unittest.TestCase):
+    def test_original_http_is_ready_before_pool_preparation(self):
+        from unittest.mock import Mock
+        runtime=Mock()
+        m.source_http_ready(runtime)
+        command=runtime.raw.call_args.args
+        self.assertEqual(command[0],'source')
+        self.assertIn('/api/auth/csrf',command[1][0])
+        self.assertIn('/api/actuator/health',command[1][0])
+        self.assertIn('no pool/input',command[1][0])
     def plan(self,case):
         p=m.PROFILES[case]
         return {'durationSeconds':900,'cutoverSeconds':360,'authActors':p['authActors'],'poolCount':p['poolCount'],
