@@ -63,6 +63,11 @@ class FrozenBatchComparison(unittest.TestCase):
    for key in ['durationSeconds','cutoverSeconds','httpTimeoutSeconds','sourceApplyConcurrency','snapshotBytesPerSecond']:
     changed=copy.deepcopy(plan);changed[key]+=1
     with self.subTest(key=key),self.assertRaises(RuntimeError):f.validate_plan(changed,control)
+ def test_auth_observer_success_label_is_not_an_http_failure(self):
+  result=m.module('compare472test',ROOT/'scripts/compare-batch472.py')
+  self.assertEqual(result.auth_failures({'success':400}),0)
+  self.assertEqual(result.auth_failures({'success':398,'timeout':2}),2)
+  self.assertEqual(result.auth_failures({'200':399,'401':1}),1)
   control,plan=self.plans();plan['maxTransactionRecords']=11
   with self.assertRaises(RuntimeError):m.validate_plan(plan,control)
 

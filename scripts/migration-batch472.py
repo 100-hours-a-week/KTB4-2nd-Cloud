@@ -163,5 +163,9 @@ def main():
  elif a.action=='close':module('close472',ROOT/'scripts/javamysql467-close.py').main(d,'diagnostics472')
  else:
   r=module('analyze472',ROOT/'scripts/analyze-javamysql467.py');r.BASE=BASE/CASE;r.ARCHIVE_NAMESPACE='diagnostics472';r.main(['--pull'] if a.pull else [])
+  path=BASE/CASE/'diagnostic-analysis.json';result=json.loads(path.read_text());plan=json.loads((BASE/CASE/'plan.json').read_text())
+  result['fixedSettingsFrom']='467 instrumented180s control; migration trip batch commit candidate only'
+  result['candidateChanges']={k:plan[k] for k in ['backendCommit','backendImage','maxTransactionRecords','runtimeImageParent']}
+  path.write_text(json.dumps(result,indent=2))
 
 if __name__=='__main__':main()

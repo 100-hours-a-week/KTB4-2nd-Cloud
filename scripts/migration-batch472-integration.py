@@ -7,6 +7,7 @@ import importlib.util
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import time
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -71,6 +72,13 @@ def initialize():
  if source.count('scripts/migration-batch472.py')!=1:raise RuntimeError('Preparation import anchor differs')
  source=source.replace('scripts/migration-batch472.py','scripts/migration-batch472-integration.py')
  compile(source,'prepare-integration472','exec');(BASE/'tools').mkdir();(BASE/'tools/prepare.py').write_text(source)
+ reports={}
+ for name in ['report.py','analysis.py','query-deltas.py','assess.py','case-result.py','close.py']:
+  source=(PARENT/'tools'/name).read_text()
+  text=source.replace('KTB4-2nd-Cloud-463','KTB4-2nd-Cloud-472').replace('scripts/cdc-poll463.py','scripts/migration-batch472-integration.py').replace('evidence/463-cdc-poll/integration','evidence/472-batch-commit/integration').replace("'issue':463","'issue':472")
+  compile(text,name,'exec');(BASE/'tools'/name).write_text(text)
+  reports[name]={'parentSha256':hashlib.sha256(source.encode()).hexdigest(),'renderedSha256':hashlib.sha256(text.encode()).hexdigest(),'changes':'Root/module/evidence identity only; unchanged19 checks and analysis'}
+ (BASE/'tools/report-tools-manifest.json').write_text(json.dumps(reports,indent=2))
  print(json.dumps({'phase':'initialized','runId':plan['rates'][0]['runId'],'runtimeChanged':False}))
 
 def run():
@@ -90,11 +98,19 @@ def run():
  m.execute(plan['rates'][0],2)
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('action',choices=['init','deploy','run']);a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('action',choices=['init','deploy','run','finish']);a=p.parse_args()
  if a.action=='init':initialize();return
  prerequisite();validate_plan(json.loads((BASE/CASE/'plan.json').read_text()))
  if a.action=='deploy':
   driver().deploy();module('check472image',ROOT/'scripts/migration-batch472.py').verify_candidate_cached(BASE)
- else:run()
+ elif a.action=='run':run()
+ else:
+  plan=json.loads((BASE/CASE/'plan.json').read_text());state=json.loads((BASE/CASE/(plan['rates'][0]['runId']+'.state.json')).read_text())
+  if state.get('phase')!='completed':raise RuntimeError('Unfinished run: preserve runtime before closure')
+  try:
+   result=subprocess.run(['python3',str(BASE/'tools/case-result.py'),CASE])
+  finally:
+   subprocess.run(['python3',str(BASE/'tools/close.py')],check=True)
+  if result.returncode:raise SystemExit(result.returncode)
 
 if __name__=='__main__':main()
