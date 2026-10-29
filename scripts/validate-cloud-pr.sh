@@ -94,6 +94,9 @@ node --test tests/load/tests/browser-evidence.test.mjs
 node --test tests/load/tests/browser-journey-guard.test.mjs
 node --test tests/load/tests/nginx-mobile-har.test.mjs
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_failure_evidence.py'
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_shared_ip_trial.py'
+python3 -m unittest discover -s tests/ci -p 'test_nginx_shared_ip_observation.py'
+python3 -m unittest discover -s tests/ci -p 'test_user_read_cutover.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_browser_guard.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_connection_trials.py'
 python3 -c 'import ast,pathlib; [ast.parse(pathlib.Path("tests/load/scripts/"+n).read_text()) for n in ["analyze-nginx-browser-load.py", "analyze-nginx-connection-browser.py"]]'
@@ -117,6 +120,7 @@ bash -n tests/load/scripts/run-k6.sh
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_observability.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_staging_cutover.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_rehearsal_reset.py'
+python3 -m unittest discover -s tests/ci -p 'test_cdc461.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_migration_seed.py'
 bash -n terraform/v2/staging/files/initialize-mysql-replica.sh
 bash -n scripts/provision-staging-cutover-account.sh
