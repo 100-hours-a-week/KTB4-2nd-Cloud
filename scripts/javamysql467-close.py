@@ -11,8 +11,11 @@ import time
 
 ROOT=Path(__file__).resolve().parents[1]
 
-def main():
- s=importlib.util.spec_from_file_location('a467close',ROOT/'scripts/diagnose-javamysql467.py');a=importlib.util.module_from_spec(s);s.loader.exec_module(a);_,_,m,_=a.load();p=a.BASE/a.CASE;plan=json.loads((p/'plan.json').read_text());run=plan['rates'][0]['runId'];sp=p/(run+'.state.json');state=json.loads(sp.read_text())
+def main(driver=None,namespace='diagnostics467'):
+ if namespace not in ('diagnostics467','diagnostics472'):raise ValueError('Unapproved diagnostic namespace')
+ if driver is None:
+  s=importlib.util.spec_from_file_location('a467close',ROOT/'scripts/diagnose-javamysql467.py');driver=importlib.util.module_from_spec(s);s.loader.exec_module(driver)
+ a=driver;_,_,m,_=a.load();p=a.BASE/a.CASE;plan=json.loads((p/'plan.json').read_text());run=plan['rates'][0]['runId'];sp=p/(run+'.state.json');state=json.loads(sp.read_text())
  if state.get('phase')!='apps_stopped':raise RuntimeError('Preserve before cleanup; apps must have stopped')
  # Both stopped applications flush JFR on exit; parse with the same installed JRE.
  code='''import json,subprocess
@@ -44,7 +47,7 @@ for name in ['resource-samples.jsonl','completions.json','snapshot-stream.json']
  if not f.is_file():raise RuntimeError('Missing diagnostic '+name)
  subprocess.run(['aws','s3','cp',str(f),'s3://yeodam-v2-staging-mysql-backup-483175530259-ap-northeast-2/'+prefix+name,'--region','ap-northeast-2','--sse','AES256','--only-show-errors'],check=True,capture_output=True)
 print(json.dumps({'runId':run,'jfr':reports,'mysqlCheckpoints':4,'privatePoolOrEnvironmentArchived':False,'prefix':prefix}))
-'''.replace('RUN',repr(run)).replace('FROM',str(round(state['startedAt']*1000))).replace('TO',str(round((state['startedAt']+180)*1000)))
+'''.replace('diagnostics467',namespace).replace('RUN',repr(run)).replace('FROM',str(round(state['startedAt']*1000))).replace('TO',str(round((state['startedAt']+180)*1000)))
  r=m.raw('source',["python3 - <<'ARCHIVE467'\n"+code+'\nARCHIVE467']);(p/'archive-receipt.json').write_text(json.dumps(m.records(r),indent=2));print(json.dumps(m.records(r)),flush=True)
  # Snapshot both DBs after stopping CDC/auth writers. Source remained authoritative.
  def preserve(role):
@@ -59,7 +62,7 @@ r.snapshot(role,path);key='migration/performance455/diagnostics467/'+run+'/'+rol
 import subprocess
 subprocess.run(['aws','s3','cp',str(path),'s3://'+r.BUCKET+'/'+key,'--region','ap-northeast-2','--sse','AES256','--only-show-errors'],check=True,capture_output=True)
 print(json.dumps({'role':role,'key':key,'sha256':r.sha(path),'bytes':path.stat().st_size,'flags':r.query(role,'SELECT @@read_only,@@super_read_only;'),'preservedAt':time.time()}))
-'''.replace('ROLE',repr(role)).replace('RUN',repr(run))
+'''.replace('diagnostics467',namespace).replace('ROLE',repr(role)).replace('RUN',repr(run))
   out=m.raw(role,["python3 - <<'PRESERVE467'\n"+code+'\nPRESERVE467']);(p/('final-preserved-'+role+'.json')).write_text(json.dumps(m.records(out),indent=2));return m.records(out)
  with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
   for result in pool.map(preserve,['source','target']):print(json.dumps(result),flush=True)
