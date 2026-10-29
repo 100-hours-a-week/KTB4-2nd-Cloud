@@ -12,6 +12,7 @@ scope=''
 release_dir=''
 image_env=''
 redis_compat='false'
+user_read_limit='false'
 temporary_directory=''
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
@@ -42,7 +43,7 @@ usage() {
 Usage: sudo ./scripts/deploy-v1-staging-source.sh \
   --scope app|worker \
   --release-dir /opt/yeodam/releases/CLOUD_COMMIT_SHA \
-  --image-env /etc/yeodam/v1-source-images.env [--redis-compat]
+  --image-env /etc/yeodam/v1-source-images.env [--redis-compat] [--user-read-limit]
 
 Runtime values are read only from /yeodam/v2/staging/v1-source in Parameter Store.
 The supplied image file must contain staging-compatible SHA and digest references.
@@ -55,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --release-dir) release_dir="${2:?missing release directory}"; shift 2 ;;
     --image-env) image_env="${2:?missing image env file}"; shift 2 ;;
     --redis-compat) redis_compat='true'; shift ;;
+    --user-read-limit) user_read_limit='true'; shift ;;
     --help|-h) usage; exit 0 ;;
     *) fail "Unknown argument: $1" ;;
   esac
@@ -62,6 +64,7 @@ done
 
 [[ "${EUID}" -eq 0 ]] || fail 'Run as root.'
 [[ "${scope}" == app || "${scope}" == worker ]] || fail 'Scope must be app or worker.'
+[[ "${user_read_limit}" != true || "${scope}" == app ]] || fail 'User read limiting is App-only.'
 if [[ "${scope}" == app ]]; then
   [[ -f "$(dirname -- "${BASH_SOURCE[0]}")/render-v1-staging-nginx.py" ]] || fail 'Staging Nginx renderer is missing.'
   [[ -f "$(dirname -- "${BASH_SOURCE[0]}")/../monitoring/v1-staging/nginx_observability.py" ]] || fail 'Staging Nginx observation helper is missing.'
@@ -90,6 +93,10 @@ if [[ "${scope}" == app ]]; then
   [[ "$(image_value FRONTEND_API_ORIGIN)" == "https://${DOMAIN}" ]] || fail 'FRONTEND_API_ORIGIN must explicitly attest the staging FE build.'
   require_image FRONTEND_IMAGE FRONTEND_DIGEST yeodam-frontend
   require_image BACKEND_IMAGE BACKEND_DIGEST yeodam-backend
+  if [[ "${user_read_limit}" == true ]]; then
+    [[ "$(image_value BACKEND_DIGEST)" == sha256:3f1cb707caa276a7b834d92279d3738184f0b7c8b681e876544f0cc9612dc2b8 ]] || fail 'User read limiting requires the reviewed V1 image digest.'
+    printf 'V1_USER_READ_RATE_LIMIT_ENABLED=true\nV1_USER_READ_RATE_LIMIT_RPS=5\nV1_USER_READ_RATE_LIMIT_BURST=30\nV1_USER_READ_RATE_LIMIT_MAX_USERS=10000\n' >> "${runtime_env}"
+  fi
   printf 'BACKEND_LOG_GROUP=%s\n' "${BACKEND_LOG_GROUP}" >> "${runtime_env}"
   compose_files=(-f "${release_dir}/app-compose.yml")
   services=(backend frontend)
@@ -134,9 +141,16 @@ done
 
 if [[ "${scope}" == app ]]; then
   nginx_rendered="${temporary_directory}/nginx.conf"
+  user_read_args=()
+  if [[ "${user_read_limit}" == true ]]; then
+    # Verify the healthy runtime, not merely the requested deployment flag.
+    backend_id="$("${compose[@]}" ps --quiet backend)"
+    docker inspect --format '{{range .Config.Env}}{{if eq . "V1_USER_READ_RATE_LIMIT_ENABLED=true"}}enabled{{end}}{{end}}' "${backend_id}" | grep -qx enabled || fail 'Backend user read limiter is not active.'
+    user_read_args=(--user-read-limit-enabled --backend-digest "$(image_value BACKEND_DIGEST)")
+  fi
   python3 "$(dirname -- "${BASH_SOURCE[0]}")/render-v1-staging-nginx.py" \
     --template "${release_dir}/nginx/yeodam.conf" --output "${nginx_rendered}" \
-    --release "${release_dir##*/}"
+    --release "${release_dir##*/}" "${user_read_args[@]}"
   install -m 0644 "${nginx_rendered}" /etc/nginx/sites-available/yeodam-v1-staging
   ln -sfn /etc/nginx/sites-available/yeodam-v1-staging /etc/nginx/sites-enabled/yeodam-v1-staging
   rm -f /etc/nginx/sites-enabled/yeodam-maintenance
