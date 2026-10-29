@@ -45,6 +45,38 @@ def load():return driver().load()
 
 def previous_restored(case):return driver().previous_restored(case)
 
+def observer_ready():
+ d=driver();_,_,m,_=d.load();plan=json.loads((BASE/CASE/'plan.json').read_text());run=plan['rates'][0]['runId']
+ validate_plan(plan)
+ if (BASE/'jfr-probe.json').exists():raise RuntimeError('Keep completed observer receipt')
+ old=json.loads((CONTROL/CASE/'plan.json').read_text())['rates'][0]['runId']
+ reader=json.loads((CONTROL/'observer-manifest.json').read_text())['readerClassSha256']
+ code='''import importlib.util,json,hashlib,subprocess,shutil
+from pathlib import Path
+s=importlib.util.spec_from_file_location('host467','/run/yeodam-b391/javamysql467-host.py');h=importlib.util.module_from_spec(s);s.loader.exec_module(h)
+root=Path('/run/yeodam-javamysql467');run=RUN;old=OLD
+reader=root/old/'app/Jfr467Summary.class'
+assert hashlib.sha256(reader.read_bytes()).hexdigest()==READER_SHA
+profiles={}
+for role in ['app','consumer']:
+ h.setup_jfr(run,role)
+ current=root/run/role/'settings.jfc';previous=root/old/role/'settings.jfc'
+ assert current.read_bytes()==previous.read_bytes(), 'Observer profile differs'
+ profiles[role]=hashlib.sha256(current.read_bytes()).hexdigest()
+target=root/run/'app';shutil.copyfile(reader,target/'Jfr467Summary.class');(target/'Jfr467Summary.class').chmod(0o444)
+image=IMAGE
+common=['docker','run','--rm','--network','none','--cpus','1','--mount','type=bind,source='+str(target)+',target=/run/jfr467','--entrypoint','java']
+p=subprocess.run(common+['--memory','256m',image,'-Xmx32m','-XX:StartFlightRecording=settings=/run/jfr467/settings.jfc,filename=/run/jfr467/probe.jfr,dumponexit=true','-version'],capture_output=True,text=True)
+if p.returncode:raise RuntimeError('JFR startup probe failed; no input')
+p=subprocess.run(common+['--memory','1024m',image,'-Xmx768m','-cp','/run/jfr467','Jfr467Summary','/run/jfr467/probe.jfr','0','9223372036854775807'],capture_output=True,text=True)
+if p.returncode:raise RuntimeError('JFR reader probe failed; no input')
+report=json.loads(p.stdout)
+if report['deniedEventCounts']:raise RuntimeError('Sensitive JFR event; no input')
+print(json.dumps({'runId':run,'exitCode':0,'deniedEvents':report['deniedEventCounts'],'readerClassSha256':READER_SHA,'profilesMatchControl':profiles,'probeBytes':(target/'probe.jfr').stat().st_size}))
+'''.replace('READER_SHA',repr(reader)).replace('RUN',repr(run)).replace('OLD',repr(old)).replace('IMAGE',repr(plan['runtimeImageParent']))
+ records=m.records(m.raw('source',["python3 - <<'OBSERVER472'\n"+code+'\nOBSERVER472']))
+ (BASE/'jfr-probe.json').write_text(json.dumps(records,indent=2));print(json.dumps(records[-1]))
+
 def initialize(commit,image,workflow):
  if BASE.exists():raise RuntimeError('Keep existing472 attempt; no overwrite/replacement')
  control=json.loads((CONTROL/CASE/'plan.json').read_text())
@@ -74,12 +106,13 @@ def initialize(commit,image,workflow):
  print(json.dumps({'runId':plan['rates'][0]['runId'],'inputSeconds':180,'writerSwitch':False,'runtimeChanged':False}))
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('action',choices=['init','deploy','run','close','analyze']);p.add_argument('--backend-commit');p.add_argument('--backend-image');p.add_argument('--workflow',type=int);p.add_argument('--pull',action='store_true');a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('action',choices=['init','deploy','observer-ready','run','close','analyze']);p.add_argument('--backend-commit');p.add_argument('--backend-image');p.add_argument('--workflow',type=int);p.add_argument('--pull',action='store_true');a=p.parse_args()
  if a.action=='init':
   if not all((a.backend_commit,a.backend_image,a.workflow)):raise RuntimeError('Published image receipt required')
   initialize(a.backend_commit,a.backend_image,a.workflow);return
  d=driver();validate_plan(json.loads((BASE/CASE/'plan.json').read_text()))
  if a.action=='deploy':d.deploy()
+ elif a.action=='observer-ready':observer_ready()
  elif a.action=='run':
   r=module('run472',ROOT/'scripts/javamysql467-run.py');r.load_driver=lambda root:d;r.run(ROOT)
  elif a.action=='close':module('close472',ROOT/'scripts/javamysql467-close.py').main(d,'diagnostics472')
