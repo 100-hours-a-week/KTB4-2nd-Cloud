@@ -13,6 +13,7 @@ release_dir=''
 image_env=''
 redis_compat='false'
 user_read_limit='false'
+jwt_read_gate='false'
 temporary_directory=''
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
@@ -43,7 +44,7 @@ usage() {
 Usage: sudo ./scripts/deploy-v1-staging-source.sh \
   --scope app|worker \
   --release-dir /opt/yeodam/releases/CLOUD_COMMIT_SHA \
-  --image-env /etc/yeodam/v1-source-images.env [--redis-compat] [--user-read-limit]
+  --image-env /etc/yeodam/v1-source-images.env [--redis-compat] [--user-read-limit] [--jwt-read-gate]
 
 Runtime values are read only from /yeodam/v2/staging/v1-source in Parameter Store.
 The supplied image file must contain staging-compatible SHA and digest references.
@@ -57,6 +58,7 @@ while [[ $# -gt 0 ]]; do
     --image-env) image_env="${2:?missing image env file}"; shift 2 ;;
     --redis-compat) redis_compat='true'; shift ;;
     --user-read-limit) user_read_limit='true'; shift ;;
+    --jwt-read-gate) jwt_read_gate='true'; shift ;;
     --help|-h) usage; exit 0 ;;
     *) fail "Unknown argument: $1" ;;
   esac
@@ -65,6 +67,10 @@ done
 [[ "${EUID}" -eq 0 ]] || fail 'Run as root.'
 [[ "${scope}" == app || "${scope}" == worker ]] || fail 'Scope must be app or worker.'
 [[ "${user_read_limit}" != true || "${scope}" == app ]] || fail 'User read limiting is App-only.'
+[[ "${jwt_read_gate}" != true || ( "${scope}" == app && "${user_read_limit}" == true ) ]] || fail 'JWT gate requires App scope and --user-read-limit.'
+if [[ "${jwt_read_gate}" == true ]]; then
+  [[ -f /usr/lib/nginx/modules/ngx_http_js_module.so && -f /etc/yeodam/nginx-jwt-gate/config.json && -f /etc/yeodam/nginx-jwt-gate/gate.mjs ]] || fail 'Prepare and verify the edge JWT gate before redeploying it.'
+fi
 if [[ "${scope}" == app ]]; then
   [[ -f "$(dirname -- "${BASH_SOURCE[0]}")/render-v1-staging-nginx.py" ]] || fail 'Staging Nginx renderer is missing.'
   [[ -f "$(dirname -- "${BASH_SOURCE[0]}")/../monitoring/v1-staging/nginx_observability.py" ]] || fail 'Staging Nginx observation helper is missing.'
@@ -147,6 +153,11 @@ if [[ "${scope}" == app ]]; then
     backend_id="$("${compose[@]}" ps --quiet backend)"
     docker inspect --format '{{range .Config.Env}}{{if eq . "V1_USER_READ_RATE_LIMIT_ENABLED=true"}}enabled{{end}}{{end}}' "${backend_id}" | grep -qx enabled || fail 'Backend user read limiter is not active.'
     user_read_args=(--user-read-limit-enabled --backend-digest "$(image_value BACKEND_DIGEST)")
+    if [[ "${jwt_read_gate}" == true ]]; then
+      # Recheck the key privately against the healthy backend. Never print either configuration.
+      python3 "${release_dir}/monitoring/v1-staging/jwt-gate/prepare.py" verify-runtime
+      user_read_args+=(--jwt-read-gate)
+    fi
   fi
   python3 "$(dirname -- "${BASH_SOURCE[0]}")/render-v1-staging-nginx.py" \
     --template "${release_dir}/nginx/yeodam.conf" --output "${nginx_rendered}" \

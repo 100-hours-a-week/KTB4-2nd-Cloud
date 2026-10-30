@@ -98,6 +98,10 @@ python3 -m unittest discover -s tests/load/tests -p 'test_nginx_shared_ip_trial.
 python3 -m unittest discover -s tests/ci -p 'test_nginx_shared_ip_observation.py'
 python3 -m unittest discover -s tests/ci -p 'test_user_read_cutover.py'
 python3 -m unittest discover -s tests/ci -p 'test_nginx_user_read_profile.py'
+python3 -m unittest discover -s tests/ci -p 'test_nginx_jwt_*.py'
+node --test tests/ci/nginx-jwt-gate.test.mjs
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_jwt_trial.py'
+bash tests/ci/check-nginx-jwt-gate.sh
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_browser_guard.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_connection_trials.py'
 python3 -c 'import ast,pathlib; [ast.parse(pathlib.Path("tests/load/scripts/"+n).read_text()) for n in ["analyze-nginx-browser-load.py", "analyze-nginx-connection-browser.py"]]'
@@ -257,3 +261,6 @@ python3 -m unittest discover -s tests/ci -p 'test_v2_release_event.py'
 python3 -m unittest discover -s tests/ci -p 'test_v2_staging_release.py'
 
 python3 -m unittest discover -s tests/ci -p 'test_v2_production_release.py'
+
+python3 -m unittest discover -s tests/ci -p 'test_javamysql467.py'
+python3 -m unittest discover -s tests/ci -p 'test_batch_commit472.py'

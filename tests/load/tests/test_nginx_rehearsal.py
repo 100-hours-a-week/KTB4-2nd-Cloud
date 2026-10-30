@@ -95,6 +95,15 @@ class RehearsalTest(unittest.TestCase):
             self.assertNotIn(forbidden, text)
         self.assertNotIn('opaque', archive.scrub('Authorization: Bearer opaque', b'key'))
 
+    def test_export_retains_only_finite_jwt_classification_not_token_identity(self):
+        row = archive.access_row({'peer_addr':'203.0.113.9','jwt_gate_result':'signature_valid',
+                                  'accessToken':'private','userId':'123'},b'key')
+        self.assertEqual(row['jwt_gate_result'],'signature_valid')
+        self.assertNotIn('private',json.dumps(row))
+        self.assertNotIn('userId',row)
+        with self.assertRaises(ValueError):
+            archive.access_row({'jwt_gate_result':'arbitrary-private-value'},b'key')
+
     def test_cloudwatch_empty_page_is_not_end_and_ingestion_time_is_kept(self):
         pages = [{'events': [], 'nextToken': 'next'}, {'events': [
             {'eventId': 'a', 'timestamp': 10, 'ingestionTime': 20, 'message': '{"event":"done"}'}]}]
