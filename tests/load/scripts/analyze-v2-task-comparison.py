@@ -28,10 +28,13 @@ def analyze(directory):
         if row['metric'] == 'http_req_duration':
             durations[(phase, operation)].append(data['value'])
             codes[phase][tags.get('status', 'unknown')] += 1
-        elif row['metric'] in ('dropped_iterations', 'business_failures'):
+        elif row['metric'] in ('dropped_iterations', 'business_failures', 'http_req_failed'):
             counts[(phase, row['metric'])] += data['value']
     phases = {}
-    for phase in ['warmup', 'r10', 'r30', 'r50']:
+    observed = set(p for p, _ in durations)
+    measured = sorted((p for p in observed if p.startswith('r') and p[1:].isdigit()),
+                      key=lambda p: int(p[1:]))
+    for phase in ['warmup', *measured]:
         phases[phase] = {'statusCounts': dict(codes[phase]),
             'dropped': counts[(phase, 'dropped_iterations')],
             'businessFailures': counts[(phase, 'business_failures')], 'operations': {}}
@@ -42,9 +45,11 @@ def analyze(directory):
                 'p95Ms': percentile(v, .95), 'p99Ms': percentile(v, .99),
                 'maxMs': max(v) if v else None}
     events = []
+    starts = []
     for line in (directory / 'events.jsonl').open():
         try: row = json.loads(line)
         except ValueError: continue
+        if row.get('event') == 'write_started': starts.append(row)
         if row.get('event') == 'result' and row.get('operation') == 'trip_create': events.append(row)
     confirmed = [e for e in events if e['ok']]
     ids = [e['tripId'] for e in confirmed]
@@ -54,6 +59,10 @@ def analyze(directory):
         'end': (directory / 'end.txt').read_text().strip(),
         'exitCode': int((directory / 'exit-code.txt').read_text()), 'phases': phases,
         'writeAttempts': len(events), 'confirmedWrites': len(confirmed),
+        'writeStarts': len(starts), 'missingWriteResults': len(starts) - len(events) if starts else 0,
+        'totalDropped': sum(v for (p, name), v in counts.items() if name == 'dropped_iterations'),
+        'totalBusinessFailures': sum(v for (p, name), v in counts.items() if name == 'business_failures'),
+        'totalHttpFailures': sum(v for (p, name), v in counts.items() if name == 'http_req_failed'),
         'duplicateResponseIds': len(ids) - len(set(ids)),
         'confirmedProjectionSHA256': hashlib.sha256(projection.encode()).hexdigest()}
 
