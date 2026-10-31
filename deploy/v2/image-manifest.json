@@ -3,16 +3,16 @@
   "components": {
     "frontend": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-FE",
-      "sourceSha": "e0fab8706cd9722ddffb5ef0354015d21903e74c",
-      "image": "ghcr.io/100-hours-a-week/yeodam-frontend:sha-e0fab8706cd9722ddffb5ef0354015d21903e74c",
-      "digest": "sha256:045af03505fdc5ebe17db7a3d785a492490aaacc794dcbab14c3d6bd73ec1041",
+      "sourceSha": "d4629721146dc79328fd8bed095343489c8023ea",
+      "image": "ghcr.io/100-hours-a-week/yeodam-frontend:sha-d4629721146dc79328fd8bed095343489c8023ea",
+      "digest": "sha256:52d3db1299873c499acd4ade689b3fa3f51d4533c7984504617bacd3af8acdc7",
       "platform": "linux/amd64"
     },
     "backend": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
-      "sourceSha": "501419feb6d113b0e17881c0f39927d95437f367",
-      "image": "ghcr.io/100-hours-a-week/yeodam-backend:sha-501419feb6d113b0e17881c0f39927d95437f367",
-      "digest": "sha256:478c5672657d78e0bef08ad423da7d402d83631c26de004fec61aaa6b9479ff0",
+      "sourceSha": "1f46254e1100aa9e3f5ebd2a0da088a021b3135d",
+      "image": "ghcr.io/100-hours-a-week/yeodam-backend:sha-1f46254e1100aa9e3f5ebd2a0da088a021b3135d",
+      "digest": "sha256:e3e8b523a33b0459d6c7a7b2cc1f591ee8cbe2ce07ec33f2fdf690f8b14ef1b0",
       "platform": "linux/amd64"
     },
     "ai-app": {
