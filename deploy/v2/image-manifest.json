@@ -10,9 +10,9 @@
     },
     "backend": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
-      "sourceSha": "4c6a66671e4b7a359ff0f761ee61a41a3c929442",
-      "image": "ghcr.io/100-hours-a-week/yeodam-backend:sha-4c6a66671e4b7a359ff0f761ee61a41a3c929442",
-      "digest": "sha256:e5f07199eaa7c979dcf174dde370cd3667046a490ad0aaed0b4360e17171c638",
+      "sourceSha": "f907e1f9945efab7b06dd578dfc722d9b3fd021e",
+      "image": "ghcr.io/100-hours-a-week/yeodam-backend:sha-f907e1f9945efab7b06dd578dfc722d9b3fd021e",
+      "digest": "sha256:10e069448c9316a3dd95ebc6bbef5b5363e0c08bc373d2e142b933d34c857f97",
       "platform": "linux/amd64"
     },
     "ai-app": {
