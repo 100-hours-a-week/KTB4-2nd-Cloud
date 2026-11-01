@@ -11,24 +11,6 @@ resource "aws_security_group" "plg" {
   tags        = merge(local.common_tags, { Name = "${local.plg_name}-sg", Role = "observability" })
 }
 
-resource "aws_vpc_security_group_ingress_rule" "plg_loki_from_v1" {
-  security_group_id            = aws_security_group.plg.id
-  referenced_security_group_id = aws_security_group.v1_source_app.id
-  description                  = "V1 App Alloy to Loki only"
-  ip_protocol                  = "tcp"
-  from_port                    = 3100
-  to_port                      = 3100
-}
-
-resource "aws_vpc_security_group_ingress_rule" "plg_prometheus_from_v1" {
-  security_group_id            = aws_security_group.plg.id
-  referenced_security_group_id = aws_security_group.v1_source_app.id
-  description                  = "V1 App Alloy remote write only"
-  ip_protocol                  = "tcp"
-  from_port                    = 9090
-  to_port                      = 9090
-}
-
 resource "aws_vpc_security_group_egress_rule" "plg_https" {
   security_group_id = aws_security_group.plg.id
   description       = "SSM, registry, package and AWS APIs through staging NAT"
