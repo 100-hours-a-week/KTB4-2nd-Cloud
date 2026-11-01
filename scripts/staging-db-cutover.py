@@ -2,6 +2,7 @@
 """Staging-only native-replication handoff; no HTTP request replay or DB reset."""
 import argparse
 import fcntl
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -99,8 +100,9 @@ class Database:
         self.ca.parent.rmdir()
 
 class Handoff:
-    def __init__(self, db, path, run_id, gap):
+    def __init__(self, db, path, run_id, gap, v2_client_ip=None):
         self.db, self.path, self.run_id, self.gap = db, path, run_id, gap
+        self.v2_client_ip = v2_client_ip
         self.state = json.loads(path.read_text()) if path.exists() else None
 
     def save(self, phase, **values):
@@ -144,7 +146,12 @@ class Handoff:
         # ProxySQL can retain an idle connection from an earlier candidate
         # SELECT. Permit only idle app connections accounted for by its free
         # HG20 pool. Active or unrelated clients still block the rehearsal.
-        require(self.db.query('target',"SELECT COUNT(*) FROM information_schema.processlist WHERE USER NOT IN ('system user','event_scheduler','yeodam_cutover') AND ID!=CONNECTION_ID() AND NOT(USER='yeodam_app' AND HOST LIKE '10.30.0.174:%' AND COMMAND='Sleep');")=='0', 'Target has another client; isolate the rehearsal first')
+        allowed_v2 = (f" OR (USER='yeodam_app' AND HOST LIKE '{self.v2_client_ip}:%' AND COMMAND='Sleep')"
+                      if self.v2_client_ip else '')
+        require(self.db.query('target',"SELECT COUNT(*) FROM information_schema.processlist WHERE USER NOT IN ('system user','event_scheduler','yeodam_cutover') AND ID!=CONNECTION_ID() AND NOT((USER='yeodam_app' AND HOST LIKE '10.30.0.174:%' AND COMMAND='Sleep')"+allowed_v2+");")=='0', 'Target has another or active client; isolate the rehearsal first')
+        if self.v2_client_ip:
+            v2_idle = self.db.query('target',f"SELECT COUNT(*) FROM information_schema.processlist WHERE USER='yeodam_app' AND HOST LIKE '{self.v2_client_ip}:%' AND COMMAND='Sleep';")
+            require(v2_idle.isdigit() and 0 < int(v2_idle) <= 20, 'Expected only bounded idle V2 rehearsal connections')
         idle = self.db.query('target',"SELECT COUNT(*) FROM information_schema.processlist WHERE USER='yeodam_app' AND HOST LIKE '10.30.0.174:%' AND COMMAND='Sleep';")
         free = self.db.query('proxy','SELECT COALESCE(SUM(ConnFree),0) FROM stats_mysql_connection_pool WHERE hostgroup=20;')
         used = self.db.query('proxy','SELECT COALESCE(SUM(ConnUsed),0) FROM stats_mysql_connection_pool WHERE hostgroup=20;')
@@ -257,10 +264,15 @@ def main():
     parser.add_argument('--run-id',required=True)
     parser.add_argument('--confirm-run')
     parser.add_argument('--gap-seconds',type=int,default=8)
+    parser.add_argument('--allow-v2-client-ip', help='exact isolated V2 task IP; only idle connections are permitted')
     args = parser.parse_args()
     require(os.geteuid()==0, 'Run as root on V1 staging App')
     require(str(UUID(args.run_id))==args.run_id and re.fullmatch(r'10\.30\.10\.[0-9]+',args.target), 'Expected staging target and canonical Run UUID')
     require(2<=args.gap_seconds<=60, 'Gap deadline must be 2..60 seconds')
+    if args.allow_v2_client_ip:
+        address = ipaddress.IPv4Address(args.allow_v2_client_ip)
+        require(address in ipaddress.IPv4Network('10.30.10.0/24') and str(address)!=args.target,
+                'Expected a separate staging private app task IP')
     if args.action!='check': require(args.confirm_run==args.run_id, 'Mutation requires matching Run confirmation')
     require(command(['aws','sts','get-caller-identity','--query','Account','--output','text'])=='483175530259', 'Wrong AWS account')
     require(command(['mysql','-uroot','--protocol=socket','--batch','--skip-column-names','-e','SELECT @@server_id;'])=='1', 'Wrong staging source')
@@ -272,7 +284,7 @@ def main():
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         db = Database(args.target)
         try:
-            handoff = Handoff(db,DIRECTORY/'active.json',args.run_id,args.gap_seconds)
+            handoff = Handoff(db,DIRECTORY/'active.json',args.run_id,args.gap_seconds,args.allow_v2_client_ip)
             if args.action=='check': print(json.dumps({'preflight':handoff.check(),'journal':handoff.state}))
             else: getattr(handoff,args.action)()
         finally: db.close()

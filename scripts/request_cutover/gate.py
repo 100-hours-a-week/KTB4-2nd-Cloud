@@ -36,6 +36,8 @@ class Gate:
         self.waiters = self.wait_bytes = 0
         self.deadline = 0.0
         self.token = None
+        self.sealed = False
+        self.sealed_fingerprint = None
         self.aborts = 0
         self.reason = None
         self.sequence = 0
@@ -58,6 +60,9 @@ class Gate:
         if self.config.get('environment') == 'staging-preparation' and previous['phase'] != 'V1':
             raise ValueError('preparation profile cannot resume committed V2 authority')
         self.phase = previous['phase']  # COMMIT is durable before any V2 dispatch.
+        self.sealed = self.phase == 'BLOCKED'
+        self.sealed_fingerprint = previous.get('auth_fingerprint')
+        self.token = previous.get('hold_token') if self.sealed else None
         self.reason = 'recovered_committed' if self.phase == 'V2' else 'recovered_precommit'
 
     def persist(self, phase):
@@ -69,7 +74,9 @@ class Gate:
         try:
             with os.fdopen(fd, 'w') as stream:
                 json.dump({'run_id': self.config['run_id'], 'config_hash': self.identity,
-                           'phase': phase, 'committed_at': time.time()}, stream)
+                           'phase': phase, 'hold_token': self.token if phase == 'BLOCKED' else None,
+                           'auth_fingerprint': self.sealed_fingerprint,
+                           'committed_at': time.time()}, stream)
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(name, dest)
@@ -90,13 +97,14 @@ class Gate:
 
     def status(self):
         return {'run_id': self.config['run_id'], 'phase': self.phase,
+                'sealed': self.sealed,
                 'hold_token': self.token, 'inflight': dict(self.inflight),
                 'waiters': self.waiters, 'wait_bytes': self.wait_bytes,
                 'remaining_seconds': max(0, self.deadline - time.monotonic()) if self.phase == 'HOLD' else 0,
                 'aborts': self.aborts, 'last_reason': self.reason, 'outcomes': dict(self.terminal)}
 
     def abort_locked(self, reason):
-        if self.phase not in ('V1', 'HOLD'):
+        if self.phase not in ('V1', 'HOLD') or self.sealed:
             raise ValueError('V2 or uncertain authority is committed; automatic V1 rollback is prohibited')
         self.phase = 'V1'
         self.reason = reason
@@ -104,6 +112,26 @@ class Gate:
         self.aborts += 1
         self.event('aborted', reason=reason)
         self.changed.notify_all()
+
+    def fail_locked(self, reason):
+        if not self.sealed:
+            self.abort_locked(reason)
+            return
+        self.phase = 'BLOCKED'
+        self.reason = reason
+        self.event('blocked', reason=reason)
+        self.changed.notify_all()
+
+    def db_handoff(self, phase):
+        path = Path(self.config['a_db_journal'])
+        if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077:
+            raise ValueError('private A DB handoff journal required')
+        state = json.loads(path.read_text())
+        if (state.get('runId') != self.config['run_id'] or state.get('phase') != phase
+                or state.get('target') != self.config['a_db_target']
+                or state.get('promotionPossible') != (phase == 'switched')):
+            raise ValueError('A DB handoff is not in the required phase')
+        return state
 
     async def begin(self):
         if self.config.get('environment') == 'staging-preparation':
@@ -123,10 +151,45 @@ class Gate:
         await asyncio.sleep(max(0, self.deadline - time.monotonic()))
         async with self.changed:
             if self.phase == 'HOLD' and self.token == token:
-                self.abort_locked('hold_timeout')
+                if self.sealed:
+                    self.phase = 'BLOCKED'
+                    self.reason = 'sealed_hold_timeout'
+                    self.event('blocked', reason=self.reason)
+                    self.changed.notify_all()
+                else:
+                    self.abort_locked('hold_timeout')
+
+    async def seal(self, token, proof=None):
+        """Durably forbid V1 reopening before the first DB cutover mutation."""
+        async with self.changed:
+            if (self.phase != 'HOLD' or self.sealed or self.token != token
+                    or self.inflight['V1'] != 0 or time.monotonic() >= self.deadline):
+                raise ValueError('cannot seal an undrained or expired HOLD')
+            if self.config.get('require_seal'):
+                if (not isinstance(proof, dict) or proof.get('source_fingerprint') != proof.get('target_fingerprint')
+                        or not re.fullmatch('[0-9a-f]{64}', proof.get('target_fingerprint', ''))
+                        or proof.get('pending_jobs') != 0):
+                    raise ValueError('cannot seal without verified authentication snapshot')
+                self.sealed_fingerprint = proof['target_fingerprint']
+            try:
+                self.persist('BLOCKED')
+            except OSError:
+                self.phase = 'BLOCKED'
+                self.reason = 'seal_journal_uncertain'
+                self.changed.notify_all()
+                raise
+            self.sealed = True
+            self.event('sealed')
+            return self.status()
 
     async def commit(self, proof):
         async with self.changed:
+            if self.config.get('require_seal') and not self.sealed:
+                raise ValueError('DB handoff requires a sealed HTTP gate')
+            if self.config.get('require_seal'):
+                self.db_handoff('switched')
+                if proof.get('target_fingerprint') != self.sealed_fingerprint:
+                    raise ValueError('authentication proof changed after seal')
             if (self.phase != 'HOLD' or self.inflight['V1'] != 0
                     or time.monotonic() >= self.deadline
                     or proof.get('hold_token') != self.token
@@ -152,6 +215,47 @@ class Gate:
             self.changed.notify_all()
             return self.status()
 
+    async def recover_v2(self, proof):
+        """Forward-only recovery after an expired A HOLD; preserve the failed Run evidence."""
+        async with self.changed:
+            if self.phase != 'BLOCKED' or not self.sealed or not self.config.get('require_seal'):
+                raise ValueError('no blocked A handoff to recover')
+            self.db_handoff('switched')
+            if (proof.get('run_id') != self.config['run_id']
+                    or proof.get('hold_token') != self.token
+                    or proof.get('pending_jobs') != 0
+                    or proof.get('source_fingerprint') != self.sealed_fingerprint
+                    or proof.get('target_fingerprint') != self.sealed_fingerprint):
+                raise ValueError('authentication proof differs from sealed source snapshot')
+            self.persist('V2')
+            self.phase = 'V2'
+            self.reason = 'recovered_after_failed_hold'
+            self.event('recovered_v2_after_failed_hold', keys=proof.get('keys'))
+            self.changed.notify_all()
+            return self.status()
+
+    async def resume_v1(self, token):
+        """Only the DB controller's verified pre-promotion abort may reopen V1."""
+        async with self.changed:
+            if (not self.sealed or self.phase not in ('HOLD', 'BLOCKED')
+                    or self.token != token):
+                raise ValueError('no sealed A handoff to resume')
+            self.db_handoff('aborted')
+            try:
+                self.persist('V1')
+            except OSError:
+                self.phase = 'BLOCKED'
+                self.reason = 'resume_journal_uncertain'
+                self.changed.notify_all()
+                raise
+            self.phase = 'V1'
+            self.sealed = False
+            self.token = None
+            self.reason = 'verified_db_abort'
+            self.event('resumed_v1_after_db_abort')
+            self.changed.notify_all()
+            return self.status()
+
     async def admit(self, request):
         started = time.monotonic()
         size = request.content_length
@@ -161,12 +265,12 @@ class Gate:
         async with self.changed:
             if self.phase == 'HOLD':
                 if request.content_type == 'multipart/form-data':
-                    self.abort_locked('legacy_multipart_arrived')
+                    self.fail_locked('legacy_multipart_arrived')
                 elif size is None:
-                    self.abort_locked('unknown_body_size')
+                    self.fail_locked('unknown_body_size')
                 elif (self.waiters >= self.config.get('max_waiters', 1000)
                       or self.wait_bytes + size > self.config.get('max_wait_bytes', 67108864)):
-                    self.abort_locked('hold_capacity')
+                    self.fail_locked('hold_capacity')
                 else:
                     self.waiters += 1
                     self.wait_bytes += size
@@ -174,7 +278,7 @@ class Gate:
             try:
                 while self.phase == 'HOLD':
                     if request.transport is None or request.transport.is_closing():
-                        self.abort_locked('waiting_client_disconnected')
+                        self.fail_locked('waiting_client_disconnected')
                         raise ConnectionResetError()
                     try:
                         await asyncio.wait_for(self.changed.wait(), timeout=0.05)
@@ -211,6 +315,8 @@ class Gate:
             forwarded['X-Request-ID'] = reqid
             forwarded['X-Forwarded-Proto'] = 'https'
             forwarded['X-Forwarded-Host'] = self.config['public_host']
+            if dest == 'V2' and self.config.get('v2_route_header'):
+                forwarded['X-Yeodam-A-Rehearsal'] = self.config['v2_route_header']
 
             async def body():
                 async for data in request.content.iter_chunked(65536):
@@ -249,7 +355,7 @@ class Gate:
                     self.inflight[dest] -= 1
                 self.terminal[outcome] = self.terminal.get(outcome, 0) + 1
                 if self.phase == 'HOLD' and outcome != 'completed':
-                    self.abort_locked('inflight_request_not_completed')
+                    self.fail_locked('inflight_request_not_completed')
                 self.changed.notify_all()
             elapsed = time.monotonic() - started
             self.observe('duration', elapsed)
@@ -299,6 +405,12 @@ class Gate:
                 result = await self.begin()
             elif request.path == '/commit':
                 result = await self.commit(data)
+            elif request.path == '/seal':
+                result = await self.seal(data.get('hold_token'), data)
+            elif request.path == '/recover-v2':
+                result = await self.recover_v2(data)
+            elif request.path == '/resume-v1':
+                result = await self.resume_v1(data.get('hold_token'))
             elif request.path == '/abort':
                 async with self.changed:
                     if data.get('hold_token') != self.token:
@@ -338,7 +450,7 @@ async def applications(config):
     admin = web.Application(client_max_size=8192)
     admin.router.add_get('/status', gate.control)
     admin.router.add_get('/metrics', gate.control)
-    for path in ('begin', 'abort', 'commit'):
+    for path in ('begin', 'abort', 'commit', 'seal', 'resume-v1', 'recover-v2'):
         admin.router.add_post('/' + path, gate.control)
     return app, admin
 

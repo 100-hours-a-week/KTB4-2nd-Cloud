@@ -22,9 +22,9 @@ const rate = positiveIntegerEnv('K6_TRIP_RATE', 10);
 const duration = positiveIntegerEnv('K6_TRIP_DURATION_SECONDS', 120);
 const preVus = positiveIntegerEnv('K6_TRIP_PREALLOCATED_VUS', 40);
 const maxVus = positiveIntegerEnv('K6_TRIP_MAX_VUS', preVus);
-if (mode === 'load' && (![10, 30, 100].includes(rate) || duration !== 120 ||
+if (mode === 'load' && (![10, 30, 50, 100].includes(rate) || duration !== 120 ||
     maxVus < preVus || preVus < rate * 4)) {
-  throw new Error('Trip load requires 10, 30 or 100 RPS for 120s and at least rate × 4 preallocated VUs');
+  throw new Error('Trip load requires 10, 30, 50 or 100 RPS for 120s and at least rate × 4 preallocated VUs');
 }
 if (mode === 'live' && (rate !== 10 || duration !== 2700 || preVus !== 40 || maxVus !== 40)) {
   throw new Error('CDC live run requires 10 RPS for 2700s and 40 fixed VUs');

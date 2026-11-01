@@ -1,6 +1,7 @@
 """Pinned existing-staging plan, local rendering and sanitized AWS describe calls."""
 import argparse
 import hashlib
+import ipaddress
 import json
 from pathlib import Path
 import re
@@ -102,6 +103,37 @@ def validate_gate(config):
             or config['mysql']['user'] != 'yeodam_app'):
         raise ValueError('invalid staging preparation runtime')
     # This profile is deliberately passthrough-only; it cannot start HOLD/import.
+
+
+def validate_a_gate(config):
+    """Constrain the live A rehearsal to the existing Source and isolated target."""
+    expected = read_json(ASSETS / 'plan.example.json')
+    if (config.get('environment') != 'staging-a-rehearsal'
+            or config.get('preparation_only', False)
+            or config.get('require_seal') is not True
+            or config.get('source_instance_id') != SOURCE
+            or config.get('public_host') != HOST
+            or config.get('v1_api') != 'http://127.0.0.1:8080'
+            or config.get('v1_web') != 'http://127.0.0.1:3000'
+            or config.get('v2_origin') != 'https://' + ALB
+            or config.get('v2_tls_name') != 'staging.yeodam-2gether.com'
+            or config.get('v2_route_header') != config.get('run_id')
+            or config.get('a_db_target') != expected['mysql']['target_host']
+            or config.get('a_db_journal') != '/var/lib/yeodam/migration-cutover/active.json'
+            or config.get('mysql') != {k: expected['mysql'][k] for k in ('host', 'port', 'database', 'user', 'password_env')}
+            or config.get('redis') != {**{k: expected['redis'][k] for k in ('host', 'port', 'db', 'tls', 'password_env')},
+                                       'prefix': 'yeodam:cutover:' + config['run_id'] + ':'}
+            or config.get('hold_seconds') != 5):
+        raise ValueError('invalid A staging rehearsal scope')
+    for key in ('socket', 'journal'):
+        if not str(config.get(key, '')).startswith('/run/yeodam-cutover/'):
+            raise ValueError('A rehearsal requires host-mounted private gate paths')
+    try:
+        client = ipaddress.IPv4Address(config['v2_client_ip'])
+    except (KeyError, ipaddress.AddressValueError) as error:
+        raise ValueError('A rehearsal requires an exact V2 task IP') from error
+    if client not in ipaddress.IPv4Network('10.30.10.0/24') or str(client) == expected['mysql']['target_host']:
+        raise ValueError('V2 task must be separate from the migration DB')
 
 
 def render(plan, release, output):
