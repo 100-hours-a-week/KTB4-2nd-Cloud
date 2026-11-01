@@ -70,35 +70,6 @@ data "aws_iam_policy_document" "github_actions_deploy" {
   }
 
   statement {
-    sid    = "ControlWorkerInstance"
-    effect = "Allow"
-
-    actions = [
-      "ec2:StartInstances",
-      "ec2:StopInstances",
-    ]
-
-    resources = [
-      aws_instance.worker.arn,
-    ]
-  }
-
-  statement {
-    sid    = "RunDeploymentCommands"
-    effect = "Allow"
-
-    actions = [
-      "ssm:SendCommand",
-    ]
-
-    resources = [
-      "arn:${data.aws_partition.current.partition}:ssm:${var.aws_region}::document/AWS-RunShellScript",
-      aws_instance.app.arn,
-      aws_instance.worker.arn,
-    ]
-  }
-
-  statement {
     sid    = "ReadDeploymentCommandResults"
     effect = "Allow"
 

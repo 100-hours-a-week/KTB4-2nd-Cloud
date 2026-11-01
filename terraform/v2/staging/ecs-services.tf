@@ -8,12 +8,12 @@ locals {
     "AI_SERVER_API_KEY",
   ])
 
-  backend_mysql_host   = var.backend_mysql_mode == "validation" ? aws_route53_record.mysql_validation_private.fqdn : module.mysql.private_ip
-  backend_mysql_schema = var.backend_mysql_mode == "validation" ? "yeodam_validation" : "yeodam_v1_source"
-  backend_mysql_user   = var.backend_mysql_mode == "validation" ? "yeodam_validation" : "yeodam_app"
-  backend_mysql_password_parameter = var.backend_mysql_mode == "validation" ? (
-    local.mysql_validation_password_parameter
-  ) : local.mysql_app_password_parameter
+  # The separate validation DB is the live QA service DB. The retired
+  # migration target must never become an alternative deployment destination.
+  backend_mysql_host               = aws_route53_record.mysql_validation_private.fqdn
+  backend_mysql_schema             = "yeodam_validation"
+  backend_mysql_user               = "yeodam_validation"
+  backend_mysql_password_parameter = local.mysql_validation_password_parameter
 
   backend_base_environment = {
     SPRING_PROFILES_ACTIVE        = "prod,internal-metrics"
