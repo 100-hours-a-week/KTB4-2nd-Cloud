@@ -1,8 +1,28 @@
 # 여담 Cloud
 
-휴대폰과 디지털카메라로 찍은 여행 사진을 모아, 촬영 시각과 위치를 바탕으로 앨범과 지도에 정리하는 서비스입니다.
 
-[서비스](https://yeodam-2gether.com) / [Cloud Wiki](https://github.com/100-hours-a-week/KTB4-2nd-Cloud/wiki) / [Frontend](https://github.com/100-hours-a-week/KTB4-2nd-FE) / [Backend](https://github.com/100-hours-a-week/KTB4-2nd-BE) / [AI](https://github.com/100-hours-a-week/KTB4-2nd-AI)
+**흩어진 여행 사진을 하나의 기록으로**
+
+[서비스 바로가기](https://yeodam-2gether.com) / [Cloud Wiki](https://github.com/100-hours-a-week/KTB4-2nd-Cloud/wiki) / [Frontend](https://github.com/100-hours-a-week/KTB4-2nd-FE) / [Backend](https://github.com/100-hours-a-week/KTB4-2nd-BE) / [AI](https://github.com/100-hours-a-week/KTB4-2nd-AI)
+
+<img src="docs/assets/yeodam-login.png" alt="흩어진 여행 사진을 하나의 기록으로 모으는 여담의 시작 화면" width="210" align="right" />
+
+## 어떤 서비스인가요?
+
+여담은 **휴대폰과 디지털카메라를 함께 사용하는 여행자를 위한 사진 정리 서비스**입니다.
+
+기기별로 흩어진 사진을 모으고, 촬영 장소를 다시 찾아 분류하는 수고를 줄여 여행을 하나의 기록으로 남길 수 있도록 만들었습니다.
+
+### 주요 기능
+
+- **여행 사진 모으기** — 여러 기기로 찍은 사진을 한 여행에 함께 업로드
+- **촬영 위치 복원** — 촬영 시각과 위치 정보를 단서로 GPS가 없는 사진의 장소 추정
+- **앨범과 지도** — 사진을 장소별로 묶어 보고 여행 기록을 지도에서 확인
+- **여행 스토리** — 사진을 바탕으로 여행 이야기를 생성하고 기록
+
+이 저장소는 여담의 AWS 인프라와 배포, 관측 환경을 관리합니다.
+
+<br clear="all" />
 
 ## 서비스 구조
 
