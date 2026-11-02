@@ -94,6 +94,31 @@ def validate_target(account, cluster, context, kube_server, cluster_info):
         raise ValueError("Kubeconfig server does not match the reviewed AWS cluster")
 
 
+def select_nodes(nodes, groups=None, max_nodes=2, storage_group=None):
+    system = [node for node in nodes if node["metadata"].get("labels", {}).get("yeodam.io/role") == "system"]
+    if len(system) > max_nodes:
+        raise ValueError("System node count exceeds the reviewed transition budget")
+    if groups:
+        if len(groups) != 2 or len(set(groups)) != 2:
+            raise ValueError("Select exactly two distinct node groups")
+        selected = [node for node in system if node["metadata"]["labels"].get("eks.amazonaws.com/nodegroup") in groups]
+        if {node["metadata"]["labels"].get("eks.amazonaws.com/nodegroup") for node in selected} != set(groups):
+            raise ValueError("Selected node group is missing")
+    else:
+        if max_nodes != 2 or storage_group:
+            raise ValueError("Transition verification requires two explicit target groups")
+        selected = system
+    if storage_group and storage_group not in (groups or []):
+        raise ValueError("Storage probe must target one of the selected groups")
+    if len(selected) != 2 or len({node["metadata"]["labels"]["topology.kubernetes.io/zone"] for node in selected}) != 2:
+        raise ValueError("Expected two selected system nodes in two AZs")
+    for node in selected:
+        conditions = {c["type"]: c["status"] for c in node["status"]["conditions"]}
+        if conditions.get("Ready") != "True" or any(conditions.get(k) == "True" for k in ["MemoryPressure", "DiskPressure", "PIDPressure"]):
+            raise ValueError("Selected node is not Ready or reports resource pressure")
+    return selected
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["render", "check", "cleanup"])
@@ -101,6 +126,9 @@ def main():
     parser.add_argument("--account", default="483175530259")
     parser.add_argument("--profile", default="yeodam-admin")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--node-group", dest="node_groups", action="append")
+    parser.add_argument("--max-system-nodes", type=int, choices=[2, 3], default=2)
+    parser.add_argument("--storage-node-group")
     args = parser.parse_args()
     if args.mode == "render":
         print(json.dumps({"apiVersion": "v1", "kind": "List", "items": objects()}, indent=2))
@@ -152,11 +180,7 @@ def main():
     if get("namespace", NAMESPACE, missing_ok=True) or get("storageclass", STORAGE_CLASS, missing_ok=True):
         raise ValueError("Existing smoke objects found; inspect and explicitly clean before rerunning")
     nodes = get("nodes")["items"]
-    system = [node for node in nodes if node["metadata"].get("labels", {}).get("yeodam.io/role") == "system"]
-    if len(system) != 2 or len({node["metadata"]["labels"]["topology.kubernetes.io/zone"] for node in system}) != 2:
-        raise ValueError("Expected two system nodes in two AZs")
-    if not all(any(c["type"] == "Ready" and c["status"] == "True" for c in node["status"]["conditions"]) for node in system):
-        raise ValueError("System nodes are not Ready")
+    system = select_nodes(nodes, args.node_groups, args.max_system_nodes, args.storage_node_group)
     addons = {}
     for name in ["vpc-cni", "coredns", "kube-proxy", "eks-pod-identity-agent", "aws-ebs-csi-driver"]:
         addon = json.loads(command(aws + ["eks", "describe-addon", "--cluster-name", args.cluster, "--addon-name", name]).stdout)["addon"]
@@ -168,11 +192,20 @@ def main():
     for target in ["deployment/coredns", "daemonset/aws-node", "daemonset/kube-proxy"]:
         command(kube + ["-n", "kube-system", "rollout", "status", target, "--timeout=180s"])
 
-    command(kube + ["create", "-f", "-"], stdin=json.dumps({"apiVersion": "v1", "kind": "List", "items": objects()}))
+    fixtures = objects()
+    if args.node_groups:
+        deployment = next(item for item in fixtures if item["kind"] == "Deployment")
+        affinity = deployment["spec"]["template"]["spec"]["affinity"]
+        affinity["nodeAffinity"] = {"requiredDuringSchedulingIgnoredDuringExecution": {"nodeSelectorTerms": [{
+            "matchExpressions": [{"key": "eks.amazonaws.com/nodegroup", "operator": "In", "values": args.node_groups}]
+        }]}}
+    command(kube + ["create", "-f", "-"], stdin=json.dumps({"apiVersion": "v1", "kind": "List", "items": fixtures}))
     command(kube + ["-n", NAMESPACE, "rollout", "status", "deployment/http", "--timeout=180s"])
     pods = get("pods", namespace=NAMESPACE)["items"]
     if len(pods) != 2 or len({pod["spec"]["nodeName"] for pod in pods}) != 2:
         raise ValueError("HTTP pods are not placed on distinct nodes")
+    if {pod["spec"]["nodeName"] for pod in pods} != {node["metadata"]["name"] for node in system}:
+        raise ValueError("HTTP probes must cover the two selected nodes")
     for pod in pods:
         peer = next(other for other in pods if other["metadata"]["name"] != pod["metadata"]["name"])
         command(kube + ["-n", NAMESPACE, "exec", pod["metadata"]["name"], "--", "sh", "-ec",
@@ -181,7 +214,10 @@ def main():
                        "test \"$(wget -T 5 -t 1 -qO- http://http:8080/)\" = foundation-ok"])
     for name, script in [("write", "echo foundation-persisted > /data/receipt; sync"),
                          ("read", "test \"$(cat /data/receipt)\" = foundation-persisted")]:
-        command(kube + ["create", "-f", "-"], stdin=json.dumps(storage_job(name, script)))
+        job = storage_job(name, script)
+        if args.storage_node_group:
+            job["spec"]["template"]["spec"]["nodeSelector"]["eks.amazonaws.com/nodegroup"] = args.storage_node_group
+        command(kube + ["create", "-f", "-"], stdin=json.dumps(job))
         command(kube + ["-n", NAMESPACE, "wait", "--for=condition=complete", f"job/{name}", "--timeout=300s"])
         # Delete completed writer too, ensuring the second pod remounts the PVC.
         command(kube + ["-n", NAMESPACE, "delete", "job", name, "--wait=true"])
@@ -197,6 +233,10 @@ def main():
                "nodes": [node["metadata"]["name"] for node in system], "crossNodeHttp": True,
                "serviceDns": True, "pvcRemount": True, "encryptedGp3": True,
                "syntheticVolumeId": volume_id, "cleanupPending": True,
+               "selectedNodeGroups": args.node_groups, "storageNodeGroup": args.storage_node_group,
+               "nodeResources": [{"node": node["metadata"]["name"],
+                                  "instanceType": node["metadata"]["labels"].get("node.kubernetes.io/instance-type"),
+                                  "allocatable": node["status"].get("allocatable", {})} for node in system],
                "observedAtEpoch": int(time.time())}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x") as stream:

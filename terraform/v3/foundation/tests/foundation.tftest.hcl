@@ -56,6 +56,40 @@ run "isolated_two_az_foundation" {
     condition     = aws_launch_template.system.metadata_options[0].http_tokens == "required" && aws_launch_template.system.metadata_options[0].http_put_response_hop_limit == 1 && aws_launch_template.system.block_device_mappings[0].ebs[0].encrypted
     error_message = "Keep IMDSv2, block pod metadata inheritance and encrypt node disks."
   }
+  assert {
+    condition     = alltrue([for group in aws_eks_node_group.system : group.instance_types == tolist(["t3a.medium"])]) && aws_launch_template.system.credit_specification[0].cpu_credits == "unlimited"
+    error_message = "Final defaults must use the reviewed x86 size and an explicit credit mode."
+  }
+}
+
+run "keep_legacy_template_during_add_a" {
+  command = plan
+  variables {
+    system_node_groups = {
+      ap-northeast-2a            = { availability_zone = "ap-northeast-2a", instance_type = "m6i.large", launch_template_version = "1" }
+      ap-northeast-2c            = { availability_zone = "ap-northeast-2c", instance_type = "m6i.large", launch_template_version = "1" }
+      ap-northeast-2a-t3a-medium = { availability_zone = "ap-northeast-2a", instance_type = "t3a.medium" }
+    }
+  }
+  assert {
+    condition = (
+      length(aws_eks_node_group.system) == 3 &&
+      aws_eks_node_group.system["ap-northeast-2a"].launch_template[0].version == "1" &&
+      aws_eks_node_group.system["ap-northeast-2c"].launch_template[0].version == "1"
+    )
+    error_message = "Legacy nodes must not roll onto the new T3a credit template."
+  }
+}
+
+run "reject_unpinned_legacy" {
+  command = plan
+  variables {
+    system_node_groups = {
+      ap-northeast-2a = { availability_zone = "ap-northeast-2a", instance_type = "m6i.large" }
+      ap-northeast-2c = { availability_zone = "ap-northeast-2c", instance_type = "m6i.large" }
+    }
+  }
+  expect_failures = [var.system_node_groups]
 }
 
 run "reject_public_api" {
