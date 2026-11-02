@@ -76,10 +76,30 @@ variable "api_public_access_cidrs" {
   }
 }
 
-variable "node_instance_type" {
-  description = "Initial x86 system capacity, not a measured application capacity."
-  type        = string
-  default     = "m6i.large"
+variable "system_node_groups" {
+  description = "Final two t3a.medium groups. Use reviewed migration inputs to add/verify/remove one AZ at a time; legacy m6i groups stay pinned to LT v1."
+  type = map(object({
+    availability_zone       = string
+    instance_type           = string
+    launch_template_version = optional(string)
+  }))
+  default = {
+    ap-northeast-2a-t3a-medium = { availability_zone = "ap-northeast-2a", instance_type = "t3a.medium" }
+    ap-northeast-2c-t3a-medium = { availability_zone = "ap-northeast-2c", instance_type = "t3a.medium" }
+  }
+
+  validation {
+    condition = (
+      length(var.system_node_groups) >= 2 && length(var.system_node_groups) <= 3 &&
+      toset([for group in var.system_node_groups : group.availability_zone]) == toset(var.availability_zones) &&
+      alltrue([for key, group in var.system_node_groups :
+        startswith(key, group.availability_zone) && can(regex("^[a-z0-9-]{1,50}$", key)) &&
+        contains(["m6i.large", "t3a.medium"], group.instance_type) &&
+        (group.instance_type != "m6i.large" || group.launch_template_version == "1")
+      ])
+    )
+    error_message = "Keep both reviewed AZs and 2-3 single-node groups. Only t3a.medium or legacy m6i.large pinned to LT v1 are allowed."
+  }
 }
 
 variable "node_release_version" {

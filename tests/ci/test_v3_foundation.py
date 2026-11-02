@@ -71,5 +71,36 @@ class TargetBoundaryTests(unittest.TestCase):
             self.assertNotIn("synthetic HTTP probe failed", str(failure.exception))
 
 
+class TransitionSelectionTests(unittest.TestCase):
+    @staticmethod
+    def node(name, az, group):
+        return {"metadata": {"name": name, "labels": {"yeodam.io/role": "system",
+                "topology.kubernetes.io/zone": az, "eks.amazonaws.com/nodegroup": group}},
+                "status": {"conditions": [{"type": "Ready", "status": "True"}]}}
+
+    def test_three_nodes_can_verify_new_a_and_old_c_only(self):
+        nodes = [self.node("old-a", "a", "old-a"), self.node("new-a", "a", "new-a"), self.node("old-c", "c", "old-c")]
+        chosen = MODULE.select_nodes(nodes, ["new-a", "old-c"], 3, "new-a")
+        self.assertEqual([n["metadata"]["name"] for n in chosen], ["new-a", "old-c"])
+        with self.assertRaises(ValueError):
+            MODULE.select_nodes(nodes)
+
+    def test_wrong_storage_group_and_same_az_are_rejected(self):
+        nodes = [self.node("a1", "a", "a1"), self.node("a2", "a", "a2")]
+        with self.assertRaises(ValueError):
+            MODULE.select_nodes(nodes, ["a1", "a2"], 2, "a1")
+        nodes[1]["metadata"]["labels"]["topology.kubernetes.io/zone"] = "c"
+        with self.assertRaises(ValueError):
+            MODULE.select_nodes(nodes, ["a1", "a2"], 2, "unselected")
+
+    def test_memory_pressure_and_missing_candidate_fail_before_fixtures(self):
+        nodes = [self.node("a", "a", "a"), self.node("c", "c", "c")]
+        with self.assertRaises(ValueError):
+            MODULE.select_nodes(nodes, ["a", "missing"], 2)
+        nodes[0]["status"]["conditions"].append({"type": "MemoryPressure", "status": "True"})
+        with self.assertRaises(ValueError):
+            MODULE.select_nodes(nodes, ["a", "c"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

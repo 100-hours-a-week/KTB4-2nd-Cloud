@@ -64,6 +64,12 @@ resource "aws_launch_template" "system" {
   name_prefix            = "${var.cluster_name}-system-"
   update_default_version = true
 
+  # Only new T3a groups use this version. Legacy m6i groups explicitly retain v1.
+  # Unlimited avoids credit exhaustion throttling; surplus charges are monitored.
+  credit_specification {
+    cpu_credits = "unlimited"
+  }
+
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
@@ -90,24 +96,25 @@ resource "aws_launch_template" "system" {
   }
 }
 
-# Separate single-AZ groups guarantee one system node in each AZ. No app/GPU
-# pools or Karpenter permissions are introduced in this foundation issue.
+# Separate names keep a new group alongside the old group for explicit validation.
+# Never apply the final defaults over legacy groups in one destructive transition;
+# migrations/484-* and check-v3-node-sizing-plan.py enforce four small plans.
 resource "aws_eks_node_group" "system" {
-  for_each        = local.zones
+  for_each        = var.system_node_groups
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "system-${each.key}"
   node_role_arn   = aws_iam_role.node.arn
-  subnet_ids      = [aws_subnet.private[each.key].id]
+  subnet_ids      = [aws_subnet.private[each.value.availability_zone].id]
   ami_type        = "AL2023_x86_64_STANDARD"
   release_version = var.node_release_version
   version         = var.kubernetes_version
   capacity_type   = "ON_DEMAND"
-  instance_types  = [var.node_instance_type]
+  instance_types  = [each.value.instance_type]
   labels          = { "yeodam.io/role" = "system" }
 
   launch_template {
     id      = aws_launch_template.system.id
-    version = aws_launch_template.system.latest_version
+    version = coalesce(each.value.launch_template_version, tostring(aws_launch_template.system.latest_version))
   }
   scaling_config {
     desired_size = 1

@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 python3 -m unittest discover -s tests/ci -p 'test_v3_foundation.py'
+python3 -m unittest discover -s tests/ci -p 'test_v3_node_sizing_plan.py'
 
 bash -n monitoring/v1-staging/install-nginx-logrotate.sh
 python3 -m unittest discover -s tests/ci -p 'test_v1_nginx_observability.py'
