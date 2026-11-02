@@ -19,7 +19,7 @@ IMAGE = "public.ecr.aws/docker/library/busybox:1.37.0"
 
 
 def command(args, *, stdin=None, allow_failure=False):
-    result = subprocess.run(args, input=stdin, text=True, capture_output=True)
+    result = subprocess.run(args, input=stdin, text=True, capture_output=True, timeout=660)
     if result.returncode and not allow_failure:
         # kubectl diagnostics for synthetic objects only; AWS error text is not copied.
         raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(args[:4])}")
@@ -112,10 +112,11 @@ def main():
     context = command(["kubectl", "config", "current-context"]).stdout.strip()
     kube_server = command(["kubectl", "config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}"]).stdout
     validate_target(args.account, args.cluster, context, kube_server, info)
-    kube = ["kubectl", "--context", context, "--request-timeout=30s"]
+    # Long-running watches use their explicit --timeout, not a shorter HTTP timeout.
+    kube = ["kubectl", "--context", context]
 
     def get(kind, name=None, namespace=None, missing_ok=False):
-        cmd = kube + (["-n", namespace] if namespace else []) + ["get", kind]
+        cmd = kube + ["--request-timeout=30s"] + (["-n", namespace] if namespace else []) + ["get", kind]
         if name:
             cmd.append(name)
         if missing_ok:
@@ -199,6 +200,9 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except subprocess.TimeoutExpired:
+        print("Verification command timed out; inspect the retained synthetic objects", file=sys.stderr)
+        sys.exit(1)
     except (RuntimeError, ValueError, KeyError) as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)
