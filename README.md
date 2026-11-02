@@ -6,33 +6,26 @@
 
 ## 서비스 구조
 
-현재 운영 중인 V2의 주요 연결입니다. V3는 별도 EKS 환경을 구축 중입니다.
+FE, BE, AI API는 ECS Fargate에서 실행합니다. 아래는 운영 중인 V2의 주요 요청 경로입니다.
 
 ```mermaid
-flowchart TB
+flowchart LR
     user[사용자] --> alb[ALB]
-    alb --> fe["Frontend<br/>Next.js / ECS Fargate"]
-    alb --> be["Backend<br/>Spring Boot / ECS Fargate"]
-
-    be --> mysql[(MySQL)]
-    be --> auth[(App Redis)]
-    be --> s3["S3<br/>원본 사진과 처리 결과"]
-    be -->|내부 ALB| ai["AI API<br/>ECS Fargate"]
-
-    mysql -->|Outbox| cdc[Debezium / Connect]
-    cdc --> kafka[Kafka]
-    kafka --> ai
-
-    ai --> gpu["GPU EC2<br/>임베딩 vLLM / Qdrant"]
-    ai --> queue[(AI Redis)]
-    ai --> vlm["RunPod<br/>VLM"]
+    alb --> fe["Frontend<br/>Next.js"]
+    alb --> be["Backend<br/>Spring Boot"]
+    be -->|내부 ALB| ai[AI API]
+    be --> data["MySQL<br/>App Redis"]
+    be --> s3["S3<br/>사진과 처리 결과"]
 ```
 
 | 구분 | 구성 |
 | --- | --- |
 | 데이터와 인증 | MySQL에 서비스 데이터 저장, App Redis에 세션과 CSRF 관리 |
-| AI 실행 | Fargate API, GPU EC2, 외부 RunPod으로 역할 분리. 작업 상태는 별도 AI Redis 사용 |
+| AI 실행 | GPU EC2의 임베딩 vLLM과 Qdrant, 외부 RunPod의 VLM 사용 |
+| 비동기 처리 | Debezium과 Kafka Connect로 Outbox 이벤트 전달. AI 작업 상태는 별도 AI Redis 사용 |
 | 배포와 관측 | Terraform, GitHub Actions, Prometheus, Loki, Grafana, CloudWatch |
+
+V3는 운영 V2와 분리된 EKS 환경을 구축 중입니다.
 
 ## 배포
 
