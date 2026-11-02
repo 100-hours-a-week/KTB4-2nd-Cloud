@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+python3 -m unittest discover -s tests/ci -p 'test_v3_foundation.py'
+python3 -m unittest discover -s tests/ci -p 'test_v3_node_sizing_plan.py'
+
 bash -n monitoring/v1-staging/install-nginx-logrotate.sh
 python3 -m unittest discover -s tests/ci -p 'test_v1_nginx_observability.py'
 python3 -m unittest discover -s tests/ci -p 'test_nginx_read_dry_run.py'
@@ -21,6 +24,7 @@ python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_observability.py'
 python3 -m unittest discover -s tests/ci -p 'test_ai_runner_ops.py'
+python3 -m unittest discover -s tests/ci -p 'test_ai_reference_access.py'
 python3 -c 'import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path("monitoring/grafana-web").glob("*.py")]'
 python3 -c 'import ast,pathlib,json; [ast.parse(p.read_text()) for p in pathlib.Path("monitoring/ai-runner").glob("*.py")]; json.loads(pathlib.Path("monitoring/ai-runner/cloudwatch.json").read_text())'
 bash -n monitoring/ai-runner/install.sh

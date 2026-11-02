@@ -1,0 +1,9 @@
+# Use only after A candidate readiness/HTTP/DNS/PVC and cleanup receipts pass.
+system_node_groups = {
+  ap-northeast-2c = {
+    availability_zone = "ap-northeast-2c", instance_type = "m6i.large", launch_template_version = "1"
+  }
+  ap-northeast-2a-t3a-medium = {
+    availability_zone = "ap-northeast-2a", instance_type = "t3a.medium"
+  }
+}
