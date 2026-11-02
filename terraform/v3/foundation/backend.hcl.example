@@ -1,0 +1,2 @@
+# Existing state bucket; the V3 key is separate from every V1/V2 root.
+bucket = "yeodam-v1-tfstate-ACCOUNT_ID-ap-northeast-2-an"
