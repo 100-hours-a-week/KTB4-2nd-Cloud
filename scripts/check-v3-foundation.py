@@ -21,7 +21,10 @@ IMAGE = "public.ecr.aws/docker/library/busybox:1.37.0"
 def command(args, *, stdin=None, allow_failure=False):
     result = subprocess.run(args, input=stdin, text=True, capture_output=True, timeout=660)
     if result.returncode and not allow_failure:
-        # kubectl diagnostics for synthetic objects only; AWS error text is not copied.
+        # All kubectl commands here address reviewed infrastructure or synthetic
+        # fixtures, never Secrets. Preserve the failing probe; hide AWS error bodies.
+        if args[0] == "kubectl":
+            raise RuntimeError(f"kubectl failed ({result.returncode}): {' '.join(args)}\n{result.stderr[-2000:]}")
         raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(args[:4])}")
     return result
 
@@ -160,6 +163,10 @@ def main():
         if addon["status"] != "ACTIVE" or addon.get("health", {}).get("issues"):
             raise ValueError(f"Add-on unhealthy: {name}")
         addons[name] = addon["addonVersion"]
+
+    # Managed add-on ACTIVE alone does not replace the in-cluster rollout check.
+    for target in ["deployment/coredns", "daemonset/aws-node", "daemonset/kube-proxy"]:
+        command(kube + ["-n", "kube-system", "rollout", "status", target, "--timeout=180s"])
 
     command(kube + ["create", "-f", "-"], stdin=json.dumps({"apiVersion": "v1", "kind": "List", "items": objects()}))
     command(kube + ["-n", NAMESPACE, "rollout", "status", "deployment/http", "--timeout=180s"])

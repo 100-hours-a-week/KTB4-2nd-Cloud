@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("foundation", ROOT / "scripts/check-v3-foundation.py")
@@ -59,6 +60,15 @@ class TargetBoundaryTests(unittest.TestCase):
                                     capture_output=True, text=True, env={"PATH": ""})
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("isolated V3 file", result.stderr)
+
+    def test_failed_probe_is_diagnosable_without_logging_aws_error_bodies(self):
+        result = subprocess.CompletedProcess([], 1, stdout="", stderr="synthetic HTTP probe failed")
+        with patch.object(MODULE.subprocess, "run", return_value=result):
+            with self.assertRaisesRegex(RuntimeError, "synthetic HTTP probe failed"):
+                MODULE.command(["kubectl", "exec", "synthetic", "--", "wget", "http://fixture"])
+            with self.assertRaises(RuntimeError) as failure:
+                MODULE.command(["aws", "eks", "describe-cluster"])
+            self.assertNotIn("synthetic HTTP probe failed", str(failure.exception))
 
 
 if __name__ == "__main__":
