@@ -17,9 +17,9 @@
     },
     "ai-app": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-AI",
-      "sourceSha": "e2deb767b33d7de3db7ae837ae2f388bee487110",
-      "image": "ghcr.io/100-hours-a-week/yeodam-ai-app:sha-e2deb767b33d7de3db7ae837ae2f388bee487110",
-      "digest": "sha256:5075ce9e3f8f8735aa4ecd2cb7ac8f1defc314d4ec7013ef9c171b3609ffa75a",
+      "sourceSha": "5e85474c550f1ac9b018d28c6a6b980d8fc7aff0",
+      "image": "ghcr.io/100-hours-a-week/yeodam-ai-app:sha-5e85474c550f1ac9b018d28c6a6b980d8fc7aff0",
+      "digest": "sha256:5fecab329d0a0fb7eee4eb7479e1e82d777b8a37d5b2166a2583eb37bc66ed13",
       "platform": "linux/amd64"
     }
   }
