@@ -1,0 +1,12 @@
+{{- range $namespace, $_ := .Values.namespaces }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $namespace }}
+  annotations:
+    # Removing a Helm release must not cascade-delete future application data.
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "yeodam-v3-platform.namespaceLabels" (dict "root" $ "namespace" $namespace) | nindent 4 }}
+{{- end }}

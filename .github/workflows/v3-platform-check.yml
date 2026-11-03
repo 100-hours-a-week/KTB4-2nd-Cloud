@@ -1,0 +1,30 @@
+name: V3 platform checks
+
+on:
+  workflow_call:
+  push:
+    paths:
+      - 'deploy/v3/platform/**'
+      - 'scripts/check-v3-platform.py'
+      - 'scripts/prepare-v3-validation.py'
+      - 'scripts/requirements-v3-validation.txt'
+      - 'scripts/validate-v3-platform.sh'
+      - 'tests/ci/v3/**'
+      - 'tests/ci/test_v3_platform.py'
+      - '.github/workflows/v3-platform-check.yml'
+      - '.github/workflows/cloud-pr-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Helm and platform contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Render, validate and test V3 platform definitions
+        run: bash scripts/validate-v3-platform.sh
