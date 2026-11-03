@@ -15,6 +15,11 @@ resource "aws_iam_role_policy" "ai_gpu_runtime" {
       },
       {
         Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = [for path in ["/yeodam/v2/staging/ai/VLM_BASE_URL", "/yeodam/v2/staging/ai/VLM_API_KEY", "/yeodam/v2/staging/app/KAKAO_CLIENT_ID"] : "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${path}"]
+      },
+      {
+        Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
         Resource = module.ecs_foundation.ghcr_credentials_secret_arn
       },
@@ -42,6 +47,9 @@ resource "aws_ssm_document" "ai_gpu_runtime" {
       inputs = {
         timeoutSeconds = "2400"
         runCommand = [
+          "install -d -m 0700 /run/yeodam-staging-runner-code",
+          "printf '%s' '${filebase64("${path.module}/../../../scripts/ai_runner_runtime.py")}' | base64 --decode > /run/yeodam-staging-runner-code/ai_runner_runtime.py",
+          "export PYTHONPATH=/run/yeodam-staging-runner-code",
           "export AI_GPU_COMPOSE_B64='${filebase64("${path.module}/../../../deploy/v2-staging/ai-gpu/compose.yml")}'",
           "export AI_GPU_SETTINGS_B64='${filebase64("${path.module}/../../../scripts/configure-v2-staging-ai-gpu.py")}'",
           "export AI_APP_BUCKET='${module.app_storage.bucket_name}'",

@@ -9,12 +9,14 @@ resource "aws_iam_role_policy" "runpod_update" {
   name = "staging-runpod-update"
   role = aws_iam_role.runpod_update.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
+    { Effect = "Allow", Action = ["ssm:SendCommand"], Resource = [aws_ssm_document.ai_runner_deploy.arn, aws_instance.ai_gpu.arn] },
+    { Effect = "Allow", Action = ["ssm:GetCommandInvocation"], Resource = "*", Condition = { StringEquals = { "aws:RequestedRegion" = "ap-northeast-2" } } },
     { Effect = "Allow", Action = ["ssm:GetParameter"], Resource = [
       aws_ssm_parameter.ai_vlm_base_url.arn,
       "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/yeodam/v2/staging/ai/VLM_API_KEY"
     ] },
     { Effect = "Allow", Action = ["ssm:PutParameter"], Resource = aws_ssm_parameter.ai_vlm_base_url.arn },
-    { Effect = "Allow", Action = ["ecs:DescribeServices", "ecs:UpdateService"], Resource = aws_ecs_service.ai_api.id },
+    { Effect = "Allow", Action = ["ecs:DescribeServices", "ecs:UpdateService"], Resource = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/yeodam-v2-staging-app/${local.ai_api_name}" },
     { Effect = "Allow", Action = ["ecs:ListTasks"], Resource = "*", Condition = { ArnEquals = { "ecs:cluster" = module.ecs_foundation.cluster_arn } } },
     { Effect = "Allow", Action = ["ecs:DescribeTasks"], Resource = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/yeodam-v2-staging-app/*" },
     { Effect = "Allow", Action = ["ecs:DescribeTaskDefinition", "ecs:RegisterTaskDefinition"], Resource = "*" },

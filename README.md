@@ -1,55 +1,78 @@
 # 여담 Cloud
 
-여담은 휴대폰과 디지털카메라에 흩어진 여행 사진을 모아, 촬영 시각과 위치를 바탕으로 앨범과 지도에 정리하는 서비스입니다.
 
-이 저장소에서는 AWS 인프라, 배포 파이프라인과 운영 도구를 관리합니다. V2는 ECS 기반으로 운영하고 있으며, V3 Kubernetes 전환 작업을 진행하고 있습니다.
+**흩어진 여행 사진을 하나의 기록으로**
 
-[서비스](https://yeodam-2gether.com) | [Cloud Wiki](https://github.com/100-hours-a-week/KTB4-2nd-Cloud/wiki) | [팀 설계 문서](https://github.com/100-hours-a-week/KTB4-2nd-wiki/wiki)
+[서비스 바로가기](https://yeodam-2gether.com) / [Cloud Wiki](https://github.com/100-hours-a-week/KTB4-2nd-Cloud/wiki) / [Frontend](https://github.com/100-hours-a-week/KTB4-2nd-FE) / [Backend](https://github.com/100-hours-a-week/KTB4-2nd-BE) / [AI](https://github.com/100-hours-a-week/KTB4-2nd-AI)
 
-## 구성
+<img src="docs/assets/yeodam-login.png" alt="흩어진 여행 사진을 하나의 기록으로 모으는 여담의 시작 화면" width="210" align="right" />
 
-FE와 BE, AI API를 ECS에 배포하고 ALB로 연결합니다. MySQL에는 서비스 데이터를, App Redis에는 인증 상태를 저장합니다. 무거운 AI 작업은 GPU EC2와 외부 RunPod에서 처리하며, 작업 상태를 관리하는 AI Redis는 App Redis와 분리했습니다.
+## 어떤 서비스인가요?
 
-Kafka와 Debezium으로 Outbox 이벤트를 전달하고, Prometheus, Loki, Grafana와 CloudWatch로 서비스와 호스트 상태를 확인합니다. 인프라는 Terraform으로 관리합니다.
+여담은 **휴대폰과 디지털카메라를 함께 사용하는 여행자를 위한 사진 정리 서비스**입니다.
 
-## 주요 작업
+기기별로 흩어진 사진을 모으고, 촬영 장소를 다시 찾아 분류하는 수고를 줄여 여행을 하나의 기록으로 남길 수 있도록 만들었습니다.
 
-### DB 이전과 요청 처리
+### 주요 기능
 
-여행 데이터 100만 행 이상을 준비하고 실제 API 요청이 들어오는 동안 Snapshot부터 DB 전환까지 시험했습니다. 인증 변경은 Debezium으로 Redis에 전달하고, 전환 중 새 요청은 별도 Kafka 경로로 수락했습니다.
+- **여행 사진 모으기** — 여러 기기로 찍은 사진을 한 여행에 함께 업로드
+- **촬영 위치 복원** — 촬영 시각과 위치 정보를 단서로 GPS가 없는 사진의 장소 추정
+- **앨범과 지도** — 사진을 장소별로 묶어 보고 여행 기록을 지도에서 확인
+- **여행 스토리** — 사진을 바탕으로 여행 이야기를 생성하고 기록
 
-이후 조회 인덱스와 CDC 처리, 묶음 커밋을 개선했습니다. 동일한 50 RPS 시험에서 요청 생성부터 DB 처리 완료 기록까지의 p95는 **52.607초에서 18.849초**로 줄었습니다. 운영 원본 DB 이전 실적이 아닌 스테이징 리허설 결과입니다.
+이 저장소는 여담의 AWS 인프라와 배포, 관측 환경을 관리합니다.
 
-[실험 기록](https://github.com/100-hours-a-week/KTB4-2nd-Cloud/wiki/Dev-DB-무중단-마이그레이션) | [묶음 커밋 비교 PR](https://github.com/100-hours-a-week/KTB4-2nd-Cloud/pull/473)
+<br clear="all" />
 
-### 배포와 관측
+## 서비스 구조
 
-각 서비스가 발행한 이미지를 Digest로 고정하고, Cloud PR에서 이미지 조합을 검증합니다. 검증한 조합을 스테이징에 배포한 뒤 같은 조합을 운영으로 승격합니다.
+FE, BE, AI API는 ECS Fargate에서 실행합니다. 아래는 운영 중인 V2의 주요 요청 경로입니다.
 
-운영 중에는 서비스 지표와 호스트 로그를 같은 시각으로 대조합니다. Nginx 연결 고갈을 분석하고, 정상 사용자에게 미치는 영향을 확인하며 방어 설정을 보완했습니다.
+```mermaid
+flowchart LR
+    user[사용자] --> alb[ALB]
+    alb --> fe["Frontend<br/>Next.js"]
+    alb --> be["Backend<br/>Spring Boot"]
+    be -->|내부 ALB| ai[AI API]
+    be --> data["MySQL<br/>App Redis"]
+    be --> s3["S3<br/>사진과 처리 결과"]
+```
 
-[CI 검증 범위](deploy/cloud-pr-gate.md) | [V2 배포 Workflow](.github/workflows/v2-production-release.yml) | [Nginx 장애 기록](https://github.com/100-hours-a-week/KTB4-2nd-Cloud/wiki/Incident-2026-09-29-Nginx-연결-고갈)
+| 구분 | 구성 |
+| --- | --- |
+| 데이터와 인증 | MySQL에 서비스 데이터 저장, App Redis에 세션과 CSRF 관리 |
+| AI 실행 | GPU EC2의 임베딩 vLLM과 Qdrant, 외부 RunPod의 VLM 사용 |
+| 비동기 처리 | Debezium과 Kafka Connect로 Outbox 이벤트 전달. AI 작업 상태는 별도 AI Redis 사용 |
+| 배포와 관측 | Terraform, GitHub Actions, Prometheus, Loki, Grafana, CloudWatch |
 
-### 단일 및 다중 Task 부하 비교
+V3는 운영 V2와 분리된 EKS 환경을 구축 중입니다.
 
-같은 BE 이미지와 DB 조건에서 Task 1개와 2개를 비교했습니다. 목록 조회 80%, 여행 메타데이터 생성 20% 조건으로 각각 **250 RPS와 550 RPS를 3분간 유지**했습니다. 장시간 운영 용량이나 서비스 전체의 처리량을 의미하지는 않습니다.
+## 배포
 
-[시험 코드와 검증 PR](https://github.com/100-hours-a-week/KTB4-2nd-Cloud/pull/475)
+```text
+FE / BE / AI main → 이미지 발행 → Cloud Manifest PR
+→ 이미지 조합 검증 → 스테이징 배포 → 승인한 조합을 운영에 배포
+```
+
+이미지는 Digest로 고정합니다. 운영 배포는 성공한 스테이징 Run을 지정해 실행합니다.
+
+[배포 안내](deploy/release-deployment.md) / [이미지 Manifest](deploy/v2/image-manifest.json) / [CI 검증 범위](deploy/cloud-pr-gate.md)
+
+## 개발 기록
+
+- [DB 마이그레이션](https://github.com/100-hours-a-week/KTB4-2nd-Cloud/wiki/Dev-DB-무중단-마이그레이션) — 요청 보존, 인증 동기화와 처리 지연 개선
+- [Nginx 연결 고갈](https://github.com/100-hours-a-week/KTB4-2nd-Cloud/wiki/Incident-2026-09-29-Nginx-연결-고갈) — 접속 실패 원인과 방어 과정
+- [단일 / 다중 Task 부하 비교](https://github.com/100-hours-a-week/KTB4-2nd-Cloud/pull/475) — 동일 조건에서 요청 분산과 병목 확인
 
 ## 저장소 안내
 
 | 경로 | 내용 |
 | --- | --- |
-| `terraform/` | AWS 인프라 구성 |
-| `deploy/` | 배포 설정, 이미지 Manifest와 운영 안내 |
-| `monitoring/` | 지표와 로그 수집, 대시보드와 알림 |
-| `scripts/` | 배포와 점검, 이전 도구 |
-| `tests/ci/` | 설정 검증과 격리된 이미지 통합 시험 |
-| `tests/load/` | API 부하 시나리오와 결과 대조 도구 |
-| `nginx/`, `app-compose.yml`, `worker-compose.yml` | V1 구성과 운영 이력 |
+| [`terraform/v2/`](terraform/v2/) | 운영과 스테이징 인프라 |
+| [`terraform/v3/`](terraform/v3/) | Kubernetes 기반 구축 |
+| [`deploy/`](deploy/) | 배포 설정과 이미지 Manifest |
+| [`monitoring/`](monitoring/) | 지표, 로그, 대시보드와 알림 |
+| [`scripts/`](scripts/) | 배포와 점검 도구 |
+| [`tests/`](tests/) | CI 검증과 부하 시험 |
 
-이전 시험과 V1 도구도 이력으로 남아 있습니다. 현재 운영 대상으로 실행하기 전에 사용 환경과 필요한 설정을 확인해야 합니다.
-
-## 변경과 배포
-
-작업 브랜치에서 PR을 만들고 필수 `cloud-ci-gate`를 통과한 뒤 main에 병합합니다. V2 이미지 Manifest 변경은 스테이징 배포로 이어지며, 운영 배포는 성공한 스테이징 Run을 지정해 실행합니다.
+V1 설정과 종료한 이전 시험 도구는 이력으로 보존하고 있습니다.

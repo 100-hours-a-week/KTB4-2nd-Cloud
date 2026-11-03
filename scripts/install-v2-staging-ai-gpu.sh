@@ -21,6 +21,8 @@ python3 /opt/yeodam-ai/configure-runtime.py
 cd /opt/yeodam-ai
 docker compose config --quiet
 docker compose pull
+runner_image=$(docker compose config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["process-runner"]["image"])')
+python3 -c 'import ai_runner_runtime,sys; ai_runner_runtime.prepare("staging", sys.argv[1])' "$runner_image"
 docker compose up -d embedding qdrant
 # First start downloads model weights; do not mark it ready from a running PID.
 for attempt in $(seq 1 240); do

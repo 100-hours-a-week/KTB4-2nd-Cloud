@@ -73,6 +73,7 @@ def host_guard():
 
 
 def install():
+    import ai_runner_runtime
     os.umask(0o077)
     host_guard()
     with open('/run/yeodam-production-runner.lock', 'w') as lock:
@@ -111,6 +112,7 @@ def install():
         for work in ['TRIP_CREATE', 'TRIP_UPDATE', 'STORY_CREATE']:
             for direction in ['REQUEST', 'RESULT']:
                 values[f'KAFKA_{work}_{direction}_TOPIC'] = f'prod.yeodam.{work.lower().replace("_", "-")}.{direction.lower()}'
+        values.update(ai_runner_runtime.additional_values('production'))
         if any('\n' in value or '\r' in value for value in values.values()):
             raise ValueError('Multiline environment value rejected')
         ROOT.mkdir(mode=0o750, parents=True, exist_ok=True)
@@ -128,6 +130,7 @@ def install():
                 '--password-stdin', input=auth['password'], env=env)
             run('docker', 'compose', 'config', '--quiet', cwd=ROOT, env=env)
             run('docker', 'compose', 'pull', cwd=ROOT, env=env)
+        ai_runner_runtime.prepare('production', image)
         # At host startup, do not claim production work before the shared model is ready.
         wait_script = '''import time,urllib.request
 deadline=time.monotonic()+600
