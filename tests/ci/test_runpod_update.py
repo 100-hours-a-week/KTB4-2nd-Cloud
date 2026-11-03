@@ -109,6 +109,9 @@ class RunpodTests(unittest.TestCase):
         self.assertEqual(report['status'], 'healthy')
         self.assertEqual(report['parameterVersion'], 3)
         self.assertTrue(all(c[c.index('--name') + 1] == m.STAGING_PARAMETER for c in self.writes()))
+        self.assertEqual(self.runner_calls[0][1:3], ('inspect-settings', 2))
+        self.assertTrue(all(c[3] == report['runnerOperation'] for c in self.runner_calls))
+        self.assertRegex(report['runnerOperation'], r'^[0-9a-f]{32}$')
 
     def test_production_uses_only_production_writes_and_preserves_staging(self):
         report = self.exercise()
@@ -185,8 +188,20 @@ class RunpodTests(unittest.TestCase):
         with patch.object(m.ai, 'aws', side_effect=aws), self.assertRaises(RuntimeError) as error:
             m.runner_settings('staging', 'sync-vlm', 3, 'a' * 32)
         self.assertNotIn('SECRET', str(error.exception))
+        self.assertEqual(error.exception.command_id,'id')
         with patch.object(m.ai, 'aws', side_effect=RuntimeError('SECRET')), self.assertRaises(m.RunnerStateUnknown):
             m.runner_settings('staging', 'sync-vlm', 3, 'a' * 32)
+
+    def test_old_or_mismatched_ssm_receipt_stops_preflight_with_command_id(self):
+        def aws(*args):
+            if args[:2]==('ssm','send-command'):
+                params=json.loads(args[args.index('--parameters')+1])
+                self.assertEqual(params['OperationId'],['a'*32])
+                return {'Command':{'CommandId':'safe-command-id'}}
+            return {'Status':'Success','StandardOutputContent':json.dumps({'settingsReady':True})}
+        with patch.object(m.ai,'aws',side_effect=aws),self.assertRaises(m.RunnerSettingsFailure) as error:
+            m.runner_settings('staging','inspect-settings',2,'a'*32)
+        self.assertEqual(error.exception.command_id,'safe-command-id')
 
     def test_old_healthy_target_cannot_attest_current_revision(self):
         def aws(*args):

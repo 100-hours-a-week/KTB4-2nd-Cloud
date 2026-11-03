@@ -19,6 +19,7 @@ CONTAINER_PATH = '/data/ai-reference'
 INDEX = 'places-v2026-10-30.sqlite'
 INDEX_URI = 's3://yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/places/v2026-10-30/places.sqlite'
 INDEX_SHA = '41f531891d9bdc5417e91c80a92e51f2e92e2661a641cb627cbdb16e5f0f3b1d'
+VLM_KEYS = ('VLM_BASE_URL', 'VLM_API_KEY', 'VLM_MODEL')
 MOUNT = {'type': 'bind', 'source': HOST_PATH, 'target': CONTAINER_PATH}
 ENVIRONMENTS = {
     'staging': ('/opt/yeodam-ai', '/etc/yeodam/ai/runner.env', 'yeodam-ai-process-runner', 'yeodam-ai'),
@@ -138,15 +139,35 @@ def container(environment):
     return row
 
 
-def runner_ready(environment, expected):
+def same_image(environment, row):
+    root, _, _, _ = ENVIRONMENTS[environment]
+    config = json.loads(run('docker', 'compose', 'config', '--format', 'json', cwd=root))
+    image = config['services']['process-runner']['image']
+    configured_id = run('docker', 'image', 'inspect', image, '--format', '{{.Id}}').strip()
+    if configured_id != row['Image']:
+        raise RuntimeError('Configured runner image differs from the running image; use the image deployment workflow')
+
+
+def recreate(environment):
+    root, _, _, _ = ENVIRONMENTS[environment]
+    run('docker', 'compose', 'up', '-d', '--no-deps', '--no-build', '--pull', 'never',
+        '--force-recreate', 'process-runner', cwd=root)
+
+
+def runner_ready(environment, expected, *, absent=(), probe_vlm=True, image_id=None):
     _, _, name, _ = ENVIRONMENTS[environment]
     first = None
     for _ in range(90):
         row = container(environment)
         actual = parse_env('\n'.join(row['Config'].get('Env', [])))
+        if image_id is not None and row['Image'] != image_id:
+            raise RuntimeError('Runner image changed during URL update')
         marker = (row['Id'], row['RestartCount'])
-        if row['State']['Running'] and all(actual.get(k) == v for k, v in expected.items()):
+        if (row['State']['Running'] and all(actual.get(k) == v for k, v in expected.items())
+                and all(k not in actual for k in absent)):
             if first == marker:
+                if not probe_vlm:
+                    return  # Restore the previous configuration, including absent keys.
                 # Authenticated model-list probe, no generated tokens/jobs.
                 probe = ("import os,httpx; r=httpx.get(os.environ['VLM_BASE_URL']+'/models',"
                          "headers={'Authorization':'Bearer '+os.environ['VLM_API_KEY']},timeout=15);"
@@ -162,59 +183,87 @@ def runner_ready(environment, expected):
 
 
 def url_action(environment, action, version=0, operation=''):
-    root, env_path, _, _ = ENVIRONMENTS[environment]
+    _, env_path, _, _ = ENVIRONMENTS[environment]
     path = Path(env_path)
     values = parse_env(path.read_text())
     if values.get('JOBS_ENV') != environment:
         raise ValueError('Wrong runner environment')
     row = container(environment)
     actual = parse_env('\n'.join(row['Config'].get('Env', [])))
-    if action == 'inspect-settings':
-        expected, _ = vlm_values(environment)
-        mounts = [m for m in row.get('Mounts', []) if m.get('Destination') == CONTAINER_PATH]
-        if len(mounts) != 1 or mounts[0].get('Source') != HOST_PATH or mounts[0].get('RW') is not True:
-            raise RuntimeError('Runner reference mount is missing or read-only; deploy its configuration first')
-        if not row['State']['Running'] or not all(values.get(k) == actual.get(k) == v for k, v in expected.items()):
-            raise RuntimeError('Runner VLM settings are not aligned; prepare/recreate it before updating RunPod')
-        return {'settingsReady': True}
+    if actual.get('JOBS_ENV') != environment:
+        raise ValueError('Running container has another environment')
     if not re.fullmatch(r'[0-9a-f]{32}', operation):
-        raise ValueError('A unique RunPod operation ID is required')
+        raise ValueError('A unique RunPod operation ID is required; use the updated URL workflow')
     directory = Path('/run/yeodam-runner-settings') / environment
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     backup = directory / (operation + '.json')
-    if action == 'sync-vlm':
-        if not row['State']['Running'] or any(values.get(k) != actual.get(k) for k in ['VLM_BASE_URL', 'VLM_API_KEY', 'VLM_MODEL']):
-            raise RuntimeError('Runner changed after preflight; inspect before updating it')
+    if action == 'inspect-settings':
+        # VLM-only preflight. Index, Kakao and mounts belong to initial deployment.
+        # Missing VLM keys are valid; an unsaved file/container mismatch is not.
+        if not row['State']['Running'] or any(values.get(k) != actual.get(k) for k in VLM_KEYS):
+            raise RuntimeError('Runner VLM file and running configuration differ; inspect before updating')
+        same_image(environment, row)
         expected, current_version = vlm_values(environment)
         if version <= 0 or current_version != version:
-            raise RuntimeError('RunPod Parameter version changed before runner update')
+            raise RuntimeError('RunPod Parameter changed during preflight')
         if backup.exists():
             raise RuntimeError('Operation already exists; inspect before retrying')
+        # Save the old API URL even if the runner has never had any VLM settings.
+        # Preflight stores metadata only; full env backup is created before sync.
+        atomic(backup, json.dumps({'state': 'prepared', 'apiUrl': expected['VLM_BASE_URL'],
+                                  'apiVersion': current_version, 'oldSha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                                  'imageId': row['Image'], 'runtimeOld': env_digest(actual)}))
+        return {'settingsReady': True, 'parameterVersion': current_version,
+                'initializingVlm': any(not values.get(k) for k in VLM_KEYS)}
+    if action == 'sync-vlm':
+        if not backup.is_file():
+            raise RuntimeError('Preflight snapshot missing; use the updated URL workflow')
+        data = json.loads(backup.read_text())
+        if (data.get('state') != 'prepared' or not row['State']['Running']
+                or row['Image'] != data['imageId'] or env_digest(actual) != data['runtimeOld']
+                or hashlib.sha256(path.read_bytes()).hexdigest() != data['oldSha256']):
+            raise RuntimeError('Runner changed after preflight; inspect before updating it')
+        same_image(environment, row)
+        expected, current_version = vlm_values(environment)
+        if version <= data['apiVersion'] or current_version != version:
+            raise RuntimeError('RunPod Parameter version changed before runner update')
         old = path.read_text()
         values.update(expected)
         new = render_env(values)
-        atomic(backup, json.dumps({'old': old, 'newSha256': hashlib.sha256(new.encode()).hexdigest(),
-                                  'imageId': row['Image'], 'runtimeOld': env_digest(actual),
-                                  'runtimeNew': env_digest(dict(actual, **expected))}))
+        data.update(state='updating', old=old, newSha256=hashlib.sha256(new.encode()).hexdigest(),
+                    runtimeNew=env_digest(dict(actual, **expected)),
+                    oldVlm={k: actual[k] for k in VLM_KEYS if k in actual},
+                    missingVlm=[k for k in VLM_KEYS if k not in actual])
+        atomic(backup, json.dumps(data))
         atomic(path, new)
-        run('docker', 'compose', 'up', '-d', '--no-deps', '--force-recreate', 'process-runner', cwd=root)
-        runner_ready(environment, expected)
+        recreate(environment)
+        runner_ready(environment, expected, image_id=data['imageId'])
         return {'settingsReady': True, 'parameterVersion': current_version}
     if action == 'restore-vlm':
         data = json.loads(backup.read_text())
-        allowed_files = {data['newSha256'], hashlib.sha256(data['old'].encode()).hexdigest()}
+        expected, current_version = vlm_values(environment)
+        if current_version != version or expected['VLM_BASE_URL'] != data['apiUrl']:
+            raise RuntimeError('Restored API Parameter does not match the preflight snapshot')
+        same_image(environment, row)
+        if data.get('state') == 'prepared':
+            # Sync failed before changing any env bytes or recreating a container.
+            if (row['Image'] != data['imageId'] or env_digest(actual) != data['runtimeOld']
+                    or hashlib.sha256(path.read_bytes()).hexdigest() != data['oldSha256']):
+                raise RuntimeError('Runner changed externally; refusing to overwrite it')
+            backup.unlink()
+            return {'settingsReady': True, 'runnerUnchanged': True}
+        if data.get('state') != 'updating':
+            raise RuntimeError('Unknown backup state; inspect before recovery')
+        allowed_files = {data['newSha256'], data['oldSha256']}
         if (row['Image'] != data['imageId'] or hashlib.sha256(path.read_bytes()).hexdigest() not in allowed_files
                 or env_digest(actual) not in {data['runtimeOld'], data['runtimeNew']}):
             raise RuntimeError('Runner changed externally; refusing to overwrite it')
-        old = parse_env(data['old'])
-        expected, current_version = vlm_values(environment)
-        if current_version != version or not all(old.get(k) == v for k, v in expected.items()):
-            raise RuntimeError('Restored Parameter does not match the runner backup')
         atomic(path, data['old'])
-        run('docker', 'compose', 'up', '-d', '--no-deps', '--force-recreate', 'process-runner', cwd=root)
-        runner_ready(environment, expected)
+        recreate(environment)
+        runner_ready(environment, data['oldVlm'], absent=data['missingVlm'],
+                     probe_vlm=False, image_id=data['imageId'])
         backup.unlink()
-        return {'settingsReady': True}
+        return {'settingsReady': True, 'configurationRestored': True}
     if action == 'finalize-vlm':
         backup.unlink(missing_ok=True)
         return {'finalized': True}

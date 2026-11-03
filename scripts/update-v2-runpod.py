@@ -27,6 +27,15 @@ class ProbeError(RuntimeError):
 
 class RunnerStateUnknown(TimeoutError):
     """Do not issue a competing restore while an SSM command may still run."""
+    def __init__(self, message, command_id=None):
+        super().__init__(message)
+        self.command_id = command_id
+
+
+class RunnerSettingsFailure(RuntimeError):
+    def __init__(self, command_id):
+        super().__init__('Runner settings failed; inspect SSM command ' + command_id)
+        self.command_id = command_id
 
 
 def runner_settings(environment, action, version=0, operation=''):
@@ -44,23 +53,23 @@ def runner_settings(environment, action, version=0, operation=''):
             result = ai.aws('ssm', 'get-command-invocation', '--command-id', command_id, '--instance-id', ai.INSTANCE)
         except RuntimeError as error:
             if 'InvocationDoesNotExist' not in str(error):
-                raise RunnerStateUnknown('Runner command status unavailable: ' + command_id) from None
+                raise RunnerStateUnknown('Runner command status unavailable', command_id) from None
             time.sleep(5)
             continue
         status = result['Status']
         if status == 'Success':
             row = json.loads(result['StandardOutputContent'].strip())
             if row.get('settingsReady' if action != 'finalize-vlm' else 'finalized') is not True:
-                raise RuntimeError('Runner settings receipt is incomplete: ' + command_id)
-            if action == 'sync-vlm' and row.get('parameterVersion') != version:
-                raise RuntimeError('Runner attested another Parameter version: ' + command_id)
+                raise RunnerSettingsFailure(command_id)
+            if action in {'inspect-settings', 'sync-vlm'} and row.get('parameterVersion') != version:
+                raise RunnerSettingsFailure(command_id)
             return row
         if status == 'Failed':
-            raise RuntimeError('Runner settings command failed: ' + command_id)
+            raise RunnerSettingsFailure(command_id)
         if status in {'Cancelled', 'TimedOut', 'Cancelling'}:
-            raise RunnerStateUnknown('Inspect runner command before recovery: ' + command_id)
+            raise RunnerStateUnknown('Inspect runner command before recovery', command_id)
         time.sleep(5)
-    raise RunnerStateUnknown('Runner command outcome unknown: ' + command_id)
+    raise RunnerStateUnknown('Runner command outcome unknown', command_id)
 
 
 def validate_url(value):
@@ -199,9 +208,11 @@ def promote(environment, new_url, report, save, staging_version=None):
     settings = {e['name']: e['value'] for e in current['containerDefinitions'][0].get('environment', [])}
     old_parameter = ai.aws('ssm', 'get-parameter', '--name', parameter(environment))['Parameter']
     old_url = validate_url(old_parameter['Value'])
-    runner_settings(environment, 'inspect-settings')
     report.update(environment=environment, previousUrl=old_url, newUrl=new_url, previousRevision=previous,
                   expectedStagingVersion=staging_version, runnerOperation=uuid.uuid4().hex)
+    save()
+    inspected = runner_settings(environment, 'inspect-settings', old_parameter['Version'], report['runnerOperation'])
+    report['runnerVlmInitialization'] = inspected.get('initializingVlm', False)
     save()
     probe(environment, new_url, settings['VLM_MODEL'])
     desired = candidate(environment, current)
@@ -292,6 +303,10 @@ def main():
         if report['status'] == 'preflight':
             report['status'] = 'preflight_failed'
         report['errorType'] = type(error).__name__
+        command_id = getattr(error, 'command_id', None)
+        if command_id and re.fullmatch(r'[0-9a-f-]{36}', command_id):
+            report['runnerCommandId'] = command_id
+            print('Runner SSM CommandId: ' + command_id, flush=True)
         if isinstance(error, ProbeError):
             report['message'] = str(error)
             print(str(error), flush=True)
