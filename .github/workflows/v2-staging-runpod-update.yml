@@ -50,7 +50,7 @@ jobs:
           aws-region: ap-northeast-2
           role-duration-seconds: 3600
           role-session-name: yeodam-v2-staging-runpod
-      - name: Verify RunPod and update AI API
+      - name: Verify RunPod and synchronize AI API and runner
         env:
           RUNPOD_URL: ${{ inputs.url }}
           RUNPOD_UPDATE_REPORT: ${{ runner.temp }}/runpod-update.json

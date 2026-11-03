@@ -62,15 +62,18 @@ def main():
         if action == 'inspect':
             print(json.dumps(inspect()))
             return
+        import ai_runner_runtime
+        if action in {'inspect-settings', 'sync-vlm', 'restore-vlm', 'finalize-vlm'}:
+            result = ai_runner_runtime.url_action('production', action,
+                int(os.environ.get('AI_RUNNER_PARAMETER_VERSION', '0')), os.environ.get('AI_RUNNER_OPERATION', ''))
+            print(json.dumps(result))
+            return
         if action != 'deploy':
             raise ValueError('Expected inspect or deploy')
         image = image_ref(os.environ['AI_DEPLOY_IMAGE'])
         if not (ROOT / 'compose.yml').is_file() or not Path('/data/qdrant').is_mount():
             raise RuntimeError('GPU runtime is not initialized')
-        before = inspect()
-        if before['image'] == before['configuredImage'] == image and before['health'] == 'healthy':
-            print(json.dumps(before))
-            return
+        inspect()
         # Credentials are short lived on this host and never reach the Actions runner.
         with tempfile.TemporaryDirectory(prefix='production-ai-deploy-', dir='/run') as directory:
             os.environ['DOCKER_CONFIG'] = directory
@@ -83,6 +86,7 @@ def main():
             if result.returncode:
                 raise RuntimeError('Runner registry login failed')
             run('docker', 'pull', '--platform', 'linux/amd64', image)
+            ai_runner_runtime.prepare('production', image)
             # Compose loads this durable override on normal systemd startup too.
             override = ROOT / 'compose.override.yml'
             if override.exists():
@@ -90,7 +94,7 @@ def main():
                 if set(previous) != {'services'} or set(previous['services']) != {'process-runner'}:
                     raise RuntimeError('Refusing to replace an unrelated Compose override')
             content = {'services': {'process-runner': {'image': image,
-                        'environment': {'RELEASE': image}}}}
+                        'environment': {'RELEASE': image}, 'volumes': [dict(ai_runner_runtime.MOUNT, bind={'create_host_path': False})]}}}
             temporary = ROOT / '.runner-release.tmp'
             temporary.write_text(json.dumps(content) + '\n')
             temporary.chmod(0o600)

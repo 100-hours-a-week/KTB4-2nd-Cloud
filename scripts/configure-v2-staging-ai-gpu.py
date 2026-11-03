@@ -47,6 +47,7 @@ def env_file(name, values):
 
 
 def main():
+    import ai_runner_runtime
     os.umask(0o077)
     embedding_key = get_or_create("/yeodam/v2/staging/ai/EMBEDDING_API_KEY")
     api_key = get_or_create("/yeodam/v2/staging/ai/API_KEY")
@@ -69,6 +70,7 @@ def main():
     for work in ("TRIP_CREATE", "TRIP_UPDATE", "STORY_CREATE"):
         for direction in ("REQUEST", "RESULT"):
             values[f"KAFKA_{work}_{direction}_TOPIC"] = f"staging.yeodam.{work.lower().replace('_', '-')}.{direction.lower()}"
+    values.update(ai_runner_runtime.additional_values('staging'))
     env_file("runner.env", values)
     credential = json.loads(aws("secretsmanager", "get-secret-value", "--secret-id", os.environ["AI_GHCR_SECRET"])["SecretString"])
     login = subprocess.run(["docker", "login", "ghcr.io", "--username", credential["username"], "--password-stdin"], input=credential["password"], text=True, capture_output=True)
