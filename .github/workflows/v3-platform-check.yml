@@ -4,13 +4,15 @@ on:
   workflow_call:
   push:
     paths:
-      - 'deploy/v3/platform/**'
+      - 'deploy/v3/**'
       - 'scripts/check-v3-platform.py'
+      - 'scripts/check-v3-apps.py'
       - 'scripts/prepare-v3-validation.py'
       - 'scripts/requirements-v3-validation.txt'
       - 'scripts/validate-v3-platform.sh'
       - 'tests/ci/v3/**'
       - 'tests/ci/test_v3_platform.py'
+      - 'tests/ci/test_v3_apps.py'
       - '.github/workflows/v3-platform-check.yml'
       - '.github/workflows/cloud-pr-gate.yml'
 
@@ -26,5 +28,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Render, validate and test V3 platform definitions
+      - name: Render, validate and test V3 platform and app definitions
+        env:
+          V3_RENDERED_DIR: ${{ runner.temp }}/v3-rendered
         run: bash scripts/validate-v3-platform.sh
+
+      - name: Preserve rendered platform and synthetic app definitions
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: v3-rendered-${{ github.sha }}
+          path: ${{ runner.temp }}/v3-rendered
+          retention-days: 7
+          if-no-files-found: warn

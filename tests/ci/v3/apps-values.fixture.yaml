@@ -1,0 +1,100 @@
+# CI fixtures only: synthetic digests, references and timings. Never deploy this file.
+images:
+  backend: ghcr.io/100-hours-a-week/yeodam-backend@sha256:1111111111111111111111111111111111111111111111111111111111111111
+  websocket: ghcr.io/100-hours-a-week/yeodam-websocket@sha256:2222222222222222222222222222222222222222222222222222222222222222
+defaults:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+      ephemeral-storage: 64Mi
+    limits:
+      memory: 1Gi
+      ephemeral-storage: 512Mi
+  imagePullSecrets:
+  - ci-only-ghcr-pull
+  environment:
+    RELEASE: ci-fixture-only
+  configMapRefs:
+  - ci-only-runtime
+  secretRefs:
+    EXAMPLE_API_KEY:
+      name: ci-only-secrets
+      key: API_KEY
+  configurationRevision: ci-only-not-a-release
+  probes:
+    startup:
+      httpGet:
+        path: /actuator/health/liveness
+        port: management
+        scheme: HTTP
+      periodSeconds: 5
+      timeoutSeconds: 2
+      failureThreshold: 24
+      successThreshold: 1
+    liveness:
+      httpGet:
+        path: /actuator/health/liveness
+        port: management
+        scheme: HTTP
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+      successThreshold: 1
+    readiness:
+      httpGet:
+        path: /actuator/health/readiness
+        port: management
+        scheme: HTTP
+      periodSeconds: 5
+      timeoutSeconds: 2
+      failureThreshold: 3
+      successThreshold: 1
+  terminationGracePeriodSeconds: 180
+  preStopDelaySeconds: 5
+  rollout:
+    maxSurge: 1
+    maxUnavailable: 0
+  scratchSizeLimit: 64Mi
+  catalogSizeLimit: 16Mi
+workloads:
+  auth-api:
+    enabled: true
+  trip-api:
+    enabled: true
+  photo-api:
+    enabled: true
+  photo-converter:
+    enabled: true
+  trip-result-worker:
+    enabled: true
+  trip-websocket:
+    enabled: true
+    probes:
+      startup:
+        httpGet:
+          path: /api/actuator/health/liveness
+          port: http
+          scheme: HTTP
+        periodSeconds: 5
+        timeoutSeconds: 2
+        failureThreshold: 24
+        successThreshold: 1
+      liveness:
+        httpGet:
+          path: /api/actuator/health/liveness
+          port: http
+          scheme: HTTP
+        periodSeconds: 10
+        timeoutSeconds: 2
+        failureThreshold: 3
+        successThreshold: 1
+      readiness:
+        httpGet:
+          path: /api/actuator/health/readiness
+          port: http
+          scheme: HTTP
+        periodSeconds: 5
+        timeoutSeconds: 2
+        failureThreshold: 3
+        successThreshold: 1

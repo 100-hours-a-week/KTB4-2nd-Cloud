@@ -172,12 +172,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--rendered', type=Path, help='Check supplied platform rendering instead of Helm output')
     parser.add_argument('--workloads', type=Path, help='Additionally check future Deployment/Service definitions')
+    parser.add_argument('--output', type=Path, help='Retain the successfully checked platform rendering')
     args = parser.parse_args()
     values = yaml.load((CHART / 'values.yaml').read_text(), Loader=UniqueLoader)
     source = args.rendered.read_text() if args.rendered else render()
     documents = load_documents(source)
     accounts = validate_platform(documents, values)
     schema_check(source)
+    if args.output:
+        args.output.write_text(source)
     if args.workloads:
         app_source = args.workloads.read_text()
         validate_workloads(load_documents(app_source), accounts)
