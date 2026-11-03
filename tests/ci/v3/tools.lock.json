@@ -1,0 +1,63 @@
+{
+  "helmVersion": "v4.3.1",
+  "kubeconformVersion": "v0.8.0",
+  "kubernetesVersion": "1.36.0",
+  "platforms": {
+    "darwin-arm64": {
+      "helm": {
+        "url": "https://get.helm.sh/helm-v4.3.1-darwin-arm64.tar.gz",
+        "sha256": "6b4e61c8cd27d99e5a801e63ff25dd5c70b36875c2cd659d3e9ce6b76fc23198",
+        "member": "darwin-arm64/helm"
+      },
+      "kubeconform": {
+        "url": "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-darwin-arm64.tar.gz",
+        "sha256": "f84f4dfbebf4a6b0b230385fa065a39ea35e02608c2b50d025dcf64775a69d67",
+        "member": "kubeconform"
+      }
+    },
+    "linux-amd64": {
+      "helm": {
+        "url": "https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz",
+        "sha256": "0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b",
+        "member": "linux-amd64/helm"
+      },
+      "kubeconform": {
+        "url": "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz",
+        "sha256": "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883",
+        "member": "kubeconform"
+      }
+    }
+  },
+  "schemas": {
+    "namespace": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/namespace.json",
+      "sha256": "99301bb4ecb85094c9708ee076b5bdcc23465a1352dd0f1d9189e39d2fbeeac3",
+      "license": "Apache-2.0",
+      "upstreamCommit": "e0c72a1bc5f409d1685c0e1323460c8a98cd7459"
+    },
+    "serviceaccount": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/serviceaccount.json",
+      "sha256": "dd71e8bcb8514b858b41757f8c52389440d40ffe5631880cc7f3dce6afab64b5",
+      "license": "Apache-2.0",
+      "upstreamCommit": "e0c72a1bc5f409d1685c0e1323460c8a98cd7459"
+    },
+    "networkpolicy": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/networkpolicy.json",
+      "sha256": "ad5b450751102335d51cbaca737a46d75396666ba59b5139f3420e56550251fb",
+      "license": "Apache-2.0",
+      "upstreamCommit": "e0c72a1bc5f409d1685c0e1323460c8a98cd7459"
+    },
+    "deployment": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/deployment.json",
+      "sha256": "cd8f028559c39fb3de4078e2ab10302ba5be95503d67fb02bae556f096d2755d",
+      "license": "Apache-2.0",
+      "upstreamCommit": "e0c72a1bc5f409d1685c0e1323460c8a98cd7459"
+    },
+    "service": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/service.json",
+      "sha256": "67995b5af5be6b179c6ce8833864282e901f1ba0f604d97a67e57f1d93db2deb",
+      "license": "Apache-2.0",
+      "upstreamCommit": "e0c72a1bc5f409d1685c0e1323460c8a98cd7459"
+    }
+  }
+}
