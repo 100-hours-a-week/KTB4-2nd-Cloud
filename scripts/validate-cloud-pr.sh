@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+python3 -m unittest discover -s tests/ci -p 'test_v3_foundation.py'
+python3 -m unittest discover -s tests/ci -p 'test_v3_node_sizing_plan.py'
+
 bash -n monitoring/v1-staging/install-nginx-logrotate.sh
 python3 -m unittest discover -s tests/ci -p 'test_v1_nginx_observability.py'
 python3 -m unittest discover -s tests/ci -p 'test_nginx_read_dry_run.py'
@@ -21,6 +24,7 @@ python3 -m unittest discover -s tests/ci -p 'test_production_mysql_account.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_kafka_host.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_observability.py'
 python3 -m unittest discover -s tests/ci -p 'test_ai_runner_ops.py'
+python3 -m unittest discover -s tests/ci -p 'test_ai_reference_access.py'
 python3 -c 'import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path("monitoring/grafana-web").glob("*.py")]'
 python3 -c 'import ast,pathlib,json; [ast.parse(p.read_text()) for p in pathlib.Path("monitoring/ai-runner").glob("*.py")]; json.loads(pathlib.Path("monitoring/ai-runner/cloudwatch.json").read_text())'
 bash -n monitoring/ai-runner/install.sh
@@ -97,6 +101,11 @@ python3 -m unittest discover -s tests/load/tests -p 'test_nginx_failure_evidence
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_shared_ip_trial.py'
 python3 -m unittest discover -s tests/ci -p 'test_nginx_shared_ip_observation.py'
 python3 -m unittest discover -s tests/ci -p 'test_user_read_cutover.py'
+python3 -m unittest discover -s tests/ci -p 'test_nginx_user_read_profile.py'
+python3 -m unittest discover -s tests/ci -p 'test_nginx_jwt_*.py'
+node --test tests/ci/nginx-jwt-gate.test.mjs
+python3 -m unittest discover -s tests/load/tests -p 'test_nginx_jwt_trial.py'
+bash tests/ci/check-nginx-jwt-gate.sh
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_browser_guard.py'
 python3 -m unittest discover -s tests/load/tests -p 'test_nginx_connection_trials.py'
 python3 -c 'import ast,pathlib; [ast.parse(pathlib.Path("tests/load/scripts/"+n).read_text()) for n in ["analyze-nginx-browser-load.py", "analyze-nginx-connection-browser.py"]]'
@@ -144,6 +153,7 @@ bash -n monitoring/v2-staging/install-backend-discovery.sh
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/backend.json >/dev/null
 python3 -m unittest discover -s tests/ci -p 'test_backend_discovery.py'
 python3 -m unittest discover -s tests/ci -p 'test_runpod_update.py'
+python3 -m unittest discover -s tests/ci -p 'test_ai_runner_runtime.py'
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/kafka-cdc.json >/dev/null
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/ai-jobs.json >/dev/null
 node --check tests/load/scenarios/migration-metrics-smoke.js
@@ -256,3 +266,6 @@ python3 -m unittest discover -s tests/ci -p 'test_v2_release_event.py'
 python3 -m unittest discover -s tests/ci -p 'test_v2_staging_release.py'
 
 python3 -m unittest discover -s tests/ci -p 'test_v2_production_release.py'
+
+python3 -m unittest discover -s tests/ci -p 'test_javamysql467.py'
+python3 -m unittest discover -s tests/ci -p 'test_batch_commit472.py'

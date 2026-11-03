@@ -16,12 +16,14 @@ resource "aws_iam_role_policy" "production_runpod_update" {
   name = "production-runpod-update-only"
   role = aws_iam_role.production_runpod_update.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
+    { Effect = "Allow", Action = ["ssm:SendCommand"], Resource = [aws_ssm_document.production_runner_deploy.arn, data.aws_instance.shared_gpu.arn] },
+    { Effect = "Allow", Action = ["ssm:GetCommandInvocation"], Resource = "*", Condition = { StringEquals = { "aws:RequestedRegion" = "ap-northeast-2" } } },
     { Effect = "Allow", Action = ["ssm:GetParameter"], Resource = [
       for path in ["/yeodam/v2/production/ai/VLM_BASE_URL", "/yeodam/v2/production/ai/VLM_API_KEY", "/yeodam/v2/staging/ai/VLM_BASE_URL"] :
       "arn:aws:ssm:ap-northeast-2:${data.aws_caller_identity.current.account_id}:parameter${path}"
     ] },
     { Effect = "Allow", Action = ["ssm:PutParameter"], Resource = "arn:aws:ssm:ap-northeast-2:${data.aws_caller_identity.current.account_id}:parameter/yeodam/v2/production/ai/VLM_BASE_URL" },
-    { Effect = "Allow", Action = ["ecs:DescribeServices", "ecs:UpdateService"], Resource = aws_ecs_service.ai_api.id },
+    { Effect = "Allow", Action = ["ecs:DescribeServices", "ecs:UpdateService"], Resource = "arn:aws:ecs:ap-northeast-2:${data.aws_caller_identity.current.account_id}:service/${local.name_prefix}-app/${local.name_prefix}-ai-api" },
     { Effect = "Allow", Action = ["ecs:ListTasks"], Resource = "*", Condition = { ArnEquals = { "ecs:cluster" = module.ecs_foundation.cluster_arn } } },
     { Effect = "Allow", Action = ["ecs:DescribeTasks"], Resource = "arn:aws:ecs:ap-northeast-2:${data.aws_caller_identity.current.account_id}:task/${local.name_prefix}-app/*" },
     { Effect = "Allow", Action = ["ecs:DescribeTaskDefinition", "ecs:RegisterTaskDefinition", "elasticloadbalancing:DescribeTargetHealth"], Resource = "*", Condition = { StringEquals = { "aws:RequestedRegion" = "ap-northeast-2" } } },

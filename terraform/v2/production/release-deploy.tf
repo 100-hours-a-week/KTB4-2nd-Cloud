@@ -54,8 +54,10 @@ resource "aws_ssm_document" "production_runner_deploy" {
     schemaVersion = "2.2"
     description   = "Update only the production CPU process runner; preserve shared GPU services and configuration"
     parameters = {
-      Action      = { type = "String", allowedValues = ["inspect", "deploy"] }
-      ImageDigest = { type = "String", default = "", allowedPattern = "^$|^ghcr\\.io/100-hours-a-week/yeodam-ai-app@sha256:[0-9a-f]{64}$" }
+      Action           = { type = "String", allowedValues = ["inspect", "deploy", "inspect-settings", "sync-vlm", "restore-vlm", "finalize-vlm"] }
+      ParameterVersion = { type = "String", default = "0", allowedPattern = "^[0-9]{1,12}$" }
+      OperationId      = { type = "String", default = "", allowedPattern = "^$|^[0-9a-f]{32}$" }
+      ImageDigest      = { type = "String", default = "", allowedPattern = "^$|^ghcr\\.io/100-hours-a-week/yeodam-ai-app@sha256:[0-9a-f]{64}$" }
     }
     mainSteps = [{
       action = "aws:runShellScript"
@@ -63,6 +65,10 @@ resource "aws_ssm_document" "production_runner_deploy" {
       inputs = {
         timeoutSeconds = "540"
         runCommand = [
+          "install -d -m 0700 /run/yeodam-production-runner-code",
+          "printf '%s' '${filebase64("${path.module}/../../../scripts/ai_runner_runtime.py")}' | base64 --decode > /run/yeodam-production-runner-code/ai_runner_runtime.py",
+          "export PYTHONPATH=/run/yeodam-production-runner-code",
+          "export AI_RUNNER_PARAMETER_VERSION='{{ ParameterVersion }}' AI_RUNNER_OPERATION='{{ OperationId }}'",
           "export AI_DEPLOY_ACTION='{{ Action }}' AI_DEPLOY_IMAGE='{{ ImageDigest }}'",
           "printf '%s' '${filebase64("${path.module}/../../../scripts/deploy-v2-production-ai-runner.py")}' | base64 --decode > /run/yeodam-production-runner-deploy.py",
           "python3 /run/yeodam-production-runner-deploy.py"

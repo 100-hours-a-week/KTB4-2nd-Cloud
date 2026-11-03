@@ -1,0 +1,15 @@
+# Copy to foundation.auto.tfvars (ignored), replace operator inputs, then review
+# the account, regional compatibility and plan. This is NOT an apply instruction.
+expected_account_id = "483175530259"
+admin_role_arns = [
+  "arn:aws:iam::483175530259:role/REPLACE_WITH_REVIEWED_OPERATOR_ROLE"
+]
+api_public_access_cidrs = ["192.0.2.10/32"] # Replace with the operator's public IP.
+node_release_version   = "1.36.5-20261031"
+addon_versions = {
+  vpc-cni                = "v1.23.2-eksbuild.8"
+  kube-proxy             = "v1.36.0-eksbuild.60"
+  coredns                = "v1.14.7-eksbuild.28"
+  eks-pod-identity-agent = "v1.4.1-eksbuild.3"
+  aws-ebs-csi-driver     = "v1.67.2-eksbuild.1"
+}

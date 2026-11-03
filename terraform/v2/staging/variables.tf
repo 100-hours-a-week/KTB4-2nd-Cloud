@@ -41,20 +41,9 @@ variable "alb_secondary_availability_zone" {
 }
 
 variable "mysql_ami_id" {
-  description = "Reviewed Canonical Ubuntu 24.04 ARM64 AMI for the staging MySQL host"
+  description = "Reviewed Canonical Ubuntu 24.04 ARM64 AMI for the live staging validation MySQL host"
   type        = string
   default     = "ami-0ccbfe1123f2d682d"
-}
-
-variable "mysql_active_private_ip" {
-  description = "Validated MySQL private IP to publish in the private zone; null until recovery checks pass"
-  type        = string
-  default     = null
-
-  validation {
-    condition     = var.mysql_active_private_ip == null || can(cidrhost("${var.mysql_active_private_ip}/32", 0))
-    error_message = "mysql_active_private_ip must be a valid IPv4 address or null."
-  }
 }
 
 variable "redis_node_type" {
@@ -67,29 +56,6 @@ variable "v1_source_ami_id" {
   description = "Reviewed Ubuntu 24.04 x86_64 AMI for the V1 rehearsal App and Worker"
   type        = string
   default     = "ami-086a43496cb46286c"
-}
-
-variable "v1_source_app_instance_type" {
-  description = "V1 rehearsal App size; production parity is t3.medium"
-  type        = string
-  default     = "t3.medium"
-}
-
-variable "v1_source_worker_instance_type" {
-  description = "V1 rehearsal AI Worker size; stop outside rehearsal windows"
-  type        = string
-  default     = "c7i.xlarge"
-}
-
-variable "v1_source_mysql_data_gib" {
-  description = "Retained MySQL data volume for the V1 rehearsal source"
-  type        = number
-  default     = 20
-
-  validation {
-    condition     = var.v1_source_mysql_data_gib >= 10
-    error_message = "The V1 rehearsal MySQL volume must be at least 10 GiB."
-  }
 }
 
 variable "plg_instance_type" {
@@ -186,12 +152,12 @@ variable "backend_environment" {
 }
 
 variable "backend_mysql_mode" {
-  description = "Use the isolated validation schema while V1-to-V2 replication owns the migration target"
+  description = "Compatibility input; only the live validation DB is available after migration retirement"
   type        = string
   default     = "validation"
 
   validation {
-    condition     = contains(["validation", "migration_target"], var.backend_mysql_mode)
-    error_message = "backend_mysql_mode must be validation or migration_target."
+    condition     = var.backend_mysql_mode == "validation"
+    error_message = "The migration target is retired; backend_mysql_mode must be validation."
   }
 }

@@ -69,6 +69,16 @@ class RunpodTests(unittest.TestCase):
                 return {'taskDefinition': {'taskDefinitionArn': 'new-revision'}}
             return {}
         report = {'status': 'preflight'}
+        self.runner_calls = []
+        def runner(environment, action, version=0, operation=''):
+            self.runner_calls.append((environment, action, version, operation))
+            if action == 'sync-vlm' and failure == 'runner':
+                raise RuntimeError('runner failed')
+            if action == 'sync-vlm' and failure == 'runner-unknown':
+                raise m.RunnerStateUnknown('status unknown')
+            if action == 'finalize-vlm' and failure == 'cleanup':
+                raise RuntimeError('cleanup failed')
+            return {'settingsReady': True}
         def wait(*args):
             if args[1] == 'new-revision' and failure in {'rollout', 'external-write'}:
                 if failure == 'external-write':
@@ -81,9 +91,10 @@ class RunpodTests(unittest.TestCase):
              patch.object(m, 'target_group', return_value='target'), \
              patch.object(m, 'healthy_tasks', return_value=True), \
              patch.object(m, 'probe', side_effect=m.ProbeError('probe failed') if failure == 'probe' else None) as probe, \
-             patch.object(m, 'wait_api', side_effect=wait):
-            if failure:
-                with self.assertRaises(RuntimeError):
+             patch.object(m, 'wait_api', side_effect=wait), \
+             patch.object(m, 'runner_settings', side_effect=runner):
+            if failure and failure != 'cleanup':
+                with self.assertRaises((RuntimeError, m.RunnerStateUnknown)):
                     m.promote(environment, URL, report, lambda: None, 7 if environment == 'production' else None)
             else:
                 m.promote(environment, URL, report, lambda: None, 7 if environment == 'production' else None)
@@ -98,6 +109,9 @@ class RunpodTests(unittest.TestCase):
         self.assertEqual(report['status'], 'healthy')
         self.assertEqual(report['parameterVersion'], 3)
         self.assertTrue(all(c[c.index('--name') + 1] == m.STAGING_PARAMETER for c in self.writes()))
+        self.assertEqual(self.runner_calls[0][1:3], ('inspect-settings', 2))
+        self.assertTrue(all(c[3] == report['runnerOperation'] for c in self.runner_calls))
+        self.assertRegex(report['runnerOperation'], r'^[0-9a-f]{32}$')
 
     def test_production_uses_only_production_writes_and_preserves_staging(self):
         report = self.exercise()
@@ -108,7 +122,9 @@ class RunpodTests(unittest.TestCase):
         update = next(c for c in self.calls if c[:2] == ('ecs', 'update-service'))
         self.assertEqual(update[update.index('--cluster') + 1], m.ENVIRONMENTS['production'][0])
         self.assertEqual(update[update.index('--service') + 1], m.ENVIRONMENTS['production'][1])
-        self.assertFalse(any(c[0] == 'ec2' or c[:2] == ('ssm', 'send-command') for c in self.calls))
+        self.assertFalse(any(c[0] == 'ec2' for c in self.calls))
+        self.assertEqual([x[1] for x in self.runner_calls], ['inspect-settings', 'sync-vlm', 'finalize-vlm'])
+        self.assertTrue(all(x[0] == 'production' for x in self.runner_calls))
 
     def test_stale_staging_receipt_stops_before_production_write(self):
         for failure in ['stale-before', 'stale-during']:
@@ -142,6 +158,50 @@ class RunpodTests(unittest.TestCase):
         self.assertEqual(report['status'], 'recovery_required')
         self.assertEqual(len(self.writes()), 1)
         self.assertFalse(any(c[:2] == ('ecs', 'update-service') for c in self.calls))
+
+    def test_runner_failure_restores_api_parameter_and_runner(self):
+        report = self.exercise(failure='runner')
+        self.assertEqual(report['status'], 'restored_previous')
+        self.assertEqual([x[1] for x in self.runner_calls], ['inspect-settings', 'sync-vlm', 'restore-vlm'])
+        self.assertEqual(self.runner_calls[-1][2], 4)
+
+    def test_unknown_runner_outcome_never_starts_competing_recovery(self):
+        report = self.exercise(failure='runner-unknown')
+        self.assertEqual(report['status'], 'recovery_required')
+        self.assertTrue(report['runnerOutcomeUnknown'])
+        self.assertEqual(len(self.writes()), 1)
+        self.assertNotIn('restore-vlm', [x[1] for x in self.runner_calls])
+
+    def test_backup_cleanup_failure_does_not_rollback_healthy_endpoints(self):
+        report = self.exercise(failure='cleanup')
+        self.assertEqual(report['status'], 'healthy')
+        self.assertTrue(report['runnerBackupCleanupPending'])
+        self.assertEqual(len(self.writes()), 1)
+
+    def test_ssm_targets_one_environment_and_never_prints_command_output(self):
+        def aws(*args):
+            if args[:2] == ('ssm', 'send-command'):
+                self.assertEqual(args[args.index('--instance-ids') + 1], m.ai.INSTANCE)
+                self.assertEqual(args[args.index('--document-name') + 1], 'yeodam-v2-staging-ai-runner-deploy')
+                return {'Command': {'CommandId': 'id'}}
+            return {'Status': 'Failed', 'StandardErrorContent': 'SECRET'}
+        with patch.object(m.ai, 'aws', side_effect=aws), self.assertRaises(RuntimeError) as error:
+            m.runner_settings('staging', 'sync-vlm', 3, 'a' * 32)
+        self.assertNotIn('SECRET', str(error.exception))
+        self.assertEqual(error.exception.command_id,'id')
+        with patch.object(m.ai, 'aws', side_effect=RuntimeError('SECRET')), self.assertRaises(m.RunnerStateUnknown):
+            m.runner_settings('staging', 'sync-vlm', 3, 'a' * 32)
+
+    def test_old_or_mismatched_ssm_receipt_stops_preflight_with_command_id(self):
+        def aws(*args):
+            if args[:2]==('ssm','send-command'):
+                params=json.loads(args[args.index('--parameters')+1])
+                self.assertEqual(params['OperationId'],['a'*32])
+                return {'Command':{'CommandId':'safe-command-id'}}
+            return {'Status':'Success','StandardOutputContent':json.dumps({'settingsReady':True})}
+        with patch.object(m.ai,'aws',side_effect=aws),self.assertRaises(m.RunnerSettingsFailure) as error:
+            m.runner_settings('staging','inspect-settings',2,'a'*32)
+        self.assertEqual(error.exception.command_id,'safe-command-id')
 
     def test_old_healthy_target_cannot_attest_current_revision(self):
         def aws(*args):

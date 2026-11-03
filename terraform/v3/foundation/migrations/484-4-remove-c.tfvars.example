@@ -1,0 +1,9 @@
+# Use only after C candidate verification/cleanup. Matches final root defaults.
+system_node_groups = {
+  ap-northeast-2a-t3a-medium = {
+    availability_zone = "ap-northeast-2a", instance_type = "t3a.medium"
+  }
+  ap-northeast-2c-t3a-medium = {
+    availability_zone = "ap-northeast-2c", instance_type = "t3a.medium"
+  }
+}

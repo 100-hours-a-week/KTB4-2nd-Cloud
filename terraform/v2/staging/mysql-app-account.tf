@@ -17,12 +17,6 @@ data "aws_iam_policy_document" "mysql_app_password" {
   }
 }
 
-resource "aws_iam_role_policy" "mysql_app_password" {
-  name   = "yeodam-v2-staging-mysql-app-password"
-  role   = module.mysql.instance_role_name
-  policy = data.aws_iam_policy_document.mysql_app_password.json
-}
-
 # Run manually after the SecureString exists. Keeping this outside EC2 user_data
 # avoids replacing the stateful MySQL instance to provision an application user.
 resource "aws_ssm_document" "mysql_app_account" {
@@ -61,27 +55,6 @@ resource "aws_ssm_document" "mysql_validation_account" {
   tags = local.common_tags
 }
 
-resource "aws_ssm_document" "mysql_v1_source_app_account" {
-  name          = "yeodam-v2-staging-mysql-v1-source-app-account"
-  document_type = "Command"
-  content = jsonencode({
-    schemaVersion = "2.2"
-    description   = "Allow the V1 staging App to reach the V1-compatible schema using its existing password"
-    mainSteps = [{
-      action = "aws:runShellScript"
-      name   = "provisionV1SourceAppAccount"
-      inputs = {
-        runCommand = [
-          "export V1_APP_PRIVATE_IP='${aws_instance.v1_source_app.private_ip}'",
-          "bash -s <<'YEODAM_V1_APP_ACCOUNT'\n${file("${path.module}/files/provision-mysql-v1-source-app-account.sh")}\nYEODAM_V1_APP_ACCOUNT",
-        ]
-      }
-    }]
-  })
-
-  tags = local.common_tags
-}
-
 resource "aws_ssm_document" "mysql_backup_with_validation" {
   name          = "yeodam-v2-staging-mysql-backup-with-validation"
   document_type = "Command"
@@ -107,14 +80,4 @@ resource "aws_ssm_document" "mysql_backup_with_validation" {
   })
 
   tags = local.common_tags
-}
-
-resource "aws_ssm_association" "mysql_backup_with_validation" {
-  name             = aws_ssm_document.mysql_backup_with_validation.name
-  association_name = "yeodam-v2-staging-mysql-backup-with-validation"
-
-  targets {
-    key    = "InstanceIds"
-    values = [module.mysql.instance_id]
-  }
 }
