@@ -153,6 +153,7 @@ bash -n monitoring/v2-staging/install-backend-discovery.sh
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/backend.json >/dev/null
 python3 -m unittest discover -s tests/ci -p 'test_backend_discovery.py'
 python3 -m unittest discover -s tests/ci -p 'test_runpod_update.py'
+python3 -m unittest discover -s tests/ci -p 'test_ai_runner_runtime.py'
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/kafka-cdc.json >/dev/null
 python3 -m json.tool monitoring/v2-staging/grafana/dashboards/ai-jobs.json >/dev/null
 node --check tests/load/scenarios/migration-metrics-smoke.js

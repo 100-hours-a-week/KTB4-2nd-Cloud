@@ -42,7 +42,7 @@ resource "aws_iam_role_policy" "production_runner_runtime" {
   role = data.aws_iam_role.shared_gpu.name
   policy = jsonencode({ Version = "2012-10-17", Statement = [
     { Effect = "Allow", Action = ["ssm:GetParameter", "ssm:PutParameter"], Resource = "arn:aws:ssm:ap-northeast-2:${data.aws_caller_identity.current.account_id}:parameter${local.production_ai_api_key_parameter}" },
-    { Effect = "Allow", Action = ["ssm:GetParameter"], Resource = [local.ai_redis_parameter_arn, "arn:aws:ssm:ap-northeast-2:${data.aws_caller_identity.current.account_id}:parameter/yeodam/v2/staging/ai/EMBEDDING_API_KEY"] },
+    { Effect = "Allow", Action = ["ssm:GetParameter"], Resource = [local.ai_redis_parameter_arn, "arn:aws:ssm:ap-northeast-2:${data.aws_caller_identity.current.account_id}:parameter/yeodam/v2/staging/ai/EMBEDDING_API_KEY", "arn:aws:ssm:ap-northeast-2:${data.aws_caller_identity.current.account_id}:parameter/yeodam/v2/production/ai/VLM_BASE_URL", "arn:aws:ssm:ap-northeast-2:${data.aws_caller_identity.current.account_id}:parameter/yeodam/v2/production/ai/VLM_API_KEY", "arn:aws:ssm:ap-northeast-2:${data.aws_caller_identity.current.account_id}:parameter/yeodam/v2/production/app/KAKAO_CLIENT_ID"] },
     { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = module.ecs_foundation.ghcr_credentials_secret_arn },
     { Effect = "Allow", Action = ["s3:GetObject"], Resource = ["${data.aws_s3_bucket.production_photos.arn}/trip-uploads/*/derived/*", "${data.aws_s3_bucket.production_photos.arn}/trip-additions/*/derived/*"] }
   ] })
@@ -69,6 +69,9 @@ resource "aws_ssm_document" "production_runner_runtime" {
       inputs = {
         timeoutSeconds = "600"
         runCommand = [
+          "install -d -m 0700 /run/yeodam-production-runner-code",
+          "printf '%s' '${filebase64("${path.module}/../../../scripts/ai_runner_runtime.py")}' | base64 --decode > /run/yeodam-production-runner-code/ai_runner_runtime.py",
+          "export PYTHONPATH=/run/yeodam-production-runner-code",
           "export PRODUCTION_RUNNER_IMAGE='${local.production_runner_image}'",
           "export PRODUCTION_RUNNER_COMPOSE_B64='${filebase64("${path.module}/../../../deploy/v2-production/ai-runner/compose.yml")}'",
           "export PRODUCTION_PHOTO_BUCKET='${data.aws_s3_bucket.production_photos.id}'",

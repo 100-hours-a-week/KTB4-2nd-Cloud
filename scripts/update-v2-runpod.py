@@ -9,6 +9,7 @@ import re
 import signal
 import subprocess
 import time
+import uuid
 
 spec = importlib.util.spec_from_file_location('ai_deploy', Path(__file__).with_name('deploy-v2-staging-ai.py'))
 ai = importlib.util.module_from_spec(spec)
@@ -22,6 +23,44 @@ STAGING_PARAMETER = '/yeodam/v2/staging/ai/VLM_BASE_URL'
 
 class ProbeError(RuntimeError):
     pass
+
+
+class RunnerStateUnknown(TimeoutError):
+    """Do not issue a competing restore while an SSM command may still run."""
+
+
+def runner_settings(environment, action, version=0, operation=''):
+    parameter(environment)
+    document = f'yeodam-v2-{environment}-ai-runner-deploy'
+    parameters = {'Action': [action], 'ParameterVersion': [str(version)], 'OperationId': [operation]}
+    try:
+        command = ai.aws('ssm', 'send-command', '--instance-ids', ai.INSTANCE, '--document-name', document,
+                         '--timeout-seconds', '60', '--parameters', json.dumps(parameters))
+    except RuntimeError:
+        raise RunnerStateUnknown('Runner command dispatch outcome unknown; inspect SSM before recovery') from None
+    command_id = command['Command']['CommandId']
+    for _ in range(120):
+        try:
+            result = ai.aws('ssm', 'get-command-invocation', '--command-id', command_id, '--instance-id', ai.INSTANCE)
+        except RuntimeError as error:
+            if 'InvocationDoesNotExist' not in str(error):
+                raise RunnerStateUnknown('Runner command status unavailable: ' + command_id) from None
+            time.sleep(5)
+            continue
+        status = result['Status']
+        if status == 'Success':
+            row = json.loads(result['StandardOutputContent'].strip())
+            if row.get('settingsReady' if action != 'finalize-vlm' else 'finalized') is not True:
+                raise RuntimeError('Runner settings receipt is incomplete: ' + command_id)
+            if action == 'sync-vlm' and row.get('parameterVersion') != version:
+                raise RuntimeError('Runner attested another Parameter version: ' + command_id)
+            return row
+        if status == 'Failed':
+            raise RuntimeError('Runner settings command failed: ' + command_id)
+        if status in {'Cancelled', 'TimedOut', 'Cancelling'}:
+            raise RunnerStateUnknown('Inspect runner command before recovery: ' + command_id)
+        time.sleep(5)
+    raise RunnerStateUnknown('Runner command outcome unknown: ' + command_id)
 
 
 def validate_url(value):
@@ -160,8 +199,9 @@ def promote(environment, new_url, report, save, staging_version=None):
     settings = {e['name']: e['value'] for e in current['containerDefinitions'][0].get('environment', [])}
     old_parameter = ai.aws('ssm', 'get-parameter', '--name', parameter(environment))['Parameter']
     old_url = validate_url(old_parameter['Value'])
+    runner_settings(environment, 'inspect-settings')
     report.update(environment=environment, previousUrl=old_url, newUrl=new_url, previousRevision=previous,
-                  expectedStagingVersion=staging_version)
+                  expectedStagingVersion=staging_version, runnerOperation=uuid.uuid4().hex)
     save()
     probe(environment, new_url, settings['VLM_MODEL'])
     desired = candidate(environment, current)
@@ -185,6 +225,15 @@ def promote(environment, new_url, report, save, staging_version=None):
         update(environment, revision)
         wait_api(environment, revision, target)
         probe(environment, new_url, settings['VLM_MODEL'])
+        report['runnerAttempted'] = True
+        save()
+        runner_settings(environment, 'sync-vlm', written['Version'], report['runnerOperation'])
+        report['runnerSettingsReady'] = True
+    except RunnerStateUnknown:
+        report['status'] = 'recovery_required'
+        report['runnerOutcomeUnknown'] = True
+        save()
+        raise
     except Exception:
         report['status'] = 'recovering'
         save()
@@ -198,14 +247,22 @@ def promote(environment, new_url, report, save, staging_version=None):
             latest_parameter = ai.aws('ssm', 'get-parameter', '--name', parameter(environment))['Parameter']
             if latest_parameter['Value'] != new_url or latest_parameter['Version'] != report['parameterVersion']:
                 raise RuntimeError('Parameter changed externally; refusing to overwrite it during recovery')
-            ai.aws('ssm', 'put-parameter', '--name', parameter(environment), '--type', 'String', '--value', old_url, '--overwrite')
+            restored = ai.aws('ssm', 'put-parameter', '--name', parameter(environment), '--type', 'String', '--value', old_url, '--overwrite')
             update(environment, previous, force=True)
             wait_api(environment, previous, target)
+            if report.get('runnerAttempted'):
+                runner_settings(environment, 'restore-vlm', restored['Version'], report['runnerOperation'])
             report['status'] = 'restored_previous'
         except Exception:
             report['status'] = 'recovery_required'
         save()
         raise
+    try:
+        runner_settings(environment, 'finalize-vlm', written['Version'], report['runnerOperation'])
+    except Exception:
+        # API and runner are healthy; leftover root-only /run backup is a cleanup
+        # item, not a reason to roll back a successful endpoint change.
+        report['runnerBackupCleanupPending'] = True
     report['status'] = 'healthy'
     save()
 

@@ -40,6 +40,11 @@ services:
     container_name: yeodam-ai-process-runner
     command: ["python", "-m", "app.jobs.runner"]
     env_file: /etc/yeodam/ai/runner.env
+    volumes:
+      - type: bind
+        source: /var/lib/yeodam/ai-reference
+        target: /data/ai-reference
+        bind: {create_host_path: false}
     init: true
     cpus: 2.0
     restart: unless-stopped
