@@ -58,6 +58,22 @@
       "sha256": "67995b5af5be6b179c6ce8833864282e901f1ba0f604d97a67e57f1d93db2deb",
       "license": "Apache-2.0",
       "upstreamCommit": "e0c72a1bc5f409d1685c0e1323460c8a98cd7459"
+    },
+    "clusterrole": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/clusterrole.json",
+      "sha256": "5b35631b2aa7e349269562742607d2e54fe5922ee5bf1579a1eceb58ce86f206"
+    },
+    "clusterrolebinding": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/clusterrolebinding.json",
+      "sha256": "114a4db87e6bf7c81b49fd1b32b57ccb7e1f052de891c70e3ed3c0b375e82cc5"
+    },
+    "secret": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/secret.json",
+      "sha256": "65f5a6945bbe766eef8292e5aa45c7b62d98c275af45a51652d26b0426cc3c55"
+    },
+    "validatingwebhookconfiguration": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/validatingwebhookconfiguration.json",
+      "sha256": "d4e6e151843df3fb5e9ea7f10d31b6eb67496ab9789571f91b3e59dec8ad51f0"
     }
   }
 }

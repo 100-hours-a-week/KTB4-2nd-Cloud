@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "stores"
+  ],
+  "properties": {
+    "stores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frontend",
+        "auth",
+        "trip",
+        "photo",
+        "ai"
+      ],
+      "properties": {
+        "frontend": {
+          "$ref": "#/definitions/store"
+        },
+        "auth": {
+          "$ref": "#/definitions/store"
+        },
+        "trip": {
+          "$ref": "#/definitions/store"
+        },
+        "photo": {
+          "$ref": "#/definitions/store"
+        },
+        "ai": {
+          "$ref": "#/definitions/store"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "store": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "roleArn",
+        "secrets"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "roleArn": {
+          "type": "string"
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "data"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "maxLength": 63
+              },
+              "data": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "secretKey",
+                    "remoteKey"
+                  ],
+                  "properties": {
+                    "secretKey": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9._-]+$"
+                    },
+                    "remoteKey": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "property": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Opaque",
+                  "kubernetes.io/dockerconfigjson"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
