@@ -129,10 +129,10 @@ class RequiredGateTest(unittest.TestCase):
         final_step = source.split('      - name: Require validation and applicable integration\n', 1)[1]
         cls.shell = textwrap.dedent(final_step.split('        run: |\n', 1)[1])
 
-    def gate(self, v1, v2, r1, r2, validate='success'):
+    def gate(self, v1, v2, r1, r2, validate='success', v3='success'):
         env = os.environ | {'RUNTIME_REQUIRED': v1, 'V2_RUNTIME_REQUIRED': v2,
                             'INTEGRATION_RESULT': r1, 'V2_INTEGRATION_RESULT': r2,
-                            'VALIDATE_RESULT': validate}
+                            'VALIDATE_RESULT': validate, 'V3_PLATFORM_RESULT': v3}
         return subprocess.run(['bash', '-c', self.shell], env=env, capture_output=True).returncode
 
     def test_required_success_and_intentional_skips(self):
@@ -146,6 +146,11 @@ class RequiredGateTest(unittest.TestCase):
             with self.subTest(result=result):
                 self.assertNotEqual(self.gate('true', 'false', result, 'skipped'), 0)
                 self.assertNotEqual(self.gate('false', 'true', 'skipped', result), 0)
+
+    def test_v3_failure_or_skip_blocks_the_required_cloud_gate(self):
+        for result in ['failure', 'cancelled', 'skipped', '']:
+            with self.subTest(result=result):
+                self.assertNotEqual(self.gate('false', 'false', 'skipped', 'skipped', v3=result), 0)
 
     def test_invalid_flags_or_validation_failure_cannot_pass(self):
         for flag in ['', 'unknown', 'TRUE']:

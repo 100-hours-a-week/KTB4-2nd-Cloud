@@ -1,0 +1,40 @@
+{{- range $namespace, $_ := .Values.namespaces }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "yeodam-v3-platform.namespaceLabels" (dict "root" $ "namespace" $namespace) | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cluster-dns
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "yeodam-v3-platform.namespaceLabels" (dict "root" $ "namespace" $namespace) | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        # Same peer: kube-dns Pods AND kube-system, not either selector alone.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

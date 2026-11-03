@@ -1,0 +1,723 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$defs": {
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {"type": "string", "pattern": "^$|^([1-9][0-9]*m|[0-9]+(\\.[0-9]+)?)$"},
+            "memory": {"type": "string", "pattern": "^$|^[1-9][0-9]*(Ki|Mi|Gi|Ti)$"},
+            "ephemeral-storage": {"type": "string", "pattern": "^$|^[1-9][0-9]*(Ki|Mi|Gi|Ti)$"}
+          },
+          "required": ["cpu", "memory", "ephemeral-storage"]
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {"type": "string", "pattern": "^$|^([1-9][0-9]*m|[0-9]+(\\.[0-9]+)?)$"},
+            "memory": {"type": "string", "pattern": "^$|^[1-9][0-9]*(Ki|Mi|Gi|Ti)$"},
+            "ephemeral-storage": {"type": "string", "pattern": "^$|^[1-9][0-9]*(Ki|Mi|Gi|Ti)$"}
+          },
+          "required": ["cpu", "memory", "ephemeral-storage"]
+        }
+      },
+      "required": ["requests", "limits"]
+    },
+    "probe": {
+      "anyOf": [
+        {"type": "object", "maxProperties": 0},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "httpGet": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "path": {"type": "string", "pattern": "^/"},
+                "port": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+                "scheme": {"enum": ["HTTP", "HTTPS"]}
+              },
+              "required": ["path", "port", "scheme"]
+            },
+            "periodSeconds": {"type": "integer", "minimum": 1},
+            "timeoutSeconds": {"type": "integer", "minimum": 1},
+            "failureThreshold": {"type": "integer", "minimum": 1},
+            "successThreshold": {"const": 1}
+          },
+          "required": ["httpGet", "periodSeconds", "timeoutSeconds", "failureThreshold", "successThreshold"]
+        }
+      ]
+    },
+    "field-resources": {"$ref": "#/$defs/resources"},
+    "field-imagePullSecrets": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+      "uniqueItems": true
+    },
+    "field-environment": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Z_][A-Z0-9_]*$"},
+      "additionalProperties": {"type": "string"}
+    },
+    "field-configMapRefs": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+      "uniqueItems": true
+    },
+    "field-secretRefs": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Z_][A-Z0-9_]*$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+          "key": {"type": "string", "pattern": "^[A-Za-z0-9._-]+$"}
+        },
+        "required": ["name", "key"]
+      }
+    },
+    "field-probes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "startup": {"$ref": "#/$defs/probe"},
+        "liveness": {"$ref": "#/$defs/probe"},
+        "readiness": {"$ref": "#/$defs/probe"}
+      },
+      "required": ["startup", "liveness", "readiness"]
+    },
+    "field-terminationGracePeriodSeconds": {"type": "integer", "minimum": 0},
+    "field-preStopDelaySeconds": {"type": "integer", "minimum": 0},
+    "field-rollout": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"maxSurge": {"type": "integer", "minimum": 0}, "maxUnavailable": {"type": "integer", "minimum": 0}},
+      "required": ["maxSurge", "maxUnavailable"]
+    },
+    "field-security": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runAsUser": {"type": "integer", "minimum": 0},
+        "runAsGroup": {"type": "integer", "minimum": 0},
+        "fsGroup": {"type": "integer", "minimum": 0}
+      },
+      "required": ["runAsUser", "runAsGroup", "fsGroup"]
+    },
+    "field-scratchSizeLimit": {"type": "string", "pattern": "^$|^[1-9][0-9]*(Ki|Mi|Gi|Ti)$"},
+    "field-catalogSizeLimit": {"type": "string", "pattern": "^$|^[1-9][0-9]*(Ki|Mi|Gi|Ti)$"},
+    "field-secretVolumes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+          "secretName": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+          "mountPath": {"type": "string", "pattern": "^/[^\\n]*$"}
+        },
+        "required": ["name", "secretName", "mountPath"]
+      }
+    },
+    "field-configurationRevision": {"type": "string", "maxLength": 256},
+    "field-resources-override": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {"type": "string", "pattern": "^$|^([1-9][0-9]*m|[0-9]+(\\.[0-9]+)?)$"},
+            "memory": {"type": "string", "pattern": "^$|^[1-9][0-9]*(Ki|Mi|Gi|Ti)$"},
+            "ephemeral-storage": {"type": "string", "pattern": "^$|^[1-9][0-9]*(Ki|Mi|Gi|Ti)$"}
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {"type": "string", "pattern": "^$|^([1-9][0-9]*m|[0-9]+(\\.[0-9]+)?)$"},
+            "memory": {"type": "string", "pattern": "^$|^[1-9][0-9]*(Ki|Mi|Gi|Ti)$"},
+            "ephemeral-storage": {"type": "string", "pattern": "^$|^[1-9][0-9]*(Ki|Mi|Gi|Ti)$"}
+          }
+        }
+      }
+    },
+    "field-probes-override": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "startup": {
+          "anyOf": [
+            {"type": "object", "maxProperties": 0},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "httpGet": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {"type": "string", "pattern": "^/"},
+                    "port": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+                    "scheme": {"enum": ["HTTP", "HTTPS"]}
+                  }
+                },
+                "periodSeconds": {"type": "integer", "minimum": 1},
+                "timeoutSeconds": {"type": "integer", "minimum": 1},
+                "failureThreshold": {"type": "integer", "minimum": 1},
+                "successThreshold": {"const": 1}
+              }
+            }
+          ]
+        },
+        "liveness": {
+          "anyOf": [
+            {"type": "object", "maxProperties": 0},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "httpGet": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {"type": "string", "pattern": "^/"},
+                    "port": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+                    "scheme": {"enum": ["HTTP", "HTTPS"]}
+                  }
+                },
+                "periodSeconds": {"type": "integer", "minimum": 1},
+                "timeoutSeconds": {"type": "integer", "minimum": 1},
+                "failureThreshold": {"type": "integer", "minimum": 1},
+                "successThreshold": {"const": 1}
+              }
+            }
+          ]
+        },
+        "readiness": {
+          "anyOf": [
+            {"type": "object", "maxProperties": 0},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "httpGet": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {"type": "string", "pattern": "^/"},
+                    "port": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+                    "scheme": {"enum": ["HTTP", "HTTPS"]}
+                  }
+                },
+                "periodSeconds": {"type": "integer", "minimum": 1},
+                "timeoutSeconds": {"type": "integer", "minimum": 1},
+                "failureThreshold": {"type": "integer", "minimum": 1},
+                "successThreshold": {"const": 1}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "field-security-override": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runAsUser": {"type": "integer", "minimum": 0},
+        "runAsGroup": {"type": "integer", "minimum": 0},
+        "fsGroup": {"type": "integer", "minimum": 0}
+      }
+    },
+    "field-rollout-override": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"maxSurge": {"type": "integer", "minimum": 0}, "maxUnavailable": {"type": "integer", "minimum": 0}}
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backend": {"type": "string", "pattern": "^$|^ghcr\\.io/[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$"},
+        "websocket": {"type": "string", "pattern": "^$|^ghcr\\.io/[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$"},
+        "frontend": {"type": "string", "pattern": "^$|^ghcr\\.io/[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$"},
+        "ai": {"type": "string", "pattern": "^$|^ghcr\\.io/[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}$"}
+      },
+      "required": ["backend", "websocket", "frontend", "ai"]
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resources": {"$ref": "#/$defs/field-resources"},
+        "imagePullSecrets": {"$ref": "#/$defs/field-imagePullSecrets"},
+        "environment": {"$ref": "#/$defs/field-environment"},
+        "configMapRefs": {"$ref": "#/$defs/field-configMapRefs"},
+        "secretRefs": {"$ref": "#/$defs/field-secretRefs"},
+        "probes": {"$ref": "#/$defs/field-probes"},
+        "terminationGracePeriodSeconds": {"$ref": "#/$defs/field-terminationGracePeriodSeconds"},
+        "preStopDelaySeconds": {"$ref": "#/$defs/field-preStopDelaySeconds"},
+        "rollout": {"$ref": "#/$defs/field-rollout"},
+        "security": {"$ref": "#/$defs/field-security"},
+        "scratchSizeLimit": {"$ref": "#/$defs/field-scratchSizeLimit"},
+        "catalogSizeLimit": {"$ref": "#/$defs/field-catalogSizeLimit"},
+        "secretVolumes": {"$ref": "#/$defs/field-secretVolumes"},
+        "configurationRevision": {"$ref": "#/$defs/field-configurationRevision"}
+      },
+      "required": [
+        "resources",
+        "imagePullSecrets",
+        "environment",
+        "configMapRefs",
+        "secretRefs",
+        "probes",
+        "terminationGracePeriodSeconds",
+        "preStopDelaySeconds",
+        "rollout",
+        "security",
+        "scratchSizeLimit",
+        "catalogSizeLimit",
+        "secretVolumes",
+        "configurationRevision"
+      ]
+    },
+    "workloads": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "frontend": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "resources": {"$ref": "#/$defs/field-resources-override"},
+            "imagePullSecrets": {"$ref": "#/$defs/field-imagePullSecrets"},
+            "environment": {"$ref": "#/$defs/field-environment"},
+            "configMapRefs": {"$ref": "#/$defs/field-configMapRefs"},
+            "secretRefs": {"$ref": "#/$defs/field-secretRefs"},
+            "probes": {"$ref": "#/$defs/field-probes-override"},
+            "terminationGracePeriodSeconds": {"$ref": "#/$defs/field-terminationGracePeriodSeconds"},
+            "preStopDelaySeconds": {"$ref": "#/$defs/field-preStopDelaySeconds"},
+            "rollout": {"$ref": "#/$defs/field-rollout-override"},
+            "security": {"$ref": "#/$defs/field-security-override"},
+            "scratchSizeLimit": {"$ref": "#/$defs/field-scratchSizeLimit"},
+            "catalogSizeLimit": {"$ref": "#/$defs/field-catalogSizeLimit"},
+            "secretVolumes": {"$ref": "#/$defs/field-secretVolumes"},
+            "configurationRevision": {"$ref": "#/$defs/field-configurationRevision"},
+            "enabled": {"type": "boolean"},
+            "namespace": {"const": "frontend"},
+            "name": {"const": "frontend"},
+            "component": {"const": "frontend"},
+            "purpose": {"const": "web"},
+            "imageRef": {"const": "frontend"},
+            "serviceAccountName": {"const": "frontend"},
+            "replicas": {"type": "integer", "minimum": 1},
+            "ports": {
+              "type": "object",
+              "propertyNames": {"pattern": "^[a-z][a-z0-9-]{0,14}$"},
+              "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 65535}
+            },
+            "service": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {"enabled": {"type": "boolean"}, "port": {"type": "integer", "minimum": 0, "maximum": 65535}},
+              "required": ["enabled", "port"]
+            }
+          },
+          "required": [
+            "enabled",
+            "namespace",
+            "name",
+            "component",
+            "purpose",
+            "imageRef",
+            "serviceAccountName",
+            "replicas",
+            "ports",
+            "service"
+          ]
+        },
+        "auth-api": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "resources": {"$ref": "#/$defs/field-resources-override"},
+            "imagePullSecrets": {"$ref": "#/$defs/field-imagePullSecrets"},
+            "environment": {"$ref": "#/$defs/field-environment"},
+            "configMapRefs": {"$ref": "#/$defs/field-configMapRefs"},
+            "secretRefs": {"$ref": "#/$defs/field-secretRefs"},
+            "probes": {"$ref": "#/$defs/field-probes-override"},
+            "terminationGracePeriodSeconds": {"$ref": "#/$defs/field-terminationGracePeriodSeconds"},
+            "preStopDelaySeconds": {"$ref": "#/$defs/field-preStopDelaySeconds"},
+            "rollout": {"$ref": "#/$defs/field-rollout-override"},
+            "security": {"$ref": "#/$defs/field-security-override"},
+            "scratchSizeLimit": {"$ref": "#/$defs/field-scratchSizeLimit"},
+            "catalogSizeLimit": {"$ref": "#/$defs/field-catalogSizeLimit"},
+            "secretVolumes": {"$ref": "#/$defs/field-secretVolumes"},
+            "configurationRevision": {"$ref": "#/$defs/field-configurationRevision"},
+            "enabled": {"type": "boolean"},
+            "namespace": {"const": "auth"},
+            "name": {"const": "backend"},
+            "component": {"const": "backend"},
+            "purpose": {"const": "api"},
+            "imageRef": {"const": "backend"},
+            "serviceAccountName": {"const": "auth-api"},
+            "replicas": {"type": "integer", "minimum": 1},
+            "ports": {
+              "type": "object",
+              "propertyNames": {"pattern": "^[a-z][a-z0-9-]{0,14}$"},
+              "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 65535}
+            },
+            "service": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {"enabled": {"type": "boolean"}, "port": {"type": "integer", "minimum": 0, "maximum": 65535}},
+              "required": ["enabled", "port"]
+            }
+          },
+          "required": [
+            "enabled",
+            "namespace",
+            "name",
+            "component",
+            "purpose",
+            "imageRef",
+            "serviceAccountName",
+            "replicas",
+            "ports",
+            "service"
+          ]
+        },
+        "trip-api": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "resources": {"$ref": "#/$defs/field-resources-override"},
+            "imagePullSecrets": {"$ref": "#/$defs/field-imagePullSecrets"},
+            "environment": {"$ref": "#/$defs/field-environment"},
+            "configMapRefs": {"$ref": "#/$defs/field-configMapRefs"},
+            "secretRefs": {"$ref": "#/$defs/field-secretRefs"},
+            "probes": {"$ref": "#/$defs/field-probes-override"},
+            "terminationGracePeriodSeconds": {"$ref": "#/$defs/field-terminationGracePeriodSeconds"},
+            "preStopDelaySeconds": {"$ref": "#/$defs/field-preStopDelaySeconds"},
+            "rollout": {"$ref": "#/$defs/field-rollout-override"},
+            "security": {"$ref": "#/$defs/field-security-override"},
+            "scratchSizeLimit": {"$ref": "#/$defs/field-scratchSizeLimit"},
+            "catalogSizeLimit": {"$ref": "#/$defs/field-catalogSizeLimit"},
+            "secretVolumes": {"$ref": "#/$defs/field-secretVolumes"},
+            "configurationRevision": {"$ref": "#/$defs/field-configurationRevision"},
+            "enabled": {"type": "boolean"},
+            "namespace": {"const": "trip"},
+            "name": {"const": "backend"},
+            "component": {"const": "backend"},
+            "purpose": {"const": "api"},
+            "imageRef": {"const": "backend"},
+            "serviceAccountName": {"const": "trip-api"},
+            "replicas": {"type": "integer", "minimum": 1},
+            "ports": {
+              "type": "object",
+              "propertyNames": {"pattern": "^[a-z][a-z0-9-]{0,14}$"},
+              "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 65535}
+            },
+            "service": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {"enabled": {"type": "boolean"}, "port": {"type": "integer", "minimum": 0, "maximum": 65535}},
+              "required": ["enabled", "port"]
+            }
+          },
+          "required": [
+            "enabled",
+            "namespace",
+            "name",
+            "component",
+            "purpose",
+            "imageRef",
+            "serviceAccountName",
+            "replicas",
+            "ports",
+            "service"
+          ]
+        },
+        "trip-result-worker": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "resources": {"$ref": "#/$defs/field-resources-override"},
+            "imagePullSecrets": {"$ref": "#/$defs/field-imagePullSecrets"},
+            "environment": {"$ref": "#/$defs/field-environment"},
+            "configMapRefs": {"$ref": "#/$defs/field-configMapRefs"},
+            "secretRefs": {"$ref": "#/$defs/field-secretRefs"},
+            "probes": {"$ref": "#/$defs/field-probes-override"},
+            "terminationGracePeriodSeconds": {"$ref": "#/$defs/field-terminationGracePeriodSeconds"},
+            "preStopDelaySeconds": {"$ref": "#/$defs/field-preStopDelaySeconds"},
+            "rollout": {"$ref": "#/$defs/field-rollout-override"},
+            "security": {"$ref": "#/$defs/field-security-override"},
+            "scratchSizeLimit": {"$ref": "#/$defs/field-scratchSizeLimit"},
+            "catalogSizeLimit": {"$ref": "#/$defs/field-catalogSizeLimit"},
+            "secretVolumes": {"$ref": "#/$defs/field-secretVolumes"},
+            "configurationRevision": {"$ref": "#/$defs/field-configurationRevision"},
+            "enabled": {"type": "boolean"},
+            "namespace": {"const": "trip"},
+            "name": {"const": "backend"},
+            "component": {"const": "backend"},
+            "purpose": {"const": "result-worker"},
+            "imageRef": {"const": "backend"},
+            "serviceAccountName": {"const": "trip-result-worker"},
+            "replicas": {"type": "integer", "minimum": 1},
+            "ports": {
+              "type": "object",
+              "propertyNames": {"pattern": "^[a-z][a-z0-9-]{0,14}$"},
+              "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 65535}
+            },
+            "service": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {"enabled": {"type": "boolean"}, "port": {"type": "integer", "minimum": 0, "maximum": 65535}},
+              "required": ["enabled", "port"]
+            }
+          },
+          "required": [
+            "enabled",
+            "namespace",
+            "name",
+            "component",
+            "purpose",
+            "imageRef",
+            "serviceAccountName",
+            "replicas",
+            "ports",
+            "service"
+          ]
+        },
+        "trip-websocket": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "resources": {"$ref": "#/$defs/field-resources-override"},
+            "imagePullSecrets": {"$ref": "#/$defs/field-imagePullSecrets"},
+            "environment": {"$ref": "#/$defs/field-environment"},
+            "configMapRefs": {"$ref": "#/$defs/field-configMapRefs"},
+            "secretRefs": {"$ref": "#/$defs/field-secretRefs"},
+            "probes": {"$ref": "#/$defs/field-probes-override"},
+            "terminationGracePeriodSeconds": {"$ref": "#/$defs/field-terminationGracePeriodSeconds"},
+            "preStopDelaySeconds": {"$ref": "#/$defs/field-preStopDelaySeconds"},
+            "rollout": {"$ref": "#/$defs/field-rollout-override"},
+            "security": {"$ref": "#/$defs/field-security-override"},
+            "scratchSizeLimit": {"$ref": "#/$defs/field-scratchSizeLimit"},
+            "catalogSizeLimit": {"$ref": "#/$defs/field-catalogSizeLimit"},
+            "secretVolumes": {"$ref": "#/$defs/field-secretVolumes"},
+            "configurationRevision": {"$ref": "#/$defs/field-configurationRevision"},
+            "enabled": {"type": "boolean"},
+            "namespace": {"const": "trip"},
+            "name": {"const": "websocket"},
+            "component": {"const": "websocket"},
+            "purpose": {"const": "websocket"},
+            "imageRef": {"const": "websocket"},
+            "serviceAccountName": {"const": "trip-websocket"},
+            "replicas": {"type": "integer", "minimum": 2, "maximum": 4},
+            "ports": {
+              "type": "object",
+              "propertyNames": {"pattern": "^[a-z][a-z0-9-]{0,14}$"},
+              "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 65535}
+            },
+            "service": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {"enabled": {"type": "boolean"}, "port": {"type": "integer", "minimum": 0, "maximum": 65535}},
+              "required": ["enabled", "port"]
+            }
+          },
+          "required": [
+            "enabled",
+            "namespace",
+            "name",
+            "component",
+            "purpose",
+            "imageRef",
+            "serviceAccountName",
+            "replicas",
+            "ports",
+            "service"
+          ]
+        },
+        "photo-api": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "resources": {"$ref": "#/$defs/field-resources-override"},
+            "imagePullSecrets": {"$ref": "#/$defs/field-imagePullSecrets"},
+            "environment": {"$ref": "#/$defs/field-environment"},
+            "configMapRefs": {"$ref": "#/$defs/field-configMapRefs"},
+            "secretRefs": {"$ref": "#/$defs/field-secretRefs"},
+            "probes": {"$ref": "#/$defs/field-probes-override"},
+            "terminationGracePeriodSeconds": {"$ref": "#/$defs/field-terminationGracePeriodSeconds"},
+            "preStopDelaySeconds": {"$ref": "#/$defs/field-preStopDelaySeconds"},
+            "rollout": {"$ref": "#/$defs/field-rollout-override"},
+            "security": {"$ref": "#/$defs/field-security-override"},
+            "scratchSizeLimit": {"$ref": "#/$defs/field-scratchSizeLimit"},
+            "catalogSizeLimit": {"$ref": "#/$defs/field-catalogSizeLimit"},
+            "secretVolumes": {"$ref": "#/$defs/field-secretVolumes"},
+            "configurationRevision": {"$ref": "#/$defs/field-configurationRevision"},
+            "enabled": {"type": "boolean"},
+            "namespace": {"const": "photo"},
+            "name": {"const": "backend"},
+            "component": {"const": "backend"},
+            "purpose": {"const": "api"},
+            "imageRef": {"const": "backend"},
+            "serviceAccountName": {"const": "photo-api"},
+            "replicas": {"type": "integer", "minimum": 1},
+            "ports": {
+              "type": "object",
+              "propertyNames": {"pattern": "^[a-z][a-z0-9-]{0,14}$"},
+              "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 65535}
+            },
+            "service": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {"enabled": {"type": "boolean"}, "port": {"type": "integer", "minimum": 0, "maximum": 65535}},
+              "required": ["enabled", "port"]
+            }
+          },
+          "required": [
+            "enabled",
+            "namespace",
+            "name",
+            "component",
+            "purpose",
+            "imageRef",
+            "serviceAccountName",
+            "replicas",
+            "ports",
+            "service"
+          ]
+        },
+        "photo-converter": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "resources": {"$ref": "#/$defs/field-resources-override"},
+            "imagePullSecrets": {"$ref": "#/$defs/field-imagePullSecrets"},
+            "environment": {"$ref": "#/$defs/field-environment"},
+            "configMapRefs": {"$ref": "#/$defs/field-configMapRefs"},
+            "secretRefs": {"$ref": "#/$defs/field-secretRefs"},
+            "probes": {"$ref": "#/$defs/field-probes-override"},
+            "terminationGracePeriodSeconds": {"$ref": "#/$defs/field-terminationGracePeriodSeconds"},
+            "preStopDelaySeconds": {"$ref": "#/$defs/field-preStopDelaySeconds"},
+            "rollout": {"$ref": "#/$defs/field-rollout-override"},
+            "security": {"$ref": "#/$defs/field-security-override"},
+            "scratchSizeLimit": {"$ref": "#/$defs/field-scratchSizeLimit"},
+            "catalogSizeLimit": {"$ref": "#/$defs/field-catalogSizeLimit"},
+            "secretVolumes": {"$ref": "#/$defs/field-secretVolumes"},
+            "configurationRevision": {"$ref": "#/$defs/field-configurationRevision"},
+            "enabled": {"type": "boolean"},
+            "namespace": {"const": "photo"},
+            "name": {"const": "backend"},
+            "component": {"const": "backend"},
+            "purpose": {"const": "conversion-worker"},
+            "imageRef": {"const": "backend"},
+            "serviceAccountName": {"const": "photo-converter"},
+            "replicas": {"type": "integer", "minimum": 1},
+            "ports": {
+              "type": "object",
+              "propertyNames": {"pattern": "^[a-z][a-z0-9-]{0,14}$"},
+              "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 65535}
+            },
+            "service": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {"enabled": {"type": "boolean"}, "port": {"type": "integer", "minimum": 0, "maximum": 65535}},
+              "required": ["enabled", "port"]
+            }
+          },
+          "required": [
+            "enabled",
+            "namespace",
+            "name",
+            "component",
+            "purpose",
+            "imageRef",
+            "serviceAccountName",
+            "replicas",
+            "ports",
+            "service"
+          ]
+        },
+        "ai": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "resources": {"$ref": "#/$defs/field-resources-override"},
+            "imagePullSecrets": {"$ref": "#/$defs/field-imagePullSecrets"},
+            "environment": {"$ref": "#/$defs/field-environment"},
+            "configMapRefs": {"$ref": "#/$defs/field-configMapRefs"},
+            "secretRefs": {"$ref": "#/$defs/field-secretRefs"},
+            "probes": {"$ref": "#/$defs/field-probes-override"},
+            "terminationGracePeriodSeconds": {"$ref": "#/$defs/field-terminationGracePeriodSeconds"},
+            "preStopDelaySeconds": {"$ref": "#/$defs/field-preStopDelaySeconds"},
+            "rollout": {"$ref": "#/$defs/field-rollout-override"},
+            "security": {"$ref": "#/$defs/field-security-override"},
+            "scratchSizeLimit": {"$ref": "#/$defs/field-scratchSizeLimit"},
+            "catalogSizeLimit": {"$ref": "#/$defs/field-catalogSizeLimit"},
+            "secretVolumes": {"$ref": "#/$defs/field-secretVolumes"},
+            "configurationRevision": {"$ref": "#/$defs/field-configurationRevision"},
+            "enabled": {"type": "boolean"},
+            "namespace": {"const": "ai"},
+            "name": {"const": "ai"},
+            "component": {"const": "ai"},
+            "purpose": {"const": "application"},
+            "imageRef": {"const": "ai"},
+            "serviceAccountName": {"const": "ai"},
+            "replicas": {"type": "integer", "minimum": 1},
+            "ports": {
+              "type": "object",
+              "propertyNames": {"pattern": "^[a-z][a-z0-9-]{0,14}$"},
+              "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 65535}
+            },
+            "service": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {"enabled": {"type": "boolean"}, "port": {"type": "integer", "minimum": 0, "maximum": 65535}},
+              "required": ["enabled", "port"]
+            }
+          },
+          "required": [
+            "enabled",
+            "namespace",
+            "name",
+            "component",
+            "purpose",
+            "imageRef",
+            "serviceAccountName",
+            "replicas",
+            "ports",
+            "service"
+          ]
+        }
+      },
+      "required": [
+        "frontend",
+        "auth-api",
+        "trip-api",
+        "trip-result-worker",
+        "trip-websocket",
+        "photo-api",
+        "photo-converter",
+        "ai"
+      ]
+    }
+  },
+  "required": ["images", "defaults", "workloads"]
+}
