@@ -1,0 +1,99 @@
+name: Production WebSocket Image
+on:
+  push:
+    paths:
+      - 'deploy/v2-production/websocket/source.json'
+      - '.github/workflows/production-websocket-image.yml'
+      - 'tests/ci/smoke-production-websocket.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: production-websocket-image-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.repository == '100-hours-a-week/KTB4-2nd-Cloud'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Read reviewed source contract
+        id: source
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          d = json.loads(Path('deploy/v2-production/websocket/source.json').read_text())
+          assert d['sourceRepository'] == '100-hours-a-week/KTB4-2nd-BE'
+          assert re.fullmatch('[0-9a-f]{40}', d['sourceSha'])
+          assert d['image'] == 'ghcr.io/100-hours-a-week/yeodam-websocket:sha-' + d['sourceSha']
+          assert re.fullmatch('ghcr.io/100-hours-a-week/yeodam-backend@sha256:[0-9a-f]{64}', d['backendImage'])
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('sha=' + d['sourceSha'] + '\nimage=' + d['image'] + '\n')
+          PY
+      - name: Checkout compatible BE source without switching its main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: 100-hours-a-week/KTB4-2nd-BE
+          ref: ${{ steps.source.outputs.sha }}
+          path: backend-source
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Verify compatible backend tag and digest
+        run: |
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          d = json.loads(Path('deploy/v2-production/websocket/source.json').read_text())
+          tag = 'ghcr.io/100-hours-a-week/yeodam-backend:sha-' + d['sourceSha']
+          actual = subprocess.check_output(['docker', 'buildx', 'imagetools', 'inspect', tag, '--format', '{{.Manifest.Digest}}'], text=True).strip()
+          assert d['backendImage'].endswith('@' + actual), 'Backend tag/digest differs from the reviewed production image'
+          PY
+      - name: Build only the standalone WebSocket app
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: backend-source
+          file: backend-source/websocket-server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: ${{ steps.source.outputs.image }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/100-hours-a-week/KTB4-2nd-BE
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+          cache-from: type=gha,scope=production-websocket
+          cache-to: type=gha,mode=max,scope=production-websocket
+      - name: Verify small-task startup and Redis subscription with synthetic dependencies
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: python3 tests/ci/smoke-production-websocket.py --image "ghcr.io/100-hours-a-week/yeodam-websocket@$DIGEST"
+      - name: Record immutable deployment input
+        env:
+          IMAGE: ${{ steps.source.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          assert re.fullmatch('sha256:[0-9a-f]{64}', os.environ['DIGEST'])
+          d = json.loads(Path('deploy/v2-production/websocket/source.json').read_text())
+          d.update(digest=os.environ['DIGEST'], immutableImage=os.environ['IMAGE'].split(':sha-')[0] + '@' + os.environ['DIGEST'])
+          Path('websocket-image.json').write_text(json.dumps(d, indent=2) + '\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('WebSocket image: `' + d['immutableImage'] + '`\n\nImage published only; no deployment.\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: production-websocket-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: websocket-image.json
+          retention-days: 30
