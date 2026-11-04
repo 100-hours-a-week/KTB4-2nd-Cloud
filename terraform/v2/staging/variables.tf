@@ -1,5 +1,5 @@
 variable "aws_region" {
-  description = "AWS Region for the V2 staging network"
+  description = "AWS Region of the retained shared GPU network"
   type        = string
   default     = "ap-northeast-2"
 
@@ -8,9 +8,8 @@ variable "aws_region" {
     error_message = "V2 staging must be deployed in ap-northeast-2."
   }
 }
-
 variable "vpc_cidr" {
-  description = "Proposed, non-overlapping V2 staging VPC CIDR; verify against account VPCs before apply"
+  description = "Existing shared GPU VPC CIDR; preserve 10.30.0.0/16"
   type        = string
   default     = "10.30.0.0/16"
 
@@ -22,142 +21,8 @@ variable "vpc_cidr" {
     error_message = "vpc_cidr must be a valid IPv4 /16 CIDR for the derived /24 subnets."
   }
 }
-
 variable "app_availability_zone" {
-  description = "Availability Zone for App, MySQL, Redis and the NAT gateway"
+  description = "Existing shared GPU and NAT availability zone"
   type        = string
   default     = "ap-northeast-2a"
-}
-
-variable "alb_secondary_availability_zone" {
-  description = "Second Availability Zone reserved for the ALB public subnet"
-  type        = string
-  default     = "ap-northeast-2c"
-
-  validation {
-    condition     = var.alb_secondary_availability_zone != var.app_availability_zone
-    error_message = "The two ALB public subnets must be in different availability zones."
-  }
-}
-
-variable "mysql_ami_id" {
-  description = "Reviewed Canonical Ubuntu 24.04 ARM64 AMI for the live staging validation MySQL host"
-  type        = string
-  default     = "ami-0ccbfe1123f2d682d"
-}
-
-variable "redis_node_type" {
-  description = "Initial staging Redis node size; revisit after auth-state load measurements"
-  type        = string
-  default     = "cache.t4g.micro"
-}
-
-variable "v1_source_ami_id" {
-  description = "Reviewed Ubuntu 24.04 x86_64 AMI for the V1 rehearsal App and Worker"
-  type        = string
-  default     = "ami-086a43496cb46286c"
-}
-
-variable "plg_instance_type" {
-  description = "Private staging PLG host size; measure memory under rehearsal load"
-  type        = string
-  default     = "t3.medium"
-}
-
-variable "plg_data_gib" {
-  description = "Retained EBS capacity for the staging PLG data stores"
-  type        = number
-  default     = 40
-
-  validation {
-    condition     = var.plg_data_gib >= 20
-    error_message = "PLG data volume must have at least 20 GiB."
-  }
-}
-
-variable "enable_load_generator" {
-  description = "Create the temporary staging k6 host only during a rehearsal"
-  type        = bool
-  default     = false
-}
-
-variable "load_generator_instance_type" {
-  description = "Staging k6 host size; verify generator headroom during each run"
-  type        = string
-  default     = "c6i.large"
-
-  validation {
-    condition     = contains(["c6i.large", "m6i.xlarge"], var.load_generator_instance_type)
-    error_message = "The staging load generator must use c6i.large or m6i.xlarge."
-  }
-}
-
-variable "frontend_image" {
-  description = "Initial V2 staging frontend main image, pinned by digest; override for a later approved release"
-  type        = string
-  # KTB4-2nd-FE main bd50569, Frontend Image run 37902003903.
-  default = "ghcr.io/100-hours-a-week/yeodam-frontend@sha256:2ff2e41c82c97ddcdf0e7ec6300cba42b756ef2a4cbd27971831fd772c05ab81"
-
-  validation {
-    condition     = var.frontend_image == null || can(regex("^ghcr[.]io/100-hours-a-week/yeodam-frontend@sha256:[0-9a-f]{64}$", var.frontend_image))
-    error_message = "frontend_image must be a yeodam-frontend GHCR digest reference."
-  }
-}
-
-variable "backend_image" {
-  description = "Initial staging Backend main image pinned by digest; later images use the staging CD workflow"
-  type        = string
-  # BE main ec19388, Backend Image run 38703683719.
-  default = "ghcr.io/100-hours-a-week/yeodam-backend@sha256:f9ffaee66820c929ff558c4aeb22592189f24ecf02b6cde41e14f8e4278cc21b"
-
-  validation {
-    condition     = var.backend_image == null || can(regex("^ghcr[.]io/100-hours-a-week/yeodam-backend@sha256:[0-9a-f]{64}$", var.backend_image))
-    error_message = "backend_image must be a yeodam-backend GHCR digest reference."
-  }
-}
-
-variable "frontend_desired_count" {
-  description = "Initial staging frontend task count; raise to two for distribution and rolling checks"
-  type        = number
-  default     = 1
-
-  validation {
-    condition     = var.frontend_desired_count >= 1 && var.frontend_desired_count <= 4 && floor(var.frontend_desired_count) == var.frontend_desired_count
-    error_message = "frontend_desired_count must be an integer from 1 to 4."
-  }
-}
-
-variable "backend_desired_count" {
-  description = "Initial staging backend task count; raise to two after shared-state checks"
-  type        = number
-  default     = 1
-
-  validation {
-    condition     = var.backend_desired_count >= 1 && var.backend_desired_count <= 6 && floor(var.backend_desired_count) == var.backend_desired_count
-    error_message = "backend_desired_count must be an integer from 1 to 6."
-  }
-}
-
-variable "backend_environment" {
-  description = "Non-secret Backend runtime values; MySQL connection is selected by backend_mysql_mode"
-  type        = map(string)
-  default     = { KAKAO_CLIENT_ID = "530a80e4805e8db54165f63384bbaca9" }
-
-  validation {
-    condition = length(setintersection(toset(keys(var.backend_environment)), toset([
-      "MYSQL_PASSWORD", "MYSQL_URL", "MYSQL_USERNAME", "KAKAO_CLIENT_SECRET", "JWT_SECRET", "AI_SERVER_API_KEY", "REDIS_PASSWORD",
-    ]))) == 0
-    error_message = "backend_environment must not override MySQL connection or credentials; use backend_mysql_mode and staging secrets."
-  }
-}
-
-variable "backend_mysql_mode" {
-  description = "Compatibility input; only the live validation DB is available after migration retirement"
-  type        = string
-  default     = "validation"
-
-  validation {
-    condition     = var.backend_mysql_mode == "validation"
-    error_message = "The migration target is retired; backend_mysql_mode must be validation."
-  }
 }

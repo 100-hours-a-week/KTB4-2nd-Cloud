@@ -47,7 +47,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "mysql_backup" {
 
   rule {
     id     = "expire-backup-objects-after-14-days"
-    status = "Enabled"
+    status = "Disabled"
 
     filter {}
 
@@ -62,7 +62,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "mysql_backup" {
 
   rule {
     id     = "remove-expired-backup-delete-markers"
-    status = "Enabled"
+    status = "Disabled"
 
     filter {}
 
@@ -113,32 +113,4 @@ resource "aws_s3_bucket_policy" "mysql_backup" {
   bucket     = aws_s3_bucket.mysql_backup.id
   policy     = data.aws_iam_policy_document.mysql_backup_bucket.json
   depends_on = [aws_s3_bucket_public_access_block.mysql_backup]
-}
-
-resource "aws_cloudwatch_metric_alarm" "mysql_binlog_ship_warning" {
-  alarm_name          = "yeodam-v2-staging-mysql-binlog-shipping-warning"
-  alarm_description   = "No complete external binary log shipment for at least three minutes"
-  namespace           = "Yeodam/V2/Staging/MySQL"
-  metric_name         = "ExternalBinlogAgeSeconds"
-  statistic           = "Maximum"
-  period              = 60
-  evaluation_periods  = 1
-  threshold           = 180
-  comparison_operator = "GreaterThanOrEqualToThreshold"
-  treat_missing_data  = "breaching"
-  tags                = local.common_tags
-}
-
-resource "aws_cloudwatch_metric_alarm" "mysql_binlog_ship_critical" {
-  alarm_name          = "yeodam-v2-staging-mysql-binlog-shipping-critical"
-  alarm_description   = "No complete external binary log shipment for five minutes; RPO target at risk"
-  namespace           = "Yeodam/V2/Staging/MySQL"
-  metric_name         = "ExternalBinlogAgeSeconds"
-  statistic           = "Maximum"
-  period              = 60
-  evaluation_periods  = 1
-  threshold           = 300
-  comparison_operator = "GreaterThanOrEqualToThreshold"
-  treat_missing_data  = "breaching"
-  tags                = local.common_tags
 }
