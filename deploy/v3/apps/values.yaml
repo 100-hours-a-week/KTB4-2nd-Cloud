@@ -5,6 +5,8 @@ images:
   websocket: ''
   frontend: ''
   ai: ''
+# Enable the stricter BE runtime contract with the foundation BE overlay only.
+backendContract: false
 defaults:
   resources:
     requests:
@@ -18,6 +20,7 @@ defaults:
   imagePullSecrets: []
   environment: {}
   configMapRefs: []
+  configMapData: {}
   secretRefs: {}
   probes:
     startup: {}

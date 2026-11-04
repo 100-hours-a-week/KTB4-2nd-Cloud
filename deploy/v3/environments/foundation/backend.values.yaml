@@ -1,0 +1,123 @@
+# BE-only overlay on deploy/v3/apps. All workloads remain disabled.
+# Supply a real image/release, endpoints and existing Secret references in private values.
+# New V3 Topic/Group names are proposed contracts, not existing broker resources.
+backendContract: true
+images:
+  backend: ''
+defaults:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+      ephemeral-storage: 64Mi
+    limits:
+      memory: 1Gi
+      ephemeral-storage: 512Mi
+  imagePullSecrets:
+  - ghcr-pull
+  environment: {}
+  configMapRefs: []
+  configMapData:
+    SPRING_PROFILES_ACTIVE: prod,internal-metrics
+    MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
+    SERVER_SHUTDOWN: graceful
+    SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: 60s
+    JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5
+    VIPS_CONCURRENCY: '1'
+    MYSQL_URL: ''
+    REDIS_HOST: ''
+    REDIS_PORT: '6379'
+    KAFKA_BOOTSTRAP_SERVERS: ''
+    ATTACHMENT_S3_BUCKET: ''
+    AWS_REGION: ap-northeast-2
+    AI_SERVER_BASE_URL: ''
+    AI_EC2_INSTANCE_ID: ''
+    JWT_ISSUER: ''
+    FRONTEND_ORIGIN: ''
+    FRONTEND_OAUTH_CALLBACK_URI: ''
+    KAKAO_REDIRECT_URI: ''
+    AUTH_SESSION_KEY_PREFIX: 'yeodam:v3:foundation:auth:'
+    WEBSOCKET_EVENTS_CHANNEL: yeodam:v3:foundation:websocket:events:v1
+    KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP: v3.foundation.yeodam.trip-update-results
+    ATTACHMENT_CONVERSION_MODE: DB
+    SPRING_APPLICATION_JSON: |
+      {
+        "app": {
+          "trip": {
+            "result-listener-enabled": true,
+            "result-consumer-group": "v3.foundation.yeodam.trip-results"
+          },
+          "story": {
+            "result-listener-enabled": true,
+            "result-consumer-group": "v3.foundation.yeodam.story-results"
+          },
+          "outbox": {
+            "receipt-consumer-group": "v3.foundation.yeodam.outbox-receipts"
+          }
+        }
+      }
+    RELEASE: ''
+    KAFKA_TRIP_CREATE_REQUEST_TOPIC: v3.foundation.yeodam.trip-create.request
+    KAFKA_TRIP_CREATE_RESULT_TOPIC: v3.foundation.yeodam.trip-create.result
+    KAFKA_TRIP_UPDATE_REQUEST_TOPIC: v3.foundation.yeodam.trip-update.request
+    KAFKA_TRIP_UPDATE_RESULT_TOPIC: v3.foundation.yeodam.trip-update.result
+    KAFKA_STORY_CREATE_REQUEST_TOPIC: v3.foundation.yeodam.story-create.request
+    KAFKA_STORY_CREATE_RESULT_TOPIC: v3.foundation.yeodam.story-create.result
+  secretRefs:
+    MYSQL_USERNAME:
+      name: backend-credentials
+      key: MYSQL_USERNAME
+    MYSQL_PASSWORD:
+      name: backend-credentials
+      key: MYSQL_PASSWORD
+    JWT_SECRET:
+      name: backend-credentials
+      key: JWT_SECRET
+    KAKAO_CLIENT_ID:
+      name: backend-credentials
+      key: KAKAO_CLIENT_ID
+    KAKAO_CLIENT_SECRET:
+      name: backend-credentials
+      key: KAKAO_CLIENT_SECRET
+    AI_SERVER_API_KEY:
+      name: backend-credentials
+      key: AI_SERVER_API_KEY
+    WEBSOCKET_INTERNAL_SERVICE_TOKEN:
+      name: backend-credentials
+      key: WEBSOCKET_INTERNAL_SERVICE_TOKEN
+  probes:
+    startup:
+      httpGet:
+        path: /actuator/health/liveness
+        port: management
+        scheme: HTTP
+      periodSeconds: 5
+      timeoutSeconds: 2
+      failureThreshold: 60
+      successThreshold: 1
+    liveness:
+      httpGet:
+        path: /actuator/health/liveness
+        port: management
+        scheme: HTTP
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+      successThreshold: 1
+    readiness:
+      httpGet:
+        path: /actuator/health/readiness
+        port: management
+        scheme: HTTP
+      periodSeconds: 5
+      timeoutSeconds: 2
+      failureThreshold: 3
+      successThreshold: 1
+  terminationGracePeriodSeconds: 180
+  preStopDelaySeconds: 5
+  rollout:
+    maxSurge: 1
+    maxUnavailable: 0
+  scratchSizeLimit: 256Mi
+  catalogSizeLimit: 32Mi
+  configurationRevision: ''

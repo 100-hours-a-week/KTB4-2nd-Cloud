@@ -6,6 +6,7 @@ from copy import deepcopy
 from decimal import Decimal
 import importlib.util
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -68,15 +69,30 @@ def validate(documents, values):
     configs = {name: merge(values['defaults'], item) for name, item in values['workloads'].items() if item['enabled']}
     expected = {('Deployment', c['namespace'], name) for name, c in configs.items()}
     expected |= {('Service', c['namespace'], name) for name, c in configs.items() if c['service']['enabled']}
+    expected |= {('ConfigMap', c['namespace'], name + '-runtime') for name, c in configs.items() if c.get('configMapData')}
     identities = {(doc['kind'], doc['metadata'].get('namespace'), doc['metadata']['name']) for doc in documents}
     require(len(identities) == len(documents) and identities == expected, 'App resource set differs from enabled values')
-    platform.validate_workloads(documents, accounts)
+    platform.validate_workloads([d for d in documents if d['kind'] != 'ConfigMap'], accounts)
+    if values.get('backendContract'):
+        backend_spec = importlib.util.spec_from_file_location('v3_backend', ROOT / 'scripts/v3_backend_contract.py')
+        backend = importlib.util.module_from_spec(backend_spec)
+        backend_spec.loader.exec_module(backend)
+        backend.validate_backend(configs)
     for doc in documents:
-        name = doc['metadata']['name']
+        name = doc['metadata']['name'].removesuffix('-runtime') if doc['kind'] == 'ConfigMap' else doc['metadata']['name']
         config = configs[name]
         labels = accounts[(config['namespace'], config['serviceAccountName'])]
         require(config['imageRef'] == labels[platform.NAME], 'Image reference must match the platform application identity')
         require(all(doc['metadata']['labels'].get(key) == value for key, value in labels.items()), 'Resource identity labels mismatch')
+        data = config.get('configMapData', {})
+        require(not any(re.search(r'(password|secret|token|api_?key|private_?key)$', key, re.I)
+                        or key in ('KAKAO_CLIENT_ID', 'MONGODB_URI', 'SPRING_MONGODB_URI') for key in data),
+                'Known secret ConfigMap keys must use secretRefs')
+        require(not set(data).intersection(config['environment']) and not set(data).intersection(config['secretRefs']),
+                'ConfigMap/environment/Secret keys must not shadow each other')
+        if doc['kind'] == 'ConfigMap':
+            require(doc.get('data') == data and not doc.get('binaryData'), 'ConfigMap payload differs from values')
+            continue
         if doc['kind'] == 'Service':
             require(config['purpose'] not in ['conversion-worker', 'result-worker'], 'Worker-purpose copies have no HTTP Service')
             require(doc['spec'].get('type') == 'ClusterIP', 'External load balancers are outside this chart')
@@ -104,7 +120,13 @@ def validate(documents, values):
         image = values['images'][config['imageRef']]
         require(bool(re.fullmatch(r'ghcr\.io/[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}', image)), 'Use an immutable GHCR image digest')
         require(container['image'] == image and container['name'] == config['name'], 'Shared image selection mismatch')
-        require(pod_template['metadata']['annotations'] == {'yeodam.io/image': image, 'yeodam.io/configuration-revision': config['configurationRevision']},
+        annotations = {'yeodam.io/image': image, 'yeodam.io/configuration-revision': config['configurationRevision']}
+        if data:
+            # Helm toJson uses compact, sorted JSON (including HTML escaping).
+            encoded = json.dumps(data, ensure_ascii=False, separators=(',', ':'), sort_keys=True)
+            encoded = encoded.replace('&', '\\u0026').replace('<', '\\u003c').replace('>', '\\u003e')
+            annotations['yeodam.io/configuration-checksum'] = hashlib.sha256(encoded.encode()).hexdigest()
+        require(pod_template['metadata']['annotations'] == annotations,
                 'Image and external configuration revision must be recorded')
         require(bool(config['configurationRevision']), 'Configuration revision is required')
         expected_resources = deepcopy(config['resources'])
@@ -119,13 +141,15 @@ def validate(documents, values):
             require(container[probe + 'Probe'] == expected_probe, 'Probe must use the configured endpoint and timing')
             require(expected_probe['httpGet']['port'] in ports, 'Probe port does not exist')
         expected_env = [{'name': key, 'value': value} for key, value in sorted(config['environment'].items())]
-        require(not any(re.search(r'(password|secret|token|api_?key|private_?key)$', key, re.I) or key == 'KAKAO_CLIENT_ID'
+        require(not any(re.search(r'(password|secret|token|api_?key|private_?key)$', key, re.I) or key in ('KAKAO_CLIENT_ID', 'MONGODB_URI', 'SPRING_MONGODB_URI')
                         for key in config['environment']), 'Known secret environment keys must use secretRefs')
         for key, secret in sorted(config['secretRefs'].items()):
             require(key not in config['environment'], 'Literal and Secret environment entries must not overlap')
             expected_env.append({'name': key, 'valueFrom': {'secretKeyRef': {**secret, 'optional': False}}})
         require(container.get('env', []) == expected_env, 'Only explicit configuration and Secret references may be injected')
-        expected_env_from = [{'configMapRef': {'name': key, 'optional': False}} for key in config['configMapRefs']]
+        refs = ([name + '-runtime'] if data else []) + config['configMapRefs']
+        require(len(set(refs)) == len(refs), 'Do not import a ConfigMap twice')
+        expected_env_from = [{'configMapRef': {'name': key, 'optional': False}} for key in refs]
         require(container.get('envFrom', []) == expected_env_from, 'Only configured ConfigMap references may be imported')
         volumes = {'scratch': {'name': 'scratch', 'emptyDir': {'sizeLimit': config['scratchSizeLimit']}}}
         mounts = [{'name': 'scratch', 'mountPath': '/tmp'}]

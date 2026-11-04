@@ -1,0 +1,17 @@
+{{- range $instance, $workload := .Values.workloads }}
+{{- $c := mergeOverwrite (deepCopy $.Values.defaults) $workload }}
+{{- if and $c.enabled $c.configMapData }}
+{{- $ctx := dict "root" $ "instance" $instance "config" $c }}
+{{- include "yeodam-v3-apps.check" $ctx }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $instance }}-runtime
+  namespace: {{ $c.namespace }}
+  labels:
+    {{- include "yeodam-v3-apps.labels" $ctx | nindent 4 }}
+data:
+  {{- toYaml $c.configMapData | nindent 2 }}
+{{- end }}
+{{- end }}

@@ -29,6 +29,9 @@ spec:
       annotations:
         yeodam.io/image: {{ index $.Values.images $c.imageRef | quote }}
         yeodam.io/configuration-revision: {{ $c.configurationRevision | quote }}
+        {{- if $c.configMapData }}
+        yeodam.io/configuration-checksum: {{ $c.configMapData | toJson | sha256sum | quote }}
+        {{- end }}
     spec:
       serviceAccountName: {{ $c.serviceAccountName }}
       automountServiceAccountToken: false
@@ -88,8 +91,13 @@ spec:
               {{- if $c.resources.limits.cpu }}
               cpu: {{ $c.resources.limits.cpu | quote }}
               {{- end }}
-          {{- if $c.configMapRefs }}
+          {{- if or $c.configMapRefs $c.configMapData }}
           envFrom:
+            {{- if $c.configMapData }}
+            - configMapRef:
+                name: {{ $instance }}-runtime
+                optional: false
+            {{- end }}
             {{- range $c.configMapRefs }}
             - configMapRef:
                 name: {{ . }}
