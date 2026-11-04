@@ -50,7 +50,10 @@ resource "aws_service_discovery_service" "websocket_backend" {
       type = "A"
     }
   }
-  health_check_custom_config {}
+  # Provider 6.67 reads back 1; omitting it plans a needless service replacement.
+  # Keep the deprecated argument until a reviewed provider upgrade fixes that drift.
+  health_check_custom_config { failure_threshold = 1 }
+  lifecycle { prevent_destroy = true }
   tags = local.common_tags
 }
 
