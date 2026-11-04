@@ -24,16 +24,16 @@ def plan():
         rows.append(dict(address=address,type=kind,mode='managed',change=dict(actions=['create'],before=None,after=after)))
     for address,before,after in [
         ('aws_eks_cluster.this',{'name':'yeodam-v3-foundation','vpc_config':[{'subnet_ids':['a','c'],'endpoint_public_access':True}]},
-         {'name':'yeodam-v3-foundation','vpc_config':[{'subnet_ids':None,'endpoint_public_access':True}]}),
+         {'name':'yeodam-v3-foundation','vpc_config':[{'subnet_ids':['a','c'],'endpoint_public_access':True}]}),
         ('aws_vpc_endpoint.s3',{'route_table_ids':['a','c']},{'route_table_ids':None})]:
-        rows.append(dict(address=address,type='existing',mode='managed',change=dict(actions=['update'],before=before,after=after)))
+        rows.append(dict(address=address,type='existing',mode='managed',change=dict(actions=['no-op'] if address=='aws_eks_cluster.this' else ['update'],before=before,after=after)))
     return {'complete':True,'variables':{k:{'value':v} for k,v in dict(expected_account_id='483175530259',
         cluster_name='yeodam-v3-foundation',enable_kafka_nodes=True,nat_gateway_az_overrides={'ap-northeast-2b':'ap-northeast-2a'}).items()},'resource_changes':rows}
 
 
 class KafkaPlanProtection(unittest.TestCase):
     def test_accepts_only_reviewed_delta(self):
-        self.assertEqual(m.validate(plan()),{'create':10,'update':2})
+        self.assertEqual(m.validate(plan()),{'create':10,'update':1})
 
     def test_rejects_larger_or_unbounded_nodes(self):
         for key,value in [('instance_types',['t3a.medium']),('scaling_config',[dict(min_size=1,max_size=3,desired_size=1)])]:
@@ -54,8 +54,22 @@ class KafkaPlanProtection(unittest.TestCase):
 
     def test_rejects_cluster_access_changes(self):
         p=plan();row=next(x for x in p['resource_changes'] if x['address']=='aws_eks_cluster.this')
+        row['change']['actions']=['update']
         row['change']['after']['vpc_config'][0]['endpoint_public_access']=False
         with self.assertRaises(ValueError):m.validate(p)
+
+    def test_rejects_expanding_eks_control_plane_azs(self):
+        p=plan();row=next(x for x in p['resource_changes'] if x['address']=='aws_eks_cluster.this')
+        row['change']['actions']=['update'];row['change']['after']['vpc_config'][0]['subnet_ids']=['a','b','c']
+        with self.assertRaises(ValueError):m.validate(p)
+
+    def test_accepts_partial_retry_and_post_apply_no_changes(self):
+        p=plan()
+        for row in p['resource_changes']:
+            if row['type']!='aws_eks_node_group':row['change']['actions']=['no-op']
+        self.assertEqual(m.validate(p),{'create':3})
+        for row in p['resource_changes']:row['change']['actions']=['no-op']
+        self.assertEqual(m.validate(p),{})
 
     def test_rejects_unavailable_amd_type_in_third_az(self):
         p=plan();row=next(x for x in p['resource_changes'] if x['address']=='aws_eks_node_group.kafka["ap-northeast-2b"]')

@@ -134,10 +134,10 @@ run "three_az_network_keeps_two_system_nodes" {
       length(aws_subnet.private) == 3 && length(aws_subnet.public) == 3 &&
       length(aws_nat_gateway.this) == 3 && length(aws_eip.nat) == 3 &&
       length(aws_route.private) == 3 && length(aws_vpc_endpoint.s3.route_table_ids) == 3 &&
-      length(aws_eks_cluster.this.vpc_config[0].subnet_ids) == 3 &&
+      length(aws_eks_cluster.this.vpc_config[0].subnet_ids) == 2 &&
       length(aws_eks_node_group.system) == 2
     )
-    error_message = "Extend network and EKS subnet coverage without adding system nodes."
+    error_message = "Extend worker network coverage while retaining the original EKS ENI AZ set and system nodes."
   }
   assert {
     condition = (
@@ -264,4 +264,16 @@ run "reject_unavailable_kafka_instance_type" {
     values = { instance_types = [] }
   }
   expect_failures = [aws_eks_node_group.kafka["ap-northeast-2b"]]
+}
+
+run "third_az_workers_do_not_change_cluster_eni_azs" {
+  command = apply
+  variables { enable_kafka_nodes = true }
+  assert {
+    condition = (
+      toset(aws_eks_cluster.this.vpc_config[0].subnet_ids) == toset([aws_subnet.private["ap-northeast-2a"].id, aws_subnet.private["ap-northeast-2c"].id]) &&
+      toset(aws_eks_node_group.kafka["ap-northeast-2b"].subnet_ids) == toset([aws_subnet.private["ap-northeast-2b"].id])
+    )
+    error_message = "Keep EKS cluster ENIs in original a/c AZs while allowing b worker capacity in the same VPC."
+  }
 }

@@ -21,10 +21,11 @@ def validate(plan):
     variables = {k:v['value'] for k,v in plan.get('variables',{}).items()}
     require(variables.get('expected_account_id') == '483175530259' and variables.get('cluster_name') == 'yeodam-v3-foundation', 'Wrong target')
     require(variables.get('enable_kafka_nodes') is True and variables.get('nat_gateway_az_overrides') == {'ap-northeast-2b':'ap-northeast-2a'}, 'Use the explicit reviewed minimal-cost inputs')
-    seen, actions = set(), Counter()
+    seen, observed, actions = set(), set(), Counter()
     for row in plan.get('resource_changes',[]):
         if row.get('mode') != 'managed': continue
         c, address = row['change'], row['address']
+        observed.add(address)
         if c['actions'] == ['no-op']: continue
         seen.add(address); actions[','.join(c['actions'])] += 1
         before, after = c.get('before') or {}, c.get('after') or {}
@@ -39,15 +40,11 @@ def validate(plan):
                 require(after['credit_specification'] == [{'cpu_credits':'standard'}], 'Surplus CPU charges not allowed')
                 disk=after['block_device_mappings'][0]['ebs'][0]
                 require(disk['volume_size']==20 and disk['volume_type']=='gp3' and disk['encrypted'], 'Unexpected root disk budget')
-        elif c['actions'] == ['update'] and address == 'aws_eks_cluster.this':
-            require(before['name'] == 'yeodam-v3-foundation', 'Wrong EKS cluster')
-            require({k for k in set(before)|set(after) if before.get(k)!=after.get(k)} == {'vpc_config'}, 'Unrelated cluster mutation')
-            b,a=before['vpc_config'][0],after['vpc_config'][0]
-            require({k for k in set(b)|set(a) if b.get(k)!=a.get(k)} == {'subnet_ids'}, 'Cluster access/security must remain unchanged')
         elif c['actions'] == ['update'] and address == 'aws_vpc_endpoint.s3':
             require({k for k in set(before)|set(after) if before.get(k)!=after.get(k)} == {'route_table_ids'}, 'Unrelated S3 endpoint mutation')
         else: raise ValueError('Unexpected deletion, replacement or update: ' + address)
-    require(seen == CREATES | {'aws_eks_cluster.this','aws_vpc_endpoint.s3'}, 'Unexpected/missing planned resource set; refresh the review')
+    require(seen.issubset(CREATES | {'aws_vpc_endpoint.s3'}), 'Unexpected planned resource set')
+    require((CREATES | {'aws_eks_cluster.this','aws_vpc_endpoint.s3'}).issubset(observed), 'Missing retained/planned identities; refresh the review')
     return dict(actions)
 
 

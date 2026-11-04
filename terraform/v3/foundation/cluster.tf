@@ -16,7 +16,9 @@ resource "aws_eks_cluster" "this" {
   }
 
   vpc_config {
-    subnet_ids              = [for subnet in aws_subnet.private : subnet.id]
+    # EKS cluster ENI AZs must match the original creation set. Worker nodes
+    # may use other subnets/AZs in the same VPC; do not expand this with them.
+    subnet_ids              = [for az in ["ap-northeast-2a", "ap-northeast-2c"] : aws_subnet.private[az].id]
     endpoint_private_access = true
     endpoint_public_access  = true
     public_access_cidrs     = var.api_public_access_cidrs
