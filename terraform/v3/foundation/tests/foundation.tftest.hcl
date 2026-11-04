@@ -206,7 +206,8 @@ run "small_kafka_nodes_with_shared_third_az_nat" {
   }
   assert {
     condition = alltrue([for az, group in aws_eks_node_group.kafka :
-      group.instance_types == tolist([az == "ap-northeast-2b" ? "t3.small" : "t3a.small"]) &&
+      aws_launch_template.kafka[az].instance_type == (az == "ap-northeast-2b" ? "t3.small" : "t3a.small") &&
+      (group.instance_types == null || length(group.instance_types) == 0) &&
       toset(group.subnet_ids) == toset([aws_subnet.private[az].id]) &&
       group.scaling_config[0].desired_size == 1 && group.scaling_config[0].min_size == 1 && group.scaling_config[0].max_size == 1 &&
       group.capacity_type == "ON_DEMAND" && group.ami_type == "AL2023_x86_64_STANDARD" &&
@@ -217,11 +218,11 @@ run "small_kafka_nodes_with_shared_third_az_nat" {
   }
   assert {
     condition = (
-      aws_launch_template.kafka[0].credit_specification[0].cpu_credits == "standard" &&
-      aws_launch_template.kafka[0].block_device_mappings[0].ebs[0].volume_size == 20 &&
-      aws_launch_template.kafka[0].block_device_mappings[0].ebs[0].encrypted &&
-      aws_launch_template.kafka[0].metadata_options[0].http_tokens == "required" &&
-      aws_launch_template.kafka[0].metadata_options[0].http_put_response_hop_limit == 1
+      length(aws_launch_template.kafka) == 3 && alltrue([for lt in aws_launch_template.kafka : lt.credit_specification[0].cpu_credits == "standard"]) &&
+      aws_launch_template.kafka["ap-northeast-2a"].block_device_mappings[0].ebs[0].volume_size == 20 &&
+      aws_launch_template.kafka["ap-northeast-2a"].block_device_mappings[0].ebs[0].encrypted &&
+      aws_launch_template.kafka["ap-northeast-2a"].metadata_options[0].http_tokens == "required" &&
+      aws_launch_template.kafka["ap-northeast-2a"].metadata_options[0].http_put_response_hop_limit == 1
     )
     error_message = "Avoid surplus CPU charges, keep small encrypted root disks and deny Pod IMDS access."
   }

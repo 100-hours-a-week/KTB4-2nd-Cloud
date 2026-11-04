@@ -18,7 +18,8 @@ data "aws_ec2_instance_type_offerings" "kafka" {
   }
 }
 resource "aws_launch_template" "kafka" {
-  count                  = var.enable_kafka_nodes ? 1 : 0
+  for_each               = var.enable_kafka_nodes ? local.zones : {}
+  instance_type          = local.kafka_instance_types[each.key]
   name_prefix            = "${var.cluster_name}-kafka-"
   update_default_version = true
 
@@ -53,14 +54,13 @@ resource "aws_launch_template" "kafka" {
 resource "aws_eks_node_group" "kafka" {
   for_each        = var.enable_kafka_nodes ? local.zones : {}
   cluster_name    = aws_eks_cluster.this.name
-  node_group_name = "kafka-${each.key}-${replace(local.kafka_instance_types[each.key], ".", "-")}"
+  node_group_name = "kafka-${each.key}-small"
   node_role_arn   = aws_iam_role.node.arn
   subnet_ids      = [aws_subnet.private[each.key].id]
   ami_type        = "AL2023_x86_64_STANDARD"
   release_version = var.node_release_version
   version         = var.kubernetes_version
   capacity_type   = "ON_DEMAND"
-  instance_types  = [local.kafka_instance_types[each.key]]
   labels          = { "yeodam.io/role" = "kafka", "yeodam.io/stage" = "v3" }
   taint {
     key    = "yeodam.io/role"
@@ -68,8 +68,8 @@ resource "aws_eks_node_group" "kafka" {
     effect = "NO_SCHEDULE"
   }
   launch_template {
-    id      = aws_launch_template.kafka[0].id
-    version = tostring(aws_launch_template.kafka[0].latest_version)
+    id      = aws_launch_template.kafka[each.key].id
+    version = tostring(aws_launch_template.kafka[each.key].latest_version)
   }
   scaling_config {
     desired_size = 1
@@ -90,4 +90,11 @@ resource "aws_eks_node_group" "kafka" {
 
 output "kafka_node_groups" {
   value = { for az, group in aws_eks_node_group.kafka : az => group.node_group_name }
+}
+
+# Preserve the original template ID in AZ a; the other AZs need their own
+# typed template. The provider omits CreditSpecification without instance_type.
+moved {
+  from = aws_launch_template.kafka[0]
+  to   = aws_launch_template.kafka["ap-northeast-2a"]
 }
