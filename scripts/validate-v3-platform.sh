@@ -24,3 +24,8 @@ mkdir -p "${rendered_dir}"
 "${validation_dir}/venv/bin/python" scripts/check-v3-apps.py \
   -f tests/ci/v3/apps-values.fixture.yaml --output "${rendered_dir}/apps-ci-fixture.yaml"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_apps.py'
+"${V3_HELM}" lint --strict deploy/v3/secret-access
+"${V3_HELM}" lint --strict deploy/v3/secret-access -f tests/ci/v3/secrets-values.fixture.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py \
+  --directory "${validation_dir}" --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_secrets.py'
