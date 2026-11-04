@@ -5,6 +5,10 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'deploy/production/release-policy.json'
+      - 'scripts/prepare-production-release.py'
+      - 'tests/ci/test_production_release_prepare.py'
+      - '.github/workflows/production-release-prepare.yml'
       - 'scripts/check-v3-platform.py'
       - 'scripts/check-v3-apps.py'
       - 'scripts/v3_backend_contract.py'
@@ -38,6 +42,9 @@ jobs:
         env:
           V3_RENDERED_DIR: ${{ runner.temp }}/v3-rendered
         run: bash scripts/validate-v3-platform.sh
+
+      - name: Verify disabled production release contract without credentials
+        run: python3 -m unittest discover -s tests/ci -p 'test_production_release_prepare.py'
 
       - name: Set up Terraform for offline infrastructure tests
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2

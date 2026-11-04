@@ -1,0 +1,74 @@
+name: Production Release Preparation
+
+on:
+  push:
+    branches: [main]
+    paths: ['deploy/v2/image-manifest.json']
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: '검증할 병합 완료 Cloud 이미지 후보 PR 번호 (배포하지 않음)'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: yeodam-production-release-preparation
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the triggering main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify merged candidate and record deployment hold
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_PR: ${{ inputs.pull_request_number }}
+        run: |
+          set -Eeuo pipefail
+          report="$RUNNER_TEMP/production-release/preparation.json"
+          if [[ "$RELEASE_EVENT" == push ]]; then
+            python3 scripts/prepare-production-release.py --commit "$RELEASE_COMMIT" --report "$report"
+          else
+            python3 scripts/prepare-production-release.py --pr "$RELEASE_PR" --report "$report"
+          fi
+
+      - name: Preserve candidate validation and hold reason
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-release-preparation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/production-release/*.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Explain the preparation result
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = Path(os.environ['RUNNER_TEMP']) / 'production-release/preparation.json'
+          with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
+              summary.write('## Production release preparation\n\n')
+              summary.write('This workflow does not deploy ECS or Kubernetes.\n\n')
+              if report.exists():
+                  data = json.loads(report.read_text())
+                  summary.write('Status: `' + data['status'] + '`\n\n')
+                  summary.write(data['reason'] + '\n')
+          PY
