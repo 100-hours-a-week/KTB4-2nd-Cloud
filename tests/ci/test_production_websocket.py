@@ -159,6 +159,18 @@ class RuntimeTests(unittest.TestCase):
             m.aws('ssm', 'put-parameter', payload={'Value': 'must-not-print'})
         self.assertFalse(captured[0].exists())
 
+    def test_running_task_with_unknown_health_is_not_ready(self):
+        row = SERVICE | {'serviceName': m.WEBSOCKET}
+        replies = [{'taskArns': ['new-task']}, {'tasks': [{'taskDefinitionArn': OLD, 'healthStatus': 'UNKNOWN'}]}]
+        with patch.object(m, 'service', return_value=row), patch.object(m, 'aws', side_effect=replies):
+            self.assertIsNone(m.websocket_health())
+
+    def test_old_task_cannot_attest_the_new_websocket_revision(self):
+        row = SERVICE | {'serviceName': m.WEBSOCKET, 'taskDefinition': NEW}
+        replies = [{'taskArns': ['old-task']}, {'tasks': [{'taskDefinitionArn': OLD, 'healthStatus': 'HEALTHY'}]}]
+        with patch.object(m, 'service', return_value=row), patch.object(m, 'aws', side_effect=replies):
+            self.assertIsNone(m.websocket_health())
+
     def test_production_release_in_progress_blocks_configuration(self):
         replies = [{'Parameters': [{'Name': m.production.ACTIVE}]}, {'Parameter': {'Value': json.dumps({'status': 'deploying'})}}]
         with patch.object(m, 'aws', side_effect=replies), self.assertRaises(ValueError):

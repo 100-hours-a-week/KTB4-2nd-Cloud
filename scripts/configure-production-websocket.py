@@ -201,6 +201,47 @@ def rollback(path, apply):
     return journal
 
 
+def websocket_health():
+    row = service(WEBSOCKET)
+    if not production.common.ai.stable(row, row['taskDefinition']):
+        return None
+    arns = aws('ecs', 'list-tasks', '--cluster', CLUSTER, '--service-name', WEBSOCKET,
+               '--desired-status', 'RUNNING')['taskArns']
+    if len(arns) != 1:
+        return None
+    task = aws('ecs', 'describe-tasks', '--cluster', CLUSTER, '--tasks', *arns)['tasks'][0]
+    if task['taskDefinitionArn'] != row['taskDefinition'] or task.get('healthStatus') != 'HEALTHY':
+        return None
+    expected = json.loads((ROOT / 'deploy/v2-production/websocket/image.json').read_text())['immutableImage']
+    container = task['containers'][0]
+    if container['name'] != 'websocket' or container['image'] != expected:
+        raise ValueError('Unexpected WebSocket image/container')
+    definition = aws('ecs', 'describe-task-definition', '--task-definition', row['taskDefinition'])['taskDefinition']
+    env = {e['name']: e['value'] for e in definition['containerDefinitions'][0].get('environment', [])}
+    if env.get('REDIS_CONNECT_TIMEOUT') != '10s' or env.get('REDIS_TIMEOUT') != '10s':
+        raise ValueError('WebSocket did not adopt the reviewed Redis timeout settings')
+    ips = {i['privateIpv4Address'] for i in container.get('networkInterfaces', [])}
+    lbs = row.get('loadBalancers', [])
+    prefix = f'arn:aws:elasticloadbalancing:{REGION}:{ACCOUNT}:targetgroup/yeodam-v2-prod-websocket/'
+    if len(lbs) != 1 or not lbs[0]['targetGroupArn'].startswith(prefix):
+        raise ValueError('Unexpected WebSocket target group')
+    targets = aws('elbv2', 'describe-target-health', '--target-group-arn', lbs[0]['targetGroupArn'])['TargetHealthDescriptions']
+    healthy = [t for t in targets if t['Target']['Id'] in ips and t['Target']['Port'] == 8081 and t['TargetHealth']['State'] == 'healthy']
+    if not healthy:
+        return None
+    return {'status': 'healthy', 'taskHealth': 'HEALTHY', 'healthyTargets': len(healthy),
+            'image': expected, 'taskDefinition': row['taskDefinition']}
+
+
+def wait_websocket():
+    for _ in range(90):
+        result = websocket_health()
+        if result:
+            return result
+        time.sleep(5)
+    raise TimeoutError('WebSocket Task and ALB health did not pass; inspect startup logs')
+
+
 def smoke():
     results = {}
     for path, expected in [('/api/ws', 401), ('/api/internal/websocket/authentication', 404)]:
@@ -220,7 +261,7 @@ def smoke():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['inspect', 'prepare-token', 'configure-backend', 'rollback-backend', 'smoke'])
+    parser.add_argument('action', choices=['inspect', 'prepare-token', 'configure-backend', 'rollback-backend', 'verify-websocket', 'smoke'])
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--journal', type=Path)
     args = parser.parse_args()
@@ -237,6 +278,8 @@ def main():
         if not args.journal:
             raise ValueError('--journal is required')
         result = rollback(args.journal, args.apply)
+    elif args.action == 'verify-websocket':
+        result = wait_websocket()
     elif args.action == 'smoke':
         result = smoke()
     else:
