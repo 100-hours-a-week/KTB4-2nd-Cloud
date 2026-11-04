@@ -58,6 +58,17 @@ services:
       timeout: 5s
       retries: 60
 
+  mongo:
+    image: mongo:8.0
+    platform: linux/amd64
+    command: [mongod, --bind_ip_all, --wiredTigerCacheSizeGB, "0.25"]
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, mongosh, --quiet, --eval, "quit(db.adminCommand({ping: 1}).ok ? 0 : 1)"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+
   redis-auth:
     image: redis:7.4.2-alpine
     command: [redis-server, --requirepass, ci-auth-only, --save, ""]
@@ -162,6 +173,7 @@ services:
       SPRING_FLYWAY_ENABLED: "true"
       JAVA_TOOL_OPTIONS: -Xms128m -Xmx512m -XX:ActiveProcessorCount=2
       MYSQL_URL: jdbc:mysql://mysql:3306/yeodam_v2_ci?serverTimezone=Asia/Seoul&characterEncoding=utf8
+      SPRING_MONGODB_URI: mongodb://mongo:27017/yeodam_v2_ci
       MYSQL_USERNAME: yeodam
       MYSQL_PASSWORD: ci-app-only
       REDIS_HOST: redis-auth
@@ -188,6 +200,7 @@ services:
     mem_limit: 1g
     depends_on:
       mysql: {condition: service_healthy}
+      mongo: {condition: service_healthy}
       redis-auth: {condition: service_healthy}
       ai-api: {condition: service_healthy}
     healthcheck:
