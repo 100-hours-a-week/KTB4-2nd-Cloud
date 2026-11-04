@@ -44,3 +44,9 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${V3_HELM}" lint --strict deploy/v3/storage
 "${validation_dir}/venv/bin/python" scripts/check-v3-storage.py --output "${rendered_dir}/storage.yaml"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_storage.py'
+
+"${V3_HELM}" lint --strict deploy/v3/kafka
+"${V3_HELM}" lint --strict deploy/v3/kafka -f tests/ci/v3/kafka-smoke.values.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-kafka.py \
+  --directory "${validation_dir}" --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_kafka.py'

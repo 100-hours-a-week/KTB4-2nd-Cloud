@@ -1,0 +1,87 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: kafka, labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-cluster-dns, namespace: kafka, labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-private-api, namespace: kafka, labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        # Private EKS endpoint ENIs, and Service IP before service DNAT.
+        - ipBlock: {cidr: 10.40.0.0/16}
+        - ipBlock: {cidr: 172.20.0.1/32}
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-kafka-internal, namespace: kafka, labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}}
+spec:
+  podSelector:
+    matchLabels:
+      strimzi.io/cluster: {{ .Values.clusterName }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              strimzi.io/cluster: {{ .Values.clusterName }}
+      ports: [{protocol: TCP, port: 9090}, {protocol: TCP, port: 9091}, {protocol: TCP, port: 9093}]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              strimzi.io/cluster: {{ .Values.clusterName }}
+      ports: [{protocol: TCP, port: 9090}, {protocol: TCP, port: 9091}, {protocol: TCP, port: 9093}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-operator-admin, namespace: kafka, labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}}
+spec:
+  podSelector:
+    matchLabels: {name: strimzi-cluster-operator}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              strimzi.io/cluster: {{ .Values.clusterName }}
+      ports: [{protocol: TCP, port: 9090}, {protocol: TCP, port: 9091}, {protocol: TCP, port: 8443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-smoke-client, namespace: kafka, labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/instance: kafka-smoke}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              strimzi.io/cluster: {{ .Values.clusterName }}
+              strimzi.io/kind: Kafka
+      ports: [{protocol: TCP, port: 9093}]

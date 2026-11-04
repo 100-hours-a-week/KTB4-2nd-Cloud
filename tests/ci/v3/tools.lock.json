@@ -84,6 +84,14 @@
     "storageclass": {
       "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/storageclass.json",
       "sha256": "861cd2cad6e752b0d361e4946438f1d22e6e8ab0acad194c2a5dc50dc9242a4c"
+    },
+    "job": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/job.json",
+      "sha256": "edcd3b8017ad204da5cb94562dd31f038f121e9a81931204d9983edd3fa7604c"
+    },
+    "rolebinding": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/rolebinding.json",
+      "sha256": "d9b50842abde1f24dd16bdf266cb144184cf4672a628d0ee16ebc723ec7ecf79"
     }
   }
 }

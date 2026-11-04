@@ -1,0 +1,148 @@
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: kafka
+  labels:
+    app.kubernetes.io/part-of: yeodam
+    yeodam.io/stage: v3
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  kafka:
+    version: {{ .Values.kafkaVersion | quote }}
+    image: {{ .Values.kafkaImage | quote }}
+    rack:
+      topologyKey: topology.kubernetes.io/zone
+    listeners:
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+        authentication:
+          type: scram-sha-512
+        # Strimzi merges this ingress rule with its own management rules.
+        # Application namespace access is deliberately a later contract.
+        networkPolicyPeers:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/instance: kafka-smoke
+    authorization:
+      type: simple
+    config:
+      auto.create.topics.enable: false
+      default.replication.factor: 3
+      min.insync.replicas: 2
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      num.partitions: 3
+      # Small startup disks: bounded initial retention, not a business retention SLA.
+      log.retention.hours: 24
+      log.retention.bytes: 268435456
+      log.segment.bytes: 67108864
+    template:
+      podDisruptionBudget:
+        maxUnavailable: 1
+  entityOperator:
+    topicOperator:
+      watchedNamespace: kafka
+      resources:
+        requests: {cpu: 50m, memory: 256Mi}
+        limits: {memory: 384Mi}
+      jvmOptions: {"-Xms": 128m, "-Xmx": 128m}
+    userOperator:
+      watchedNamespace: kafka
+      resources:
+        requests: {cpu: 50m, memory: 256Mi}
+        limits: {memory: 384Mi}
+      jvmOptions: {"-Xms": 128m, "-Xmx": 128m}
+    template:
+      pod:
+        metadata:
+          labels:
+            app.kubernetes.io/name: kafka-entity-operator
+            app.kubernetes.io/instance: {{ .Values.clusterName }}
+            app.kubernetes.io/component: entity-operator
+            app.kubernetes.io/part-of: yeodam
+            yeodam.io/stage: v3
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: yeodam.io/role
+                      operator: In
+                      values: [system]
+        enableServiceLinks: false
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: dual-role
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: {{ .Values.clusterName }}
+    app.kubernetes.io/part-of: yeodam
+    yeodam.io/stage: v3
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  replicas: {{ .Values.broker.replicas }}
+  roles: [broker, controller]
+  resources:
+    {{- toYaml .Values.broker.resources | nindent 4 }}
+  jvmOptions:
+    "-Xms": {{ .Values.broker.heap | quote }}
+    "-Xmx": {{ .Values.broker.heap | quote }}
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: persistent-claim
+        class: {{ .Values.broker.storageClass }}
+        size: {{ .Values.broker.volumeSize }}
+        kraftMetadata: shared
+        deleteClaim: false
+  template:
+    pod:
+      metadata:
+        labels:
+          app.kubernetes.io/name: kafka
+          app.kubernetes.io/instance: {{ .Values.clusterName }}
+          app.kubernetes.io/component: broker-controller
+          app.kubernetes.io/part-of: yeodam
+          yeodam.io/stage: v3
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 120
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: yeodam.io/role
+                    operator: In
+                    values: [kafka]
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  strimzi.io/cluster: {{ .Values.clusterName }}
+                  strimzi.io/pool-name: dual-role
+              topologyKey: kubernetes.io/hostname
+      tolerations:
+        - key: yeodam.io/role
+          operator: Equal
+          value: kafka
+          effect: NoSchedule
+      topologySpreadConstraints:
+        - maxSkew: 1
+          minDomains: 3
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          nodeAffinityPolicy: Honor
+          nodeTaintsPolicy: Honor
+          labelSelector:
+            matchLabels:
+              strimzi.io/cluster: {{ .Values.clusterName }}
+              strimzi.io/pool-name: dual-role
