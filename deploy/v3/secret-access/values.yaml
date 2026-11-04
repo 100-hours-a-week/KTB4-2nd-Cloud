@@ -1,0 +1,23 @@
+# Install access baseline first, then the pinned operator; enable stores last.
+# No credentials or remote secret payloads belong in values.
+stores:
+  frontend:
+    enabled: false
+    roleArn: ''
+    secrets: []
+  auth:
+    enabled: false
+    roleArn: ''
+    secrets: []
+  trip:
+    enabled: false
+    roleArn: ''
+    secrets: []
+  photo:
+    enabled: false
+    roleArn: ''
+    secrets: []
+  ai:
+    enabled: false
+    roleArn: ''
+    secrets: []

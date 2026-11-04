@@ -46,6 +46,11 @@ def prepare(directory):
         file = schema_directory / f'{kind}.json'
         if not file.exists() or hashlib.sha256(file.read_bytes()).hexdigest() != entry['sha256']:
             file.write_bytes(download(entry))
+    # Render this verified archive directly; never unpack arbitrary upstream paths.
+    operator = json.loads((ROOT / 'deploy/v3/secret-operator/upstream.lock.json').read_text())
+    archive = directory / 'external-secrets.tgz'
+    if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != operator['sha256']:
+        archive.write_bytes(download(operator))
 
 
 if __name__ == '__main__':

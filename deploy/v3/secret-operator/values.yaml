@@ -1,0 +1,66 @@
+# Official chart 2.14.0, pinned by upstream.lock.json. No application secrets.
+fullnameOverride: external-secrets
+replicaCount: 1
+revisionHistoryLimit: 2
+leaderElect: false
+commonLabels:
+  app.kubernetes.io/part-of: yeodam
+  yeodam.io/stage: v3
+image:
+  tag: v2.14.0@sha256:10608eb53e636e744903d5f3657a4d9c44e28d9d9c181b73e07bc7dd2e6884dc
+serviceAccount:
+  name: external-secrets
+rbac:
+  serviceAccountTokenCreate: false
+  aggregateToView: false
+  aggregateToEdit: false
+  aggregateToAdmin: false
+  servicebindings:
+    create: false
+  leaderElection:
+    create: false
+openshiftFinalizers: false
+processClusterExternalSecret: false
+processClusterStore: false
+processClusterGenerator: false
+processClusterPushSecret: false
+processPushSecret: false
+crds:
+  createClusterExternalSecret: false
+  createClusterSecretStore: false
+  createClusterGenerator: false
+  createClusterPushSecret: false
+  createPushSecret: false
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+extraEnv:
+  - name: AWS_STS_REGIONAL_ENDPOINTS
+    value: regional
+  - name: AWS_EC2_METADATA_DISABLED
+    value: "true"
+webhook:
+  replicaCount: 1
+  revisionHistoryLimit: 2
+  image:
+    tag: v2.14.0@sha256:10608eb53e636e744903d5f3657a4d9c44e28d9d9c181b73e07bc7dd2e6884dc
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+certController:
+  replicaCount: 1
+  revisionHistoryLimit: 2
+  image:
+    tag: v2.14.0@sha256:10608eb53e636e744903d5f3657a4d9c44e28d9d9c181b73e07bc7dd2e6884dc
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi

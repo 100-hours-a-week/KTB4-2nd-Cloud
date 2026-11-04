@@ -1,0 +1,69 @@
+{{- $namespaces := list "frontend" "auth" "trip" "photo" "ai" -}}
+{{- range $ns, $store := .Values.stores }}
+{{- if not (has $ns $namespaces) }}{{ fail "Unknown Secret namespace" }}{{ end }}
+{{- if $store.enabled }}
+{{- $role := printf "arn:aws:iam::483175530259:role/yeodam-v3-foundation-eso-%s" $ns }}
+{{- if ne $store.roleArn $role }}{{ fail "SecretStore role must match its namespace reader role" }}{{ end }}
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: aws-secretsmanager
+  namespace: {{ $ns }}
+  labels:
+    app.kubernetes.io/part-of: yeodam
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    yeodam.io/stage: v3
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: ap-northeast-2
+      role: {{ $store.roleArn | quote }}
+{{- range $binding := $store.secrets }}
+{{- $name := required "Secret target name is required" $binding.name }}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $name) }}{{ fail "Invalid target Secret name" }}{{ end }}
+{{- if not $binding.data }}{{ fail "Explicit Secret key mappings are required" }}{{ end }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    app.kubernetes.io/part-of: yeodam
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    yeodam.io/stage: v3
+spec:
+  refreshPolicy: Periodic
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: aws-secretsmanager
+  target:
+    name: {{ $name }}
+    # Retain the last Secret on source/removal errors or chart uninstall.
+    # Platform operators explicitly remove retained Secrets when retiring them.
+    creationPolicy: Orphan
+    deletionPolicy: Retain
+    template:
+      type: {{ default "Opaque" $binding.type | quote }}
+  data:
+    {{- range $mapping := $binding.data }}
+    {{- $key := required "remoteKey is required" $mapping.remoteKey }}
+    {{- if not (hasPrefix (printf "yeodam/v3/foundation/%s/" $ns) $key) }}{{ fail "Remote Secret must belong to the same namespace prefix" }}{{ end }}
+    {{- if not (regexMatch "^[A-Za-z0-9/_+=.@-]+$" $key) }}{{ fail "Invalid remote Secret key" }}{{ end }}
+    - secretKey: {{ required "secretKey is required" $mapping.secretKey | quote }}
+      remoteRef:
+        key: {{ $key | quote }}
+        {{- with $mapping.property }}
+        property: {{ . | quote }}
+        {{- end }}
+        version: AWSCURRENT
+        decodingStrategy: None
+    {{- end }}
+{{- end }}
+{{- else if or $store.roleArn $store.secrets }}
+{{- fail "Disabled stores must not contain role or Secret mappings" }}
+{{- end }}
+{{- end }}
