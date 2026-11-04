@@ -43,10 +43,12 @@ class RunpodTests(unittest.TestCase):
             self.assertEqual(m.candidate(environment, result), result)
             self.assertEqual(before, definition(environment))
 
-    def exercise(self, environment='production', failure=None):
+    def exercise(self, environment='production', failure=None, production_only=False):
         self.calls = []
         self.parameters = {m.STAGING_PARAMETER: {'Value': URL, 'Version': 7},
                            m.parameter('production'): {'Value': OLD, 'Version': 2}}
+        if production_only:
+            self.parameters.pop(m.STAGING_PARAMETER)
         if environment == 'staging':
             self.parameters[m.STAGING_PARAMETER] = {'Value': OLD, 'Version': 2}
         if failure == 'stale-before':
@@ -95,9 +97,9 @@ class RunpodTests(unittest.TestCase):
              patch.object(m, 'runner_settings', side_effect=runner):
             if failure and failure != 'cleanup':
                 with self.assertRaises((RuntimeError, m.RunnerStateUnknown)):
-                    m.promote(environment, URL, report, lambda: None, 7 if environment == 'production' else None)
+                    m.promote(environment, URL, report, lambda: None, 7 if environment == 'production' and not production_only else None, production_only)
             else:
-                m.promote(environment, URL, report, lambda: None, 7 if environment == 'production' else None)
+                m.promote(environment, URL, report, lambda: None, 7 if environment == 'production' and not production_only else None, production_only)
             self.probes = probe.call_args_list
         return report
 
@@ -238,15 +240,37 @@ class RunpodTests(unittest.TestCase):
                 self.assertNotEqual(run.returncode, 0)
                 self.assertTrue('explicit environment' in run.stderr or 'unrecognized arguments' in run.stderr)
 
-    def test_workflow_requires_staging_success_and_approved_production(self):
-        text = (ROOT / '.github/workflows/v2-staging-runpod-update.yml').read_text()
-        production = text.split('  production:\n', 1)[1]
-        self.assertIn('needs: staging', production)
-        self.assertIn('environment: production', production)
-        self.assertIn('group: yeodam-v2-production-release', production)
-        self.assertIn('AWS_V2_PRODUCTION_RUNPOD_UPDATE_ROLE_ARN', production)
-        self.assertIn('--expected-staging-version "$STAGING_VERSION"', production)
-        self.assertEqual(text.count('ref: ${{ github.sha }}'), 2)
+    def test_production_only_succeeds_without_any_staging_parameter(self):
+        self.exercise(production_only=True)
+        self.assertNotIn(m.STAGING_PARAMETER, self.parameters)
+        self.assertFalse(any(m.STAGING_PARAMETER in c for c in self.calls))
+        self.assertTrue(any(c[:2] == ('ecs', 'update-service') for c in self.calls))
+
+    def test_production_workflow_has_no_staging_dependency(self):
+        text = (ROOT / '.github/workflows/v2-production-runpod-update.yml').read_text()
+        self.assertNotIn('needs: staging', text)
+        self.assertIn('environment: production', text)
+        self.assertIn('group: yeodam-v2-production-release', text)
+        self.assertIn('AWS_V2_PRODUCTION_RUNPOD_UPDATE_ROLE_ARN', text)
+        self.assertIn('--production-only', text)
+        self.assertEqual(text.count('ref: ${{ github.sha }}'), 1)
+        self.assertNotIn('STAGING_VERSION', text)
+
+    def test_production_only_keeps_preflight_and_recovery_without_staging(self):
+        for failure, status in [('probe', 'preflight'), ('rollout', 'restored_previous'),
+                                ('runner', 'restored_previous'), ('runner-unknown', 'recovery_required')]:
+            with self.subTest(failure=failure):
+                report = self.exercise(failure=failure, production_only=True)
+                self.assertEqual(report['status'], status)
+                self.assertFalse(any(m.STAGING_PARAMETER in c for c in self.calls))
+                if failure == 'probe': self.assertFalse(self.writes())
+
+    def test_production_only_rejects_staging_and_ambiguous_attestation(self):
+        for env, version in [('staging', None), ('production', 7)]:
+            with self.subTest(env=env), patch.object(m.ai, 'aws') as aws:
+                with self.assertRaises(ValueError):
+                    m.promote(env, URL, {}, lambda: None, version, production_only=True)
+                aws.assert_not_called()
 
 
 if __name__ == '__main__':
