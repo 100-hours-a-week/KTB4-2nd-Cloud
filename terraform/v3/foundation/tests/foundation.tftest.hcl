@@ -1,4 +1,7 @@
 mock_provider "aws" {
+  mock_data "aws_ec2_instance_type_offerings" {
+    defaults = { instance_types = ["t3a.small", "t3.small"] }
+  }
   mock_resource "aws_launch_template" {
     defaults = { id = "lt-0123456789abcdef0", latest_version = 1 }
   }
@@ -203,7 +206,7 @@ run "small_kafka_nodes_with_shared_third_az_nat" {
   }
   assert {
     condition = alltrue([for az, group in aws_eks_node_group.kafka :
-      group.instance_types == tolist(["t3a.small"]) &&
+      group.instance_types == tolist([az == "ap-northeast-2b" ? "t3.small" : "t3a.small"]) &&
       toset(group.subnet_ids) == toset([aws_subnet.private[az].id]) &&
       group.scaling_config[0].desired_size == 1 && group.scaling_config[0].min_size == 1 && group.scaling_config[0].max_size == 1 &&
       group.capacity_type == "ON_DEMAND" && group.ami_type == "AL2023_x86_64_STANDARD" &&
@@ -251,4 +254,14 @@ run "reject_third_az_self_nat_override" {
   command = plan
   variables { nat_gateway_az_overrides = { ap-northeast-2b = "ap-northeast-2b" } }
   expect_failures = [var.nat_gateway_az_overrides]
+}
+
+run "reject_unavailable_kafka_instance_type" {
+  command = plan
+  variables { enable_kafka_nodes = true }
+  override_data {
+    target = data.aws_ec2_instance_type_offerings.kafka["ap-northeast-2b"]
+    values = { instance_types = [] }
+  }
+  expect_failures = [aws_eks_node_group.kafka["ap-northeast-2b"]]
 }

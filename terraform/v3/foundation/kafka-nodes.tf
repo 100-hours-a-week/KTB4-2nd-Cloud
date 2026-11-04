@@ -1,5 +1,22 @@
 # Initial capacity only: no Kafka Operator, Broker, Topic or application rollout.
 # Small nodes are a measured starting point, not validated production capacity.
+# This account offers T3a in a/c, but b requires the same-size Intel T3.
+locals {
+  kafka_instance_types = { for az in keys(local.zones) : az => contains(["ap-northeast-2a", "ap-northeast-2c"], az) ? "t3a.small" : "t3.small" }
+}
+
+data "aws_ec2_instance_type_offerings" "kafka" {
+  for_each      = var.enable_kafka_nodes ? local.zones : {}
+  location_type = "availability-zone"
+  filter {
+    name   = "location"
+    values = [each.key]
+  }
+  filter {
+    name   = "instance-type"
+    values = [local.kafka_instance_types[each.key]]
+  }
+}
 resource "aws_launch_template" "kafka" {
   count                  = var.enable_kafka_nodes ? 1 : 0
   name_prefix            = "${var.cluster_name}-kafka-"
@@ -36,14 +53,14 @@ resource "aws_launch_template" "kafka" {
 resource "aws_eks_node_group" "kafka" {
   for_each        = var.enable_kafka_nodes ? local.zones : {}
   cluster_name    = aws_eks_cluster.this.name
-  node_group_name = "kafka-${each.key}-t3a-small"
+  node_group_name = "kafka-${each.key}-${replace(local.kafka_instance_types[each.key], ".", "-")}"
   node_role_arn   = aws_iam_role.node.arn
   subnet_ids      = [aws_subnet.private[each.key].id]
   ami_type        = "AL2023_x86_64_STANDARD"
   release_version = var.node_release_version
   version         = var.kubernetes_version
   capacity_type   = "ON_DEMAND"
-  instance_types  = ["t3a.small"]
+  instance_types  = [local.kafka_instance_types[each.key]]
   labels          = { "yeodam.io/role" = "kafka", "yeodam.io/stage" = "v3" }
   taint {
     key    = "yeodam.io/role"
@@ -61,6 +78,12 @@ resource "aws_eks_node_group" "kafka" {
   }
   update_config {
     max_unavailable = 1
+  }
+  lifecycle {
+    precondition {
+      condition     = contains(data.aws_ec2_instance_type_offerings.kafka[each.key].instance_types, local.kafka_instance_types[each.key])
+      error_message = "The reviewed small instance type is not offered in this AZ; stop before creating an unsupported node group."
+    }
   }
   depends_on = [aws_iam_role_policy_attachment.node, aws_eks_addon.cni, aws_route.private, aws_route.public]
 }

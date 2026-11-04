@@ -5,7 +5,8 @@ from collections import Counter
 import json
 from pathlib import Path
 
-ZONES = {'ap-northeast-2a', 'ap-northeast-2b', 'ap-northeast-2c'}
+TYPES = {'ap-northeast-2a':'t3a.small', 'ap-northeast-2b':'t3.small', 'ap-northeast-2c':'t3a.small'}
+ZONES = set(TYPES)
 CREATES = {'aws_launch_template.kafka[0]'} | {f'aws_eks_node_group.kafka["{az}"]' for az in ZONES} | {
     f'{kind}["ap-northeast-2b"]' for kind in ['aws_subnet.private', 'aws_subnet.public',
         'aws_route_table.private', 'aws_route.private', 'aws_route_table_association.private', 'aws_route_table_association.public']}
@@ -30,7 +31,8 @@ def validate(plan):
         if c['actions'] == ['create']:
             require(address in CREATES, 'Unexpected creation: ' + address)
             if row['type'] == 'aws_eks_node_group':
-                require(after['instance_types'] == ['t3a.small'] and after['capacity_type'] == 'ON_DEMAND', 'Only small on-demand Kafka nodes')
+                az = address.split('["', 1)[1].split('"', 1)[0]
+                require(after['instance_types'] == [TYPES[az]] and after['capacity_type'] == 'ON_DEMAND', 'Only reviewed AZ-specific small on-demand Kafka nodes')
                 require(after['scaling_config'] == [{'desired_size':1, 'min_size':1, 'max_size':1}], 'Unbounded node count')
                 require(after['labels'].get('yeodam.io/role') == 'kafka' and after['taint'] == [{'key':'yeodam.io/role','value':'kafka','effect':'NO_SCHEDULE'}], 'Missing Kafka isolation')
             if row['type'] == 'aws_launch_template':

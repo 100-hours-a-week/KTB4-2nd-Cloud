@@ -14,7 +14,8 @@ def plan():
         kind='aws_eks_node_group' if address.startswith('aws_eks_node_group.') else 'aws_launch_template' if address.startswith('aws_launch_template.') else 'network'
         after={}
         if kind=='aws_eks_node_group':
-            after=dict(instance_types=['t3a.small'],capacity_type='ON_DEMAND',
+            az=address.split('["',1)[1].split('"',1)[0]
+            after=dict(instance_types=[m.TYPES[az]],capacity_type='ON_DEMAND',
                 scaling_config=[dict(min_size=1,max_size=1,desired_size=1)],
                 labels={'yeodam.io/role':'kafka'},taint=[dict(key='yeodam.io/role',value='kafka',effect='NO_SCHEDULE')])
         if kind=='aws_launch_template':
@@ -54,6 +55,11 @@ class KafkaPlanProtection(unittest.TestCase):
     def test_rejects_cluster_access_changes(self):
         p=plan();row=next(x for x in p['resource_changes'] if x['address']=='aws_eks_cluster.this')
         row['change']['after']['vpc_config'][0]['endpoint_public_access']=False
+        with self.assertRaises(ValueError):m.validate(p)
+
+    def test_rejects_unavailable_amd_type_in_third_az(self):
+        p=plan();row=next(x for x in p['resource_changes'] if x['address']=='aws_eks_node_group.kafka["ap-northeast-2b"]')
+        row['change']['after']['instance_types']=['t3a.small']
         with self.assertRaises(ValueError):m.validate(p)
 
     def test_rejects_wrong_account_or_partial_plan(self):
