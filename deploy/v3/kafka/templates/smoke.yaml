@@ -1,4 +1,4 @@
-{{- if .Values.smoke.enabled }}
+{{- if and .Values.clusterEnabled .Values.smoke.enabled }}
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:

@@ -1,2 +1,3 @@
+clusterEnabled: true
 smoke:
   enabled: true

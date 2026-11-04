@@ -1,3 +1,4 @@
+{{- if .Values.clusterEnabled }}
 apiVersion: kafka.strimzi.io/v1
 kind: Kafka
 metadata:
@@ -146,3 +147,4 @@ spec:
             matchLabels:
               strimzi.io/cluster: {{ .Values.clusterName }}
               strimzi.io/pool-name: dual-role
+{{- end }}

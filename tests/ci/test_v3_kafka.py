@@ -15,7 +15,7 @@ spec.loader.exec_module(m)
 class KafkaContracts(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.base = m.platform.load_documents(m.render())
+        cls.base = m.platform.load_documents(m.render(values=m.FOUNDATION))
         cls.smoke = m.platform.load_documents(m.render(values=ROOT / 'tests/ci/v3/kafka-smoke.values.yaml'))
         directory = Path(os.environ['V3_SCHEMA_DIR']).parent
         cls.operator = m.platform.load_documents(m.render(directory / 'strimzi.tgz',
@@ -42,6 +42,15 @@ class KafkaContracts(unittest.TestCase):
                             (['authentication', 'type'], 'tls'), (['networkPolicyPeers'], [{}])]:
             with self.subTest(path=path):
                 self.mutate('Kafka', ['spec', 'kafka', 'listeners', 0] + path, value)
+
+    def test_baseline_install_needs_no_crds_or_adoption(self):
+        baseline = m.platform.load_documents(m.render())
+        m.validate_cluster(baseline, enabled=False)
+        self.assertEqual({d['kind'] for d in baseline}, {'Namespace', 'NetworkPolicy'})
+        m.platform.schema_check(m.yaml.safe_dump_all(baseline))
+        result = subprocess.run([os.environ['V3_HELM'], 'template', 'test', str(m.CHART),
+                '--set', 'smoke.enabled=true'], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0, 'Smoke must not bypass the explicit cluster activation')
 
     def test_namespace_and_rack_boundary(self):
         self.mutate('Kafka', ['metadata', 'namespace'], 'default')

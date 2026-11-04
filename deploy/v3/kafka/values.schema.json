@@ -7,7 +7,8 @@
     "kafkaVersion",
     "kafkaImage",
     "broker",
-    "smoke"
+    "smoke",
+    "clusterEnabled"
   ],
   "properties": {
     "clusterName": {
@@ -66,6 +67,31 @@
           "type": "boolean"
         }
       }
+    },
+    "clusterEnabled": {
+      "type": "boolean"
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "smoke": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "clusterEnabled": {
+            "const": true
+          }
+        }
+      }
+    }
+  ]
 }

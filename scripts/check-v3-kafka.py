@@ -21,13 +21,14 @@ OPERATOR = ROOT / 'deploy/v3/kafka-operator'
 LOCK = json.loads((OPERATOR / 'upstream.lock.json').read_text())
 CLUSTER = 'yeodam-v3-kafka'
 NS = 'kafka'
+FOUNDATION = ROOT / 'deploy/v3/environments/foundation/kafka.values.yaml'
 MANAGEMENT_PORTS = [9090, 9091, 8443]
 
 
 def render(chart=CHART, values=None, include_crds=False):
     command = [os.environ['V3_HELM'], 'template',
                'strimzi' if include_crds else CLUSTER, str(chart),
-               '--namespace', NS, '--kube-version', '1.36.0']
+               '--namespace', NS if include_crds else 'default', '--kube-version', '1.36.0']
     if values:
         command += ['-f', str(values)]
     if include_crds:
@@ -104,9 +105,12 @@ def validate_operator(documents):
                     'Strimzi 1.3 uses v1 only')
 
 
-def validate_cluster(documents, smoke=False):
+def validate_cluster(documents, smoke=False, enabled=True):
     unique(documents)
-    expected = {'Namespace': 1, 'NetworkPolicy': 6, 'Kafka': 1, 'KafkaNodePool': 1}
+    expected = {'Namespace': 1, 'NetworkPolicy': 6}
+    if enabled:
+        expected.update({'Kafka': 1, 'KafkaNodePool': 1})
+    require(not smoke or enabled, 'Smoke requires a running Kafka cluster')
     if smoke:
         expected.update({'KafkaUser': 1, 'KafkaTopic': 1, 'Job': 1})
     require(Counter(d['kind'] for d in documents) == expected, 'Unexpected workload, disk, endpoint or credentials')
@@ -121,6 +125,9 @@ def validate_cluster(documents, smoke=False):
     for mode in ('enforce', 'audit', 'warn'):
         require(labels.get(f'pod-security.kubernetes.io/{mode}') == 'restricted' and
                 labels.get(f'pod-security.kubernetes.io/{mode}-version') == 'v1.36', 'Restricted namespace required')
+    validate_policies(documents)
+    if not enabled:
+        return
     obj = by_kind['Kafka']
     require(obj['metadata']['name'] == CLUSTER, 'Wrong Kafka cluster')
     require(obj['metadata'].get('annotations') == {'helm.sh/resource-policy': 'keep'}, 'Keep Kafka on uninstall')
@@ -178,6 +185,27 @@ def validate_cluster(documents, smoke=False):
         'topologyKey': 'topology.kubernetes.io/zone', 'whenUnsatisfiable': 'DoNotSchedule',
         'nodeAffinityPolicy': 'Honor', 'nodeTaintsPolicy': 'Honor',
         'labelSelector': {'matchLabels': selector}}], 'Preserve one broker per AZ')
+    if smoke:
+        user, topic, job = (by_kind[kind] for kind in ('KafkaUser', 'KafkaTopic', 'Job'))
+        require(user['metadata']['name'] == topic['metadata']['name'] == 'v3-smoke', 'Owned smoke resources only')
+        require(user['spec'] == {'authentication': {'type': 'scram-sha-512'}, 'authorization': {
+            'type': 'simple', 'acls': [
+                {'resource': {'type': 'topic', 'name': 'v3-smoke', 'patternType': 'literal'},
+                 'operations': ['Read', 'Write', 'Describe'], 'host': '*'},
+                {'resource': {'type': 'group', 'name': 'v3-smoke-', 'patternType': 'prefix'},
+                 'operations': ['Read'], 'host': '*'}]}}, 'No business-topic or cluster-admin smoke ACL')
+        require(topic['spec'] == {'partitions': 3, 'replicas': 3, 'config': {'min.insync.replicas': 2,
+                'retention.ms': 3600000, 'retention.bytes': 10485760, 'segment.bytes': 1048576}}, 'Bounded replicated smoke topic')
+        jp = job['spec']['template']['spec']; c = jp['containers'][0]
+        require(job['spec']['activeDeadlineSeconds'] == 360 and job['spec']['backoffLimit'] == 0,
+                'Bounded one-shot smoke only')
+        require(jp['automountServiceAccountToken'] is False and jp['nodeSelector'] == {'yeodam.io/role': 'system'}
+                and c['image'] == LOCK['kafkaImage'], 'Smoke needs no API access or new nodes')
+        require('acks=all' in c['args'][0] and 'grep -Fxq' in c['args'][0]
+                and 'set -x' not in c['args'][0], 'Authenticated matching token test without credential tracing')
+
+
+def validate_policies(documents):
     policies = {d['metadata']['name']: d['spec'] for d in documents if d['kind'] == 'NetworkPolicy'}
     require(policies['default-deny'] == {'podSelector': {}, 'policyTypes': ['Ingress', 'Egress'],
                                        'ingress': [], 'egress': []}, 'Both directions deny by default')
@@ -198,24 +226,6 @@ def validate_cluster(documents, smoke=False):
         'app.kubernetes.io/instance': 'kafka-smoke'}}, 'policyTypes': ['Egress'], 'egress': [{'to': [
             {'podSelector': {'matchLabels': {'strimzi.io/cluster': CLUSTER, 'strimzi.io/kind': 'Kafka'}}}],
             'ports': [{'protocol': 'TCP', 'port': 9093}]}]}, 'Smoke client only reaches TLS Kafka')
-    if smoke:
-        user, topic, job = (by_kind[kind] for kind in ('KafkaUser', 'KafkaTopic', 'Job'))
-        require(user['metadata']['name'] == topic['metadata']['name'] == 'v3-smoke', 'Owned smoke resources only')
-        require(user['spec'] == {'authentication': {'type': 'scram-sha-512'}, 'authorization': {
-            'type': 'simple', 'acls': [
-                {'resource': {'type': 'topic', 'name': 'v3-smoke', 'patternType': 'literal'},
-                 'operations': ['Read', 'Write', 'Describe'], 'host': '*'},
-                {'resource': {'type': 'group', 'name': 'v3-smoke-', 'patternType': 'prefix'},
-                 'operations': ['Read'], 'host': '*'}]}}, 'No business-topic or cluster-admin smoke ACL')
-        require(topic['spec'] == {'partitions': 3, 'replicas': 3, 'config': {'min.insync.replicas': 2,
-                'retention.ms': 3600000, 'retention.bytes': 10485760, 'segment.bytes': 1048576}}, 'Bounded replicated smoke topic')
-        jp = job['spec']['template']['spec']; c = jp['containers'][0]
-        require(job['spec']['activeDeadlineSeconds'] == 360 and job['spec']['backoffLimit'] == 0,
-                'Bounded one-shot smoke only')
-        require(jp['automountServiceAccountToken'] is False and jp['nodeSelector'] == {'yeodam.io/role': 'system'}
-                and c['image'] == LOCK['kafkaImage'], 'Smoke needs no API access or new nodes')
-        require('acks=all' in c['args'][0] and 'grep -Fxq' in c['args'][0]
-                and 'set -x' not in c['args'][0], 'Authenticated matching token test without credential tracing')
 
 
 def system_affinity():
@@ -255,8 +265,12 @@ def main():
     platform.schema_check(yaml.safe_dump_all(d for d in operator if d['kind'] != 'CustomResourceDefinition'))
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / 'kafka-operator.yaml').write_text(operator_source)
+    baseline = render()
+    validate_cluster(platform.load_documents(baseline), enabled=False)
+    platform.schema_check(baseline)
+    (args.output / 'kafka-baseline.yaml').write_text(baseline)
     for smoke in (False, True):
-        source = render(values=ROOT / 'tests/ci/v3/kafka-smoke.values.yaml' if smoke else None)
+        source = render(values=ROOT / 'tests/ci/v3/kafka-smoke.values.yaml' if smoke else FOUNDATION)
         validate_cluster(platform.load_documents(source), smoke)
         platform.schema_check(source)
         (args.output / ('kafka-smoke.yaml' if smoke else 'kafka.yaml')).write_text(source)
