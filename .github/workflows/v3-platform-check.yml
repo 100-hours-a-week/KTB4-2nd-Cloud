@@ -14,6 +14,10 @@ on:
       - 'scripts/prepare-production-release.py'
       - 'tests/ci/test_production_release_prepare.py'
       - '.github/workflows/production-release-prepare.yml'
+      - 'scripts/check-v3-kafka-plan.py'
+      - 'tests/ci/test_v3_kafka_plan.py'
+      - 'scripts/check-v3-storage.py'
+      - 'tests/ci/test_v3_storage.py'
       - 'scripts/check-v3-platform.py'
       - 'scripts/check-v3-apps.py'
       - 'scripts/v3_backend_contract.py'
@@ -59,6 +63,9 @@ jobs:
         with:
           terraform_version: 1.16.2
           terraform_wrapper: false
+
+      - name: Verify minimum-cost Kafka Plan protection
+        run: python3 -m unittest discover -s tests/ci -p 'test_v3_kafka_plan.py'
 
       - name: Validate Secret IAM using mock AWS provider only
         working-directory: terraform/v3/secrets

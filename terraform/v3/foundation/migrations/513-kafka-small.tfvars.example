@@ -1,0 +1,5 @@
+# Merge with the reviewed private foundation inputs. Never apply this alone.
+# No existing NAT is removed. Third AZ Internet access depends on AZ a.
+availability_zones = ["ap-northeast-2a", "ap-northeast-2c", "ap-northeast-2b"]
+enable_kafka_nodes = true
+nat_gateway_az_overrides = { ap-northeast-2b = "ap-northeast-2a" }

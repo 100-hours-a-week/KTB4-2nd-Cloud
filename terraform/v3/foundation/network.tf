@@ -54,13 +54,13 @@ resource "aws_route_table_association" "public" {
 }
 
 resource "aws_eip" "nat" {
-  for_each = local.zones
+  for_each = local.nat_zones
   domain   = "vpc"
   tags     = { Name = "${var.cluster_name}-nat-${each.key}" }
 }
 
 resource "aws_nat_gateway" "this" {
-  for_each      = local.zones
+  for_each      = local.nat_zones
   allocation_id = aws_eip.nat[each.key].id
   subnet_id     = aws_subnet.public[each.key].id
   tags          = { Name = "${var.cluster_name}-nat-${each.key}" }
@@ -77,7 +77,7 @@ resource "aws_route" "private" {
   for_each               = local.zones
   route_table_id         = aws_route_table.private[each.key].id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.this[each.key].id
+  nat_gateway_id         = aws_nat_gateway.this[lookup(var.nat_gateway_az_overrides, each.key, each.key)].id
 }
 
 resource "aws_route_table_association" "private" {
