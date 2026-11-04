@@ -40,3 +40,7 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py \
   --directory "${validation_dir}" --output "${rendered_dir}"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_secrets.py'
+
+"${V3_HELM}" lint --strict deploy/v3/storage
+"${validation_dir}/venv/bin/python" scripts/check-v3-storage.py --output "${rendered_dir}/storage.yaml"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_storage.py'

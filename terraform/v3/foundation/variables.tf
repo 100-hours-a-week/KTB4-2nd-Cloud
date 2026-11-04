@@ -46,7 +46,7 @@ variable "vpc_cidr" {
 }
 
 variable "availability_zones" {
-  description = "Network AZs in stable CIDR order. System nodes are configured independently; each network AZ has its own NAT."
+  description = "Network AZs in stable CIDR order. System nodes are configured independently. NAT sharing requires an explicit override."
   type        = list(string)
   default     = ["ap-northeast-2a", "ap-northeast-2c", "ap-northeast-2b"]
 
@@ -115,5 +115,28 @@ variable "addon_versions" {
   validation {
     condition     = toset(keys(var.addon_versions)) == toset(["vpc-cni", "kube-proxy", "coredns", "eks-pod-identity-agent", "aws-ebs-csi-driver"]) && alltrue([for version in values(var.addon_versions) : can(regex("^v[0-9]+\\.[0-9]+\\.[0-9]+-eksbuild\\.[0-9]+$", version))])
     error_message = "Pin exactly the five foundation add-ons to explicit EKS build versions."
+  }
+}
+
+variable "nat_gateway_az_overrides" {
+  description = "Explicit cost tradeoff: only the appended third AZ may share an existing a/c NAT. Existing AZ routes cannot change."
+  type        = map(string)
+  default     = {}
+  validation {
+    condition = alltrue([for az, target in var.nat_gateway_az_overrides :
+      contains(slice(var.availability_zones, 2, length(var.availability_zones)), az) &&
+      contains(slice(var.availability_zones, 0, 2), target)
+    ])
+    error_message = "Only the appended third AZ may use an existing a/c NAT; self references, cycles and changes to existing AZ routes are forbidden."
+  }
+}
+
+variable "enable_kafka_nodes" {
+  description = "Opt in only after reviewing the new three-node cost and Plan. Does not install Kafka."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_kafka_nodes || length(var.availability_zones) == 3
+    error_message = "Kafka nodes require three reviewed network AZs."
   }
 }
