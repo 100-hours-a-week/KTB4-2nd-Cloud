@@ -76,6 +76,13 @@ jobs:
           terraform validate -no-color
           terraform test -no-color
 
+      - name: Validate production WebSocket Terraform without AWS credentials
+        working-directory: terraform/v2/production
+        run: |
+          terraform fmt -check websocket.tf backend-service.tf
+          terraform init -backend=false -input=false -lockfile=readonly
+          terraform validate -no-color
+
       - name: Preserve rendered definitions without application Secret payloads
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -126,6 +126,7 @@ def wait_backend(revision):
         if row['taskDefinition'] != revision:
             raise RuntimeError('Backend revision changed concurrently; inspect before rollback')
         if production.common.ai.stable(row, revision):
+            production.verify_targets('backend', row)
             return
         if any(d.get('rolloutState') == 'FAILED' for d in row.get('deployments', [])):
             raise RuntimeError('Backend rollout failed; inspect circuit breaker and journal')

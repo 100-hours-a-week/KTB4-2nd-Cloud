@@ -36,6 +36,7 @@ resource "aws_service_discovery_private_dns_namespace" "websocket" {
   description = "Private ECS discovery for WebSocket to BE authentication"
   vpc         = data.aws_vpc.production.id
   tags        = local.common_tags
+  lifecycle { prevent_destroy = true }
 }
 
 resource "aws_service_discovery_service" "websocket_backend" {
