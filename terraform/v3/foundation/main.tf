@@ -15,6 +15,7 @@ locals {
     ManagedBy   = "Terraform"
     Issue       = "481"
   }
+  # AZ list order is the existing subnet CIDR allocation; only append new AZs.
   zones = { for index, az in var.availability_zones : az => index }
 }
 
