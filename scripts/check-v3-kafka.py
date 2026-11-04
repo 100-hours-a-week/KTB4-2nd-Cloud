@@ -193,7 +193,7 @@ def validate_cluster(documents, smoke=False, enabled=True):
                 {'resource': {'type': 'topic', 'name': 'v3-smoke', 'patternType': 'literal'},
                  'operations': ['Read', 'Write', 'Describe'], 'host': '*'},
                 {'resource': {'type': 'group', 'name': 'v3-smoke-', 'patternType': 'prefix'},
-                 'operations': ['Read'], 'host': '*'}]}}, 'No business-topic or cluster-admin smoke ACL')
+                 'operations': ['Read', 'Delete'], 'host': '*'}]}}, 'No business-topic or cluster-admin smoke ACL')
         require(topic['spec'] == {'partitions': 3, 'replicas': 3, 'config': {'min.insync.replicas': 2,
                 'retention.ms': 3600000, 'retention.bytes': 10485760, 'segment.bytes': 1048576}}, 'Bounded replicated smoke topic')
         jp = job['spec']['template']['spec']; c = jp['containers'][0]

@@ -36,7 +36,7 @@ spec:
         operations: [Read, Write, Describe]
         host: "*"
       - resource: {type: group, name: v3-smoke-, patternType: prefix}
-        operations: [Read]
+        operations: [Read, Delete]
         host: "*"
 ---
 apiVersion: batch/v1
@@ -125,6 +125,12 @@ spec:
                     echo 'FAIL: expected explicit authorization rejection' >&2; exit 1;
                   }
                   echo 'PASS: invalid password and non-owned topic rejected'
+                  /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server "$bootstrap" \
+                    --command-config "$cfg" --delete --group "v3-smoke-$token" > /tmp/group-cleanup.log 2>&1
+                  grep -Fq 'was successful' /tmp/group-cleanup.log || {
+                    echo 'FAIL: temporary consumer group cleanup was not confirmed' >&2; exit 1;
+                  }
+                  echo 'PASS: temporary consumer group removed'
                   exit 0
                 fi
                 sleep 1

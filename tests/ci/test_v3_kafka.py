@@ -63,6 +63,8 @@ class KafkaContracts(unittest.TestCase):
         subprocess.run(['bash', '-n'], input=command, text=True, check=True)
         self.assertIn('SaslAuthenticationException', command)
         self.assertIn('TopicAuthorizationException', command)
+        self.assertIn('--delete --group', command)
+        self.assertIn('temporary consumer group removed', command)
 
     def test_replication_output_requires_three_insync_replicas(self):
         script = ROOT / 'deploy/v3/kafka/files/check-replicas.awk'
