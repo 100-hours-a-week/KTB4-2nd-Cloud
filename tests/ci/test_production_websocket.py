@@ -146,12 +146,18 @@ class RuntimeTests(unittest.TestCase):
             with patch.object(m, 'definition', return_value=CURRENT), patch.object(m, 'service', side_effect=[SERVICE | {'taskDefinition': NEW}, {'desiredCount': 1}]), self.assertRaises(ValueError):
                 m.rollback(path, True)
 
-    def test_token_payload_is_stdin_and_errors_do_not_expose_it(self):
-        result = type('Result', (), {'returncode': 1, 'stderr': 'must-not-print', 'stdout': ''})()
-        with patch.object(m.subprocess, 'run', return_value=result) as run, self.assertRaisesRegex(RuntimeError, 'response omitted'):
+    def test_token_payload_is_private_temporary_file_and_removed_even_on_error(self):
+        captured = []
+        def run(cmd, **kwargs):
+            path = Path(cmd[-1].removeprefix('file://'))
+            captured.append(path)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(json.loads(path.read_text())['Value'], 'must-not-print')
+            self.assertNotIn('must-not-print', ' '.join(cmd))
+            return type('Result', (), {'returncode': 1, 'stderr': 'must-not-print', 'stdout': ''})()
+        with patch.object(m.subprocess, 'run', side_effect=run), self.assertRaisesRegex(RuntimeError, 'response omitted'):
             m.aws('ssm', 'put-parameter', payload={'Value': 'must-not-print'})
-        self.assertNotIn('must-not-print', ' '.join(run.call_args.args[0]))
-        self.assertIn('must-not-print', run.call_args.kwargs['input'])
+        self.assertFalse(captured[0].exists())
 
     def test_production_release_in_progress_blocks_configuration(self):
         replies = [{'Parameters': [{'Name': m.production.ACTIVE}]}, {'Parameter': {'Value': json.dumps({'status': 'deploying'})}}]

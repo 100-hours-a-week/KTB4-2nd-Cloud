@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import secrets
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -26,10 +27,17 @@ SOURCE = ROOT / 'deploy/v2-production/websocket/source.json'
 
 def aws(*args, payload=None):
     cmd = ['aws', '--region', REGION, '--output', 'json', *args]
-    if payload is not None:
-        cmd += ['--cli-input-json', 'file:///dev/stdin']
-    result = subprocess.run(cmd, input=json.dumps(payload) if payload is not None else None,
-                            capture_output=True, text=True)
+    if payload is None:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    else:
+        # AWS CLI v2 on Mac does not reliably parse file:///dev/stdin.
+        # Keep JSON out of argv; the 0600 file is removed on success or failure.
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', encoding='utf-8') as data:
+            os.fchmod(data.fileno(), 0o600)
+            json.dump(payload, data)
+            data.flush()
+            result = subprocess.run(cmd + ['--cli-input-json', 'file://' + data.name],
+                                    capture_output=True, text=True)
     if result.returncode:
         # Task definitions and generated tokens never enter argv, stdout or errors.
         raise RuntimeError('AWS ' + ' '.join(args[:2]) + ' failed; response omitted')
