@@ -41,6 +41,7 @@ def main():
     for name in ['ai-api', 'process-runner']:
         variables = services[name]['environment']
         assert variables['JOBS_FAKE_PIPELINE'] == variables['FAKE_PIPELINE'] == 'false'
+        assert variables['PROCESS_AGENT_ENABLED'] == 'false'
         assert variables['JOBS_PROCESS_HANDLER'] == 'app.jobs.process_handler:run'
         assert variables['EMBEDDING_BASE_URL'] == variables['VLM_BASE_URL'] == 'http://models:8000/v1'
     assert services['backend']['environment']['SPRING_PROFILES_ACTIVE'] == 'prod'
