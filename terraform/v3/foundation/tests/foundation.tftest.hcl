@@ -148,7 +148,7 @@ run "three_az_network_keeps_two_system_nodes" {
     error_message = "Preserve a/c CIDRs; allocate only the new b subnet ranges."
   }
   assert {
-    condition = alltrue([for az, route in aws_route.private : route.nat_gateway_id == aws_nat_gateway.this[az].id]) && alltrue([for group in aws_eks_node_group.system : group.scaling_config[0].desired_size == 1 && length(group.subnet_ids) == 1])
+    condition     = alltrue([for az, route in aws_route.private : route.nat_gateway_id == aws_nat_gateway.this[az].id]) && alltrue([for group in aws_eks_node_group.system : group.scaling_config[0].desired_size == 1 && length(group.subnet_ids) == 1])
     error_message = "Keep per-AZ NAT routing and existing single-node groups."
   }
 }
