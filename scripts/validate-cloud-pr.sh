@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 python3 -m unittest discover -s tests/ci -p 'test_production_release_prepare.py'
+python3 -m unittest discover -s tests/ci -p 'test_production_websocket.py'
 
 python3 -m unittest discover -s tests/ci -p 'test_v3_foundation.py'
 python3 -m unittest discover -s tests/ci -p 'test_v3_node_sizing_plan.py'
