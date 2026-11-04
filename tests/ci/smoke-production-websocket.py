@@ -43,6 +43,7 @@ def main():
         docker('run', '-d', '--name', websocket, '--network', network,
                '--add-host', 'host.docker.internal:host-gateway', '--memory', '512m', '--cpus', '0.25',
                '-p', '127.0.0.1::8081', '-e', 'REDIS_HOST=' + redis, '-e', 'REDIS_SSL_ENABLED=false',
+               '-e', 'REDIS_CONNECT_TIMEOUT=10s', '-e', 'REDIS_TIMEOUT=10s',
                '-e', 'WEBSOCKET_INTERNAL_SERVICE_TOKEN=ci-only-synthetic-token',
                '-e', 'WEBSOCKET_ALLOWED_ORIGINS=https://yeodam-2gether.com',
                '-e', f'BACKEND_INTERNAL_BASE_URL=http://host.docker.internal:{server.server_port}',

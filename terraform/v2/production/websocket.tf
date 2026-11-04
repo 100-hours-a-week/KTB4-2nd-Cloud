@@ -175,6 +175,8 @@ resource "aws_ecs_task_definition" "websocket" {
       WEBSOCKET_MAX_CONNECTIONS                   = "1000"
       REDIS_HOST                                  = module.redis.primary_endpoint_address
       REDIS_PORT                                  = tostring(module.redis.port)
+      REDIS_CONNECT_TIMEOUT                       = "10s"
+      REDIS_TIMEOUT                               = "10s"
       REDIS_SSL_ENABLED                           = "true"
       SERVER_SHUTDOWN                             = "graceful"
       SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE = "30s"
