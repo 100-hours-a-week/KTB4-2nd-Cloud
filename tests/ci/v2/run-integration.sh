@@ -57,7 +57,7 @@ PY
 
 python3 scripts/v2-image-manifest.py verify
 "${compose[@]}" config --quiet
-"${compose[@]}" up -d --wait --wait-timeout 300 mysql mongo redis-auth redis-ai s3 kafka qdrant models
+"${compose[@]}" up -d --wait --wait-timeout 300 mysql redis-auth redis-ai s3 kafka qdrant models
 "${compose[@]}" exec -T s3 awslocal s3 mb s3://yeodam-v2-ci >/dev/null
 "${compose[@]}" run --rm -T driver /ci/prepare.py topics
 "${compose[@]}" up -d --wait --wait-timeout 300 ai-api process-runner backend frontend
