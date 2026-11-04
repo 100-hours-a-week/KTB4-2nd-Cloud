@@ -74,7 +74,9 @@ jobs:
     name: V2 image combination smoke
     needs: validate
     if: needs.validate.outputs.v2_runtime_required == 'true'
-    runs-on: ubuntu-latest
+    # MongoDB 8.0 rejects the 7.0.0 kernel exposed by newer hosted images
+    # (SERVER-121912 / SERVER-136272); 22.04 currently uses supported 6.8.
+    runs-on: ubuntu-22.04
     timeout-minutes: 35
     steps:
       - name: Checkout
