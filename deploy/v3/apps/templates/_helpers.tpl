@@ -52,9 +52,19 @@ capabilities:
 {{- end -}}
 {{- if eq $c.name "backend" -}}{{- $_ := required (cat $prefix "set writable backend catalog volume size") $c.catalogSizeLimit -}}{{- end -}}
 {{- range $key, $_ := $c.environment -}}
-{{- if or (regexMatch "(?i)(password|secret|token|api_?key|private_?key)$" $key) (eq $key "KAKAO_CLIENT_ID") -}}
+{{- if or (regexMatch "(?i)(password|secret|token|api_?key|private_?key)$" $key) (has $key (list "KAKAO_CLIENT_ID" "MONGODB_URI" "SPRING_MONGODB_URI")) -}}
 {{- fail (cat $prefix "use secretRefs for" $key) -}}
 {{- end -}}
 {{- if hasKey $c.secretRefs $key -}}{{ fail (cat $prefix "duplicate environment and Secret key" $key) }}{{- end -}}
+{{- end -}}
+{{- range $key, $_ := $c.configMapData -}}
+{{- if or (regexMatch "(?i)(password|secret|token|api_?key|private_?key)$" $key) (has $key (list "KAKAO_CLIENT_ID" "SPRING_MONGODB_URI" "MONGODB_URI")) -}}
+{{- fail (cat $prefix "use secretRefs for" $key) -}}
+{{- end -}}
+{{- if or (hasKey $c.environment $key) (hasKey $c.secretRefs $key) -}}{{ fail (cat $prefix "duplicate ConfigMap/environment/Secret key" $key) }}{{- end -}}
+{{- end -}}
+{{- if has (printf "%s-runtime" .instance) $c.configMapRefs -}}{{ fail (cat $prefix "generated ConfigMap must not be imported twice") }}{{- end -}}
+{{- if .root.Values.backendContract -}}
+{{- include "yeodam-v3-apps.backendCheck" . -}}
 {{- end -}}
 {{- end -}}
