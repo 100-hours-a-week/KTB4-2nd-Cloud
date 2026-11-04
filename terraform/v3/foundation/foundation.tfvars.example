@@ -1,5 +1,7 @@
 # Copy to foundation.auto.tfvars (ignored), replace operator inputs, then review
 # the account, regional compatibility and plan. This is NOT an apply instruction.
+# Stable subnet CIDR order; the third AZ adds network resources, not a system node.
+availability_zones = ["ap-northeast-2a", "ap-northeast-2c", "ap-northeast-2b"]
 expected_account_id = "483175530259"
 admin_role_arns = [
   "arn:aws:iam::483175530259:role/REPLACE_WITH_REVIEWED_OPERATOR_ROLE"

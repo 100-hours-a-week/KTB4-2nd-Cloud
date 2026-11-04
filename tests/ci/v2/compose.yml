@@ -29,6 +29,9 @@ x-ai: &ai
   JOBS_TIMEOUT_SEC: "180"
   JOBS_SHUTDOWN_GRACE_SEC: "1"
   SEARCH_ENABLED: "false"
+  # This journey tests the rule pipeline and embedding HTTP contract, not the
+  # place-selection agent requiring a real index, Kakao search and VLM calls.
+  PROCESS_AGENT_ENABLED: "false"
   IMAGE_SOURCE: s3
   S3_BUCKET: yeodam-v2-ci
   EMBED_MODEL: qwen3-vl-embedding-2b

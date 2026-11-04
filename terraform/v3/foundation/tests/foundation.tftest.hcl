@@ -33,6 +33,7 @@ variables {
 }
 
 run "isolated_two_az_foundation" {
+  variables { availability_zones = ["ap-northeast-2a", "ap-northeast-2c"] }
   # All providers are mocked: resolve computed IDs without calling AWS.
   command = apply
 
@@ -120,4 +121,64 @@ run "reject_missing_addon" {
   command = plan
   variables { addon_versions = {} }
   expect_failures = [var.addon_versions]
+}
+
+run "three_az_network_keeps_two_system_nodes" {
+  command = apply
+
+  assert {
+    condition = (
+      length(aws_subnet.private) == 3 && length(aws_subnet.public) == 3 &&
+      length(aws_nat_gateway.this) == 3 && length(aws_eip.nat) == 3 &&
+      length(aws_route.private) == 3 && length(aws_vpc_endpoint.s3.route_table_ids) == 3 &&
+      length(aws_eks_cluster.this.vpc_config[0].subnet_ids) == 3 &&
+      length(aws_eks_node_group.system) == 2
+    )
+    error_message = "Extend network and EKS subnet coverage without adding system nodes."
+  }
+  assert {
+    condition = (
+      aws_subnet.public["ap-northeast-2a"].cidr_block == "10.40.0.0/24" &&
+      aws_subnet.public["ap-northeast-2c"].cidr_block == "10.40.1.0/24" &&
+      aws_subnet.private["ap-northeast-2a"].cidr_block == "10.40.16.0/20" &&
+      aws_subnet.private["ap-northeast-2c"].cidr_block == "10.40.32.0/20" &&
+      aws_subnet.public["ap-northeast-2b"].cidr_block == "10.40.2.0/24" &&
+      aws_subnet.private["ap-northeast-2b"].cidr_block == "10.40.48.0/20"
+    )
+    error_message = "Preserve a/c CIDRs; allocate only the new b subnet ranges."
+  }
+  assert {
+    condition     = alltrue([for az, route in aws_route.private : route.nat_gateway_id == aws_nat_gateway.this[az].id]) && alltrue([for group in aws_eks_node_group.system : group.scaling_config[0].desired_size == 1 && length(group.subnet_ids) == 1])
+    error_message = "Keep per-AZ NAT routing and existing single-node groups."
+  }
+}
+
+run "reject_reordered_existing_azs" {
+  command = plan
+  variables { availability_zones = ["ap-northeast-2a", "ap-northeast-2b", "ap-northeast-2c"] }
+  expect_failures = [var.availability_zones]
+}
+
+run "reject_node_outside_network" {
+  command = plan
+  variables {
+    availability_zones = ["ap-northeast-2a", "ap-northeast-2c"]
+    system_node_groups = {
+      ap-northeast-2a-t3a-medium = { availability_zone = "ap-northeast-2a", instance_type = "t3a.medium" }
+      ap-northeast-2c-t3a-medium = { availability_zone = "ap-northeast-2c", instance_type = "t3a.medium" }
+      ap-northeast-2b-t3a-medium = { availability_zone = "ap-northeast-2b", instance_type = "t3a.medium" }
+    }
+  }
+  expect_failures = [var.system_node_groups]
+}
+
+run "reject_removing_original_system_az" {
+  command = plan
+  variables {
+    system_node_groups = {
+      ap-northeast-2a-t3a-medium = { availability_zone = "ap-northeast-2a", instance_type = "t3a.medium" }
+      ap-northeast-2b-t3a-medium = { availability_zone = "ap-northeast-2b", instance_type = "t3a.medium" }
+    }
+  }
+  expect_failures = [var.system_node_groups]
 }

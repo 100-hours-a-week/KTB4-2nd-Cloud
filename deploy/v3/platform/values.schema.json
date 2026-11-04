@@ -1,0 +1,348 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "namespaces"
+  ],
+  "properties": {
+    "namespaces": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frontend",
+        "auth",
+        "trip",
+        "photo",
+        "ai"
+      ],
+      "properties": {
+        "frontend": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "workloads"
+          ],
+          "properties": {
+            "workloads": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "frontend"
+              ],
+              "properties": {
+                "frontend": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "component",
+                    "purpose"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "enum": [
+                        "frontend"
+                      ]
+                    },
+                    "component": {
+                      "type": "string",
+                      "enum": [
+                        "frontend"
+                      ]
+                    },
+                    "purpose": {
+                      "type": "string",
+                      "enum": [
+                        "web"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "workloads"
+          ],
+          "properties": {
+            "workloads": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "auth-api"
+              ],
+              "properties": {
+                "auth-api": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "component",
+                    "purpose"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "enum": [
+                        "backend"
+                      ]
+                    },
+                    "component": {
+                      "type": "string",
+                      "enum": [
+                        "backend"
+                      ]
+                    },
+                    "purpose": {
+                      "type": "string",
+                      "enum": [
+                        "api"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "trip": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "workloads"
+          ],
+          "properties": {
+            "workloads": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "trip-api",
+                "trip-result-worker",
+                "trip-websocket"
+              ],
+              "properties": {
+                "trip-api": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "component",
+                    "purpose"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "enum": [
+                        "backend"
+                      ]
+                    },
+                    "component": {
+                      "type": "string",
+                      "enum": [
+                        "backend"
+                      ]
+                    },
+                    "purpose": {
+                      "type": "string",
+                      "enum": [
+                        "api"
+                      ]
+                    }
+                  }
+                },
+                "trip-result-worker": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "component",
+                    "purpose"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "enum": [
+                        "backend"
+                      ]
+                    },
+                    "component": {
+                      "type": "string",
+                      "enum": [
+                        "backend"
+                      ]
+                    },
+                    "purpose": {
+                      "type": "string",
+                      "enum": [
+                        "result-worker"
+                      ]
+                    }
+                  }
+                },
+                "trip-websocket": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "component",
+                    "purpose"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "enum": [
+                        "websocket"
+                      ]
+                    },
+                    "component": {
+                      "type": "string",
+                      "enum": [
+                        "websocket"
+                      ]
+                    },
+                    "purpose": {
+                      "type": "string",
+                      "enum": [
+                        "websocket"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "photo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "workloads"
+          ],
+          "properties": {
+            "workloads": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "photo-api",
+                "photo-converter"
+              ],
+              "properties": {
+                "photo-api": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "component",
+                    "purpose"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "enum": [
+                        "backend"
+                      ]
+                    },
+                    "component": {
+                      "type": "string",
+                      "enum": [
+                        "backend"
+                      ]
+                    },
+                    "purpose": {
+                      "type": "string",
+                      "enum": [
+                        "api"
+                      ]
+                    }
+                  }
+                },
+                "photo-converter": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "component",
+                    "purpose"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "enum": [
+                        "backend"
+                      ]
+                    },
+                    "component": {
+                      "type": "string",
+                      "enum": [
+                        "backend"
+                      ]
+                    },
+                    "purpose": {
+                      "type": "string",
+                      "enum": [
+                        "conversion-worker"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "ai": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "workloads"
+          ],
+          "properties": {
+            "workloads": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "ai"
+              ],
+              "properties": {
+                "ai": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "component",
+                    "purpose"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "enum": [
+                        "ai"
+                      ]
+                    },
+                    "component": {
+                      "type": "string",
+                      "enum": [
+                        "ai"
+                      ]
+                    },
+                    "purpose": {
+                      "type": "string",
+                      "enum": [
+                        "application"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

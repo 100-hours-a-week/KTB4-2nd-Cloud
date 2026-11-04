@@ -1,0 +1,45 @@
+# Deployment purposes identify copies of the full backend, not startup modes.
+# No workloads, AWS permissions, runtime secrets or resource reservations here.
+namespaces:
+  frontend:
+    workloads:
+      frontend:
+        name: frontend
+        component: frontend
+        purpose: web
+  auth:
+    workloads:
+      auth-api:
+        name: backend
+        component: backend
+        purpose: api
+  trip:
+    workloads:
+      trip-api:
+        name: backend
+        component: backend
+        purpose: api
+      trip-result-worker:
+        name: backend
+        component: backend
+        purpose: result-worker
+      trip-websocket:
+        name: websocket
+        component: websocket
+        purpose: websocket
+  photo:
+    workloads:
+      photo-api:
+        name: backend
+        component: backend
+        purpose: api
+      photo-converter:
+        name: backend
+        component: backend
+        purpose: conversion-worker
+  ai:
+    workloads:
+      ai:
+        name: ai
+        component: ai
+        purpose: application

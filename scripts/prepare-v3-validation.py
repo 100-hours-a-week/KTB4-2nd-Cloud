@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Install checksum-pinned local render tools, never access a cluster."""
+import argparse
+import hashlib
+import io
+import json
+from pathlib import Path
+import platform
+import tarfile
+import urllib.request
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def download(entry):
+    request = urllib.request.Request(entry['url'], headers={'User-Agent': 'yeodam-v3-validation'})
+    with urllib.request.urlopen(request, timeout=120) as response:
+        data = response.read()
+    if hashlib.sha256(data).hexdigest() != entry['sha256']:
+        raise ValueError('Downloaded validation input failed checksum verification')
+    return data
+
+
+def prepare(directory):
+    lock = json.loads((ROOT / 'tests/ci/v3/tools.lock.json').read_text())
+    architecture = {'arm64': 'arm64', 'aarch64': 'arm64', 'x86_64': 'amd64'}.get(platform.machine())
+    target = f'{platform.system().lower()}-{architecture}'
+    if target not in lock['platforms']:
+        raise ValueError(f'No reviewed validation binaries for {target}')
+    directory.mkdir(parents=True, exist_ok=True)
+    for tool, entry in lock['platforms'][target].items():
+        # Keep the verified archive; do not trust an unrelated binary on PATH.
+        archive = directory / f'{tool}-{entry["sha256"]}.tar.gz'
+        if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != entry['sha256']:
+            archive.write_bytes(download(entry))
+        with tarfile.open(fileobj=io.BytesIO(archive.read_bytes()), mode='r:gz') as bundle:
+            member = bundle.getmember(entry['member'])
+            if not member.isfile():
+                raise ValueError('Expected a regular validation binary')
+            with bundle.extractfile(member) as stream:
+                (directory / tool).write_bytes(stream.read())
+        (directory / tool).chmod(0o755)
+    schema_directory = directory / 'schemas'
+    schema_directory.mkdir(exist_ok=True)
+    for kind, entry in lock['schemas'].items():
+        file = schema_directory / f'{kind}.json'
+        if not file.exists() or hashlib.sha256(file.read_bytes()).hexdigest() != entry['sha256']:
+            file.write_bytes(download(entry))
+    # Render this verified archive directly; never unpack arbitrary upstream paths.
+    operator = json.loads((ROOT / 'deploy/v3/secret-operator/upstream.lock.json').read_text())
+    archive = directory / 'external-secrets.tgz'
+    if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != operator['sha256']:
+        archive.write_bytes(download(operator))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('directory', type=Path)
+    prepare(parser.parse_args().directory)

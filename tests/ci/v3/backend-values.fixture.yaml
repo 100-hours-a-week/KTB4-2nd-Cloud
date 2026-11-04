@@ -1,0 +1,20 @@
+# CI only. Non-resolving addresses, fake digest/instance and no Secret payloads. Never apply.
+images:
+  backend: ghcr.io/100-hours-a-week/yeodam-backend@sha256:3333333333333333333333333333333333333333333333333333333333333333
+defaults:
+  configurationRevision: ci-only-not-a-release
+  configMapData:
+    MYSQL_URL: jdbc:mysql://mysql.v3.example.invalid:3306/yeodam_v3?serverTimezone=Asia/Seoul&characterEncoding=utf8
+    REDIS_HOST: redis.v3.example.invalid
+    KAFKA_BOOTSTRAP_SERVERS: kafka.v3.example.invalid:9092
+    ATTACHMENT_S3_BUCKET: ci-only-v3-bucket
+    AI_SERVER_BASE_URL: http://ai.v3.example.invalid:8000
+    AI_EC2_INSTANCE_ID: i-00000000000000000
+    JWT_ISSUER: https://v3.example.invalid
+    FRONTEND_ORIGIN: https://v3.example.invalid
+    FRONTEND_OAUTH_CALLBACK_URI: https://v3.example.invalid/auth/callback
+    KAKAO_REDIRECT_URI: https://v3.example.invalid/api/auth/kakao/callback
+    RELEASE: 9fdf22bc1dec3b181eabed520cd2b5463df7198d
+workloads:
+  auth-api:
+    enabled: true

@@ -14,6 +14,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  v3-platform:
+    name: V3 platform configuration
+    uses: ./.github/workflows/v3-platform-check.yml
+    permissions:
+      contents: read
+
   validate:
     name: Release configuration
     runs-on: ubuntu-latest
@@ -98,7 +104,7 @@ jobs:
   cloud-ci-gate:
     name: cloud-ci-gate
     if: always()
-    needs: [validate, integration, v2-integration]
+    needs: [validate, integration, v2-integration, v3-platform]
     runs-on: ubuntu-latest
     steps:
       - name: Require validation and applicable integration
@@ -108,9 +114,11 @@ jobs:
           RUNTIME_REQUIRED: ${{ needs.validate.outputs.runtime_required }}
           V2_INTEGRATION_RESULT: ${{ needs.v2-integration.result }}
           V2_RUNTIME_REQUIRED: ${{ needs.validate.outputs.v2_runtime_required }}
+          V3_PLATFORM_RESULT: ${{ needs.v3-platform.result }}
         run: |
           set -Eeuo pipefail
           [[ "${VALIDATE_RESULT}" == success ]] || exit 1
+          [[ "${V3_PLATFORM_RESULT}" == success ]] || exit 1
           [[ "${RUNTIME_REQUIRED}" == true || "${RUNTIME_REQUIRED}" == false ]] || exit 1
           [[ "${V2_RUNTIME_REQUIRED}" == true || "${V2_RUNTIME_REQUIRED}" == false ]] || exit 1
           if [[ "${RUNTIME_REQUIRED}" == true ]]; then

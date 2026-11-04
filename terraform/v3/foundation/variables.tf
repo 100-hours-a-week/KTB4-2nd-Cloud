@@ -46,13 +46,13 @@ variable "vpc_cidr" {
 }
 
 variable "availability_zones" {
-  description = "One system node and one NAT per AZ; this initial foundation uses two AZs."
+  description = "Network AZs in stable CIDR order. System nodes are configured independently; each network AZ has its own NAT."
   type        = list(string)
-  default     = ["ap-northeast-2a", "ap-northeast-2c"]
+  default     = ["ap-northeast-2a", "ap-northeast-2c", "ap-northeast-2b"]
 
   validation {
-    condition     = length(var.availability_zones) == 2 && length(distinct(var.availability_zones)) == 2 && alltrue([for az in var.availability_zones : can(regex("^ap-northeast-2[a-d]$", az))])
-    error_message = "Choose two distinct Seoul AZs. A third Kafka AZ is a later network extension."
+    condition     = length(var.availability_zones) >= 2 && length(var.availability_zones) <= 3 && length(distinct(var.availability_zones)) == length(var.availability_zones) && try(var.availability_zones[0] == "ap-northeast-2a" && var.availability_zones[1] == "ap-northeast-2c", false) && alltrue([for az in var.availability_zones : can(regex("^ap-northeast-2[a-d]$", az))])
+    error_message = "Keep existing a/c AZs in their original order; optionally append one distinct Seoul AZ to preserve subnet CIDRs."
   }
 }
 
@@ -91,14 +91,15 @@ variable "system_node_groups" {
   validation {
     condition = (
       length(var.system_node_groups) >= 2 && length(var.system_node_groups) <= 3 &&
-      toset([for group in var.system_node_groups : group.availability_zone]) == toset(var.availability_zones) &&
+      alltrue([for group in var.system_node_groups : contains(var.availability_zones, group.availability_zone)]) &&
+      alltrue([for az in ["ap-northeast-2a", "ap-northeast-2c"] : contains([for group in var.system_node_groups : group.availability_zone], az)]) &&
       alltrue([for key, group in var.system_node_groups :
         startswith(key, group.availability_zone) && can(regex("^[a-z0-9-]{1,50}$", key)) &&
         contains(["m6i.large", "t3a.medium"], group.instance_type) &&
         (group.instance_type != "m6i.large" || group.launch_template_version == "1")
       ])
     )
-    error_message = "Keep both reviewed AZs and 2-3 single-node groups. Only t3a.medium or legacy m6i.large pinned to LT v1 are allowed."
+    error_message = "Keep system groups in both original a/c AZs and within the network AZs, with 2-3 single-node groups. Only t3a.medium or legacy m6i.large pinned to LT v1 are allowed."
   }
 }
 
