@@ -1,4 +1,5 @@
 # Merge with the reviewed private foundation inputs. Never apply this alone.
+# Nodes are 2vCPU/2GiB: T3a in a/c and same-size T3 in b (verified offerings).
 # No existing NAT is removed. Third AZ Internet access depends on AZ a.
 availability_zones = ["ap-northeast-2a", "ap-northeast-2c", "ap-northeast-2b"]
 enable_kafka_nodes = true

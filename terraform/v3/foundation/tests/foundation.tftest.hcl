@@ -1,4 +1,7 @@
 mock_provider "aws" {
+  mock_data "aws_ec2_instance_type_offerings" {
+    defaults = { instance_types = ["t3a.small", "t3.small"] }
+  }
   mock_resource "aws_launch_template" {
     defaults = { id = "lt-0123456789abcdef0", latest_version = 1 }
   }
@@ -131,10 +134,10 @@ run "three_az_network_keeps_two_system_nodes" {
       length(aws_subnet.private) == 3 && length(aws_subnet.public) == 3 &&
       length(aws_nat_gateway.this) == 3 && length(aws_eip.nat) == 3 &&
       length(aws_route.private) == 3 && length(aws_vpc_endpoint.s3.route_table_ids) == 3 &&
-      length(aws_eks_cluster.this.vpc_config[0].subnet_ids) == 3 &&
+      length(aws_eks_cluster.this.vpc_config[0].subnet_ids) == 2 &&
       length(aws_eks_node_group.system) == 2
     )
-    error_message = "Extend network and EKS subnet coverage without adding system nodes."
+    error_message = "Extend worker network coverage while retaining the original EKS ENI AZ set and system nodes."
   }
   assert {
     condition = (
@@ -203,7 +206,8 @@ run "small_kafka_nodes_with_shared_third_az_nat" {
   }
   assert {
     condition = alltrue([for az, group in aws_eks_node_group.kafka :
-      group.instance_types == tolist(["t3a.small"]) &&
+      aws_launch_template.kafka[az].instance_type == (az == "ap-northeast-2b" ? "t3.small" : "t3a.small") &&
+      (group.instance_types == null || length(group.instance_types) == 0) &&
       toset(group.subnet_ids) == toset([aws_subnet.private[az].id]) &&
       group.scaling_config[0].desired_size == 1 && group.scaling_config[0].min_size == 1 && group.scaling_config[0].max_size == 1 &&
       group.capacity_type == "ON_DEMAND" && group.ami_type == "AL2023_x86_64_STANDARD" &&
@@ -214,11 +218,11 @@ run "small_kafka_nodes_with_shared_third_az_nat" {
   }
   assert {
     condition = (
-      aws_launch_template.kafka[0].credit_specification[0].cpu_credits == "standard" &&
-      aws_launch_template.kafka[0].block_device_mappings[0].ebs[0].volume_size == 20 &&
-      aws_launch_template.kafka[0].block_device_mappings[0].ebs[0].encrypted &&
-      aws_launch_template.kafka[0].metadata_options[0].http_tokens == "required" &&
-      aws_launch_template.kafka[0].metadata_options[0].http_put_response_hop_limit == 1
+      length(aws_launch_template.kafka) == 3 && alltrue([for lt in aws_launch_template.kafka : lt.credit_specification[0].cpu_credits == "standard"]) &&
+      aws_launch_template.kafka["ap-northeast-2a"].block_device_mappings[0].ebs[0].volume_size == 20 &&
+      aws_launch_template.kafka["ap-northeast-2a"].block_device_mappings[0].ebs[0].encrypted &&
+      aws_launch_template.kafka["ap-northeast-2a"].metadata_options[0].http_tokens == "required" &&
+      aws_launch_template.kafka["ap-northeast-2a"].metadata_options[0].http_put_response_hop_limit == 1
     )
     error_message = "Avoid surplus CPU charges, keep small encrypted root disks and deny Pod IMDS access."
   }
@@ -251,4 +255,26 @@ run "reject_third_az_self_nat_override" {
   command = plan
   variables { nat_gateway_az_overrides = { ap-northeast-2b = "ap-northeast-2b" } }
   expect_failures = [var.nat_gateway_az_overrides]
+}
+
+run "reject_unavailable_kafka_instance_type" {
+  command = plan
+  variables { enable_kafka_nodes = true }
+  override_data {
+    target = data.aws_ec2_instance_type_offerings.kafka["ap-northeast-2b"]
+    values = { instance_types = [] }
+  }
+  expect_failures = [aws_eks_node_group.kafka["ap-northeast-2b"]]
+}
+
+run "third_az_workers_do_not_change_cluster_eni_azs" {
+  command = apply
+  variables { enable_kafka_nodes = true }
+  assert {
+    condition = (
+      toset(aws_eks_cluster.this.vpc_config[0].subnet_ids) == toset([aws_subnet.private["ap-northeast-2a"].id, aws_subnet.private["ap-northeast-2c"].id]) &&
+      toset(aws_eks_node_group.kafka["ap-northeast-2b"].subnet_ids) == toset([aws_subnet.private["ap-northeast-2b"].id])
+    )
+    error_message = "Keep EKS cluster ENIs in original a/c AZs while allowing b worker capacity in the same VPC."
+  }
 }
