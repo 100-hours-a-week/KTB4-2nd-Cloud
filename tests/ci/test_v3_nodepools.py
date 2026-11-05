@@ -62,6 +62,25 @@ class PoolContracts(unittest.TestCase):
             if kind=='extra':spec['role']='unreviewed'
             with self.subTest(kind=kind),self.assertRaises(ValueError):p.validate(docs,True)
 
+    def test_nodeclass_validation_exception_is_named_and_empty_pool_only(self):
+        policy=json.loads((p.CHART/'files/nodeclass-validation-policy.json').read_text())
+        self.assertEqual(len(policy['Statement']),6)
+        for statement in policy['Statement'][:-1]:
+            conditions=statement['Condition']['StringEquals']
+            prefix='aws:RequestTag/' if 'aws:RequestTag/karpenter.sh/nodepool' in conditions else 'aws:ResourceTag/'
+            self.assertEqual(conditions[prefix+'karpenter.sh/nodepool'],'')
+            self.assertEqual(conditions[prefix+'karpenter.k8s.aws/ec2nodeclass'],'yeodam-v3-app')
+            self.assertEqual(conditions[prefix+'kubernetes.io/cluster/yeodam-v3-foundation'],'owned')
+            actions=statement['Action'] if isinstance(statement['Action'],list) else [statement['Action']]
+            self.assertNotIn('ec2:TerminateInstances',actions)
+            self.assertNotIn('ec2:*',actions)
+        profile=policy['Statement'][-1]
+        self.assertEqual(profile['Action'],'iam:GetInstanceProfile')
+        self.assertEqual(profile['Resource'],'arn:aws:iam::483175530259:instance-profile/yeodam-v3-foundation_7668371896316790615')
+        cleanup=policy['Statement'][-2]
+        self.assertEqual(cleanup['Action'],'ec2:DeleteLaunchTemplate')
+        self.assertIn('launch-template/',cleanup['Resource'])
+
     def test_userdata_shell_and_systemd_gate_structure(self):
         c=next(d for d in self.docs if d['kind']=='EC2NodeClass')
         script=p.bootstrap_script(c['spec']['userData'])
