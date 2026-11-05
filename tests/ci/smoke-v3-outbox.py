@@ -46,7 +46,7 @@ class Outbox:
 
   print('Synthetic source/schema-history/business7 TLS setup ready; initial PENDING rows seeded',flush=True)
  def worker_config(self,ctx):
-  return '\n'+ '\n'.join(k+'='+str(v).lower() if isinstance(v,bool) else k+'='+str(v) for k,v in ENV_CONFIG.items())+'\n'
+  return '\n'+ '\n'.join(k+'='+str(v).lower() if isinstance(v,bool) else k+'='+str(v) for k,v in (ENV_CONFIG | {'producer.compression.type':'lz4','offset.flush.interval.ms':60000}).items())+'\n'
  def worker_args(self,ctx):
   return ['-e','V3_CDC_PASSWORD='+self.dbpassword,'-e','V3_KAFKA_PASSWORD='+ctx['password'],'-e','V3_KAFKA_CA_PEM='+(ctx['tls']/'ca.crt').read_text(),'-v',str(ctx['directory']/'mysql-ca')+':/mnt/mysql-ca:ro']
  def insert(self,table,id,managed,status,topic):
@@ -60,12 +60,16 @@ class Outbox:
     self.sql(self.insert(table,id,True,'PENDING',topic));self.expected[(table,id)]={'topic':topic,'payload':json.dumps({'fixture':'542','source':table,'id':id},separators=(',',':'))}
  def request(self,path,method='GET',data=None):
   req=urllib.request.Request('http://127.0.0.1:'+str(self.port)+path,data=(json.dumps(data).encode() if data is not None else None),headers={'Content-Type':'application/json'},method=method)
-  with urllib.request.urlopen(req,timeout=10) as r:return json.load(r) if r.status!=204 else None
+  try:
+   with urllib.request.urlopen(req,timeout=(90 if method != 'GET' else 10)) as r:return json.load(r) if r.status!=204 else None
+  except urllib.error.HTTPError as e:
+   (self.ctx['output']/'outbox-rest-error.json').write_text(json.dumps({'path':path,'code':e.code,'message':e.read().decode()[:12000]}));raise
  def running(self):
   for _ in range(120):
    try:
     status=self.request('/connectors/'+NAME+'/status')
-    if status.get('connector',{}).get('state')=='FAILED' or any(t['state']=='FAILED' for t in status.get('tasks',[])):raise RuntimeError('Source connector/task failed; see synthetic worker diagnostics')
+    if status.get('connector',{}).get('state')=='FAILED' or any(t['state']=='FAILED' for t in status.get('tasks',[])):
+     (self.ctx['output']/'outbox-failed-status.json').write_text(json.dumps(status,indent=2));raise RuntimeError('Source connector/task failed; see synthetic worker diagnostics')
     if status.get('tasks') and all(t['state']=='RUNNING' for t in status['tasks']):return
    except urllib.error.HTTPError as e:
     if e.code not in [404,409,500]:raise
@@ -90,16 +94,19 @@ class Outbox:
  def exercise(self,ctx):
   self.port=ctx['port'];config=dict(CONFIG);config['schema.history.internal.kafka.bootstrap.servers']='broker1:9093'
   self.request('/connectors','POST',{'name':NAME,'config':config});self.running();self.receive(7)
+  print('PASS: initial snapshot7 pending rows and exact wire',flush=True)
   # Updates, polling-owned/PUBLISHED inserts and rolled-back inserts must not publish work.
   for table in TABLES:
    self.sql(f"UPDATE yeodam.{table} SET status='PUBLISHED' WHERE outbox_id LIKE '3%';"+self.insert(table,'5',False,'PENDING',OUTPUTS[0])+self.insert(table,'6',True,'PUBLISHED',OUTPUTS[0])+'START TRANSACTION;'+self.insert(table,'8',True,'PENDING',OUTPUTS[0])+'ROLLBACK;')
   self.stage_rows(4);self.receive(14)
+  print('PASS: stream7 and filtered insert/update/rollback checks; waiting for production60s offset flush',flush=True)
   raw=self.request('/connectors/'+NAME+'/config');assert raw['database.password']=='${env:V3_CDC_PASSWORD}' and self.dbpassword not in json.dumps(raw),'Config provider leaked literal credentials'
   # Wait through the real production60s flush budget; never modify/reset offsets.
   time.sleep(65);offsets=self.request('/connectors/'+NAME+'/offsets');assert offsets['offsets'] and offsets['offsets'][0]['offset'].get('file')
   (ctx['output']/'outbox-offsets-before.json').write_text(json.dumps(offsets,indent=2))
+  print('PASS: committed source offset observed; stopping worker and inserting offline7',flush=True)
   ctx['docker']('stop','--time','90',ctx['worker'],timeout=110);self.stage_rows(7);ctx['docker']('start',ctx['worker'])
-  state=json.loads(ctx['docker']('inspect',ctx['worker']).stdout)[0];self.port=state['NetworkSettings']['Ports']['8083/tcp'][0]['HostPort'];ctx['wait_api'](self.port);self.running()
+  state=json.loads(ctx['docker']('inspect',ctx['worker']).stdout)[0];self.port=state['NetworkSettings']['Ports']['8083/tcp'][0]['HostPort'];self.running()
   found=self.receive(21);time.sleep(3);found=self.check_wire(self.records(),21);assert found and all(v==1 for v in found.values()),'Controlled restart unexpectedly replayed acknowledged events'
   state=json.loads(ctx['docker']('inspect',ctx['worker']).stdout)[0];assert state['State']['Running'] and not state['State']['OOMKilled']
   (ctx['output']/'outbox-result.json').write_text(json.dumps({'sourceTables':4,'businessTopics':7,'initialPendingRecords':7,'streamRecords':7,'offlineRecoveryRecords':7,'unexpectedEvents':0,'controlledRestartDuplicates':0,'committedOffsetBeforeRestart':True,'configProviderReferencesRetained':True,'dbTlsVerifyIdentity':True,'kafkaTlsScram':True,'schemaHistoryRf':3,'schemaHistoryMinIsr':2,'connectMemoryMi':768,'heapMi':256,'cpuLimit':0.5,'businessTasks':1},indent=2))

@@ -126,8 +126,9 @@ class Connect(unittest.TestCase):
     def test_publication_is_main_only_tested_and_no_deploy(self):
         w=yaml.load((ROOT/'.github/workflows/v3-connect-image.yml').read_text(),Loader=yaml.BaseLoader)
         self.assertEqual(w['on']['push']['branches'],['main'])
-        steps=w['jobs']['build']['steps'];build=next(i for i,s in enumerate(steps) if s.get('run')=='bash scripts/validate-v3-connect-image.sh');publish=next(i for i,s in enumerate(steps) if 'docker push' in s.get('run',''))
+        steps=w['jobs']['build']['steps'];build=next(i for i,s in enumerate(steps) if 'bash scripts/validate-v3-outbox.sh' in s.get('run',''));publish=next(i for i,s in enumerate(steps) if 'docker push' in s.get('run',''))
         self.assertLess(build,publish)
+        self.assertIn('export V3_OUTBOX_IMAGE="$V3_CONNECT_IMAGE"',steps[build]['run'])
         text=(ROOT/'.github/workflows/v3-connect-image.yml').read_text()
         for forbidden in ('kubectl','terraform apply','aws '):self.assertNotIn(forbidden,text)
         self.assertIn('"private"',text)
