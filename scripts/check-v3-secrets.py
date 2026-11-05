@@ -92,7 +92,8 @@ def validate_operator(documents):
 
 
 def validate_access(documents, stores):
-    require(set(stores) == platform.NAMESPACES, 'Exactly five application namespace slots required')
+    require(set(stores) in (platform.NAMESPACES, platform.NAMESPACES | {'mysql'}),
+            'Five application slots and optional MySQL slot only')
     actual = {}
     for doc in documents:
         identity = (doc['kind'], doc['metadata'].get('namespace', ''), doc['metadata']['name'])
