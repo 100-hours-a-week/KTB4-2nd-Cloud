@@ -1,0 +1,6 @@
+apiVersion: v2
+name: yeodam-v3-mongodb
+description: Minimal standalone story document store; no automatic failover
+version: 0.1.0
+type: application
+appVersion: "8.0.34"
