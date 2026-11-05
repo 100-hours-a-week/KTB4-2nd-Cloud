@@ -1,0 +1,109 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AppClassValidationTemplateCreate",
+      "Effect": "Allow",
+      "Action": "ec2:CreateLaunchTemplate",
+      "Resource": "arn:aws:ec2:ap-northeast-2:483175530259:launch-template/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/kubernetes.io/cluster/yeodam-v3-foundation": "owned",
+          "aws:RequestTag/eks:eks-cluster-name": "yeodam-v3-foundation",
+          "aws:RequestTag/karpenter.sh/nodepool": "",
+          "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "yeodam-v3-app",
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "AppClassValidationInstanceRequests",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:CreateFleet"
+      ],
+      "Resource": [
+        "arn:aws:ec2:ap-northeast-2:483175530259:fleet/*",
+        "arn:aws:ec2:ap-northeast-2:483175530259:instance/*",
+        "arn:aws:ec2:ap-northeast-2:483175530259:volume/*",
+        "arn:aws:ec2:ap-northeast-2:483175530259:network-interface/*",
+        "arn:aws:ec2:ap-northeast-2:483175530259:launch-template/*",
+        "arn:aws:ec2:ap-northeast-2:483175530259:spot-instances-request/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/kubernetes.io/cluster/yeodam-v3-foundation": "owned",
+          "aws:RequestTag/eks:eks-cluster-name": "yeodam-v3-foundation",
+          "aws:RequestTag/karpenter.sh/nodepool": "",
+          "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "yeodam-v3-app",
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "AppClassValidationTemplateUse",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:CreateFleet"
+      ],
+      "Resource": "arn:aws:ec2:ap-northeast-2:483175530259:launch-template/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/kubernetes.io/cluster/yeodam-v3-foundation": "owned",
+          "aws:ResourceTag/karpenter.sh/nodepool": "",
+          "aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "yeodam-v3-app",
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "AppClassValidationCreationTags",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": [
+        "arn:aws:ec2:ap-northeast-2:483175530259:fleet/*",
+        "arn:aws:ec2:ap-northeast-2:483175530259:instance/*",
+        "arn:aws:ec2:ap-northeast-2:483175530259:volume/*",
+        "arn:aws:ec2:ap-northeast-2:483175530259:network-interface/*",
+        "arn:aws:ec2:ap-northeast-2:483175530259:launch-template/*",
+        "arn:aws:ec2:ap-northeast-2:483175530259:spot-instances-request/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/kubernetes.io/cluster/yeodam-v3-foundation": "owned",
+          "aws:RequestTag/eks:eks-cluster-name": "yeodam-v3-foundation",
+          "aws:RequestTag/karpenter.sh/nodepool": "",
+          "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "yeodam-v3-app",
+          "aws:RequestedRegion": "ap-northeast-2",
+          "ec2:CreateAction": [
+            "RunInstances",
+            "CreateFleet",
+            "CreateLaunchTemplate"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "AppClassValidationTemplateCleanup",
+      "Effect": "Allow",
+      "Action": "ec2:DeleteLaunchTemplate",
+      "Resource": "arn:aws:ec2:ap-northeast-2:483175530259:launch-template/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/kubernetes.io/cluster/yeodam-v3-foundation": "owned",
+          "aws:ResourceTag/karpenter.sh/nodepool": "",
+          "aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "yeodam-v3-app",
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "AppClassLegacyProfileAbsenceCheck",
+      "Effect": "Allow",
+      "Action": "iam:GetInstanceProfile",
+      "Resource": "arn:aws:iam::483175530259:instance-profile/yeodam-v3-foundation_7668371896316790615"
+    }
+  ]
+}
