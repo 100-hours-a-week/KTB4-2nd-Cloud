@@ -3,6 +3,7 @@
 import argparse
 import base64
 import json
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -63,7 +64,8 @@ def smoke(image, output, extension=None):
         for _ in range(12):
             states=json.loads(docker('inspect',*containers).stdout)
             if not all(c['State']['Running'] for c in states):raise RuntimeError('Synthetic Broker exited; see saved diagnostics')
-            if cli('kafka-topics.sh','--list',check=False).returncode==0:break
+            ready=cli('kafka-broker-api-versions.sh',check=False)
+            if ready.returncode==0 and set(re.findall(r'\(id: ([123])\b',ready.stdout))=={'1','2','3'}:break
             time.sleep(2)
         else:raise RuntimeError('Synthetic Kafka quorum did not start')
         print('Synthetic Kafka quorum ready',flush=True)
