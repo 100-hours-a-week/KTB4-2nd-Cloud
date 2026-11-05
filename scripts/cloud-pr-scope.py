@@ -23,6 +23,15 @@ V2_FILES = frozenset({
 V2_PREFIXES = ('deploy/v2/', 'tests/ci/v2/')
 
 
+CONNECT_PREFIXES = ('deploy/v3/connect-image/', 'deploy/v3/connect/')
+CONNECT_FILES = frozenset({
+    'deploy/v3/kafka-operator/upstream.lock.json',
+    'scripts/prepare-v3-connect-image.py', 'scripts/validate-v3-connect-image.sh',
+    'tests/ci/smoke-v3-connect.py', 'tests/ci/v3/CheckConnectPlugins.java',
+    '.github/workflows/v3-connect-check.yml', '.github/workflows/v3-connect-image.yml',
+})
+
+
 def path_scope(path):
     # Runtime directories take priority over documentation extensions.
     if path in V1_FILES:
@@ -41,6 +50,7 @@ def select(paths):
     v1 = not files or bool(scopes & {'v1', 'both'})
     v2 = not files or bool(scopes & {'v2', 'both'})
     return {'runtime_required': v1, 'v2_runtime_required': v2,
+            'connect_image_required': not files or any(e['path'] in CONNECT_FILES or e['path'].startswith(CONNECT_PREFIXES) for e in files),
             'reason': 'changed-files' if files else 'empty-diff-requires-both', 'files': files}
 
 
@@ -74,7 +84,7 @@ def main():
         args.report.write_text(encoded, encoding='utf-8')
     if args.output:
         with args.output.open('a', encoding='utf-8') as stream:
-            for key in ('runtime_required', 'v2_runtime_required'):
+            for key in ('runtime_required', 'v2_runtime_required', 'connect_image_required'):
                 stream.write(f'{key}={str(result[key]).lower()}\n')
     print(encoded, end='')
 

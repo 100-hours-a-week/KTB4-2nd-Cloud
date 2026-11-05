@@ -1,0 +1,32 @@
+{
+  "baseImage": "quay.io/strimzi/kafka@sha256:b9b9e37491ce17c1b2722b3668661de91430d9437acf18c5f5bafaef38138652",
+  "kafkaVersion": "4.2.2",
+  "debeziumVersion": "3.4.3.Final",
+  "groovyVersion": "4.0.32",
+  "artifacts": [
+    {
+      "url": "https://repo.maven.apache.org/maven2/io/debezium/debezium-connector-mysql/3.4.3.Final/debezium-connector-mysql-3.4.3.Final-plugin.tar.gz",
+      "sha256": "f41e73452f7a8f0ffcc4e7e021b3ff73e2f0d2a48b2027046f9c7edb9159b4df",
+      "filename": "debezium-connector-mysql-3.4.3.Final-plugin.tar.gz",
+      "bytes": 9112959
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/io/debezium/debezium-scripting/3.4.3.Final/debezium-scripting-3.4.3.Final.jar",
+      "sha256": "45b56553f6c8c330bddf17317392e0efe625cc10b376f56ad2af62fdcf7fa622",
+      "filename": "debezium-scripting-3.4.3.Final.jar",
+      "bytes": 33290
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/org/apache/groovy/groovy/4.0.32/groovy-4.0.32.jar",
+      "sha256": "d77815c8f31d503bc50129f28892e60b64e339b490f7babf9df70848ce465698",
+      "filename": "groovy-4.0.32.jar",
+      "bytes": 7715632
+    },
+    {
+      "url": "https://repo.maven.apache.org/maven2/org/apache/groovy/groovy-jsr223/4.0.32/groovy-jsr223-4.0.32.jar",
+      "sha256": "73b24efc770f471d11fb33afde0105765467b21f62db89336259b593c79de745",
+      "filename": "groovy-jsr223-4.0.32.jar",
+      "bytes": 16832
+    }
+  ]
+}

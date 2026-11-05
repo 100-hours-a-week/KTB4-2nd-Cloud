@@ -224,7 +224,11 @@
       ]
     },
     "connect-outbox": {
-      "readTopics": [],
+      "readTopics": [
+        "prod.connect-configs",
+        "prod.connect-offsets",
+        "prod.connect-status"
+      ],
       "writeTopics": [
         "prod.yeodam.trip-create.request",
         "prod.yeodam.trip-update.request",
@@ -232,10 +236,32 @@
         "prod.yeodam.image.initial-light",
         "prod.yeodam.image.initial-heic",
         "prod.yeodam.image.additional-light",
-        "prod.yeodam.image.additional-heic"
+        "prod.yeodam.image.additional-heic",
+        "prod.connect-configs",
+        "prod.connect-offsets",
+        "prod.connect-status"
       ],
       "describeTopics": [],
-      "groups": []
+      "groups": [
+        "connect-v3"
+      ],
+      "extraTopicOperations": {
+        "prod.connect-configs": [
+          "Create",
+          "DescribeConfigs"
+        ],
+        "prod.connect-offsets": [
+          "Create",
+          "DescribeConfigs"
+        ],
+        "prod.connect-status": [
+          "Create",
+          "DescribeConfigs"
+        ]
+      },
+      "clusterOperations": [
+        "Describe"
+      ]
     }
   }
 }

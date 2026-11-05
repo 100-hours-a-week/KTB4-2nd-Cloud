@@ -1,0 +1,71 @@
+{{- if .Values.enabled }}
+{{- $_ := required "Supply the verified Connect image digest after main image publication" .Values.image }}
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaConnect
+metadata:
+  name: yeodam-v3-connect
+  namespace: kafka
+  labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+  annotations:
+    strimzi.io/use-connector-resources: 'true'
+spec:
+  version: '4.2.2'
+  replicas: 1
+  image: {{ .Values.image | quote }}
+  bootstrapServers: yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093
+  groupId: connect-v3
+  configStorageTopic: prod.connect-configs
+  offsetStorageTopic: prod.connect-offsets
+  statusStorageTopic: prod.connect-status
+  authentication:
+    type: scram-sha-512
+    username: v3-connect-outbox
+    passwordSecret: {secretName: v3-connect-outbox, password: password}
+  tls:
+    trustedCertificates:
+      - {secretName: yeodam-v3-kafka-cluster-ca-cert, certificate: ca.crt}
+  resources:
+    requests: {cpu: 100m, memory: 512Mi}
+    limits: {cpu: 500m, memory: 768Mi}
+  jvmOptions: {'-Xms': 128m, '-Xmx': 256m, gcLoggingEnabled: false}
+  config:
+    config.storage.replication.factor: 3
+    offset.storage.replication.factor: 3
+    status.storage.replication.factor: 3
+    offset.storage.partitions: 1
+    status.storage.partitions: 1
+    key.converter: org.apache.kafka.connect.storage.StringConverter
+    value.converter: org.apache.kafka.connect.storage.StringConverter
+    connector.client.config.override.policy: None
+    offset.flush.interval.ms: 60000
+    producer.acks: all
+    producer.enable.idempotence: true
+    producer.compression.type: lz4
+    ssl.endpoint.identification.algorithm: HTTPS
+  livenessProbe: {initialDelaySeconds: 120, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 6, successThreshold: 1}
+  readinessProbe: {initialDelaySeconds: 10, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 3, successThreshold: 1}
+  logging:
+    type: inline
+    loggers: {rootLogger.level: INFO}
+  template:
+    pod:
+      metadata:
+        labels: {app.kubernetes.io/name: kafka-connect, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {key: yeodam.io/role, operator: In, values: [system]}
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 90
+      tmpDirSizeLimit: 128Mi
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+    connectContainer:
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: {drop: [ALL]}
+{{- end }}
