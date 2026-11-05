@@ -1,4 +1,4 @@
-{{- $namespaces := list "frontend" "auth" "trip" "photo" "ai" "mysql" -}}
+{{- $namespaces := list "frontend" "auth" "trip" "photo" "ai" "mysql" "redis" -}}
 {{- range $ns, $store := .Values.stores }}
 {{- if not (has $ns $namespaces) }}{{ fail "Unknown Secret namespace" }}{{ end }}
 {{- if $store.enabled }}

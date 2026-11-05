@@ -1,0 +1,214 @@
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: redis, namespace: redis}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-runtime
+  namespace: redis
+  labels:
+    {{- include "redis.labels" . | nindent 4 }}
+data:
+{{ (.Files.Glob "files/*").AsConfig | indent 2 }}
+{{- range $kind := list "redis" "sentinel" }}
+{{- $data := eq $kind "redis" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ ternary "redis-members" "redis-sentinel" $data }}
+  namespace: redis
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "redis.selector" $ | nindent 4 }}
+    yeodam.io/redis-process: {{ $kind }}
+  ports:
+    - {name: tls, port: {{ ternary 6379 26379 $data }}, targetPort: tls}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: {{ $kind }}, namespace: redis}
+spec:
+  minAvailable: {{ ternary 1 2 $data }}
+  selector:
+    matchLabels:
+      {{- include "redis.selector" $ | nindent 6 }}
+      yeodam.io/redis-process: {{ $kind }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $kind }}
+  namespace: redis
+  labels:
+    {{- include "redis.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ ternary "database" "sentinel" $data }}
+spec:
+  serviceName: {{ ternary "redis-members" "redis-sentinel" $data }}
+  replicas: {{ ternary 2 3 $data }}
+  podManagementPolicy: Parallel
+  updateStrategy: {type: OnDelete}
+  persistentVolumeClaimRetentionPolicy: {whenDeleted: Retain, whenScaled: Retain}
+  selector:
+    matchLabels:
+      {{- include "redis.selector" $ | nindent 6 }}
+      yeodam.io/redis-process: {{ $kind }}
+  template:
+    metadata:
+      labels:
+        {{- include "redis.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ ternary "database" "sentinel" $data }}
+        yeodam.io/redis-process: {{ $kind }}
+      annotations:
+        checksum/runtime: {{ ($.Files.Glob "files/*").AsConfig | sha256sum }}
+    spec:
+      serviceAccountName: redis
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      {{- if $data }}
+      nodeSelector: {yeodam.io/role: data}
+      tolerations:
+        - {key: yeodam.io/role, operator: Equal, value: data, effect: NoSchedule}
+      {{- else }}
+      tolerations:
+        - {key: yeodam.io/role, operator: Equal, value: kafka, effect: NoSchedule}
+      {{- end }}
+      dnsConfig:
+        options:
+          - {name: ndots, value: "1"}
+          - {name: timeout, value: "1"}
+          - {name: attempts, value: "1"}
+      affinity:
+        {{- if not $data }}
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {key: yeodam.io/role, operator: In, values: [system]}
+                  - {key: topology.kubernetes.io/zone, operator: In, values: [ap-northeast-2a, ap-northeast-2c]}
+              - matchExpressions:
+                  - {key: yeodam.io/role, operator: In, values: [kafka]}
+                  - {key: topology.kubernetes.io/zone, operator: In, values: [ap-northeast-2b]}
+        {{- end }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  {{- include "redis.selector" $ | nindent 18 }}
+                  yeodam.io/redis-process: {{ $kind }}
+              topologyKey: topology.kubernetes.io/zone
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: {{ $kind }}
+          image: {{ $.Values.image }}
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, /runtime/start-{{ $kind }}.sh]
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: PROCESS_KIND, value: {{ $kind }}}
+            - {name: INITIAL_BOOTSTRAP, value: {{ $.Values.initialBootstrap | quote }}}
+          ports: [{name: tls, containerPort: {{ ternary 6379 26379 $data }}}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: {{ ternary "25m" "5m" $data }}, memory: {{ ternary "128Mi" "32Mi" $data }}}
+            limits: {cpu: {{ ternary "250m" "100m" $data }}, memory: {{ ternary "256Mi" "64Mi" $data }}}
+          startupProbe:
+            exec: {command: [/bin/bash, /runtime/health.sh, startup]}
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            exec: {command: [/bin/bash, /runtime/health.sh, readiness]}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec: {command: [/bin/bash, /runtime/health.sh, liveness]}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+            - {name: credentials, mountPath: /credentials, readOnly: true}
+            {{- range $path, $_ := $.Files.Glob "files/*" }}
+            - {name: runtime, mountPath: /runtime/{{ base $path }}, subPath: {{ base $path }}, readOnly: true}
+            {{- end }}
+      volumes:
+        - {name: runtime, configMap: {name: redis-runtime, defaultMode: 0444}}
+        - {name: credentials, secret: {secretName: redis-bootstrap, defaultMode: 0440}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 8Mi}}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        annotations: {helm.sh/resource-policy: keep}
+      spec:
+        accessModes: [ReadWriteOncePod]
+        storageClassName: yeodam-v3-gp3-retain
+        resources:
+          requests: {storage: 1Gi}
+{{- end }}
+{{- if .Values.smoke }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: redis-smoke, namespace: redis}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "redis.labels" . | nindent 8 }}
+        app.kubernetes.io/component: verification
+        yeodam.io/redis-process: smoke
+    spec:
+      serviceAccountName: redis
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      nodeSelector: {yeodam.io/role: system}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: smoke
+          image: {{ .Values.image }}
+          command: [/bin/bash, /runtime/smoke.sh]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 5m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          volumeMounts:
+            - {name: credentials, mountPath: /credentials, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+            {{- range $path, $_ := .Files.Glob "files/*" }}
+            - {name: runtime, mountPath: /runtime/{{ base $path }}, subPath: {{ base $path }}, readOnly: true}
+            {{- end }}
+      volumes:
+        - {name: runtime, configMap: {name: redis-runtime, defaultMode: 0444}}
+        - {name: credentials, secret: {secretName: redis-bootstrap, defaultMode: 0440}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 8Mi}}
+{{- end }}
+{{- end }}

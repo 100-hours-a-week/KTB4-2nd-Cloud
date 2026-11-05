@@ -34,6 +34,9 @@
         },
         "mysql": {
           "$ref": "#/definitions/store"
+        },
+        "redis": {
+          "$ref": "#/definitions/store"
         }
       }
     }

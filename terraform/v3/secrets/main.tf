@@ -19,9 +19,15 @@ variable "enable_mysql_reader" {
   default     = false
 }
 
+variable "enable_redis_reader" {
+  description = "Opt in to the V3 App Redis namespace reader; retain enabled MySQL inputs."
+  type        = bool
+  default     = false
+}
+
 locals {
   cluster_name = "yeodam-v3-foundation"
-  namespaces   = setunion(toset(["frontend", "auth", "trip", "photo", "ai"]), var.enable_mysql_reader ? toset(["mysql"]) : toset([]))
+  namespaces   = setunion(toset(["frontend", "auth", "trip", "photo", "ai"]), var.enable_mysql_reader ? toset(["mysql"]) : toset([]), var.enable_redis_reader ? toset(["redis"]) : toset([]))
   secret_arns = {
     for ns in local.namespaces : ns => "arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/${ns}/*"
   }
