@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Synthetic-only CDC integration: no AWS, registry credentials, kubeconfig or production endpoints."""
-import argparse,base64,collections,importlib.util,json,secrets,subprocess,sys,time,urllib.request,urllib.error
+import argparse,base64,collections,http.client,importlib.util,json,secrets,subprocess,sys,time,urllib.request,urllib.error
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts'))
 from v3_outbox_contract import CONFIG,CONTRACT,ENV_CONFIG
@@ -73,7 +73,7 @@ class Outbox:
     if status.get('tasks') and all(t['state']=='RUNNING' for t in status['tasks']):return
    except urllib.error.HTTPError as e:
     if e.code not in [404,409,500]:raise
-   except (urllib.error.URLError,TimeoutError):pass
+   except (urllib.error.URLError,TimeoutError,ConnectionError,http.client.HTTPException):pass
    time.sleep(2)
   raise RuntimeError('Source task readiness timeout')
  def records(self):
