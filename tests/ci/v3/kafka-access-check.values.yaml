@@ -1,0 +1,4 @@
+# CI/runtime opt-in: remove test resources after verification.
+enabled: true
+verification:
+  enabled: true

@@ -91,3 +91,9 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-nodepools.py \
   --directory "${validation_dir}" --output "${rendered_dir}"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_nodepools.py'
+
+"${V3_HELM}" lint --strict deploy/v3/kafka-access
+"${V3_HELM}" lint --strict deploy/v3/kafka-access -f deploy/v3/environments/foundation/kafka-access.values.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-kafka-access.py \
+  --directory "${validation_dir}" --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_kafka_access.py'

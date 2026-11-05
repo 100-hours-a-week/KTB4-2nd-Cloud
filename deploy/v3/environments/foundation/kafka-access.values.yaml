@@ -1,0 +1,2 @@
+# Apply only to yeodam-v3-kafka after its Operator and TLS/SCRAM listener are Ready.
+enabled: true

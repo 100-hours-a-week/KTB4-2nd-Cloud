@@ -24,6 +24,8 @@ on:
       - 'scripts/create-v3-mysql-bootstrap-secret.py'
       - 'tests/ci/test_v3_mysql.py'
       - 'scripts/check-v3-kafka.py'
+      - 'scripts/check-v3-kafka-access.py'
+      - 'tests/ci/test_v3_kafka_access.py'
       - 'tests/ci/test_v3_kafka.py'
       - 'scripts/check-v3-data-plan.py'
       - 'tests/ci/test_v3_data_plan.py'

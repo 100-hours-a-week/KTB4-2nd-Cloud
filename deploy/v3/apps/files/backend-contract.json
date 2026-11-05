@@ -65,7 +65,6 @@
     "ATTACHMENT_CONVERSION_PARTITION_FETCH_MAX_BYTES",
     "ATTACHMENT_CONVERSION_MAX_MESSAGE_BYTES"
   ],
-  "topicPrefix": "v3.foundation.yeodam.",
   "mongoStatus": "Story completion calls MongoDB storage in this source; every full BE role requires its connection and readiness dependency.",
   "workloadRoles": {
     "auth-api": "api",
@@ -122,5 +121,6 @@
     "JAVA_TOOL_OPTIONS",
     "VIPS_CONCURRENCY"
   ],
-  "javaToolOptions": "-XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5"
+  "javaToolOptions": "-XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5",
+  "kafkaNamesSource": "files/business-contract.json"
 }
