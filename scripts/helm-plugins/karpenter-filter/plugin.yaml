@@ -1,0 +1,10 @@
+apiVersion: v1
+type: postrenderer/v1
+name: yeodam-karpenter-filter
+version: 0.1.0
+runtime: subprocess
+runtimeConfig:
+  platformCommand:
+    - command: python3
+      args:
+        - ${HELM_PLUGIN_DIR}/../../filter-v3-karpenter.py

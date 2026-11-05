@@ -21,6 +21,30 @@ def download(entry):
     return data
 
 
+def download_karpenter(entry):
+    base = 'https://' + entry['registry']
+    scope = 'repository:' + entry['repository'] + ':pull'
+    token_url = base + '/token/?service=' + entry['registry'] + '&scope=' + scope
+    with urllib.request.urlopen(token_url, timeout=120) as response:
+        token = json.load(response)['token']
+    def fetch(path):
+        request = urllib.request.Request(base + path, headers={
+            'Authorization': 'Bearer ' + token,
+            'Accept': 'application/vnd.oci.image.manifest.v1+json'})
+        with urllib.request.urlopen(request, timeout=120) as response:
+            return response.read()
+    manifest = fetch('/v2/' + entry['repository'] + '/manifests/' + entry['manifestDigest'])
+    if 'sha256:' + hashlib.sha256(manifest).hexdigest() != entry['manifestDigest']:
+        raise ValueError('Karpenter OCI manifest checksum mismatch')
+    layers = json.loads(manifest)['layers']
+    if len(layers) != 1 or layers[0]['digest'] != 'sha256:' + entry['sha256']:
+        raise ValueError('Unexpected Karpenter chart layer')
+    chart = fetch('/v2/' + entry['repository'] + '/blobs/' + layers[0]['digest'])
+    if hashlib.sha256(chart).hexdigest() != entry['sha256']:
+        raise ValueError('Karpenter chart checksum mismatch')
+    return chart
+
+
 def prepare(directory):
     lock = json.loads((ROOT / 'tests/ci/v3/tools.lock.json').read_text())
     architecture = {'arm64': 'arm64', 'aarch64': 'arm64', 'x86_64': 'amd64'}.get(platform.machine())
@@ -56,6 +80,11 @@ def prepare(directory):
     archive = directory / 'strimzi.tgz'
     if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != strimzi['sha256']:
         archive.write_bytes(download(strimzi))
+
+    karpenter = json.loads((ROOT / 'deploy/v3/karpenter/upstream.lock.json').read_text())
+    archive = directory / 'karpenter.tgz'
+    if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != karpenter['sha256']:
+        archive.write_bytes(download_karpenter(karpenter))
 
 
 if __name__ == '__main__':
