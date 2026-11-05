@@ -1,0 +1,47 @@
+# Controller-only foundation. No NodePool, EC2NodeClass or NodeClaim objects.
+fullnameOverride: karpenter
+replicas: 2
+revisionHistoryLimit: 2
+additionalLabels: &identity
+  app.kubernetes.io/part-of: yeodam
+  app.kubernetes.io/component: node-provisioner
+  yeodam.io/stage: v3
+podLabels: *identity
+serviceAccount:
+  create: true
+  name: karpenter
+  annotations: {}
+nodeSelector:
+  kubernetes.io/os: linux
+  yeodam.io/role: system
+# Upstream hard hostname anti-affinity and zone spread are retained.
+tolerations: []
+terminationGracePeriodSeconds: 60
+priorityClassName: system-cluster-critical
+controller:
+  image:
+    repository: public.ecr.aws/karpenter/controller
+    tag: 1.15.1
+    digest: sha256:8314ff9c6bca66372031e80532c18025bbe6d34eae2443849d9ff02796fb09c8
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  env:
+    - {name: AWS_REGION, value: ap-northeast-2}
+    - {name: AWS_DEFAULT_REGION, value: ap-northeast-2}
+    - {name: AWS_EC2_METADATA_DISABLED, value: "true"}
+settings:
+  clusterName: yeodam-v3-foundation
+  eksControlPlane: true
+  interruptionQueue: yeodam-v3-foundation-karpenter
+  enableZonalShift: false
+  featureGates:
+    reservedCapacity: false
+    nodeRepair: false
+    nodeOverlay: false
+    staticCapacity: false
+    capacityBuffer: false
+    spotToSpotConsolidation: false
+    terminateFirstDrift: false
+    terminateFirstRepair: false
+    podDeletionCostManagement: false

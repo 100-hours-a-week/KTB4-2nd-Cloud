@@ -78,3 +78,8 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
   -f deploy/v3/environments/foundation/mysql-secrets.values.yaml \
   -f deploy/v3/environments/foundation/redis-secrets.values.yaml \
   -f deploy/v3/environments/foundation/mongodb-secrets.values.yaml
+
+"${V3_HELM}" lint --strict deploy/v3/karpenter-access
+"${validation_dir}/venv/bin/python" scripts/check-v3-karpenter.py \
+  --directory "${validation_dir}" --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_karpenter.py'

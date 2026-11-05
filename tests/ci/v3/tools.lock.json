@@ -104,6 +104,10 @@
       "sha256": "b298454a08f8ff1266c3e62b0e8ed6c4aab9b7882ecc9ff6eb13999ca88a7b6f",
       "license": "Apache-2.0",
       "upstreamCommit": "e0c72a1bc5f409d1685c0e1323460c8a98cd7459"
+    },
+    "role": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/role-rbac-v1.json",
+      "sha256": "dfe8fb03b1642f985b57b12edd1727b6867c13ed4b6761ef81bdd51b1d236711"
     }
   }
 }
