@@ -1,0 +1,6 @@
+apiVersion: v2
+name: yeodam-v3-mysql-schema
+version: 0.1.0
+appVersion: '34'
+description: Explicit one-shot V3 BE schema migration; no automatic database or account reset
+type: application

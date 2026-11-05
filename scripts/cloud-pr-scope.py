@@ -32,6 +32,9 @@ CONNECT_FILES = frozenset({
 })
 
 
+SCHEMA_PREFIXES = ('deploy/v3/mysql-schema-image/', 'deploy/v3/mysql-schema/', 'deploy/v3/mysql/')
+SCHEMA_FILES = frozenset(('scripts/check-v3-mysql-schema.py','tests/ci/test_v3_mysql_schema.py','tests/ci/v3/mysql-schema.values.fixture.yaml','deploy/v3/environments/foundation/mysql-schema.values.yaml','deploy/v3/environments/foundation/mysql-cdc-secrets.values.yaml','scripts/prepare-v3-mysql-schema-image.py', 'scripts/manage-v3-mysql-cdc.py', 'scripts/create-v3-mysql-bootstrap-secret.py', 'scripts/validate-v3-mysql-schema-image.sh', 'tests/ci/smoke-v3-mysql-schema.py', '.github/workflows/v3-mysql-schema-check.yml', '.github/workflows/v3-mysql-schema-image.yml'))
+
 def path_scope(path):
     # Runtime directories take priority over documentation extensions.
     if path in V1_FILES:
@@ -50,6 +53,7 @@ def select(paths):
     v1 = not files or bool(scopes & {'v1', 'both'})
     v2 = not files or bool(scopes & {'v2', 'both'})
     return {'runtime_required': v1, 'v2_runtime_required': v2,
+            'schema_image_required': not files or any(e['path'] in SCHEMA_FILES or e['path'].startswith(SCHEMA_PREFIXES) for e in files),
             'connect_image_required': not files or any(e['path'] in CONNECT_FILES or e['path'].startswith(CONNECT_PREFIXES) for e in files),
             'reason': 'changed-files' if files else 'empty-diff-requires-both', 'files': files}
 
@@ -84,7 +88,7 @@ def main():
         args.report.write_text(encoded, encoding='utf-8')
     if args.output:
         with args.output.open('a', encoding='utf-8') as stream:
-            for key in ('runtime_required', 'v2_runtime_required', 'connect_image_required'):
+            for key in ('runtime_required', 'v2_runtime_required', 'connect_image_required', 'schema_image_required'):
                 stream.write(f'{key}={str(result[key]).lower()}\n')
     print(encoded, end='')
 

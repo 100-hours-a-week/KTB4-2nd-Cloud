@@ -101,3 +101,12 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${V3_HELM}" lint --strict deploy/v3/connect
 "${validation_dir}/venv/bin/python" scripts/check-v3-connect.py --directory "${validation_dir}" --output "${rendered_dir}"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_connect.py'
+
+"${V3_HELM}" lint --strict deploy/v3/mysql-schema
+"${validation_dir}/venv/bin/python" scripts/check-v3-mysql-schema.py --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_mysql_schema.py'
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py \
+  --directory "${validation_dir}" --output "${rendered_dir}" \
+  -f deploy/v3/environments/foundation/mysql-cdc-secrets.values.yaml \
+  -f deploy/v3/environments/foundation/redis-secrets.values.yaml \
+  -f deploy/v3/environments/foundation/mongodb-secrets.values.yaml
