@@ -1,0 +1,5 @@
+apiVersion: v2
+name: yeodam-v3-karpenter-access
+description: Namespace and network boundaries for the controller-only Karpenter foundation
+type: application
+version: 0.1.0

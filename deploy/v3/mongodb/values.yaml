@@ -1,0 +1,4 @@
+# Namespace and policies only by default. No inline credentials.
+enabled: false
+smoke: false
+image: public.ecr.aws/docker/library/mongo@sha256:b9924c330a8bbc5800fe9c69f04a84e221eca7b28fd049a0354147d9908fa142

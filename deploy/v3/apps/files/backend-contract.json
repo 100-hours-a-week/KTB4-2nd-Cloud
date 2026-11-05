@@ -1,6 +1,6 @@
 {
   "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
-  "sourceCommit": "9fdf22bc1dec3b181eabed520cd2b5463df7198d",
+  "sourceCommit": "d28885364219a38c0cca1af5f0b7320e366339a5",
   "requiredConfig": [
     "SPRING_PROFILES_ACTIVE",
     "MANAGEMENT_SERVER_ADDRESS",
@@ -18,10 +18,16 @@
     "KAKAO_REDIRECT_URI",
     "AUTH_SESSION_KEY_PREFIX",
     "WEBSOCKET_EVENTS_CHANNEL",
-    "SPRING_APPLICATION_JSON",
     "ATTACHMENT_CONVERSION_MODE",
     "RELEASE",
-    "KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP"
+    "KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP",
+    "ATTACHMENT_CONVERSION_CONSUMER_ENABLED",
+    "ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED",
+    "ATTACHMENT_CONVERSION_RECOVERY_ENABLED",
+    "TRIP_RESULT_WORKER_ENABLED",
+    "TRIP_STATUS_POLLING_ENABLED",
+    "STORY_RESULT_LISTENER_ENABLED",
+    "STORY_STATUS_POLLING_ENABLED"
   ],
   "requiredSecrets": [
     "MYSQL_USERNAME",
@@ -30,7 +36,8 @@
     "KAKAO_CLIENT_ID",
     "KAKAO_CLIENT_SECRET",
     "AI_SERVER_API_KEY",
-    "WEBSOCKET_INTERNAL_SERVICE_TOKEN"
+    "WEBSOCKET_INTERNAL_SERVICE_TOKEN",
+    "MONGODB_URI"
   ],
   "topicConfig": [
     "KAFKA_TRIP_CREATE_REQUEST_TOPIC",
@@ -59,5 +66,61 @@
     "ATTACHMENT_CONVERSION_MAX_MESSAGE_BYTES"
   ],
   "topicPrefix": "v3.foundation.yeodam.",
-  "mongoStatus": "Model/repository infrastructure only; no StoryContentRepository caller in this source. Connection/health behavior requires runtime review."
+  "mongoStatus": "Story completion calls MongoDB storage in this source; every full BE role requires its connection and readiness dependency.",
+  "workloadRoles": {
+    "auth-api": "api",
+    "trip-api": "api",
+    "photo-api": "api",
+    "photo-converter": "conversion",
+    "trip-result-worker": "result"
+  },
+  "roleProfiles": {
+    "api": {
+      "environment": {
+        "ATTACHMENT_CONVERSION_CONSUMER_ENABLED": "false",
+        "ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED": "false",
+        "ATTACHMENT_CONVERSION_RECOVERY_ENABLED": "false",
+        "TRIP_RESULT_WORKER_ENABLED": "false",
+        "TRIP_STATUS_POLLING_ENABLED": "false",
+        "STORY_RESULT_LISTENER_ENABLED": "false",
+        "STORY_STATUS_POLLING_ENABLED": "false"
+      },
+      "tripResultListener": false,
+      "outboxReceiptListener": false
+    },
+    "conversion": {
+      "environment": {
+        "ATTACHMENT_CONVERSION_CONSUMER_ENABLED": "true",
+        "ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED": "true",
+        "ATTACHMENT_CONVERSION_RECOVERY_ENABLED": "true",
+        "TRIP_RESULT_WORKER_ENABLED": "false",
+        "TRIP_STATUS_POLLING_ENABLED": "false",
+        "STORY_RESULT_LISTENER_ENABLED": "false",
+        "STORY_STATUS_POLLING_ENABLED": "false"
+      },
+      "tripResultListener": false,
+      "outboxReceiptListener": false
+    },
+    "result": {
+      "environment": {
+        "ATTACHMENT_CONVERSION_CONSUMER_ENABLED": "false",
+        "ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED": "false",
+        "ATTACHMENT_CONVERSION_RECOVERY_ENABLED": "false",
+        "TRIP_RESULT_WORKER_ENABLED": "true",
+        "TRIP_STATUS_POLLING_ENABLED": "true",
+        "STORY_RESULT_LISTENER_ENABLED": "true",
+        "STORY_STATUS_POLLING_ENABLED": "true"
+      },
+      "tripResultListener": true,
+      "outboxReceiptListener": true
+    }
+  },
+  "minimumTerminationGraceSeconds": 180,
+  "optionalConfig": [
+    "SERVER_SHUTDOWN",
+    "SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE",
+    "JAVA_TOOL_OPTIONS",
+    "VIPS_CONCURRENCY"
+  ],
+  "javaToolOptions": "-XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5"
 }

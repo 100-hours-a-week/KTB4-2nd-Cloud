@@ -92,8 +92,8 @@ def validate_operator(documents):
 
 
 def validate_access(documents, stores):
-    require(platform.NAMESPACES <= set(stores) <= platform.NAMESPACES | {'mysql', 'redis'},
-            'Five application slots and optional MySQL/Redis slots only')
+    require(platform.NAMESPACES <= set(stores) <= platform.NAMESPACES | {'mysql', 'redis', 'mongodb'},
+            'Five application slots and optional MySQL/Redis/MongoDB slots only')
     actual = {}
     for doc in documents:
         identity = (doc['kind'], doc['metadata'].get('namespace', ''), doc['metadata']['name'])

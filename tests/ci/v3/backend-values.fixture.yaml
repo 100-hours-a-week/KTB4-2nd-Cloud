@@ -14,7 +14,7 @@ defaults:
     FRONTEND_ORIGIN: https://v3.example.invalid
     FRONTEND_OAUTH_CALLBACK_URI: https://v3.example.invalid/auth/callback
     KAKAO_REDIRECT_URI: https://v3.example.invalid/api/auth/kakao/callback
-    RELEASE: 9fdf22bc1dec3b181eabed520cd2b5463df7198d
+    RELEASE: d28885364219a38c0cca1af5f0b7320e366339a5
 workloads:
   auth-api:
     enabled: true

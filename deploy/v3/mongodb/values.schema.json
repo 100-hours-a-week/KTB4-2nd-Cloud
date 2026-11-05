@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled",
+    "smoke",
+    "image"
+  ],
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "smoke": {
+      "type": "boolean"
+    },
+    "image": {
+      "const": "public.ecr.aws/docker/library/mongo@sha256:b9924c330a8bbc5800fe9c69f04a84e221eca7b28fd049a0354147d9908fa142"
+    }
+  }
+}
