@@ -33,7 +33,7 @@ spec:
     type: simple
     acls:
       - resource: {type: topic, name: v3-smoke, patternType: literal}
-        operations: [Read, Write, Describe]
+        operations: [Read, Write, Describe, DescribeConfigs]
         host: "*"
       - resource: {type: group, name: v3-smoke-, patternType: prefix}
         operations: [Read, Delete]
@@ -116,11 +116,11 @@ spec:
                     echo 'FAIL: expected explicit authentication rejection' >&2; exit 1;
                   }
                   # Correct credentials must still be denied access to a non-owned topic.
-                  if timeout 45 /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$bootstrap" \
-                    --command-config "$cfg" --describe --topic __consumer_offsets > /tmp/acl.log 2>&1; then
-                    echo 'FAIL: smoke identity accessed an internal topic' >&2
-                    exit 1
-                  fi
+                  # ConsoleConsumer can log authorization failure and still exit 0.
+                  # Require the explicit broker rejection, never infer it from exit status.
+                  timeout 45 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server "$bootstrap" \
+                    --consumer.config "$cfg" --topic __consumer_offsets --partition 0 --offset earliest \
+                    --max-messages 1 --timeout-ms 15000 --consumer-property enable.auto.commit=false > /tmp/acl.log 2>&1 || true
                   grep -Eq 'TopicAuthorizationException|TOPIC_AUTHORIZATION_FAILED' /tmp/acl.log || {
                     echo 'FAIL: expected explicit authorization rejection' >&2; exit 1;
                   }
@@ -130,6 +130,22 @@ spec:
                   grep -Fq 'was successful' /tmp/group-cleanup.log || {
                     echo 'FAIL: temporary consumer group cleanup was not confirmed' >&2; exit 1;
                   }
+                  # A failed earlier trial can leave its own group behind. No other prefix is touched.
+                  /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server "$bootstrap" \
+                    --command-config "$cfg" --list > /tmp/groups.log
+                  while IFS= read -r group; do
+                    [[ "$group" =~ ^v3-smoke-v3-smoke-[0-9]+-[0-9]+$ ]] || continue
+                    /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server "$bootstrap" \
+                      --command-config "$cfg" --delete --group "$group" > /tmp/group-cleanup.log 2>&1
+                    grep -Fq 'was successful' /tmp/group-cleanup.log || {
+                      echo 'FAIL: earlier temporary group cleanup was not confirmed' >&2; exit 1;
+                    }
+                  done < /tmp/groups.log
+                  /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server "$bootstrap" \
+                    --command-config "$cfg" --list > /tmp/groups-final.log
+                  if grep -Eq '^v3-smoke-v3-smoke-[0-9]+-[0-9]+$' /tmp/groups-final.log; then
+                    echo 'FAIL: temporary consumer group remains' >&2; exit 1
+                  fi
                   echo 'PASS: temporary consumer group removed'
                   exit 0
                 fi

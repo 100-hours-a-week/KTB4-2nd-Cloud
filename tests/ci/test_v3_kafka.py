@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -65,6 +66,8 @@ class KafkaContracts(unittest.TestCase):
         self.assertIn('TopicAuthorizationException', command)
         self.assertIn('--delete --group', command)
         self.assertIn('temporary consumer group removed', command)
+        self.assertIn('--partition 0 --offset earliest', command)
+        self.assertIn('^v3-smoke-v3-smoke-[0-9]+-[0-9]+$', command)
 
     def test_replication_output_requires_three_insync_replicas(self):
         script = ROOT / 'deploy/v3/kafka/files/check-replicas.awk'
@@ -75,6 +78,22 @@ class KafkaContracts(unittest.TestCase):
                                  (complete.replace('Replicas: 0,1,2', 'Replicas: 0'), 1)]:
             with self.subTest(source=source):
                 result = subprocess.run(['awk', '-f', str(script)], input=source, text=True)
+                self.assertEqual(result.returncode, expected)
+
+    def test_acl_rejection_uses_explicit_error_even_when_cli_exits_zero(self):
+        job = next(d for d in self.smoke if d['kind'] == 'Job')
+        command = job['spec']['template']['spec']['containers'][0]['args'][0]
+        start = command.index('timeout 45 /opt/kafka/bin/kafka-console-consumer.sh')
+        end = command.index("echo 'PASS: invalid password and non-owned topic rejected'", start)
+        block = command[start:end]
+        for message, code, expected in [('TopicAuthorizationException: denied', '0', 0),
+                                        ('TOPIC_AUTHORIZATION_FAILED', '1', 0),
+                                        ('', '0', 1), ('TimeoutException', '124', 1)]:
+            with self.subTest(message=message, code=code), tempfile.TemporaryDirectory() as directory:
+                source = 'timeout() { printf "%s\\n" "$FAKE_OUTPUT"; return "$FAKE_RC"; };\n'
+                source += block.replace('/tmp/acl.log', str(Path(directory) / 'acl.log'))
+                result = subprocess.run(['bash', '-ec', source], capture_output=True, text=True,
+                                        env=dict(os.environ, FAKE_OUTPUT=message, FAKE_RC=code))
                 self.assertEqual(result.returncode, expected)
 
     def test_replication_and_insync_safety(self):
@@ -123,6 +142,8 @@ class KafkaContracts(unittest.TestCase):
 
     def test_smoke_cannot_touch_business_topic(self):
         self.mutate('KafkaUser', ['spec', 'authorization', 'acls', 0, 'resource', 'name'], '*', smoke=True)
+        self.mutate('KafkaUser', ['spec', 'authorization', 'acls', 0, 'operations'],
+                    ['Read', 'Write', 'Describe'], smoke=True)
         self.mutate('KafkaUser', ['spec', 'authorization', 'acls', 0, 'operations'], ['All'], smoke=True)
         self.mutate('KafkaTopic', ['spec', 'replicas'], 1, smoke=True)
         self.mutate('Job', ['spec', 'template', 'spec', 'automountServiceAccountToken'], True, smoke=True)

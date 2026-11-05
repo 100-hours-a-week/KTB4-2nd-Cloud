@@ -191,7 +191,7 @@ def validate_cluster(documents, smoke=False, enabled=True):
         require(user['spec'] == {'authentication': {'type': 'scram-sha-512'}, 'authorization': {
             'type': 'simple', 'acls': [
                 {'resource': {'type': 'topic', 'name': 'v3-smoke', 'patternType': 'literal'},
-                 'operations': ['Read', 'Write', 'Describe'], 'host': '*'},
+                 'operations': ['Read', 'Write', 'Describe', 'DescribeConfigs'], 'host': '*'},
                 {'resource': {'type': 'group', 'name': 'v3-smoke-', 'patternType': 'prefix'},
                  'operations': ['Read', 'Delete'], 'host': '*'}]}}, 'No business-topic or cluster-admin smoke ACL')
         require(topic['spec'] == {'partitions': 3, 'replicas': 3, 'config': {'min.insync.replicas': 2,
