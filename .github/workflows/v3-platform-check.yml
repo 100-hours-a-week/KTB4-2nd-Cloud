@@ -14,6 +14,8 @@ on:
       - 'scripts/prepare-production-release.py'
       - 'tests/ci/test_production_release_prepare.py'
       - '.github/workflows/production-release-prepare.yml'
+      - 'scripts/check-v3-kafka.py'
+      - 'tests/ci/test_v3_kafka.py'
       - 'scripts/check-v3-kafka-plan.py'
       - 'tests/ci/test_v3_kafka_plan.py'
       - 'scripts/check-v3-storage.py'

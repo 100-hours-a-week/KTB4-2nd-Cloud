@@ -1,0 +1,2 @@
+# Enable only after namespace/policies and pinned Strimzi CRDs/operator are ready.
+clusterEnabled: true
