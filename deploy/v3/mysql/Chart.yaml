@@ -1,0 +1,6 @@
+apiVersion: v2
+name: yeodam-v3-mysql
+description: Initial two-member MySQL semi-sync deployment; no automatic promotion
+version: 0.1.0
+appVersion: "8.4.13"
+type: application

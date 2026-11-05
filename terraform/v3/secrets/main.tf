@@ -13,9 +13,15 @@ provider "aws" {
   }
 }
 
+variable "enable_mysql_reader" {
+  description = "Opt in to the V3 MySQL namespace reader; no Secret payloads."
+  type        = bool
+  default     = false
+}
+
 locals {
   cluster_name = "yeodam-v3-foundation"
-  namespaces   = toset(["frontend", "auth", "trip", "photo", "ai"])
+  namespaces   = setunion(toset(["frontend", "auth", "trip", "photo", "ai"]), var.enable_mysql_reader ? toset(["mysql"]) : toset([]))
   secret_arns = {
     for ns in local.namespaces : ns => "arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/${ns}/*"
   }
