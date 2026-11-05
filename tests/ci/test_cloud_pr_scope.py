@@ -108,7 +108,7 @@ class GitDiffTest(unittest.TestCase):
         args = ['python3', str(SCRIPT), '--base', self.base, '--head', head,
                 '--output', str(output), '--report', str(report)]
         subprocess.run(args, cwd=self.root, check=True, capture_output=True)
-        self.assertEqual(output.read_text(), 'runtime_required=false\nv2_runtime_required=true\n')
+        self.assertEqual(output.read_text(), 'runtime_required=false\nv2_runtime_required=true\nconnect_image_required=false\n')
         self.assertFalse(json.loads(report.read_text())['runtime_required'])
         output.unlink()
         report.unlink()
@@ -129,11 +129,22 @@ class RequiredGateTest(unittest.TestCase):
         final_step = source.split('      - name: Require validation and applicable integration\n', 1)[1]
         cls.shell = textwrap.dedent(final_step.split('        run: |\n', 1)[1])
 
-    def gate(self, v1, v2, r1, r2, validate='success', v3='success'):
+    def gate(self, v1, v2, r1, r2, validate='success', v3='success', connect_required='false', connect_result='skipped'):
         env = os.environ | {'RUNTIME_REQUIRED': v1, 'V2_RUNTIME_REQUIRED': v2,
                             'INTEGRATION_RESULT': r1, 'V2_INTEGRATION_RESULT': r2,
-                            'VALIDATE_RESULT': validate, 'V3_PLATFORM_RESULT': v3}
+                            'VALIDATE_RESULT': validate, 'V3_PLATFORM_RESULT': v3,
+                            'CONNECT_IMAGE_REQUIRED': connect_required, 'CONNECT_IMAGE_RESULT': connect_result}
         return subprocess.run(['bash', '-c', self.shell], env=env, capture_output=True).returncode
+
+    def test_connect_image_gate_requires_real_success_or_intentional_skip(self):
+        self.assertEqual(self.gate('false','false','skipped','skipped',connect_required='true',connect_result='success'),0)
+        for result in ('failure','cancelled','skipped',''):
+            self.assertNotEqual(self.gate('false','false','skipped','skipped',connect_required='true',connect_result=result),0)
+        self.assertNotEqual(self.gate('false','false','skipped','skipped',connect_required='',connect_result='success'),0)
+        for path in scope.CONNECT_FILES | {'deploy/v3/connect-image/Dockerfile','deploy/v3/connect/templates/connect.yaml'}:
+            self.assertTrue(scope.select([path])['connect_image_required'])
+        self.assertFalse(scope.select(['docs/example.md'])['connect_image_required'])
+        self.assertTrue(scope.select([])['connect_image_required'])
 
     def test_required_success_and_intentional_skips(self):
         for v1, v2 in [('true', 'true'), ('true', 'false'), ('false', 'true'), ('false', 'false')]:

@@ -1,0 +1,46 @@
+{{- if and .Values.smoke.enabled (not .Values.enabled) }}{{ fail "Enable Connect before its API check" }}{{ end }}
+{{- if and .Values.enabled .Values.smoke.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: v3-connect-check
+  namespace: kafka
+  labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: connect-smoke, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector: {yeodam.io/role: system}
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: check
+          image: quay.io/strimzi/kafka@sha256:b9b9e37491ce17c1b2722b3668661de91430d9437acf18c5f5bafaef38138652
+          command: [/bin/bash, -ec]
+          args:
+            - |
+              set -Eeuo pipefail
+              base=http://yeodam-v3-connect-connect-api.kafka.svc:8083
+              ready=false
+              for attempt in {1..12}; do
+                if curl -fsS --connect-timeout 3 --max-time 5 "$base/connectors" > /tmp/connectors; then ready=true;break;fi
+                sleep 2
+              done
+              [[ "$ready" == true ]]
+              [[ "$(tr -d '[:space:]' < /tmp/connectors)" == '[]' ]]
+              curl -fsS --connect-timeout 3 --max-time 5 "$base/connector-plugins" > /tmp/plugins
+              tr -d '[:space:]' < /tmp/plugins | grep -F '"class":"io.debezium.connector.mysql.MySqlConnector"' >/dev/null
+              tr -d '[:space:]' < /tmp/plugins | grep -F '"version":"3.4.3.Final"' >/dev/null
+              echo 'PASS: Connect REST ready, MySQL plugin3.4.3.Final and zero business Connectors'
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts: [{name: temp, mountPath: /tmp}]
+      volumes: [{name: temp, emptyDir: {sizeLimit: 4Mi}}]
+{{- end }}

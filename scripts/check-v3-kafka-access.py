@@ -38,10 +38,13 @@ def acl_rules(access):
             operations += ['Read']
         if topic in access['writeTopics']:
             operations += ['Write']
+        operations += access.get('extraTopicOperations', {}).get(topic, [])
         rules += [{'resource': {'type': 'topic', 'name': topic, 'patternType': 'literal'},
                    'operations': operations, 'host': '*'}]
     rules += [{'resource': {'type': 'group', 'name': group, 'patternType': 'literal'},
                'operations': ['Read'], 'host': '*'} for group in access['groups']]
+    if access.get('clusterOperations'):
+        rules += [{'resource': {'type': 'cluster'}, 'operations': access['clusterOperations'], 'host': '*'}]
     return rules
 
 
@@ -68,7 +71,10 @@ def expected_access():
         groups=['prod.yeodam-trip-results', 'yeodam-trip-update-results', 'prod.yeodam-story-results', 'prod.yeodam-outbox-receipts'])
     users['ai'] = access(read=requests, write=results + [t + '-dlt' for t in requests],
         groups=['yeodam-ai-' + f for f in ('trip-create', 'trip-update', 'story-create')])
-    users['connect-outbox'] = access(write=requests + images)
+    internal = ['prod.connect-configs', 'prod.connect-offsets', 'prod.connect-status']
+    users['connect-outbox'] = access(read=internal, write=requests + images + internal, groups=['connect-v3'])
+    users['connect-outbox']['extraTopicOperations'] = {t: ['Create', 'DescribeConfigs'] for t in internal}
+    users['connect-outbox']['clusterOperations'] = ['Describe']
     return users
 
 
@@ -116,7 +122,7 @@ def validate(documents, enabled=False, verification=False):
             require(role in CONTRACT['users'], 'Unknown Kafka identity')
             require(d['spec'] == {'authentication': {'type': 'scram-sha-512'},
                     'authorization': {'type': 'simple', 'acls': acl_rules(CONTRACT['users'][role])}},
-                    'Role ACL differs: no wildcard topic/group, Create/Delete/Alter or superuser rights')
+                    'Role ACL differs: no wildcard topic/group, unreviewed Create/Delete/Alter or superuser rights')
     for t in CONTRACT['topics']:
         if t['name'] in ai:
             require(topics[t['name'] + '-dlt']['partitions'] >= t['partitions'], 'DLT must accept the source partition used by BE recoverers')

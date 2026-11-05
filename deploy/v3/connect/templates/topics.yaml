@@ -1,0 +1,73 @@
+{{- if .Values.enabled }}
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: prod.connect-configs
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: yeodam-v3-kafka
+    app.kubernetes.io/instance: kafka-connect
+    app.kubernetes.io/part-of: yeodam
+    yeodam.io/stage: v3
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  topicName: prod.connect-configs
+  partitions: 1
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    cleanup.policy: compact
+    retention.ms: -1
+    retention.bytes: -1
+    segment.bytes: 1048576
+    segment.ms: 600000
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: prod.connect-offsets
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: yeodam-v3-kafka
+    app.kubernetes.io/instance: kafka-connect
+    app.kubernetes.io/part-of: yeodam
+    yeodam.io/stage: v3
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  topicName: prod.connect-offsets
+  partitions: 1
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    cleanup.policy: compact
+    retention.ms: -1
+    retention.bytes: -1
+    segment.bytes: 1048576
+    segment.ms: 600000
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: prod.connect-status
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: yeodam-v3-kafka
+    app.kubernetes.io/instance: kafka-connect
+    app.kubernetes.io/part-of: yeodam
+    yeodam.io/stage: v3
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  topicName: prod.connect-status
+  partitions: 1
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    cleanup.policy: compact
+    retention.ms: -1
+    retention.bytes: -1
+    segment.bytes: 1048576
+    segment.ms: 600000
+{{- end }}

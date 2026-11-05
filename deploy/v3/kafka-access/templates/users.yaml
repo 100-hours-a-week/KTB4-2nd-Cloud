@@ -21,12 +21,17 @@ spec:
     acls:
       {{- range $topic := concat $access.readTopics $access.writeTopics $access.describeTopics | uniq | sortAlpha }}
       - resource: {type: topic, name: {{ $topic }}, patternType: literal}
-        operations: [Describe{{ if has $topic $access.readTopics }}, Read{{ end }}{{ if has $topic $access.writeTopics }}, Write{{ end }}]
+        operations: [Describe{{ if has $topic $access.readTopics }}, Read{{ end }}{{ if has $topic $access.writeTopics }}, Write{{ end }}{{ range $operation := (index ($access.extraTopicOperations | default dict) $topic) }}, {{ $operation }}{{ end }}]
         host: '*'
       {{- end }}
       {{- range $group := $access.groups }}
       - resource: {type: group, name: {{ $group }}, patternType: literal}
         operations: [Read]
+        host: '*'
+      {{- end }}
+      {{- if $access.clusterOperations }}
+      - resource: {type: cluster}
+        operations: {{ $access.clusterOperations | toJson }}
         host: '*'
       {{- end }}
 {{- end }}
