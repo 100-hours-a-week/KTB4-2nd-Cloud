@@ -1,0 +1,158 @@
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mysql
+  namespace: mysql
+  labels:
+    {{- include "mysql.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-runtime
+  namespace: mysql
+  labels:
+    {{- include "mysql.labels" . | nindent 4 }}
+data:
+{{ (.Files.Glob "files/*").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-members
+  namespace: mysql
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "mysql.selector" . | nindent 4 }}
+    yeodam.io/mysql-process: server
+  ports: [{name: mysql, port: 3306, targetPort: mysql}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-primary
+  namespace: mysql
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "mysql.selector" . | nindent 4 }}
+    statefulset.kubernetes.io/pod-name: {{ .Values.primaryMember }}
+    yeodam.io/mysql-process: server
+  ports: [{name: mysql, port: 3306, targetPort: mysql}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mysql
+  namespace: mysql
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "mysql.selector" . | nindent 6 }}
+      yeodam.io/mysql-process: server
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: mysql
+  labels:
+    {{- include "mysql.labels" . | nindent 4 }}
+spec:
+  serviceName: mysql-members
+  replicas: 2
+  podManagementPolicy: Parallel
+  updateStrategy: {type: OnDelete}
+  persistentVolumeClaimRetentionPolicy: {whenDeleted: Retain, whenScaled: Retain}
+  selector:
+    matchLabels:
+      {{- include "mysql.selector" . | nindent 6 }}
+      yeodam.io/mysql-process: server
+  template:
+    metadata:
+      labels:
+        {{- include "mysql.labels" . | nindent 8 }}
+        yeodam.io/mysql-process: server
+      annotations:
+        checksum/runtime: {{ (.Files.Glob "files/*").AsConfig | sha256sum }}
+    spec:
+      serviceAccountName: mysql
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      nodeSelector: {yeodam.io/role: data}
+      tolerations:
+        - {key: yeodam.io/role, operator: Equal, value: data, effect: NoSchedule}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  {{- include "mysql.selector" . | nindent 18 }}
+                  yeodam.io/mysql-process: server
+              topologyKey: topology.kubernetes.io/zone
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: mysql
+          image: {{ .Values.image }}
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, /runtime/entrypoint.sh]
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: PRIMARY_MEMBER, value: {{ .Values.primaryMember | quote }}}
+          ports: [{name: mysql, containerPort: 3306}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {cpu: "1", memory: 768Mi}
+          startupProbe:
+            exec: {command: [/bin/bash, /runtime/health.sh, startup]}
+            periodSeconds: 5
+            timeoutSeconds: 4
+            failureThreshold: 120
+          readinessProbe:
+            exec: {command: [/bin/bash, /runtime/health.sh, readiness]}
+            periodSeconds: 5
+            timeoutSeconds: 4
+            failureThreshold: 3
+          livenessProbe:
+            exec: {command: [/bin/bash, /runtime/health.sh, liveness]}
+            periodSeconds: 10
+            timeoutSeconds: 4
+            failureThreshold: 6
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/mysql}
+            - {name: tmp, mountPath: /tmp}
+            - {name: credentials, mountPath: /credentials, readOnly: true}
+            - {name: credentials, mountPath: /tls, readOnly: true}
+            {{- range $path, $_ := .Files.Glob "files/*" }}
+            - {name: runtime, mountPath: /runtime/{{ base $path }}, subPath: {{ base $path }}, readOnly: true}
+            {{- end }}
+      volumes:
+        - {name: runtime, configMap: {name: mysql-runtime, defaultMode: 0444}}
+        - {name: credentials, secret: {secretName: mysql-bootstrap, defaultMode: 0440}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        annotations: {helm.sh/resource-policy: keep}
+      spec:
+        accessModes: [ReadWriteOncePod]
+        storageClassName: yeodam-v3-gp3-retain
+        resources:
+          requests: {storage: 10Gi}
+{{- end }}

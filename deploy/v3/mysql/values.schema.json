@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled",
+    "bootstrap",
+    "smoke",
+    "primaryMember",
+    "image"
+  ],
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "bootstrap": {
+      "type": "boolean"
+    },
+    "smoke": {
+      "type": "boolean"
+    },
+    "primaryMember": {
+      "enum": [
+        "mysql-0",
+        "mysql-1"
+      ]
+    },
+    "image": {
+      "const": "public.ecr.aws/docker/library/mysql@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902"
+    }
+  }
+}

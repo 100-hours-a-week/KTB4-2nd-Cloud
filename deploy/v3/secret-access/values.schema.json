@@ -31,6 +31,9 @@
         },
         "ai": {
           "$ref": "#/definitions/store"
+        },
+        "mysql": {
+          "$ref": "#/definitions/store"
         }
       }
     }
