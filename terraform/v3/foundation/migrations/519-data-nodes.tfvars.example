@@ -1,0 +1,3 @@
+# Pass AFTER the private, currently applied foundation inputs.
+# The Plan guard must prove all existing resources are no-op.
+enable_data_nodes = true
