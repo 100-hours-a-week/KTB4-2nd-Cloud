@@ -1,0 +1,35 @@
+# Install in kafka; watch only the release namespace, never all namespaces.
+replicas: 1
+labels:
+  app.kubernetes.io/name: strimzi
+  app.kubernetes.io/instance: strimzi
+  app.kubernetes.io/component: cluster-operator
+  app.kubernetes.io/part-of: yeodam
+  yeodam.io/stage: v3
+watchNamespaces: []
+watchAnyNamespace: false
+createAggregateRoles: false
+nodeSelector:
+  yeodam.io/role: system
+resources:
+  requests: {cpu: 100m, memory: 384Mi}
+  limits: {cpu: null, memory: 512Mi}
+extraEnvs:
+  - name: JAVA_OPTS
+    value: "-Xms128m -Xmx256m"
+  - name: STRIMZI_POD_SECURITY_PROVIDER_CLASS
+    value: io.strimzi.plugin.security.profiles.impl.RestrictedPodSecurityProvider
+enableServiceLinks: false
+image:
+  digest: sha256:4deb564fa329afa4046c550a6f8f1a6d00be3b9297e556969acabe6647b6676f
+topicOperator:
+  image:
+    digest: sha256:4deb564fa329afa4046c550a6f8f1a6d00be3b9297e556969acabe6647b6676f
+userOperator:
+  image:
+    digest: sha256:4deb564fa329afa4046c550a6f8f1a6d00be3b9297e556969acabe6647b6676f
+kafkaInit:
+  image:
+    digest: sha256:4deb564fa329afa4046c550a6f8f1a6d00be3b9297e556969acabe6647b6676f
+# Disabled operands keep upstream defaults; only the explicit Kafka CR image is used.
+# A new Kafka/Connect version requires a reviewed version-specific digest before use.

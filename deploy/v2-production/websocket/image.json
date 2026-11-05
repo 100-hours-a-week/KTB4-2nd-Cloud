@@ -1,0 +1,10 @@
+{
+  "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
+  "sourceSha": "1f46254e1100aa9e3f5ebd2a0da088a021b3135d",
+  "backendImage": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:e3e8b523a33b0459d6c7a7b2cc1f591ee8cbe2ce07ec33f2fdf690f8b14ef1b0",
+  "image": "ghcr.io/100-hours-a-week/yeodam-websocket:sha-1f46254e1100aa9e3f5ebd2a0da088a021b3135d",
+  "digest": "sha256:330c073357b7b34b07220c6fc9638abb53c4fa0c4b8390ac029fcfaf541e0ca8",
+  "immutableImage": "ghcr.io/100-hours-a-week/yeodam-websocket@sha256:330c073357b7b34b07220c6fc9638abb53c4fa0c4b8390ac029fcfaf541e0ca8",
+  "buildRunId": 41823843031,
+  "buildHeadSha": "33b61fc56153ad4c81c65c0571f0c303ea0613a6"
+}

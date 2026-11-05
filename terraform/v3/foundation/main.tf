@@ -16,7 +16,8 @@ locals {
     Issue       = "481"
   }
   # AZ list order is the existing subnet CIDR allocation; only append new AZs.
-  zones = { for index, az in var.availability_zones : az => index }
+  zones     = { for index, az in var.availability_zones : az => index }
+  nat_zones = { for az, index in local.zones : az => index if !contains(keys(var.nat_gateway_az_overrides), az) }
 }
 
 data "aws_caller_identity" "current" {}

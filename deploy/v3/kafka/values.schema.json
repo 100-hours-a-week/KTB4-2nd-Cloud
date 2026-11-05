@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "clusterName",
+    "kafkaVersion",
+    "kafkaImage",
+    "broker",
+    "smoke",
+    "clusterEnabled"
+  ],
+  "properties": {
+    "clusterName": {
+      "const": "yeodam-v3-kafka"
+    },
+    "kafkaVersion": {
+      "const": "4.2.2"
+    },
+    "kafkaImage": {
+      "const": "quay.io/strimzi/kafka@sha256:b9b9e37491ce17c1b2722b3668661de91430d9437acf18c5f5bafaef38138652"
+    },
+    "broker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "replicas",
+        "resources",
+        "heap",
+        "storageClass",
+        "volumeSize"
+      ],
+      "properties": {
+        "replicas": {
+          "const": 3
+        },
+        "resources": {
+          "const": {
+            "requests": {
+              "cpu": "250m",
+              "memory": "1Gi"
+            },
+            "limits": {
+              "memory": "1Gi"
+            }
+          }
+        },
+        "heap": {
+          "const": "512m"
+        },
+        "storageClass": {
+          "const": "yeodam-v3-gp3-retain"
+        },
+        "volumeSize": {
+          "const": "10Gi"
+        }
+      }
+    },
+    "smoke": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "clusterEnabled": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "smoke": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "clusterEnabled": {
+            "const": true
+          }
+        }
+      }
+    }
+  ]
+}

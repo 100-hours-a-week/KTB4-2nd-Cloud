@@ -190,12 +190,14 @@ def update(environment, revision, force=False):
     ai.aws(*args)
 
 
-def promote(environment, new_url, report, save, staging_version=None):
+def promote(environment, new_url, report, save, staging_version=None, production_only=False):
+    if production_only and (environment != 'production' or staging_version is not None):
+        raise ValueError('production-only requires production and no staging version')
     new_url = validate_url(new_url)
     parameter(environment)
     if ai.aws('sts', 'get-caller-identity')['Account'] != ai.ACCOUNT:
         raise ValueError('Wrong AWS account')
-    if environment == 'production':
+    if environment == 'production' and not production_only:
         attest_staging(new_url, staging_version)
     current_service = service(environment)
     previous = current_service['taskDefinition']
@@ -209,7 +211,7 @@ def promote(environment, new_url, report, save, staging_version=None):
     old_parameter = ai.aws('ssm', 'get-parameter', '--name', parameter(environment))['Parameter']
     old_url = validate_url(old_parameter['Value'])
     report.update(environment=environment, previousUrl=old_url, newUrl=new_url, previousRevision=previous,
-                  expectedStagingVersion=staging_version, runnerOperation=uuid.uuid4().hex)
+                  expectedStagingVersion=staging_version, productionOnly=production_only, runnerOperation=uuid.uuid4().hex)
     save()
     inspected = runner_settings(environment, 'inspect-settings', old_parameter['Version'], report['runnerOperation'])
     report['runnerVlmInitialization'] = inspected.get('initializingVlm', False)
@@ -225,7 +227,7 @@ def promote(environment, new_url, report, save, staging_version=None):
         raise RuntimeError('AI API changed during preflight; no parameter was updated')
     if ai.aws('ssm', 'get-parameter', '--name', parameter(environment))['Parameter']['Version'] != old_parameter['Version']:
         raise RuntimeError('RunPod parameter changed during preflight; retry')
-    if environment == 'production':
+    if environment == 'production' and not production_only:
         attest_staging(new_url, staging_version)
     report['status'] = 'updating'
     save()
@@ -283,8 +285,11 @@ def main():
     parser.add_argument('url', type=validate_url)
     parser.add_argument('--environment', choices=ENVIRONMENTS, required=True)
     parser.add_argument('--expected-staging-version', type=int)
+    parser.add_argument('--production-only', action='store_true', help='Use the production path after staging retirement')
     args = parser.parse_args()
-    if args.environment == 'production' and not args.expected_staging_version:
+    if args.production_only and (args.environment != 'production' or args.expected_staging_version is not None):
+        parser.error('--production-only requires production and cannot use a staging version')
+    if args.environment == 'production' and not args.expected_staging_version and not args.production_only:
         parser.error('production requires --expected-staging-version')
     if args.environment == 'staging' and args.expected_staging_version is not None:
         parser.error('staging does not accept --expected-staging-version')
@@ -298,7 +303,7 @@ def main():
     signal.signal(signal.SIGINT, interrupted)
     save()
     try:
-        promote(args.environment, args.url, report, save, args.expected_staging_version)
+        promote(args.environment, args.url, report, save, args.expected_staging_version, args.production_only)
     except Exception as error:
         if report['status'] == 'preflight':
             report['status'] = 'preflight_failed'
