@@ -95,17 +95,17 @@ class BackendRuntime(unittest.TestCase):
     def test_json_cannot_hide_credentials(self):
         self.reject_data({'SPRING_APPLICATION_JSON': '{"spring":{"datasource":{"password":"synthetic"}}}'})
 
-    def test_production_topic_is_rejected(self):
-        self.reject_data({'KAFKA_TRIP_CREATE_REQUEST_TOPIC': 'prod.yeodam.trip-create.request'})
+    def test_old_v3_candidate_topic_is_rejected(self):
+        self.reject_data({'KAFKA_TRIP_CREATE_REQUEST_TOPIC': 'v3.foundation.yeodam.trip-create.request'})
 
     def test_default_redis_prefix_is_rejected(self):
         self.reject_data({'AUTH_SESSION_KEY_PREFIX': 'yeodam:prod:auth:'})
 
-    def test_direct_trip_update_group_must_be_v3(self):
-        self.reject_data({'KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP': 'yeodam-trip-update-results'})
+    def test_direct_trip_update_group_must_match_handoff(self):
+        self.reject_data({'KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP': 'staging.yeodam-trip-update-results'})
 
     def test_logical_group_collision_is_rejected(self):
-        self.reject_data({'KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP': 'v3.foundation.yeodam.trip-results'})
+        self.reject_data({'KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP': 'prod.yeodam-trip-results'})
 
     def test_duplicate_literal_json_is_rejected(self):
         self.reject_data({'SPRING_APPLICATION_JSON': '{"app":{},"app":{}}'})
@@ -138,7 +138,7 @@ class BackendRuntime(unittest.TestCase):
         self.reject_data({'ATTACHMENT_CONVERSION_RECOVERY_PAGE_SIZE': '0'}, kafka=True)
 
     def test_functional_group_cannot_differ_between_namespaces(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises((ValueError, subprocess.CalledProcessError)):
             self.rendered({'workloads': {'trip-api': {'enabled': True, 'springProperties': {'app': {'trip': {
                 'result-consumer-group': 'v3.foundation.yeodam.trip-other-results'}}}}}})
 

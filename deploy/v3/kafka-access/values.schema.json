@@ -1,0 +1,185 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled",
+    "clusterName",
+    "replicas",
+    "minInSyncReplicas",
+    "retentionBytes",
+    "segmentBytes",
+    "segmentMs",
+    "topicPolicies",
+    "verification"
+  ],
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "clusterName": {
+      "const": "yeodam-v3-kafka",
+      "type": "string"
+    },
+    "replicas": {
+      "const": 3,
+      "type": "integer"
+    },
+    "minInSyncReplicas": {
+      "const": 2,
+      "type": "integer"
+    },
+    "retentionBytes": {
+      "const": 67108864,
+      "type": "integer"
+    },
+    "segmentBytes": {
+      "const": 16777216,
+      "type": "integer"
+    },
+    "segmentMs": {
+      "const": 86400000,
+      "type": "integer"
+    },
+    "topicPolicies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ai-request",
+        "ai-result",
+        "ai-dlt",
+        "image-request",
+        "image-dlt"
+      ],
+      "properties": {
+        "ai-request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "retentionMs",
+            "maxMessageBytes",
+            "timestampType"
+          ],
+          "properties": {
+            "retentionMs": {
+              "const": 604800000,
+              "type": "integer"
+            },
+            "maxMessageBytes": {
+              "const": 1048576,
+              "type": "integer"
+            },
+            "timestampType": {
+              "const": "LogAppendTime",
+              "type": "string"
+            }
+          }
+        },
+        "ai-result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "retentionMs",
+            "maxMessageBytes",
+            "timestampType"
+          ],
+          "properties": {
+            "retentionMs": {
+              "const": 604800000,
+              "type": "integer"
+            },
+            "maxMessageBytes": {
+              "const": 1048576,
+              "type": "integer"
+            },
+            "timestampType": {
+              "const": "CreateTime",
+              "type": "string"
+            }
+          }
+        },
+        "ai-dlt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "retentionMs",
+            "maxMessageBytes",
+            "timestampType"
+          ],
+          "properties": {
+            "retentionMs": {
+              "const": 2592000000,
+              "type": "integer"
+            },
+            "maxMessageBytes": {
+              "const": 2097152,
+              "type": "integer"
+            },
+            "timestampType": {
+              "const": "CreateTime",
+              "type": "string"
+            }
+          }
+        },
+        "image-request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "retentionMs",
+            "maxMessageBytes",
+            "timestampType"
+          ],
+          "properties": {
+            "retentionMs": {
+              "const": 604800000,
+              "type": "integer"
+            },
+            "maxMessageBytes": {
+              "const": 262144,
+              "type": "integer"
+            },
+            "timestampType": {
+              "const": "LogAppendTime",
+              "type": "string"
+            }
+          }
+        },
+        "image-dlt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "retentionMs",
+            "maxMessageBytes",
+            "timestampType"
+          ],
+          "properties": {
+            "retentionMs": {
+              "const": 2592000000,
+              "type": "integer"
+            },
+            "maxMessageBytes": {
+              "const": 524288,
+              "type": "integer"
+            },
+            "timestampType": {
+              "const": "CreateTime",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft-07/schema#"
+}

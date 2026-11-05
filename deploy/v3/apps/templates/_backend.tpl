@@ -38,8 +38,14 @@
 {{- if or (ne $p.httpGet.path $path) (ne $p.httpGet.port "management") }}{{ fail "BE Probe must use the dedicated management endpoint" }}{{ end -}}
 {{- end -}}
 {{- if lt (int $c.terminationGracePeriodSeconds) (int $contract.minimumTerminationGraceSeconds) }}{{ fail "Keep at least 180 seconds for BE worker drain and shutdown" }}{{ end -}}
-{{- range $key := concat $contract.topicConfig $contract.conversionTopicConfig (list "ATTACHMENT_CONVERSION_GROUP_PREFIX" "KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP") -}}
-{{- if not (hasPrefix $contract.topicPrefix (index $c.configMapData $key)) }}{{ fail "Use V3-specific Topic and Group names" }}{{ end -}}
+{{- $kafka := .root.Files.Get "files/business-contract.json" | fromJson -}}
+{{- range $key, $expected := $kafka.backendEnvironment -}}
+{{- if ne (index $c.configMapData $key) $expected }}{{ fail (printf "BE Topic/Group %s must match the shared Kafka contract" $key) }}{{ end -}}
+{{- end -}}
+{{- range $key, $expected := $kafka.backendSpringGroups -}}
+{{- $property := "result-consumer-group" -}}
+{{- if eq $key "outbox" }}{{ $property = "receipt-consumer-group" }}{{ end -}}
+{{- if ne (dig "app" $key $property "" $c.springProperties) $expected }}{{ fail "BE structured consumer group must match the shared Kafka contract" }}{{ end -}}
 {{- end -}}
 {{- if ne $c.configMapData.ATTACHMENT_CONVERSION_MODE "KAFKA" }}{{ fail "Every V3 BE role must keep KAFKA mode, including non-consumers" }}{{ end -}}
 {{- $roleName := required "Unknown BE workload role" (index $contract.workloadRoles .instance) -}}
