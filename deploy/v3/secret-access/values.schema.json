@@ -37,6 +37,9 @@
         },
         "redis": {
           "$ref": "#/definitions/store"
+        },
+        "mongodb": {
+          "$ref": "#/definitions/store"
         }
       }
     }

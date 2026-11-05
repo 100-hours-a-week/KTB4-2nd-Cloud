@@ -1,0 +1,22 @@
+storage:
+  dbPath: /data/db/files
+  wiredTiger:
+    engineConfig:
+      cacheSizeGB: 0.25
+net:
+  bindIp: 0.0.0.0
+  port: 27017
+  unixDomainSocket:
+    enabled: false
+  maxIncomingConnections: 100
+  tls:
+    mode: requireTLS
+    certificateKeyFile: /tmp/server.pem
+    CAFile: /credentials/ca.crt
+    allowConnectionsWithoutCertificates: true
+security:
+  authorization: enabled
+setParameter:
+  authenticationMechanisms: SCRAM-SHA-256
+processManagement:
+  timeZoneInfo: /usr/share/zoneinfo
