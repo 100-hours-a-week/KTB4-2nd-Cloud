@@ -1,0 +1,52 @@
+name: V2 staging retirement checks
+
+on:
+  push:
+    paths:
+      - 'terraform/v2/staging/**'
+      - 'terraform/v2/modules/shared-gpu-network/**'
+      - 'scripts/check-v2-staging-retirement-plan.py'
+      - 'scripts/update-v2-runpod.py'
+      - 'tests/ci/test_staging_retirement.py'
+      - 'tests/ci/test_runpod_update.py'
+      - '.github/workflows/v2-staging-retirement-check.yml'
+      - '.github/workflows/v2-production-runpod-update.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'terraform/v2/staging/**'
+      - 'terraform/v2/modules/shared-gpu-network/**'
+      - 'scripts/check-v2-staging-retirement-plan.py'
+      - 'scripts/update-v2-runpod.py'
+      - 'tests/ci/test_staging_retirement.py'
+      - 'tests/ci/test_runpod_update.py'
+      - '.github/workflows/v2-staging-retirement-check.yml'
+      - '.github/workflows/v2-production-runpod-update.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Retained infrastructure and RunPod contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify destructive-plan guard and production-only RunPod recovery
+        run: |
+          python3 -m unittest discover -s tests/ci -p test_staging_retirement.py
+          python3 -m unittest discover -s tests/ci -p test_runpod_update.py
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.16.2
+          terraform_wrapper: false
+      - name: Validate retained configuration without AWS credentials or State
+        working-directory: terraform/v2/staging
+        run: |
+          terraform fmt -check
+          terraform fmt -check ../modules/shared-gpu-network
+          terraform init -backend=false -input=false -lockfile=readonly
+          terraform validate -no-color

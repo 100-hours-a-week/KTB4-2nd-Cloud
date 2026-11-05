@@ -132,6 +132,20 @@ class SecretContracts(unittest.TestCase):
     def test_no_secret_payload_in_operator(self):
         self.rejected_operator(lambda ds: self.find(ds, 'Secret').update(stringData={'marker': 'synthetic'}))
 
+    def test_mysql_namespace_opt_in_and_source_boundary(self):
+        defaults = yaml.safe_load((contract.CHART / 'values.yaml').read_text())
+        path = ROOT / 'deploy/v3/environments/foundation/mysql-secrets.values.yaml'
+        values = contract.merge(defaults, yaml.safe_load(path.read_text()))
+        documents = contract.load_documents(contract.render(contract.CHART, 'yeodam-v3-secret-access', path))
+        contract.validate_access(documents, values['stores'])
+        self.assertEqual(len([d for d in documents if d['kind'] == 'SecretStore']), 1)
+        binding = next(d for d in documents if d['kind'] == 'ExternalSecret')
+        self.assertEqual(binding['metadata']['namespace'], 'mysql')
+        self.assertEqual(len(binding['spec']['data']), 8)
+        binding['spec']['data'][0]['remoteRef']['key'] = 'yeodam/v2/production/mysql'
+        with self.assertRaises(contract.platform.ContractError):
+            contract.validate_access(documents, values['stores'])
+
     def test_helm_rejects_invalid_contract(self):
         cases = []
         wrong_role = copy.deepcopy(self.values)

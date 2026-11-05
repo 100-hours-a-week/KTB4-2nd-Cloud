@@ -1,0 +1,17 @@
+# Foundation only. No business topics, Connect, app credentials or production endpoints.
+# Install namespace/policies before Strimzi CRDs. Explicit foundation values enable Kafka.
+clusterEnabled: false
+clusterName: yeodam-v3-kafka
+kafkaVersion: "4.2.2"
+kafkaImage: quay.io/strimzi/kafka@sha256:b9b9e37491ce17c1b2722b3668661de91430d9437acf18c5f5bafaef38138652
+broker:
+  replicas: 3
+  resources:
+    requests: {cpu: 250m, memory: 1Gi}
+    limits: {memory: 1Gi}
+  heap: 512m
+  storageClass: yeodam-v3-gp3-retain
+  volumeSize: 10Gi
+# Creates only an isolated smoke identity, topic and one-shot Job. Remove after verification.
+smoke:
+  enabled: false

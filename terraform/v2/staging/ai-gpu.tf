@@ -4,6 +4,7 @@ locals {
 
 # Reviewed AWS DLAMI: GPU driver and NVIDIA container toolkit are preinstalled.
 # Pin the image rather than replacing a stateful GPU host on each AMI release.
+
 data "aws_ami" "ai_gpu" {
   owners = ["898082745236"]
   filter {
@@ -16,38 +17,11 @@ data "aws_ami" "ai_gpu" {
   }
 }
 
-resource "aws_security_group" "ai_api_tasks" {
-  name_prefix = "yeodam-v2-staging-ai-api-"
-  description = "Network identity for future staging AI API tasks"
-  vpc_id      = module.network.vpc_id
-  tags        = merge(local.common_tags, { Name = "yeodam-v2-staging-ai-api-sg", Role = "ai" })
-}
-
 resource "aws_security_group" "ai_gpu" {
   name_prefix = "${local.ai_gpu_name}-"
   description = "Private embedding and Qdrant host; SSM administration only"
   vpc_id      = module.network.vpc_id
   tags        = merge(local.common_tags, { Name = "${local.ai_gpu_name}-sg", Role = "ai" })
-}
-
-resource "aws_vpc_security_group_ingress_rule" "ai_gpu_api" {
-  for_each                     = { embedding = 8000, qdrant = 6333 }
-  security_group_id            = aws_security_group.ai_gpu.id
-  referenced_security_group_id = aws_security_group.ai_api_tasks.id
-  description                  = "AI API to ${each.key} on private GPU host"
-  ip_protocol                  = "tcp"
-  from_port                    = each.value
-  to_port                      = each.value
-}
-
-resource "aws_vpc_security_group_egress_rule" "ai_api_gpu" {
-  for_each                     = { embedding = 8000, qdrant = 6333 }
-  security_group_id            = aws_security_group.ai_api_tasks.id
-  referenced_security_group_id = aws_security_group.ai_gpu.id
-  description                  = "AI API to private ${each.key}"
-  ip_protocol                  = "tcp"
-  from_port                    = each.value
-  to_port                      = each.value
 }
 
 resource "aws_vpc_security_group_egress_rule" "ai_gpu_https" {
@@ -129,7 +103,9 @@ resource "aws_route53_record" "ai_gpu_private" {
 }
 
 output "ai_gpu_instance_id" { value = aws_instance.ai_gpu.id }
+
 output "ai_gpu_private_ip" { value = aws_instance.ai_gpu.private_ip }
+
 output "ai_gpu_private_hostname" { value = aws_route53_record.ai_gpu_private.fqdn }
+
 output "ai_gpu_qdrant_volume_id" { value = aws_ebs_volume.qdrant_data.id }
-output "ai_api_task_security_group_id" { value = aws_security_group.ai_api_tasks.id }

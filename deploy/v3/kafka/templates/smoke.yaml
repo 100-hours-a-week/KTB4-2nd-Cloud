@@ -1,0 +1,169 @@
+{{- if and .Values.clusterEnabled .Values.smoke.enabled }}
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: v3-smoke
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: {{ .Values.clusterName }}
+    app.kubernetes.io/part-of: yeodam
+    yeodam.io/stage: v3
+spec:
+  partitions: 3
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    retention.ms: 3600000
+    retention.bytes: 10485760
+    segment.bytes: 1048576
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: v3-smoke
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: {{ .Values.clusterName }}
+    app.kubernetes.io/part-of: yeodam
+    yeodam.io/stage: v3
+spec:
+  authentication:
+    type: scram-sha-512
+  authorization:
+    type: simple
+    acls:
+      - resource: {type: topic, name: v3-smoke, patternType: literal}
+        operations: [Read, Write, Describe, DescribeConfigs]
+        host: "*"
+      - resource: {type: group, name: v3-smoke-, patternType: prefix}
+        operations: [Read, Delete]
+        host: "*"
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: kafka-smoke, namespace: kafka, labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 360
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: kafka-smoke, app.kubernetes.io/instance: kafka-smoke, app.kubernetes.io/component: verification, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector: {yeodam.io/role: system}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: smoke
+          image: {{ .Values.kafkaImage | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 50m, memory: 256Mi}
+            limits: {memory: 384Mi}
+          env:
+            - {name: KAFKA_HEAP_OPTS, value: "-Xms64m -Xmx128m"}
+          command: [/bin/bash, -ec]
+          args:
+            - |
+              umask 077
+              cfg=/tmp/client.properties
+              cat > "$cfg" <<EOF
+              security.protocol=SASL_SSL
+              sasl.mechanism=SCRAM-SHA-512
+              sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="v3-smoke" password="$(cat /credentials/password)";
+              ssl.truststore.type=PEM
+              ssl.truststore.location=/ca/ca.crt
+              ssl.endpoint.identification.algorithm=https
+              request.timeout.ms=15000
+              default.api.timeout.ms=60000
+              EOF
+              bootstrap={{ .Values.clusterName }}-kafka-bootstrap.kafka.svc:9093
+              token="v3-smoke-$(date +%s)-$RANDOM"
+              printf '%s\n' "$token" | /opt/kafka/bin/kafka-console-producer.sh \
+                --bootstrap-server "$bootstrap" --topic v3-smoke \
+                --producer.config "$cfg" --producer-property acks=all --producer-property delivery.timeout.ms=60000
+              /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server "$bootstrap" \
+                --topic v3-smoke --from-beginning --group "v3-smoke-$token" \
+                --consumer.config "$cfg" --timeout-ms 60000 > /tmp/received 2>/tmp/consumer.log &
+              consumer=$!
+              for attempt in $(seq 1 60); do
+                if grep -Fxq "$token" /tmp/received; then
+                  kill "$consumer" 2>/dev/null || true
+                  wait "$consumer" 2>/dev/null || true
+                  echo 'PASS: authenticated TLS produce acks=all and consume matched'
+                  /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$bootstrap" \
+                    --command-config "$cfg" --describe --topic v3-smoke > /tmp/topic.log
+                  awk '
+{{ .Files.Get "files/check-replicas.awk" | indent 20 }}
+                  ' /tmp/topic.log || {
+                    echo 'FAIL: all three replicas must be in sync for all three partitions' >&2; exit 1;
+                  }
+                  echo 'PASS: three partitions each have three in-sync replicas'
+                  # Wrong credentials must fail for the authentication reason, not a timeout.
+                  sed 's/password="[^"]*"/password="deliberately-invalid"/' "$cfg" > /tmp/invalid.properties
+                  if timeout 45 /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$bootstrap" \
+                    --command-config /tmp/invalid.properties --list > /tmp/auth.log 2>&1; then
+                    echo 'FAIL: wrong password was accepted' >&2
+                    exit 1
+                  fi
+                  grep -Eq 'SaslAuthenticationException|SASL_AUTHENTICATION_FAILED' /tmp/auth.log || {
+                    echo 'FAIL: expected explicit authentication rejection' >&2; exit 1;
+                  }
+                  # Correct credentials must still be denied access to a non-owned topic.
+                  # ConsoleConsumer can log authorization failure and still exit 0.
+                  # Require the explicit broker rejection, never infer it from exit status.
+                  timeout 45 /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server "$bootstrap" \
+                    --consumer.config "$cfg" --topic __consumer_offsets --partition 0 --offset earliest \
+                    --max-messages 1 --timeout-ms 15000 --consumer-property enable.auto.commit=false > /tmp/acl.log 2>&1 || true
+                  grep -Eq 'TopicAuthorizationException|TOPIC_AUTHORIZATION_FAILED' /tmp/acl.log || {
+                    echo 'FAIL: expected explicit authorization rejection' >&2; exit 1;
+                  }
+                  echo 'PASS: invalid password and non-owned topic rejected'
+                  /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server "$bootstrap" \
+                    --command-config "$cfg" --delete --group "v3-smoke-$token" > /tmp/group-cleanup.log 2>&1
+                  grep -Fq 'was successful' /tmp/group-cleanup.log || {
+                    echo 'FAIL: temporary consumer group cleanup was not confirmed' >&2; exit 1;
+                  }
+                  # A failed earlier trial can leave its own group behind. No other prefix is touched.
+                  /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server "$bootstrap" \
+                    --command-config "$cfg" --list > /tmp/groups.log
+                  while IFS= read -r group; do
+                    [[ "$group" =~ ^v3-smoke-v3-smoke-[0-9]+-[0-9]+$ ]] || continue
+                    /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server "$bootstrap" \
+                      --command-config "$cfg" --delete --group "$group" > /tmp/group-cleanup.log 2>&1
+                    grep -Fq 'was successful' /tmp/group-cleanup.log || {
+                      echo 'FAIL: earlier temporary group cleanup was not confirmed' >&2; exit 1;
+                    }
+                  done < /tmp/groups.log
+                  /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server "$bootstrap" \
+                    --command-config "$cfg" --list > /tmp/groups-final.log
+                  if grep -Eq '^v3-smoke-v3-smoke-[0-9]+-[0-9]+$' /tmp/groups-final.log; then
+                    echo 'FAIL: temporary consumer group remains' >&2; exit 1
+                  fi
+                  echo 'PASS: temporary consumer group removed'
+                  exit 0
+                fi
+                sleep 1
+              done
+              kill "$consumer" 2>/dev/null || true
+              wait "$consumer" 2>/dev/null || true
+              echo 'FAIL: round-trip token missing' >&2
+              exit 1
+          volumeMounts:
+            - {name: credentials, mountPath: /credentials, readOnly: true}
+            - {name: ca, mountPath: /ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: credentials
+          secret: {secretName: v3-smoke, items: [{key: password, path: password}]}
+        - name: ca
+          secret: {secretName: '{{ .Values.clusterName }}-cluster-ca-cert', items: [{key: ca.crt, path: ca.crt}]}
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 8Mi}
+{{- end }}

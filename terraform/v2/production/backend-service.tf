@@ -2,7 +2,9 @@ locals {
   production_backend_manifest = local.production_release_manifest.components.backend
   production_backend_image    = "ghcr.io/100-hours-a-week/yeodam-backend@${local.production_backend_manifest.digest}"
   backend_origin              = "https://yeodam-2gether.com"
-  backend_parameters = {
+  backend_parameters = merge(var.websocket_enabled ? {
+    WEBSOCKET_INTERNAL_SERVICE_TOKEN = local.websocket_token_path
+    } : {}, {
     MYSQL_PASSWORD                    = local.mysql_app_password_parameter
     KAKAO_CLIENT_ID                   = "/yeodam/v2/production/app/KAKAO_CLIENT_ID"
     KAKAO_CLIENT_SECRET               = "/yeodam/v2/production/app/KAKAO_CLIENT_SECRET"
@@ -11,8 +13,10 @@ locals {
     DATA_GO_KR_SERVICE_KEY            = "/yeodam/v2/production/app/DATA_GO_KR_SERVICE_KEY"
     DATA_GO_KR_LEGAL_DISTRICT_API_URL = "/yeodam/v2/production/app/DATA_GO_KR_LEGAL_DISTRICT_API_URL"
     DATA_GO_KR_TIMEOUT                = "/yeodam/v2/production/app/DATA_GO_KR_TIMEOUT"
-  }
-  backend_environment = {
+  })
+  backend_environment = merge(var.websocket_enabled ? {
+    WEBSOCKET_EVENTS_CHANNEL = local.websocket_channel
+    } : {}, {
     SPRING_PROFILES_ACTIVE              = "prod,internal-metrics"
     MANAGEMENT_SERVER_ADDRESS           = "0.0.0.0"
     SPRING_JPA_HIBERNATE_DDL_AUTO       = "validate"
@@ -40,7 +44,7 @@ locals {
     ATTACHMENT_S3_BUCKET                = data.aws_s3_bucket.production_photos.id
     SENTRY_ENVIRONMENT                  = "production"
     RELEASE                             = local.production_backend_manifest.sourceSha
-  }
+  })
 }
 
 resource "aws_vpc_security_group_ingress_rule" "backend_alb" {
@@ -129,6 +133,10 @@ resource "aws_ecs_service" "backend" {
     target_group_arn = module.app_alb.backend_target_group_arn
     container_name   = "backend"
     container_port   = 8080
+  }
+  dynamic "service_registries" {
+    for_each = var.websocket_enabled ? [aws_service_discovery_service.websocket_backend[0].arn] : []
+    content { registry_arn = service_registries.value }
   }
   deployment_circuit_breaker {
     enable   = true

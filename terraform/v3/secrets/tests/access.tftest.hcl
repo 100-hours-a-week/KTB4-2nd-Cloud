@@ -41,3 +41,17 @@ run "namespace_read_boundary" {
     error_message = "Pod Identity must be bound to this cluster's core controller only."
   }
 }
+
+run "mysql_reader_opt_in" {
+  command = apply
+  variables { enable_mysql_reader = true }
+  assert {
+    condition = (
+      length(aws_iam_role.reader) == 6 &&
+      length(jsondecode(aws_iam_role_policy.assume_readers.policy).Statement[0].Resource) == 6 &&
+      jsondecode(aws_iam_role_policy.read["mysql"].policy).Statement[0].Resource == ["arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/mysql/*"] &&
+      toset(jsondecode(aws_iam_role_policy.read["mysql"].policy).Statement[0].Action) == toset(["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"])
+    )
+    error_message = "Opt-in MySQL reader must read only its V3 namespace prefix."
+  }
+}

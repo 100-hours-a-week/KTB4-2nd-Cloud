@@ -80,6 +80,30 @@
       "sha256": "14bf6e296c189e0414464c734c384a53dd2e0aae12589b030340f6079e7473b4",
       "license": "Apache-2.0",
       "upstreamCommit": "e0c72a1bc5f409d1685c0e1323460c8a98cd7459"
+    },
+    "storageclass": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/storageclass.json",
+      "sha256": "861cd2cad6e752b0d361e4946438f1d22e6e8ab0acad194c2a5dc50dc9242a4c"
+    },
+    "job": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/job.json",
+      "sha256": "edcd3b8017ad204da5cb94562dd31f038f121e9a81931204d9983edd3fa7604c"
+    },
+    "rolebinding": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/rolebinding.json",
+      "sha256": "d9b50842abde1f24dd16bdf266cb144184cf4672a628d0ee16ebc723ec7ecf79"
+    },
+    "statefulset": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/statefulset.json",
+      "sha256": "8dedec0a26f86a59ffeea907c48dd5373482a5479683f4f38915daf751560139",
+      "license": "Apache-2.0",
+      "upstreamCommit": "e0c72a1bc5f409d1685c0e1323460c8a98cd7459"
+    },
+    "poddisruptionbudget": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/poddisruptionbudget.json",
+      "sha256": "b298454a08f8ff1266c3e62b0e8ed6c4aab9b7882ecc9ff6eb13999ca88a7b6f",
+      "license": "Apache-2.0",
+      "upstreamCommit": "e0c72a1bc5f409d1685c0e1323460c8a98cd7459"
     }
   }
 }

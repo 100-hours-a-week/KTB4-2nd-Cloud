@@ -1,0 +1,4 @@
+enabled: true
+# Explicitly enable bootstrap only for empty initial volumes; never for promotion.
+bootstrap: false
+smoke: false
