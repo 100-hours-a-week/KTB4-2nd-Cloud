@@ -111,6 +111,18 @@ class KafkaAccess(unittest.TestCase):
                 result=subprocess.run(['bash','-c',source],capture_output=True,text=True)
                 with self.subTest(message=message,code=code):self.assertEqual(result.returncode,wanted)
 
+    def test_no_topic_write_pid_rejection_is_an_expected_denial(self):
+        script=(a.CHART/'files/verify.sh').read_text()
+        line=next(l for l in script.splitlines() if "Denied writer unexpectedly" in l)
+        pattern=line.split("'")[1]
+        for message,wanted in [('ClusterAuthorizationException',0),('CLUSTER_AUTHORIZATION_FAILED',0),
+                ('TopicAuthorizationException',0),('SaslAuthenticationException',1),('Network timeout',1)]:
+            result=subprocess.run(['grep','-Eq',pattern],input=message,text=True)
+            with self.subTest(message=message):self.assertEqual(result.returncode,wanted)
+        other=next(l for l in script.splitlines() if 'Unlisted Topic was not rejected' in l)
+        self.assertNotIn('ClusterAuthorizationException',other)
+        self.assertIn('enable.idempotence=true',script)
+
     def test_reviewed_shell_checks_authorization_failures_not_just_exit_codes(self):
         script=(a.CHART/'files/verify.sh').read_text()
         subprocess.run(['bash','-n'],input=script,text=True,check=True)
