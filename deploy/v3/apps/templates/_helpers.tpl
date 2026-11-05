@@ -22,6 +22,10 @@ capabilities:
 {{- define "yeodam-v3-apps.check" -}}
 {{- $c := .config -}}
 {{- $prefix := printf "%s: " .instance -}}
+{{- $roles := .root.Files.Get "files/placement-contract.json" | fromJson -}}
+{{- $role := required "Unknown app placement role" (index $roles .instance) -}}
+{{- if ne (toJson $c.nodeSelector) (toJson (dict "yeodam.io/role" $role "yeodam.io/stage" "v3")) }}{{ fail "App nodeSelector must select its own V3 CPU pool" }}{{ end -}}
+{{- if ne (toJson $c.tolerations) (toJson (list (dict "key" "yeodam.io/role" "operator" "Equal" "value" $role "effect" "NoSchedule"))) }}{{ fail "App must tolerate only its own role taint" }}{{ end -}}
 {{- $_ := required (cat $prefix "set a published digest-pinned image") (index .root.Values.images $c.imageRef) -}}
 {{- $_ := required (cat $prefix "set CPU request") $c.resources.requests.cpu -}}
 {{- $_ := required (cat $prefix "set memory request") $c.resources.requests.memory -}}

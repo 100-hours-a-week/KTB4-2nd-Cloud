@@ -1,0 +1,69 @@
+{{- if .Values.enabled }}
+{{- if not .Values.creditBootstrapReady }}{{ fail "Apply and verify the dedicated node-credit IAM policy before enabling pools" }}{{ end }}
+{{- $c := .Values.nodeClass }}
+{{- $_ := required "Pin a reviewed AL2023 x86_64 AMI" $c.amiId }}
+{{- $_ := required "Use the existing V3 security group" $c.securityGroupId }}
+{{- range $az, $id := $c.subnetIds }}{{- $_ := required (printf "Private subnet required for %s" $az) $id }}{{- end }}
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: {{ $c.name }}
+  labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+spec:
+  amiFamily: AL2023
+  amiSelectorTerms:
+    - id: {{ $c.amiId }}
+  subnetSelectorTerms:
+    {{- range $az, $id := $c.subnetIds }}
+    - id: {{ $id }}
+    {{- end }}
+  securityGroupSelectorTerms:
+    - id: {{ $c.securityGroupId }}
+  instanceProfile: {{ $c.instanceProfile }}
+  associatePublicIPAddress: false
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 1
+    httpTokens: required
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      rootVolume: true
+      ebs:
+        volumeSize: 20Gi
+        volumeType: gp3
+        encrypted: true
+        deleteOnTermination: true
+  detailedMonitoring: false
+  kubelet:
+    maxPods: 17
+  tags:
+    Project: yeodam
+    Version: v3
+    Environment: foundation
+    Role: app
+    Issue: '531'
+  userData: |
+    MIME-Version: 1.0
+    Content-Type: multipart/mixed; boundary="YEODAM-CPU-CREDIT"
+
+    --YEODAM-CPU-CREDIT
+    Content-Type: text/x-shellscript; charset="us-ascii"
+
+    #!/bin/bash
+    set -Eeuo pipefail
+    umask 077
+    install -d /etc/systemd/system/kubelet.service.d
+    cat > /etc/systemd/system/kubelet.service.d/20-yeodam-credit.conf <<'CREDIT_GATE'
+{{ .Files.Get "files/kubelet-credit-gate.conf" | indent 4 }}
+    CREDIT_GATE
+    cat > /etc/systemd/system/yeodam-cpu-credit-standard.service <<'CREDIT_UNIT'
+{{ .Files.Get "files/cpu-credit-standard.service" | indent 4 }}
+    CREDIT_UNIT
+    cat > /usr/local/sbin/yeodam-cpu-credit-standard <<'CREDIT_SCRIPT'
+{{ .Files.Get "files/cpu-credit-standard.sh" | indent 4 }}
+    CREDIT_SCRIPT
+    chmod 0700 /usr/local/sbin/yeodam-cpu-credit-standard
+    systemctl daemon-reload
+    --YEODAM-CPU-CREDIT--
+{{- end }}

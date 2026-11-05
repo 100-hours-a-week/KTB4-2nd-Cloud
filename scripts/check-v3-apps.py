@@ -118,6 +118,10 @@ def validate(documents, values):
                 'Pod security must remain non-root with RuntimeDefault seccomp')
         require(all(value > 0 for value in config['security'].values()), 'Use explicit non-root user/group IDs')
         require(pod['imagePullSecrets'] == [{'name': item} for item in config['imagePullSecrets']], 'Pull Secret references mismatch')
+        roles = json.loads((CHART / 'files/placement-contract.json').read_text())
+        role = roles[name]
+        require(config['nodeSelector'] == {'yeodam.io/role': role, 'yeodam.io/stage': 'v3'} and pod.get('nodeSelector') == config['nodeSelector'], 'App must select its own V3 CPU pool')
+        require(config['tolerations'] == [{'key': 'yeodam.io/role', 'operator': 'Equal', 'value': role, 'effect': 'NoSchedule'}] and pod.get('tolerations') == config['tolerations'], 'Do not tolerate other or fixed-node roles')
         container = pod['containers'][0]
         require(not container.get('command') and not container.get('args'), 'Use image default startup, not per-role commands')
         require(len(pod['containers']) == 1, 'Unreviewed sidecars are outside this chart')

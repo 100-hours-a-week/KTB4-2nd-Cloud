@@ -1,0 +1,20 @@
+# No Node/EC2 provisioned until explicitly enabled after IAM/preflight review.
+enabled: false
+creditBootstrapReady: false
+nodeClass:
+  name: yeodam-v3-app
+  amiId: ''
+  subnetIds:
+    ap-northeast-2a: ''
+    ap-northeast-2c: ''
+  securityGroupId: ''
+  instanceProfile: yeodam-v3-foundation-karpenter-node
+pools:
+  api:
+    instanceType: t3a.medium
+    cpuLimit: '4'
+    memoryLimit: 8Gi
+  worker:
+    instanceType: t3a.medium
+    cpuLimit: '4'
+    memoryLimit: 8Gi
