@@ -22,6 +22,7 @@ public class OutboxWire {
       var operations=history ? List.of(AclOperation.READ,AclOperation.WRITE,AclOperation.DESCRIBE,AclOperation.DESCRIBE_CONFIGS) : List.of(AclOperation.WRITE,AclOperation.DESCRIBE);
       for(var op:operations)acls.add(new AclBinding(new ResourcePattern(ResourceType.TOPIC,t,PatternType.LITERAL),new AccessControlEntry("User:v3-connect-outbox","*",op,AclPermissionType.ALLOW)));
     }
+    acls.add(new AclBinding(new ResourcePattern(ResourceType.GROUP,"v3.yeodam.outbox-schemahistory",PatternType.LITERAL),new AccessControlEntry("User:v3-connect-outbox","*",AclOperation.READ,AclPermissionType.ALLOW)));
     try(var admin=Admin.create(p)) {admin.createTopics(created).all().get(60,TimeUnit.SECONDS);admin.createAcls(acls).all().get(60,TimeUnit.SECONDS);}
     System.out.println("PASS: synthetic business7/history1 RF3/minISR2 and literal Source ACLs");
   }

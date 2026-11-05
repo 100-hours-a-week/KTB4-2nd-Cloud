@@ -87,7 +87,7 @@ class Outbox:
   return found if len(found)>=minimum else None
  def receive(self,minimum):
   for _ in range(20):
-   records=self.records();found=self.check_wire(records,minimum)
+   self.running();records=self.records();found=self.check_wire(records,minimum)
    if found:return found
    time.sleep(2)
   raise RuntimeError('Expected Outbox records not observed')

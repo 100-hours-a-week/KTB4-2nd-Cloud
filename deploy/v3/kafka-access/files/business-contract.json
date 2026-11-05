@@ -245,7 +245,8 @@
       ],
       "describeTopics": [],
       "groups": [
-        "connect-v3"
+        "connect-v3",
+        "v3.yeodam.outbox-schemahistory"
       ],
       "extraTopicOperations": {
         "prod.connect-configs": [
