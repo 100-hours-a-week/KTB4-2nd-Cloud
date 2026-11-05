@@ -14,6 +14,12 @@ on:
       - 'scripts/prepare-production-release.py'
       - 'tests/ci/test_production_release_prepare.py'
       - '.github/workflows/production-release-prepare.yml'
+      - 'scripts/check-v3-mongodb.py'
+      - 'scripts/create-v3-mongodb-bootstrap-secret.py'
+      - 'tests/ci/test_v3_mongodb.py'
+      - 'scripts/check-v3-redis.py'
+      - 'scripts/create-v3-redis-bootstrap-secret.py'
+      - 'tests/ci/test_v3_redis.py'
       - 'scripts/check-v3-mysql.py'
       - 'scripts/create-v3-mysql-bootstrap-secret.py'
       - 'tests/ci/test_v3_mysql.py'
@@ -29,6 +35,13 @@ on:
       - 'scripts/check-v3-apps.py'
       - 'scripts/v3_backend_contract.py'
       - 'scripts/check-v3-secrets.py'
+      - 'terraform/v3/karpenter/**'
+      - 'scripts/check-v3-karpenter-plan.py'
+      - 'tests/ci/test_v3_karpenter_plan.py'
+      - 'scripts/check-v3-karpenter.py'
+      - 'scripts/filter-v3-karpenter.py'
+      - 'scripts/helm-plugins/**'
+      - 'tests/ci/test_v3_karpenter.py'
       - 'terraform/v3/secrets/**'
       - 'terraform/v3/foundation/**'
       - 'scripts/prepare-v3-validation.py'
@@ -76,6 +89,17 @@ jobs:
 
       - name: Verify minimum-cost Kafka Plan protection
         run: python3 -m unittest discover -s tests/ci -p 'test_v3_kafka_plan.py'
+
+      - name: Verify controller-only Karpenter Plan protection
+        run: python3 -m unittest discover -s tests/ci -p 'test_v3_karpenter_plan.py'
+
+      - name: Validate Karpenter IAM and interruption events using mock AWS only
+        working-directory: terraform/v3/karpenter
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false -input=false -lockfile=readonly
+          terraform validate -no-color
+          terraform test -no-color
 
       - name: Validate Secret IAM using mock AWS provider only
         working-directory: terraform/v3/secrets

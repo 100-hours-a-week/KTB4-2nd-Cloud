@@ -1,51 +1,5 @@
-# Optional overlay AFTER backend.values.yaml. BE handoff candidates, not measured production settings.
-# Topic/DLT, ACL, producer/broker limits, MySQL V33 and CDC must be ready before KAFKA deployment.
+# Compatibility overlay: backend.values.yaml now supplies the complete KAFKA-only role contract.
+# Topic/ACL/TLS/Connect/Flyway prerequisites must be ready before enabling any workload.
 defaults:
   configMapData:
     ATTACHMENT_CONVERSION_MODE: KAFKA
-    ATTACHMENT_CONVERSION_GROUP_PREFIX: v3.foundation.yeodam.image-conversion
-    ATTACHMENT_CONVERSION_TECHNICAL_BACKOFF: 3s
-    ATTACHMENT_CONVERSION_RECOVERY_INTERVAL: 60s
-    ATTACHMENT_CONVERSION_RECOVERY_PAGE_SIZE: '10'
-    ATTACHMENT_CONVERSION_RECOVERY_MAX_PAGES_PER_RUN: '2'
-    ATTACHMENT_CONVERSION_RECOVERY_MAX_REISSUES_PER_RUN: '5'
-    ATTACHMENT_CONVERSION_FETCH_MAX_BYTES: '1048576'
-    ATTACHMENT_CONVERSION_PARTITION_FETCH_MAX_BYTES: '524288'
-    ATTACHMENT_CONVERSION_MAX_MESSAGE_BYTES: '262144'
-    SPRING_APPLICATION_JSON: |
-      {
-        "app": {
-          "trip": {
-            "result-listener-enabled": true,
-            "result-consumer-group": "v3.foundation.yeodam.trip-results"
-          },
-          "story": {
-            "result-listener-enabled": true,
-            "result-consumer-group": "v3.foundation.yeodam.story-results"
-          },
-          "outbox": {
-            "receipt-consumer-group": "v3.foundation.yeodam.outbox-receipts"
-          },
-          "attachment-conversion": {
-            "admission": {
-              "max-unfinished-photos": {
-                "LIGHT": 100,
-                "HEIC": 50
-              },
-              "max-unfinished-bytes": {
-                "LIGHT": 1572864000,
-                "HEIC": 786432000
-              },
-              "max-unfinished-age": "5m",
-              "sample-interval": "5s",
-              "snapshot-max-age": "15s",
-              "reopen-ratio": 0.5
-            }
-          }
-        }
-      }
-    ATTACHMENT_CONVERSION_INITIAL_LIGHT_TOPIC: v3.foundation.yeodam.image.initial-light
-    ATTACHMENT_CONVERSION_INITIAL_HEIC_TOPIC: v3.foundation.yeodam.image.initial-heic
-    ATTACHMENT_CONVERSION_ADDITIONAL_LIGHT_TOPIC: v3.foundation.yeodam.image.additional-light
-    ATTACHMENT_CONVERSION_ADDITIONAL_HEIC_TOPIC: v3.foundation.yeodam.image.additional-heic
-    ATTACHMENT_CONVERSION_DLT_TOPIC: v3.foundation.yeodam.image.conversion-dlt

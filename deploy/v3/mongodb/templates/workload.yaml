@@ -1,0 +1,135 @@
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mongodb
+  namespace: mongodb
+  labels:
+    {{- include "mongodb.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongodb-runtime
+  namespace: mongodb
+  labels:
+    {{- include "mongodb.labels" . | nindent 4 }}
+data:
+{{ (.Files.Glob "files/*").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-members
+  namespace: mongodb
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "mongodb.selector" . | nindent 4 }}
+    yeodam.io/mongodb-process: server
+  ports: [{name: mongodb, port: 27017, targetPort: mongodb}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: mongodb, namespace: mongodb}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "mongodb.selector" . | nindent 4 }}
+    yeodam.io/mongodb-process: server
+  ports: [{name: mongodb, port: 27017, targetPort: mongodb}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: mongodb
+  labels:
+    {{- include "mongodb.labels" . | nindent 4 }}
+spec:
+  serviceName: mongodb-members
+  replicas: 1
+  podManagementPolicy: Parallel
+  updateStrategy: {type: OnDelete}
+  persistentVolumeClaimRetentionPolicy: {whenDeleted: Retain, whenScaled: Retain}
+  selector:
+    matchLabels:
+      {{- include "mongodb.selector" . | nindent 6 }}
+      yeodam.io/mongodb-process: server
+  template:
+    metadata:
+      labels:
+        {{- include "mongodb.labels" . | nindent 8 }}
+        yeodam.io/mongodb-process: server
+      annotations:
+        checksum/runtime: {{ (.Files.Glob "files/*").AsConfig | sha256sum }}
+    spec:
+      serviceAccountName: mongodb
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      nodeSelector: {yeodam.io/role: data, yeodam.io/memory-tier: 4gi}
+      tolerations:
+        - {key: yeodam.io/role, operator: Equal, value: data, effect: NoSchedule}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: mongodb
+          image: {{ .Values.image }}
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, /runtime/entrypoint.sh]
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: NODE_OPTIONS, value: "--max-old-space-size=128"}
+          ports: [{name: mongodb, containerPort: 27017}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {cpu: 500m, memory: 1Gi}
+          startupProbe:
+            exec: {command: [/bin/bash, /runtime/shell.sh, /runtime/health.js]}
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            exec: {command: [/bin/bash, /runtime/shell.sh, /runtime/health.js]}
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            exec: {command: [/bin/bash, /runtime/shell.sh, /runtime/health.js]}
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - {name: data, mountPath: /data/db}
+            - {name: tmp, mountPath: /tmp}
+            - {name: runtime, mountPath: /etc/mongosh.conf, subPath: mongosh.conf, readOnly: true}
+            - {name: credentials, mountPath: /credentials, readOnly: true}
+            {{- range $path, $_ := .Files.Glob "files/*" }}
+            - {name: runtime, mountPath: /runtime/{{ base $path }}, subPath: {{ base $path }}, readOnly: true}
+            {{- end }}
+      volumes:
+        - {name: runtime, configMap: {name: mongodb-runtime, defaultMode: 0444}}
+        - {name: credentials, secret: {secretName: mongodb-bootstrap, defaultMode: 0440}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        annotations: {helm.sh/resource-policy: keep}
+      spec:
+        accessModes: [ReadWriteOncePod]
+        storageClassName: yeodam-v3-gp3-retain
+        resources:
+          requests: {storage: 5Gi}
+{{- end }}

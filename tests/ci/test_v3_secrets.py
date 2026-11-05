@@ -146,6 +146,38 @@ class SecretContracts(unittest.TestCase):
         with self.assertRaises(contract.platform.ContractError):
             contract.validate_access(documents, values['stores'])
 
+    def test_redis_reader_is_optional_and_keeps_mysql_references(self):
+        defaults = yaml.safe_load((contract.CHART / 'values.yaml').read_text())
+        paths = [ROOT / 'deploy/v3/environments/foundation/' / name for name in
+                 ('mysql-secrets.values.yaml', 'redis-secrets.values.yaml')]
+        values = defaults
+        for path in paths:
+            values = contract.merge(values, yaml.safe_load(path.read_text()))
+        documents = contract.load_documents(contract.render(contract.CHART, 'yeodam-v3-secret-access', paths))
+        contract.validate_access(documents, values['stores'])
+        stores = [d for d in documents if d['kind'] == 'SecretStore']
+        self.assertEqual({s['metadata']['namespace'] for s in stores}, {'mysql', 'redis'})
+        binding = next(d for d in documents if d['kind'] == 'ExternalSecret' and d['metadata']['namespace'] == 'redis')
+        self.assertEqual(len(binding['spec']['data']), 10)
+        binding['spec']['data'][0]['remoteRef']['key'] = 'yeodam/v3/foundation/mysql/bootstrap'
+        with self.assertRaises(contract.platform.ContractError):
+            contract.validate_access(documents, values['stores'])
+
+    def test_mongodb_addition_keeps_both_existing_database_stores(self):
+        values = yaml.safe_load((contract.CHART / 'values.yaml').read_text())
+        paths = [ROOT / 'deploy/v3/environments/foundation/' / name for name in
+                 ('mysql-secrets.values.yaml', 'redis-secrets.values.yaml', 'mongodb-secrets.values.yaml')]
+        for path in paths:
+            values = contract.merge(values, yaml.safe_load(path.read_text()))
+        docs = contract.load_documents(contract.render(contract.CHART, 'yeodam-v3-secret-access', paths))
+        contract.validate_access(docs, values['stores'])
+        self.assertEqual({d['metadata']['namespace'] for d in docs if d['kind'] == 'SecretStore'}, {'mysql', 'redis', 'mongodb'})
+        binding = next(d for d in docs if d['kind'] == 'ExternalSecret' and d['metadata']['namespace'] == 'mongodb')
+        self.assertEqual(len(binding['spec']['data']), 6)
+        binding['spec']['data'][0]['remoteRef']['key'] = 'yeodam/v3/foundation/redis/bootstrap'
+        with self.assertRaises(contract.platform.ContractError):
+            contract.validate_access(docs, values['stores'])
+
     def test_helm_rejects_invalid_contract(self):
         cases = []
         wrong_role = copy.deepcopy(self.values)

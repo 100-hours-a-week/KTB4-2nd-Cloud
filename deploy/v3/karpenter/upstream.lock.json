@@ -1,0 +1,8 @@
+{
+  "version": "1.15.1",
+  "registry": "public.ecr.aws",
+  "repository": "karpenter/karpenter",
+  "manifestDigest": "sha256:5cbfa7669966457b42de2d52f7c4b743324603275af0d9343369cfd7da7c769b",
+  "sha256": "51f74d19d578847804ffce7b22a0d87d89e540e90067f2bd392d9e19b71990fe",
+  "image": "public.ecr.aws/karpenter/controller:1.15.1@sha256:8314ff9c6bca66372031e80532c18025bbe6d34eae2443849d9ff02796fb09c8"
+}

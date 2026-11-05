@@ -34,6 +34,8 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
   --output "${rendered_dir}/backend-ci-fixture.yaml"
 "${validation_dir}/venv/bin/python" scripts/check-v3-apps.py -f "${backend_values}" -f "${kafka_values}" -f "${backend_fixture}" \
   --output "${rendered_dir}/backend-kafka-ci-fixture.yaml"
+"${validation_dir}/venv/bin/python" scripts/check-v3-apps.py -f "${backend_values}" -f "${backend_fixture}" \
+  -f tests/ci/v3/backend-roles-values.fixture.yaml --output "${rendered_dir}/backend-five-roles-ci-fixture.yaml"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_backend.py'
 "${V3_HELM}" lint --strict deploy/v3/secret-access
 "${V3_HELM}" lint --strict deploy/v3/secret-access -f tests/ci/v3/secrets-values.fixture.yaml
@@ -59,3 +61,27 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py \
   --directory "${validation_dir}" --output "${rendered_dir}" \
   -f deploy/v3/environments/foundation/mysql-secrets.values.yaml
+
+"${V3_HELM}" lint --strict deploy/v3/redis
+"${V3_HELM}" lint --strict deploy/v3/redis -f deploy/v3/environments/foundation/redis.values.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-redis.py --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_redis.py'
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py \
+  --directory "${validation_dir}" --output "${rendered_dir}" \
+  -f deploy/v3/environments/foundation/mysql-secrets.values.yaml \
+  -f deploy/v3/environments/foundation/redis-secrets.values.yaml
+
+"${V3_HELM}" lint --strict deploy/v3/mongodb
+"${V3_HELM}" lint --strict deploy/v3/mongodb -f deploy/v3/environments/foundation/mongodb.values.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-mongodb.py --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_mongodb.py'
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py \
+  --directory "${validation_dir}" --output "${rendered_dir}" \
+  -f deploy/v3/environments/foundation/mysql-secrets.values.yaml \
+  -f deploy/v3/environments/foundation/redis-secrets.values.yaml \
+  -f deploy/v3/environments/foundation/mongodb-secrets.values.yaml
+
+"${V3_HELM}" lint --strict deploy/v3/karpenter-access
+"${validation_dir}/venv/bin/python" scripts/check-v3-karpenter.py \
+  --directory "${validation_dir}" --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_karpenter.py'

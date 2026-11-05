@@ -34,6 +34,12 @@
         },
         "mysql": {
           "$ref": "#/definitions/store"
+        },
+        "redis": {
+          "$ref": "#/definitions/store"
+        },
+        "mongodb": {
+          "$ref": "#/definitions/store"
         }
       }
     }

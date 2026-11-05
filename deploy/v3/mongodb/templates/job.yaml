@@ -1,0 +1,58 @@
+{{- if and .Values.enabled .Values.smoke }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mongodb-smoke
+  namespace: mongodb
+  labels:
+    {{- include "mongodb.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "mongodb.labels" . | nindent 8 }}
+        yeodam.io/mongodb-process: smoke
+    spec:
+      serviceAccountName: mongodb
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      nodeSelector: {yeodam.io/role: data, yeodam.io/memory-tier: 4gi}
+      tolerations:
+        - {key: yeodam.io/role, operator: Equal, value: data, effect: NoSchedule}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: smoke
+          image: {{ .Values.image }}
+          command: [/bin/bash, /runtime/shell.sh, /runtime/smoke.js]
+          env:
+            - {name: NODE_OPTIONS, value: "--max-old-space-size=128"}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: client-home, mountPath: /data/db}
+            - {name: runtime, mountPath: /etc/mongosh.conf, subPath: mongosh.conf, readOnly: true}
+            - {name: credentials, mountPath: /credentials, readOnly: true}
+            {{- range $path, $_ := .Files.Glob "files/*" }}
+            - {name: runtime, mountPath: /runtime/{{ base $path }}, subPath: {{ base $path }}, readOnly: true}
+            {{- end }}
+      volumes:
+        - {name: runtime, configMap: {name: mongodb-runtime, defaultMode: 0444}}
+        - {name: credentials, secret: {secretName: mongodb-bootstrap, defaultMode: 0440}}
+        - {name: client-home, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+        - {name: tmp, emptyDir: {medium: Memory, sizeLimit: 16Mi}}
+{{- end }}

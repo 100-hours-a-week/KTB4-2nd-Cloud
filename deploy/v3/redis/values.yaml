@@ -1,0 +1,5 @@
+# Default renders only namespace/policies; secrets are references, never values.
+enabled: false
+initialBootstrap: false
+smoke: false
+image: public.ecr.aws/docker/library/redis@sha256:b6b6e3dc0c0952737748e55d5d885272840c7e42ba41ab1d5489f693419882f5

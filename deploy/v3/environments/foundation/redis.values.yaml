@@ -1,0 +1,4 @@
+enabled: true
+# Enable only while initializing five NEW empty PVCs; disable after first healthy quorum.
+initialBootstrap: false
+smoke: false

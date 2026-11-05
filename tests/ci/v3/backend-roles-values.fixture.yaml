@@ -1,0 +1,6 @@
+# CI only: add the other four roles to backend-values.fixture.yaml. Never apply.
+workloads:
+  trip-api: {enabled: true}
+  photo-api: {enabled: true}
+  photo-converter: {enabled: true}
+  trip-result-worker: {enabled: true}

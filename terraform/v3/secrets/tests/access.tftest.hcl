@@ -55,3 +55,40 @@ run "mysql_reader_opt_in" {
     error_message = "Opt-in MySQL reader must read only its V3 namespace prefix."
   }
 }
+
+run "redis_reader_preserves_mysql" {
+  command = apply
+  variables {
+    enable_mysql_reader = true
+    enable_redis_reader = true
+  }
+  assert {
+    condition = (
+      length(aws_iam_role.reader) == 7 &&
+      contains(keys(aws_iam_role.reader), "mysql") &&
+      length(jsondecode(aws_iam_role_policy.assume_readers.policy).Statement[0].Resource) == 7 &&
+      jsondecode(aws_iam_role_policy.read["redis"].policy).Statement[0].Resource == ["arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/redis/*"] &&
+      toset(jsondecode(aws_iam_role_policy.read["redis"].policy).Statement[0].Action) == toset(["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"])
+    )
+    error_message = "Redis reader is namespace-limited and must preserve the existing MySQL reader."
+  }
+}
+
+run "mongodb_preserves_existing_readers" {
+  command = apply
+  variables {
+    enable_mysql_reader   = true
+    enable_redis_reader   = true
+    enable_mongodb_reader = true
+  }
+  assert {
+    condition = (
+      length(aws_iam_role.reader) == 8 &&
+      contains(keys(aws_iam_role.reader), "mysql") && contains(keys(aws_iam_role.reader), "redis") &&
+      length(jsondecode(aws_iam_role_policy.assume_readers.policy).Statement[0].Resource) == 8 &&
+      jsondecode(aws_iam_role_policy.read["mongodb"].policy).Statement[0].Resource == ["arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/mongodb/*"] &&
+      toset(jsondecode(aws_iam_role_policy.read["mongodb"].policy).Statement[0].Action) == toset(["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"])
+    )
+    error_message = "MongoDB reader must stay in its namespace and retain existing readers."
+  }
+}
