@@ -56,7 +56,9 @@ expect_denied() {
 }
 # Console producer writes errors to its own captured file; test it separately.
 produce denied v3-access-check || true
-grep -Eq 'TopicAuthorizationException|TOPIC_AUTHORIZATION_FAILED' /tmp/produce.log || { echo 'Denied writer unexpectedly published or failed for another reason';exit 1; }
+# With no Topic Write ACL anywhere, InitProducerId rejects idempotent writes at cluster level.
+# This is an expected denial; do not add Cluster IdempotentWrite just for the test.
+grep -Eq 'ClusterAuthorizationException|CLUSTER_AUTHORIZATION_FAILED|TopicAuthorizationException|TOPIC_AUTHORIZATION_FAILED' /tmp/produce.log || { echo 'Denied writer unexpectedly published or failed for another reason';exit 1; }
 produce writer v3-access-other || true
 grep -Eq 'TopicAuthorizationException|TOPIC_AUTHORIZATION_FAILED' /tmp/produce.log || { echo 'Unlisted Topic was not rejected';exit 1; }
 expect_denied 'TopicAuthorizationException|TOPIC_AUTHORIZATION_FAILED' consume denied v3-access-check-denied
