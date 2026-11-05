@@ -1,0 +1,54 @@
+{{- if and (not .Values.enabled) (or .Values.smoke .Values.initialBootstrap) }}{{ fail "Redis jobs/bootstrap require workloads" }}{{ end }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redis
+  labels:
+    {{- include "redis.labels" . | nindent 4 }}
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.36
+  annotations: {helm.sh/resource-policy: keep}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: redis}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-dns, namespace: redis}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "redis.selector" . | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-redis-peers, namespace: redis}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "redis.selector" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "redis.selector" . | nindent 14 }}
+      ports: [{protocol: TCP, port: 6379}, {protocol: TCP, port: 26379}]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "redis.selector" . | nindent 14 }}
+      ports: [{protocol: TCP, port: 6379}, {protocol: TCP, port: 26379}]
