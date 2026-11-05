@@ -1,5 +1,5 @@
 {{- range $instance, $workload := .Values.workloads }}
-{{- $c := mergeOverwrite (deepCopy $.Values.defaults) $workload }}
+{{- $c := include "yeodam-v3-apps.resolveConfig" (dict "root" $ "instance" $instance "workload" $workload) | fromYaml }}
 {{- if and $c.enabled $c.service.enabled }}
 {{- $ctx := dict "root" $ "instance" $instance "config" $c }}
 ---

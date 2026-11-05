@@ -21,6 +21,7 @@ defaults:
   environment: {}
   configMapRefs: []
   configMapData: {}
+  springProperties: {}
   secretRefs: {}
   probes:
     startup: {}

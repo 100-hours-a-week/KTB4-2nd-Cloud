@@ -77,7 +77,11 @@ def validate(documents, values):
         backend_spec = importlib.util.spec_from_file_location('v3_backend', ROOT / 'scripts/v3_backend_contract.py')
         backend = importlib.util.module_from_spec(backend_spec)
         backend_spec.loader.exec_module(backend)
+        for config in configs.values():
+            backend.prepare_config(config)
         backend.validate_backend(configs)
+    else:
+        require(all(not c.get('springProperties') for c in configs.values()), 'Structured Spring properties require the BE contract')
     for doc in documents:
         name = doc['metadata']['name'].removesuffix('-runtime') if doc['kind'] == 'ConfigMap' else doc['metadata']['name']
         config = configs[name]
