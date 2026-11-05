@@ -140,3 +140,13 @@ variable "enable_kafka_nodes" {
     error_message = "Kafka nodes require three reviewed network AZs."
   }
 }
+
+variable "enable_data_nodes" {
+  description = "Opt in to two reviewed storage nodes only; does not install databases or migrate data."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.enable_data_nodes || var.enable_kafka_nodes
+    error_message = "Keep the existing Kafka groups enabled when adding storage capacity."
+  }
+}

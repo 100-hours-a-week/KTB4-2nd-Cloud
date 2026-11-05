@@ -1,6 +1,6 @@
 mock_provider "aws" {
   mock_data "aws_ec2_instance_type_offerings" {
-    defaults = { instance_types = ["t3a.small", "t3.small"] }
+    defaults = { instance_types = ["t3a.small", "t3.small", "t3a.medium"] }
   }
   mock_resource "aws_launch_template" {
     defaults = { id = "lt-0123456789abcdef0", latest_version = 1 }
@@ -277,4 +277,86 @@ run "third_az_workers_do_not_change_cluster_eni_azs" {
     )
     error_message = "Keep EKS cluster ENIs in original a/c AZs while allowing b worker capacity in the same VPC."
   }
+}
+
+
+run "data_capacity_disabled_by_default" {
+  command = apply
+  assert {
+    condition     = length(aws_launch_template.data) == 0 && length(aws_eks_node_group.data) == 0
+    error_message = "Do not create billed data capacity without opt-in."
+  }
+}
+
+run "mixed_minimum_data_nodes_preserve_existing_foundation" {
+  command = apply
+  variables {
+    enable_kafka_nodes       = true
+    enable_data_nodes        = true
+    nat_gateway_az_overrides = { ap-northeast-2b = "ap-northeast-2a" }
+  }
+  override_resource {
+    target = aws_launch_template.data["ap-northeast-2a"]
+    values = { id = "lt-0000000000000000a", latest_version = 1 }
+  }
+  override_resource {
+    target = aws_launch_template.data["ap-northeast-2c"]
+    values = { id = "lt-0000000000000000c", latest_version = 1 }
+  }
+  assert {
+    condition = (
+      length(aws_eks_node_group.data) == 2 && length(aws_launch_template.data) == 2 &&
+      aws_launch_template.data["ap-northeast-2a"].instance_type == "t3a.medium" &&
+      aws_launch_template.data["ap-northeast-2c"].instance_type == "t3a.small" &&
+      length(aws_eks_node_group.system) == 2 && length(aws_eks_node_group.kafka) == 3 &&
+      length(aws_nat_gateway.this) == 2 && length(aws_subnet.private) == 3 &&
+      toset(aws_eks_cluster.this.vpc_config[0].subnet_ids) == toset([aws_subnet.private["ap-northeast-2a"].id, aws_subnet.private["ap-northeast-2c"].id])
+    )
+    error_message = "Create only two mixed-size data groups without altering system/Kafka/network coverage."
+  }
+  assert {
+    condition = alltrue([for az, group in aws_eks_node_group.data :
+      group.launch_template[0].id == aws_launch_template.data[az].id &&
+      group.launch_template[0].version == "1" &&
+      (group.instance_types == null || length(group.instance_types) == 0) &&
+      toset(group.subnet_ids) == toset([aws_subnet.private[az].id]) &&
+      group.scaling_config[0].desired_size == 1 && group.scaling_config[0].min_size == 1 && group.scaling_config[0].max_size == 1 &&
+      group.node_role_arn == aws_iam_role.node.arn && group.capacity_type == "ON_DEMAND" &&
+      group.ami_type == "AL2023_x86_64_STANDARD" && group.version == var.kubernetes_version && group.release_version == var.node_release_version &&
+      group.labels["yeodam.io/role"] == "data" && group.labels["yeodam.io/stage"] == "v3" &&
+      group.labels["yeodam.io/memory-tier"] == (az == "ap-northeast-2a" ? "4gi" : "2gi") &&
+      one(group.taint).key == "yeodam.io/role" && one(group.taint).value == "data" && one(group.taint).effect == "NO_SCHEDULE"
+    ])
+    error_message = "Keep the typed per-AZ template, placement tier, isolation and one-node bounds."
+  }
+  assert {
+    condition = alltrue([for lt in aws_launch_template.data :
+      lt.credit_specification[0].cpu_credits == "standard" &&
+      length(lt.block_device_mappings) == 1 && lt.block_device_mappings[0].device_name == "/dev/xvda" &&
+      lt.block_device_mappings[0].ebs[0].volume_size == 20 && lt.block_device_mappings[0].ebs[0].volume_type == "gp3" &&
+      lt.block_device_mappings[0].ebs[0].encrypted && lt.block_device_mappings[0].ebs[0].delete_on_termination &&
+      lt.metadata_options[0].http_endpoint == "enabled" && lt.metadata_options[0].http_tokens == "required" &&
+      lt.metadata_options[0].http_put_response_hop_limit == 1
+    ])
+    error_message = "No surplus CPU fee, extra root disk or Pod IMDS access."
+  }
+}
+
+run "reject_data_without_retained_kafka" {
+  command = plan
+  variables { enable_data_nodes = true }
+  expect_failures = [var.enable_data_nodes]
+}
+
+run "reject_unavailable_storage_type" {
+  command = plan
+  variables {
+    enable_data_nodes  = true
+    enable_kafka_nodes = true
+  }
+  override_data {
+    target = data.aws_ec2_instance_type_offerings.data["ap-northeast-2a"]
+    values = { instance_types = [] }
+  }
+  expect_failures = [aws_eks_node_group.data["ap-northeast-2a"]]
 }
