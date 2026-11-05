@@ -99,6 +99,18 @@ class KafkaAccess(unittest.TestCase):
             p=Path(folder)/'bad.yaml';p.write_text('verification: {enabled: true}\n')
             with self.assertRaises(subprocess.CalledProcessError):a.render([p])
 
+    def test_console_consumer_zero_exit_rejection_is_not_mistaken_for_success(self):
+        script=(a.CHART/'files/verify.sh').read_text()
+        function=script[script.index('expect_denied() {'):script.index('# Console producer')]
+        for message, code, wanted in [('GroupAuthorizationException',0,0),
+                ('TopicAuthorizationException',1,0),('Network timeout',1,1),('normal response',0,1)]:
+            with tempfile.TemporaryDirectory() as folder:
+                # Use a private log path; never touch the running Job's fixed location.
+                fn=function.replace('/tmp/denial.log',str(Path(folder)/'denial.log'))
+                source=fn+f"\nfake() {{ printf '%s\\n' '{message}'; return {code}; }}\n"+"expect_denied 'TopicAuthorizationException|GroupAuthorizationException' fake"
+                result=subprocess.run(['bash','-c',source],capture_output=True,text=True)
+                with self.subTest(message=message,code=code):self.assertEqual(result.returncode,wanted)
+
     def test_reviewed_shell_checks_authorization_failures_not_just_exit_codes(self):
         script=(a.CHART/'files/verify.sh').read_text()
         subprocess.run(['bash','-n'],input=script,text=True,check=True)

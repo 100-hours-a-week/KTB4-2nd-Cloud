@@ -49,7 +49,9 @@ grep -Fx "$token" /tmp/result >/dev/null
 # The denial marker is required; timeout/DNS/TLS failures must never count as ACL success.
 expect_denied() {
   local pattern="$1"; shift
-  if "$@" > /tmp/denial.log 2>&1; then echo 'Expected permission rejection did not occur';exit 1;fi
+  # Kafka ConsoleConsumer may log poll-time authorization failures and return 0.
+  # The typed broker error, rather than the CLI status, proves the rejection.
+  "$@" > /tmp/denial.log 2>&1 || true
   grep -Eq "$pattern" /tmp/denial.log || { echo 'Failure was not the expected authorization rejection';exit 1; }
 }
 # Console producer writes errors to its own captured file; test it separately.
