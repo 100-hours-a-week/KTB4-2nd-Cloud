@@ -20,6 +20,7 @@ on:
       - 'scripts/check-v3-redis.py'
       - 'scripts/create-v3-redis-bootstrap-secret.py'
       - 'tests/ci/test_v3_redis.py'
+      - 'tests/ci/test_v3_validation_download.py'
       - 'scripts/check-v3-mysql-schema.py'
       - 'scripts/manage-v3-mysql-cdc.py'
       - 'scripts/prepare-v3-mysql-schema-image.py'

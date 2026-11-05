@@ -20,12 +20,14 @@ def smoke(image,output):
  def sql(member,query,check=True):return docker('exec','-i',prefix+'-'+member,'/bin/bash','-ec',cdc.ROOT_SHELL,source=query,check=check).stdout.strip()
  def wait(member,query,expected):
   for _ in range(90):
+   state=json.loads(docker('inspect',prefix+'-'+member).stdout)[0]['State']
+   if not state['Running']:raise RuntimeError('Synthetic MySQL exited; see retained fixture logs')
    if sql(member,query,False)==expected:return
    time.sleep(2)
   raise RuntimeError('Synthetic MySQL did not reach expected state')
  try:
   cred=d/'credentials';cred.mkdir();cred.chmod(0o755)
-  p=bootstrap.create_payload(cred)
+  p=bootstrap.create_payload(cred);cred.chmod(0o755) # Only disposable synthetic credentials; container UIDs must traverse.
   # Public synthetic CA/private fixtures exist only on this test's network and are removed.
   for key,name in [('rootPassword','root'),('adminPassword','admin'),('appPassword','app'),('replicationPassword','replication'),('healthPassword','health')]:
    (cred/(name+'-password')).write_text(p[key])
@@ -81,6 +83,11 @@ echo 'PASS: exact Outbox SELECT and denial of unrelated reads, writes, DDL and n
    try:
     r=docker('logs',name,check=False);(output/(name+'.log')).write_text(r.stdout+r.stderr);docker('rm','-f',name,check=False)
    except Exception:pass
-  docker('network','rm',net,check=False);shutil.rmtree(d)
+  docker('network','rm',net,check=False)
+  # Linux bind data belongs to MySQL UID999. Remove only our fixture data as that UID.
+  for data in [d/'data0',d/'data1']:
+   if data.exists():
+    docker('run','--rm','--platform','linux/amd64','--network','none','--read-only','--cap-drop','ALL','--user','999:999','-v',f'{data}:/cleanup','--entrypoint','/bin/bash',MYSQL,'-ec','rm -rf /cleanup/* /cleanup/.[!.]* /cleanup/..?*',check=False)
+  shutil.rmtree(d)
 if __name__=='__main__':
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--image',required=True);p.add_argument('--output',required=True,type=Path);a=p.parse_args();smoke(a.image,a.output)

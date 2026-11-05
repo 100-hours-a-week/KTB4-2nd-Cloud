@@ -8,14 +8,26 @@ from pathlib import Path
 import platform
 import tarfile
 import urllib.request
+import urllib.error
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def download(entry):
     request = urllib.request.Request(entry['url'], headers={'User-Agent': 'yeodam-v3-validation'})
-    with urllib.request.urlopen(request, timeout=120) as response:
-        data = response.read()
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                data = response.read()
+            break
+        except urllib.error.HTTPError as error:
+            if error.code not in (429, 500, 502, 503, 504) or attempt == 2:
+                raise
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == 2:
+                raise
+        time.sleep(2 ** attempt)
     if hashlib.sha256(data).hexdigest() != entry['sha256']:
         raise ValueError('Downloaded validation input failed checksum verification')
     return data
