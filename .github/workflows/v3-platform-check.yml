@@ -16,6 +16,8 @@ on:
       - '.github/workflows/production-release-prepare.yml'
       - 'scripts/check-v3-kafka.py'
       - 'tests/ci/test_v3_kafka.py'
+      - 'scripts/check-v3-data-plan.py'
+      - 'tests/ci/test_v3_data_plan.py'
       - 'scripts/check-v3-kafka-plan.py'
       - 'tests/ci/test_v3_kafka_plan.py'
       - 'scripts/check-v3-storage.py'
@@ -65,6 +67,9 @@ jobs:
         with:
           terraform_version: 1.16.2
           terraform_wrapper: false
+
+      - name: Verify minimum-cost data Plan protection
+        run: python3 -m unittest discover -s tests/ci -p 'test_v3_data_plan.py'
 
       - name: Verify minimum-cost Kafka Plan protection
         run: python3 -m unittest discover -s tests/ci -p 'test_v3_kafka_plan.py'
