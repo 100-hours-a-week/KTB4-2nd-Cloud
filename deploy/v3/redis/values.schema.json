@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled",
+    "initialBootstrap",
+    "smoke",
+    "image"
+  ],
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "initialBootstrap": {
+      "type": "boolean"
+    },
+    "smoke": {
+      "type": "boolean"
+    },
+    "image": {
+      "const": "public.ecr.aws/docker/library/redis@sha256:b6b6e3dc0c0952737748e55d5d885272840c7e42ba41ab1d5489f693419882f5"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: yeodam-v3-redis
+description: Minimal App Redis replication and three-AZ Sentinel; no operating-data migration
+version: 0.1.0
+type: application
+appVersion: "7.4.12"

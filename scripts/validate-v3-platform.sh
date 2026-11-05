@@ -59,3 +59,12 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py \
   --directory "${validation_dir}" --output "${rendered_dir}" \
   -f deploy/v3/environments/foundation/mysql-secrets.values.yaml
+
+"${V3_HELM}" lint --strict deploy/v3/redis
+"${V3_HELM}" lint --strict deploy/v3/redis -f deploy/v3/environments/foundation/redis.values.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-redis.py --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_redis.py'
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py \
+  --directory "${validation_dir}" --output "${rendered_dir}" \
+  -f deploy/v3/environments/foundation/mysql-secrets.values.yaml \
+  -f deploy/v3/environments/foundation/redis-secrets.values.yaml
