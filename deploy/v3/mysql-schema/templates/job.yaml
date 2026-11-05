@@ -1,0 +1,45 @@
+{{- if .Values.enabled }}
+{{- $_ := required "Supply the verified main schema image digest" .Values.image }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: v3-mysql-schema
+  namespace: mysql
+  labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: mysql-schema, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector: {yeodam.io/role: system}
+      imagePullSecrets: [{name: {{ .Values.imagePullSecret }}}]
+      securityContext: {runAsNonRoot: true, runAsUser: 1001, fsGroup: 1001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: migrate
+          image: {{ .Values.image | quote }}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: credentials, mountPath: /credentials, readOnly: true}
+            - {name: tls, mountPath: /tls, readOnly: true}
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 32Mi}}
+        - name: credentials
+          secret:
+            secretName: mysql-bootstrap
+            defaultMode: 0440
+            items: [{key: app-password, path: app-password}]
+        - name: tls
+          secret:
+            secretName: mysql-bootstrap
+            defaultMode: 0440
+            items: [{key: ca.crt, path: ca.crt}]
+{{- end }}

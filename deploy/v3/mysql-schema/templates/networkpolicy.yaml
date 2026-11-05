@@ -1,0 +1,33 @@
+{{- if .Values.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-v3-schema-client
+  namespace: mysql
+  labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/instance: mysql-schema}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: mysql, app.kubernetes.io/instance: yeodam-v3-mysql}}
+      ports: [{protocol: TCP, port: 3306}]
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-v3-schema-to-mysql
+  namespace: mysql
+  labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: mysql, app.kubernetes.io/instance: yeodam-v3-mysql}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/instance: mysql-schema}}
+      ports: [{protocol: TCP, port: 3306}]
+{{- end }}

@@ -1,0 +1,3 @@
+enabled: false
+image: ''
+imagePullSecret: ghcr-pull
