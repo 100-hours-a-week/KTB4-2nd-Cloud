@@ -1,0 +1,11 @@
+[Unit]
+Description=Verify Standard CPU credits before joining the V3 cluster
+Wants=network-online.target
+After=network-online.target
+Before=kubelet.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/yeodam-cpu-credit-standard
+RemainAfterExit=yes
+TimeoutStartSec=300

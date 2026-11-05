@@ -68,3 +68,21 @@ run "controller_only_permissions_and_events" {
     error_message = "Only account/region-selected EventBridge rules may send encrypted interruption messages over HTTPS."
   }
 }
+
+run "app_node_credit_policy_opt_in" {
+  command = apply
+  variables { enable_app_node_credit_bootstrap = true }
+  assert {
+    condition = (
+      length(aws_iam_role_policy.node_credits) == 1 &&
+      aws_iam_role_policy.node_credits[0].role == aws_iam_role.node.name &&
+      jsondecode(aws_iam_role_policy.node_credits[0].policy).Statement[0].Action == "ec2:ModifyInstanceCreditSpecification" &&
+      jsondecode(aws_iam_role_policy.node_credits[0].policy).Statement[0].Resource == "arn:aws:ec2:ap-northeast-2:483175530259:instance/*" &&
+      jsondecode(aws_iam_role_policy.node_credits[0].policy).Statement[0].Condition.StringEquals["aws:ResourceTag/kubernetes.io/cluster/yeodam-v3-foundation"] == "owned" &&
+      jsondecode(aws_iam_role_policy.node_credits[0].policy).Statement[0].Condition.StringEquals["aws:ResourceTag/karpenter.sh/nodepool"] == ["api", "worker"] &&
+      jsondecode(aws_iam_role_policy.node_credits[0].policy).Statement[1].Action == "ec2:DescribeInstanceCreditSpecifications" &&
+      jsondecode(aws_iam_role_policy.node_credits[0].policy).Statement[1].Condition.StringEquals["aws:RequestedRegion"] == "ap-northeast-2"
+    )
+    error_message = "Only the dedicated node role may read regional credit mode and change owned V3 api/worker nodes."
+  }
+}

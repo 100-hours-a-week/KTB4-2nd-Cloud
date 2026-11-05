@@ -85,3 +85,9 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-karpenter.py \
   --directory "${validation_dir}" --output "${rendered_dir}"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_karpenter.py'
+
+"${V3_HELM}" lint --strict deploy/v3/nodepools
+"${V3_HELM}" lint --strict deploy/v3/nodepools -f deploy/v3/environments/foundation/nodepools.values.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-nodepools.py \
+  --directory "${validation_dir}" --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_nodepools.py'

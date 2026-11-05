@@ -1,0 +1,3 @@
+# CI rendering only; this flag is not evidence of actual IAM deployment. Never apply this fixture.
+enabled: true
+creditBootstrapReady: true

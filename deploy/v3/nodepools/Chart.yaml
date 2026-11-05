@@ -1,0 +1,5 @@
+apiVersion: v2
+name: yeodam-v3-nodepools
+description: Bounded CPU app pools with an AL2023 Standard-credit bootstrap gate
+type: application
+version: 0.1.0

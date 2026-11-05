@@ -205,6 +205,21 @@ class AppsTest(unittest.TestCase):
         pod = self.deployment(documents, 'frontend')['spec']['template']['spec']
         self.assertNotIn('initContainers', pod)
 
+    def test_pool_placement_cannot_select_other_or_fixed_nodes(self):
+        for role in ('worker', 'system', 'kafka', 'data', 'gpu'):
+            with self.subTest(role=role): self.rejects({'workloads': {'trip-api': {'nodeSelector': {'yeodam.io/role': role}}}})
+        self.rejects({'workloads': {'trip-api': {'tolerations': [{'key': 'yeodam.io/role', 'operator': 'Exists', 'effect': 'NoSchedule'}]}}})
+        self.rejects({'workloads': {'trip-api': {'tolerations': []}}})
+
+    def test_backend_roles_and_websocket_select_their_cpu_pools(self):
+        docs, _ = self.accepts({})
+        for d in docs:
+            if d['kind'] != 'Deployment': continue
+            name = d['metadata']['name']; pod = d['spec']['template']['spec']
+            role = 'worker' if name in ('photo-converter', 'trip-result-worker', 'ai') else 'api'
+            self.assertEqual(pod['nodeSelector'], {'yeodam.io/role': role, 'yeodam.io/stage': 'v3'})
+            self.assertEqual(pod['tolerations'], [{'key': 'yeodam.io/role', 'operator': 'Equal', 'value': role, 'effect': 'NoSchedule'}])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -33,6 +33,8 @@ on:
       - 'tests/ci/test_v3_storage.py'
       - 'scripts/check-v3-platform.py'
       - 'scripts/check-v3-apps.py'
+      - 'scripts/check-v3-nodepools.py'
+      - 'tests/ci/test_v3_nodepools.py'
       - 'scripts/v3_backend_contract.py'
       - 'scripts/check-v3-secrets.py'
       - 'terraform/v3/karpenter/**'
