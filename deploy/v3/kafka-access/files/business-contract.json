@@ -227,7 +227,8 @@
       "readTopics": [
         "prod.connect-configs",
         "prod.connect-offsets",
-        "prod.connect-status"
+        "prod.connect-status",
+        "prod.yeodam.schema-history"
       ],
       "writeTopics": [
         "prod.yeodam.trip-create.request",
@@ -239,7 +240,8 @@
         "prod.yeodam.image.additional-heic",
         "prod.connect-configs",
         "prod.connect-offsets",
-        "prod.connect-status"
+        "prod.connect-status",
+        "prod.yeodam.schema-history"
       ],
       "describeTopics": [],
       "groups": [
@@ -256,6 +258,9 @@
         ],
         "prod.connect-status": [
           "Create",
+          "DescribeConfigs"
+        ],
+        "prod.yeodam.schema-history": [
           "DescribeConfigs"
         ]
       },

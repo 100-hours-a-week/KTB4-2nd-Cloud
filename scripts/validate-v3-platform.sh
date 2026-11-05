@@ -112,3 +112,13 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
   -f deploy/v3/environments/foundation/mongodb-secrets.values.yaml
 
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_validation_download.py'
+
+"${V3_HELM}" lint --strict deploy/v3/outbox
+"${validation_dir}/venv/bin/python" scripts/check-v3-outbox.py --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_outbox.py'
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py \
+ --directory "${validation_dir}" --output "${rendered_dir}" \
+ -f deploy/v3/environments/foundation/mysql-cdc-secrets.values.yaml \
+ -f deploy/v3/environments/foundation/redis-secrets.values.yaml \
+ -f deploy/v3/environments/foundation/mongodb-secrets.values.yaml \
+ -f deploy/v3/environments/foundation/outbox-secrets.values.yaml

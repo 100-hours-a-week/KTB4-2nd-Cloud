@@ -4,3 +4,5 @@ image: ''
 imagePullSecret: ghcr-pull
 smoke:
   enabled: false
+outbox:
+  enabled: false

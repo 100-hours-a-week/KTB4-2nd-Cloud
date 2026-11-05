@@ -6,7 +6,8 @@
     "enabled",
     "image",
     "imagePullSecret",
-    "smoke"
+    "smoke",
+    "outbox"
   ],
   "properties": {
     "enabled": {
@@ -20,6 +21,18 @@
       "const": "ghcr-pull"
     },
     "smoke": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outbox": {
       "type": "object",
       "additionalProperties": false,
       "required": [

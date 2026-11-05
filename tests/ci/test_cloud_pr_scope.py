@@ -108,7 +108,7 @@ class GitDiffTest(unittest.TestCase):
         args = ['python3', str(SCRIPT), '--base', self.base, '--head', head,
                 '--output', str(output), '--report', str(report)]
         subprocess.run(args, cwd=self.root, check=True, capture_output=True)
-        self.assertEqual(output.read_text(), 'runtime_required=false\nv2_runtime_required=true\nconnect_image_required=false\nschema_image_required=false\n')
+        self.assertEqual(output.read_text(), 'runtime_required=false\nv2_runtime_required=true\nconnect_image_required=false\nschema_image_required=false\noutbox_required=false\n')
         self.assertFalse(json.loads(report.read_text())['runtime_required'])
         output.unlink()
         report.unlink()
@@ -129,12 +129,13 @@ class RequiredGateTest(unittest.TestCase):
         final_step = source.split('      - name: Require validation and applicable integration\n', 1)[1]
         cls.shell = textwrap.dedent(final_step.split('        run: |\n', 1)[1])
 
-    def gate(self, v1, v2, r1, r2, validate='success', v3='success', connect_required='false', connect_result='skipped', schema_required='false', schema_result='skipped'):
+    def gate(self, v1, v2, r1, r2, validate='success', v3='success', connect_required='false', connect_result='skipped', schema_required='false', schema_result='skipped', outbox_required='false', outbox_result='skipped'):
         env = os.environ | {'RUNTIME_REQUIRED': v1, 'V2_RUNTIME_REQUIRED': v2,
                             'INTEGRATION_RESULT': r1, 'V2_INTEGRATION_RESULT': r2,
                             'VALIDATE_RESULT': validate, 'V3_PLATFORM_RESULT': v3,
                             'CONNECT_IMAGE_REQUIRED': connect_required, 'CONNECT_IMAGE_RESULT': connect_result,
-                            'SCHEMA_IMAGE_REQUIRED': schema_required, 'SCHEMA_IMAGE_RESULT': schema_result}
+                            'SCHEMA_IMAGE_REQUIRED': schema_required, 'SCHEMA_IMAGE_RESULT': schema_result,
+                            'OUTBOX_REQUIRED': outbox_required, 'OUTBOX_RESULT': outbox_result}
         return subprocess.run(['bash', '-c', self.shell], env=env, capture_output=True).returncode
 
     def test_connect_image_gate_requires_real_success_or_intentional_skip(self):
@@ -156,6 +157,15 @@ class RequiredGateTest(unittest.TestCase):
             self.assertTrue(scope.select([path])['schema_image_required'])
         self.assertFalse(scope.select(['docs/example.md'])['schema_image_required'])
         self.assertTrue(scope.select([])['schema_image_required'])
+
+    def test_outbox_gate_requires_real_success_and_covers_inputs(self):
+        self.assertEqual(self.gate('false','false','skipped','skipped',outbox_required='true',outbox_result='success'),0)
+        for result in ('failure','cancelled','skipped',''):
+            self.assertNotEqual(self.gate('false','false','skipped','skipped',outbox_required='true',outbox_result=result),0)
+        self.assertNotEqual(self.gate('false','false','skipped','skipped',outbox_required='',outbox_result='success'),0)
+        for path in scope.OUTBOX_FILES | {'deploy/v3/outbox/files/connector.json','deploy/v3/connect/values.yaml'}:
+            self.assertTrue(scope.select([path])['outbox_required'])
+        self.assertFalse(scope.select(['README.md'])['outbox_required'])
 
     def test_required_success_and_intentional_skips(self):
         for v1, v2 in [('true', 'true'), ('true', 'false'), ('false', 'true'), ('false', 'false')]:

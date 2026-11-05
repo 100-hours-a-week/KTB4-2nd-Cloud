@@ -18,14 +18,16 @@ LOCK=json.loads((ROOT/'deploy/v3/connect-image/source.lock.json').read_text())
 INTERNAL=['prod.connect-configs','prod.connect-offsets','prod.connect-status']
 
 
-def smoke(image, output):
+def smoke(image, output, extension=None):
+    issue='542' if extension is not None else '537'
     prefix='yeodam-connect-check-'+uuid.uuid4().hex[:10]
     net=prefix+'-net';containers=[];output.mkdir(parents=True,exist_ok=True)
     directory=Path(tempfile.mkdtemp(prefix=prefix+'-'));directory.chmod(0o755)
     counter=0
-    def command(args,timeout=120,check=True):
+    context={}
+    def command(args,timeout=120,check=True,source=None):
         nonlocal counter
-        result=subprocess.run(args,capture_output=True,text=True,timeout=timeout)
+        result=subprocess.run(args,input=source,capture_output=True,text=True,timeout=timeout)
         counter+=1;(output/f'command-{counter}.log').write_text(result.stdout+result.stderr)
         if check and result.returncode:raise RuntimeError('Local check failed; private diagnostic command '+str(counter))
         return result
@@ -47,7 +49,7 @@ def smoke(image, output):
         admin='local-admin';user='v3-connect-outbox'
         client='\n'.join(['security.protocol=SASL_SSL','sasl.mechanism=SCRAM-SHA-512',f'sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="{admin}" password="{password}";','ssl.truststore.type=PEM','ssl.truststore.location=/check/tls/ca.crt','ssl.endpoint.identification.algorithm=https','request.timeout.ms=5000','default.api.timeout.ms=10000'])+'\n'
         (directory/'admin.properties').write_text(client);(directory/'admin.properties').chmod(0o644)
-        docker('network','create','--label','yeodam.issue=537',net)
+        docker('network','create','--label','yeodam.issue='+issue,net)
         cluster=base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('=')
         for i in range(1,4):
             cfg=directory/f'broker{i}.properties';data=directory/f'data{i}';data.mkdir(mode=0o777);data.chmod(0o777)
@@ -55,7 +57,7 @@ def smoke(image, output):
             common=['--label','yeodam.run='+prefix,'--platform','linux/amd64','--network',net,'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--memory','512m','--cpus','1','--tmpfs','/tmp:rw,nosuid,size=64m','-v',f'{directory}:/check:ro','-v',f'{data}:/data','-e','KAFKA_HEAP_OPTS=-Xms64m -Xmx256m','-e','LOG_DIR=/tmp/kafka-logs']
             docker('run','--rm',*common,'--entrypoint','/opt/kafka/bin/kafka-storage.sh',image,'format','--cluster-id='+cluster,'-c',f'/check/broker{i}.properties','--add-scram',f'SCRAM-SHA-512=[name={admin},password={password}]','--add-scram',f'SCRAM-SHA-512=[name={user},password={password}]',timeout=120)
             name=prefix+f'-broker{i}';containers.append(name)
-            docker('run','-d','--name',name,'--label','yeodam.issue=537',*common,'--network-alias',f'broker{i}','--entrypoint','/opt/kafka/bin/kafka-server-start.sh',image,f'/check/broker{i}.properties')
+            docker('run','-d','--name',name,'--label','yeodam.issue='+issue,*common,'--network-alias',f'broker{i}','--entrypoint','/opt/kafka/bin/kafka-server-start.sh',image,f'/check/broker{i}.properties')
         def cli(tool,*args,check=True):
             return docker('run','--rm','--label','yeodam.run='+prefix,'--platform','linux/amd64','--network',net,'--memory','256m','--read-only','--tmpfs','/tmp:rw,size=32m','-v',f'{directory}:/check:ro','-e','KAFKA_HEAP_OPTS=-Xms32m -Xmx96m','--entrypoint','/opt/kafka/bin/'+tool,image,'--bootstrap-server','broker1:9093','--command-config','/check/admin.properties',*args,check=check)
         for _ in range(12):
@@ -75,14 +77,17 @@ def smoke(image, output):
         checks=directory/'classes';checks.mkdir(mode=0o755)
         command(['javac','--release','17','-d',str(checks),str(ROOT/'tests/ci/v3/CheckConnectPlugins.java')])
         docker('run','--rm','--label','yeodam.run='+prefix,'--platform','linux/amd64','--memory','768m','--cpus','.5','--read-only','--tmpfs','/tmp:rw,size=64m','-v',f'{checks}:/checks:ro','--entrypoint','java',image,'-Xmx256m','-cp','/opt/kafka/libs/*:/opt/kafka/plugins/debezium-mysql/*:/checks','CheckConnectPlugins')
+        context.update(directory=directory,prefix=prefix,net=net,containers=containers,docker=docker,command=command,cli=cli,password=password,user=user,tls=tls,image=image,output=output,wait_api=wait_api)
+        if extension:extension.prepare(context)
         worker='\n'.join(['bootstrap.servers=broker1:9093,broker2:9093,broker3:9093','group.id=connect-v3','config.storage.topic=prod.connect-configs','offset.storage.topic=prod.connect-offsets','status.storage.topic=prod.connect-status','config.storage.replication.factor=3','offset.storage.replication.factor=3','status.storage.replication.factor=3','offset.storage.partitions=1','status.storage.partitions=1','key.converter=org.apache.kafka.connect.storage.StringConverter','value.converter=org.apache.kafka.connect.storage.StringConverter','plugin.path=/opt/kafka/plugins','listeners=http://0.0.0.0:8083','rest.advertised.host.name=connect-check','connector.client.config.override.policy=None','producer.acks=all','producer.enable.idempotence=true'])+'\n'
         security=client.replace('username="'+admin+'"','username="'+user+'"')
         worker+=security
         for line in security.splitlines():
             if not line.startswith(('default.api.','request.timeout')):worker+='producer.'+line+'\nconsumer.'+line+'\n'
+        if extension:worker+=extension.worker_config(context)
         (directory/'worker.properties').write_text(worker);(directory/'worker.properties').chmod(0o644)
         name=prefix+'-worker';containers.append(name)
-        docker('run','-d','--name',name,'--label','yeodam.issue=537','--label','yeodam.run='+prefix,'--platform','linux/amd64','--network',net,'--network-alias','connect-check','--stop-timeout','90','--memory','768m','--cpus','.5','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp:rw,nosuid,size=128m','-v',f'{directory}:/check:ro','-p','127.0.0.1::8083','-e','KAFKA_HEAP_OPTS=-Xms128m -Xmx256m','-e','LOG_DIR=/tmp/connect-logs','--entrypoint','/opt/kafka/bin/connect-distributed.sh',image,'/check/worker.properties')
+        docker('run','-d','--name',name,'--label','yeodam.issue='+issue,'--label','yeodam.run='+prefix,'--platform','linux/amd64','--network',net,'--network-alias','connect-check','--stop-timeout','90','--memory','768m','--cpus','.5','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp:rw,nosuid,size=128m','-v',f'{directory}:/check:ro','-p','127.0.0.1::8083','-e','KAFKA_HEAP_OPTS=-Xms128m -Xmx256m','-e','LOG_DIR=/tmp/connect-logs',*(extension.worker_args(context) if extension else []),'--entrypoint','/opt/kafka/bin/connect-distributed.sh',image,'/check/worker.properties')
         state=json.loads(docker('inspect',name).stdout)[0];port=state['NetworkSettings']['Ports']['8083/tcp'][0]['HostPort']
         wait_api(port)
         print('Minimum-budget Connect REST ready',flush=True)
@@ -97,6 +102,7 @@ def smoke(image, output):
         peak=docker('exec',name,'cat','/sys/fs/cgroup/memory.peak').stdout.strip()
         (output/'result.json').write_text(json.dumps({'tlsScram':True,'internalTopics':3,'replicationFactor':3,'minimumIsr':2,'memoryLimitMi':768,'heapMi':256,'cpuLimit':0.5,'mysqlPluginVersion':LOCK['debeziumVersion'],'connectorCount':0,'restartRecovered':True,'memoryPeakBytes':int(peak)},indent=2))
         print('PASS: 768Mi/0.5CPU Connect, TLS/SCRAM, MySQL+Groovy plugins, RF3 internal topics, zero Connectors and restart recovery',flush=True)
+        if extension:extension.exercise(context | {'worker':name,'port':port})
     finally:
         for name in reversed(containers):
             try:
@@ -108,6 +114,7 @@ def smoke(image, output):
             except Exception:pass
         remaining=docker('ps','-aq','--filter','label=yeodam.run='+prefix,check=False).stdout.split()
         if remaining:docker('rm','-f',*remaining,check=False)
+        if extension and context:extension.cleanup(context)
         docker('network','rm',net,check=False)
         shutil.rmtree(directory)
 

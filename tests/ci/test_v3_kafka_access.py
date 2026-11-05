@@ -70,8 +70,8 @@ class KafkaAccess(unittest.TestCase):
         self.assertEqual(len(a.CONTRACT['users']['photo-converter']['groups']),5)
         self.assertEqual(len(a.CONTRACT['users']['trip-result-worker']['groups']),4)
         self.assertFalse(any('receipt' in t['name'] for t in a.CONTRACT['topics']))
-        self.assertEqual(a.CONTRACT['users']['connect-outbox']['readTopics'],['prod.connect-configs','prod.connect-offsets','prod.connect-status'])
-        self.assertEqual(len(a.CONTRACT['users']['connect-outbox']['writeTopics']),10)
+        self.assertEqual(a.CONTRACT['users']['connect-outbox']['readTopics'],['prod.connect-configs','prod.connect-offsets','prod.connect-status','prod.yeodam.schema-history'])
+        self.assertEqual(len(a.CONTRACT['users']['connect-outbox']['writeTopics']),11)
 
     def test_disposable_verification_cannot_gain_permissions_or_reserve_app_node(self):
         for mutation in ('identity','node','token','budget','script','persistent','secret','parallelism','env-secret'):

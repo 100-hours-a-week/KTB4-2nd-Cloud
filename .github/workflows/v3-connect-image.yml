@@ -4,6 +4,12 @@ on:
     branches: [main]
     paths:
       - 'deploy/v3/connect-image/**'
+      - 'deploy/v3/outbox/**'
+      - 'scripts/validate-v3-outbox.sh'
+      - 'scripts/v3_outbox_contract.py'
+      - 'scripts/prepare-v3-outbox-ca.py'
+      - 'tests/ci/smoke-v3-outbox.py'
+      - 'tests/ci/v3/OutboxWire.java'
       - 'scripts/prepare-v3-connect-image.py'
       - 'scripts/validate-v3-connect-image.sh'
       - 'tests/ci/smoke-v3-connect.py'
@@ -28,7 +34,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with: {persist-credentials: false}
       - name: Build and test the exact image before publication
-        run: bash scripts/validate-v3-connect-image.sh
+        run: |
+          export V3_OUTBOX_IMAGE="$V3_CONNECT_IMAGE"
+          export V3_OUTBOX_RESULTS="$RUNNER_TEMP/yeodam-v3-connect-results"
+          bash scripts/validate-v3-outbox.sh
       - name: Publish private image and record immutable input
         env:
           GH_TOKEN: ${{ github.token }}

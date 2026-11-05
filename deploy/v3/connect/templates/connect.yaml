@@ -1,3 +1,4 @@
+{{- if and .Values.outbox.enabled (not .Values.enabled) }}{{ fail "Enable Connect before its Outbox integration" }}{{ end }}
 {{- if .Values.enabled }}
 {{- $_ := required "Supply the verified Connect image digest after main image publication" .Values.image }}
 apiVersion: kafka.strimzi.io/v1
@@ -29,6 +30,13 @@ spec:
     limits: {cpu: 500m, memory: 768Mi}
   jvmOptions: {'-Xms': 128m, '-Xmx': 256m, gcLoggingEnabled: false}
   config:
+    {{- if .Values.outbox.enabled }}
+    config.providers: env
+    config.providers.env.class: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+    config.providers.env.param.allowlist.pattern: '^(V3_CDC_PASSWORD|V3_KAFKA_PASSWORD|V3_KAFKA_CA_PEM)$'
+    topic.creation.enable: false
+    producer.max.request.size: 262144
+    {{- end }}
     config.storage.replication.factor: 3
     offset.storage.replication.factor: 3
     status.storage.replication.factor: 3
@@ -51,6 +59,11 @@ spec:
     pod:
       metadata:
         labels: {app.kubernetes.io/name: kafka-connect, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+      {{- if .Values.outbox.enabled }}
+      volumes:
+        - name: mysql-ca
+          configMap: {name: v3-outbox-mysql-ca}
+      {{- end }}
       imagePullSecrets:
         - name: {{ .Values.imagePullSecret }}
       affinity:
@@ -64,6 +77,14 @@ spec:
       tmpDirSizeLimit: 128Mi
       securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
     connectContainer:
+      {{- if .Values.outbox.enabled }}
+      env:
+        - {name: V3_CDC_PASSWORD, valueFrom: {secretKeyRef: {name: mysql-cdc, key: password}}}
+        - {name: V3_KAFKA_PASSWORD, valueFrom: {secretKeyRef: {name: v3-connect-outbox, key: password}}}
+        - {name: V3_KAFKA_CA_PEM, valueFrom: {secretKeyRef: {name: yeodam-v3-kafka-cluster-ca-cert, key: ca.crt}}}
+      volumeMounts:
+        - {name: mysql-ca, mountPath: /mnt/mysql-ca, readOnly: true}
+      {{- end }}
       securityContext:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true

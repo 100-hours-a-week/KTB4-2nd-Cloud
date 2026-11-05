@@ -74,6 +74,9 @@ def expected_access():
     internal = ['prod.connect-configs', 'prod.connect-offsets', 'prod.connect-status']
     users['connect-outbox'] = access(read=internal, write=requests + images + internal, groups=['connect-v3'])
     users['connect-outbox']['extraTopicOperations'] = {t: ['Create', 'DescribeConfigs'] for t in internal}
+    users['connect-outbox']['readTopics'] += ['prod.yeodam.schema-history']
+    users['connect-outbox']['writeTopics'] += ['prod.yeodam.schema-history']
+    users['connect-outbox']['extraTopicOperations']['prod.yeodam.schema-history'] = ['DescribeConfigs']
     users['connect-outbox']['clusterOperations'] = ['Describe']
     return users
 
