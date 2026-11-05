@@ -1,6 +1,6 @@
-# BE-only overlay on deploy/v3/apps. All workloads remain disabled.
-# Supply a real image/release, endpoints and existing Secret references in private values.
-# New V3 Topic/Group names are proposed contracts, not existing broker resources.
+# Full BE image in five roles; all remain disabled until real dependencies are ready.
+# V3 Topic/Group names are isolated candidates, not existing broker resources.
+# springProperties is merged per workload and serialized ONCE. Do not supply raw SPRING_APPLICATION_JSON.
 backendContract: true
 images:
   backend: ''
@@ -39,23 +39,7 @@ defaults:
     AUTH_SESSION_KEY_PREFIX: 'yeodam:v3:foundation:auth:'
     WEBSOCKET_EVENTS_CHANNEL: yeodam:v3:foundation:websocket:events:v1
     KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP: v3.foundation.yeodam.trip-update-results
-    ATTACHMENT_CONVERSION_MODE: DB
-    SPRING_APPLICATION_JSON: |
-      {
-        "app": {
-          "trip": {
-            "result-listener-enabled": true,
-            "result-consumer-group": "v3.foundation.yeodam.trip-results"
-          },
-          "story": {
-            "result-listener-enabled": true,
-            "result-consumer-group": "v3.foundation.yeodam.story-results"
-          },
-          "outbox": {
-            "receipt-consumer-group": "v3.foundation.yeodam.outbox-receipts"
-          }
-        }
-      }
+    ATTACHMENT_CONVERSION_MODE: KAFKA
     RELEASE: ''
     KAFKA_TRIP_CREATE_REQUEST_TOPIC: v3.foundation.yeodam.trip-create.request
     KAFKA_TRIP_CREATE_RESULT_TOPIC: v3.foundation.yeodam.trip-create.result
@@ -63,6 +47,20 @@ defaults:
     KAFKA_TRIP_UPDATE_RESULT_TOPIC: v3.foundation.yeodam.trip-update.result
     KAFKA_STORY_CREATE_REQUEST_TOPIC: v3.foundation.yeodam.story-create.request
     KAFKA_STORY_CREATE_RESULT_TOPIC: v3.foundation.yeodam.story-create.result
+    ATTACHMENT_CONVERSION_GROUP_PREFIX: v3.foundation.yeodam.image-conversion
+    ATTACHMENT_CONVERSION_TECHNICAL_BACKOFF: 3s
+    ATTACHMENT_CONVERSION_RECOVERY_INTERVAL: 60s
+    ATTACHMENT_CONVERSION_RECOVERY_PAGE_SIZE: '10'
+    ATTACHMENT_CONVERSION_RECOVERY_MAX_PAGES_PER_RUN: '2'
+    ATTACHMENT_CONVERSION_RECOVERY_MAX_REISSUES_PER_RUN: '5'
+    ATTACHMENT_CONVERSION_FETCH_MAX_BYTES: '1048576'
+    ATTACHMENT_CONVERSION_PARTITION_FETCH_MAX_BYTES: '524288'
+    ATTACHMENT_CONVERSION_MAX_MESSAGE_BYTES: '262144'
+    ATTACHMENT_CONVERSION_INITIAL_LIGHT_TOPIC: v3.foundation.yeodam.image.initial-light
+    ATTACHMENT_CONVERSION_INITIAL_HEIC_TOPIC: v3.foundation.yeodam.image.initial-heic
+    ATTACHMENT_CONVERSION_ADDITIONAL_LIGHT_TOPIC: v3.foundation.yeodam.image.additional-light
+    ATTACHMENT_CONVERSION_ADDITIONAL_HEIC_TOPIC: v3.foundation.yeodam.image.additional-heic
+    ATTACHMENT_CONVERSION_DLT_TOPIC: v3.foundation.yeodam.image.conversion-dlt
   secretRefs:
     MYSQL_USERNAME:
       name: backend-credentials
@@ -85,6 +83,9 @@ defaults:
     WEBSOCKET_INTERNAL_SERVICE_TOKEN:
       name: backend-credentials
       key: WEBSOCKET_INTERNAL_SERVICE_TOKEN
+    MONGODB_URI:
+      name: backend-credentials
+      key: MONGODB_URI
   probes:
     startup:
       httpGet:
@@ -121,3 +122,79 @@ defaults:
   scratchSizeLimit: 256Mi
   catalogSizeLimit: 32Mi
   configurationRevision: ''
+  springProperties:
+    app:
+      trip:
+        result-listener-enabled: false
+        result-consumer-group: v3.foundation.yeodam.trip-results
+      story:
+        result-consumer-group: v3.foundation.yeodam.story-results
+      outbox:
+        receipt-consumer-group: v3.foundation.yeodam.outbox-receipts
+        receipt-listener-enabled: false
+      attachment-conversion:
+        admission:
+          max-unfinished-photos:
+            LIGHT: 100
+            HEIC: 50
+          max-unfinished-bytes:
+            LIGHT: 1572864000
+            HEIC: 786432000
+          max-unfinished-age: 5m
+          sample-interval: 5s
+          snapshot-max-age: 15s
+          reopen-ratio: 0.5
+        operations:
+          enabled: false
+workloads:
+  auth-api:
+    configMapData:
+      ATTACHMENT_CONVERSION_CONSUMER_ENABLED: 'false'
+      ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED: 'false'
+      ATTACHMENT_CONVERSION_RECOVERY_ENABLED: 'false'
+      TRIP_RESULT_WORKER_ENABLED: 'false'
+      TRIP_STATUS_POLLING_ENABLED: 'false'
+      STORY_RESULT_LISTENER_ENABLED: 'false'
+      STORY_STATUS_POLLING_ENABLED: 'false'
+  trip-api:
+    configMapData:
+      ATTACHMENT_CONVERSION_CONSUMER_ENABLED: 'false'
+      ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED: 'false'
+      ATTACHMENT_CONVERSION_RECOVERY_ENABLED: 'false'
+      TRIP_RESULT_WORKER_ENABLED: 'false'
+      TRIP_STATUS_POLLING_ENABLED: 'false'
+      STORY_RESULT_LISTENER_ENABLED: 'false'
+      STORY_STATUS_POLLING_ENABLED: 'false'
+  photo-api:
+    configMapData:
+      ATTACHMENT_CONVERSION_CONSUMER_ENABLED: 'false'
+      ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED: 'false'
+      ATTACHMENT_CONVERSION_RECOVERY_ENABLED: 'false'
+      TRIP_RESULT_WORKER_ENABLED: 'false'
+      TRIP_STATUS_POLLING_ENABLED: 'false'
+      STORY_RESULT_LISTENER_ENABLED: 'false'
+      STORY_STATUS_POLLING_ENABLED: 'false'
+  photo-converter:
+    configMapData:
+      ATTACHMENT_CONVERSION_CONSUMER_ENABLED: 'true'
+      ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED: 'true'
+      ATTACHMENT_CONVERSION_RECOVERY_ENABLED: 'true'
+      TRIP_RESULT_WORKER_ENABLED: 'false'
+      TRIP_STATUS_POLLING_ENABLED: 'false'
+      STORY_RESULT_LISTENER_ENABLED: 'false'
+      STORY_STATUS_POLLING_ENABLED: 'false'
+  trip-result-worker:
+    configMapData:
+      ATTACHMENT_CONVERSION_CONSUMER_ENABLED: 'false'
+      ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED: 'false'
+      ATTACHMENT_CONVERSION_RECOVERY_ENABLED: 'false'
+      TRIP_RESULT_WORKER_ENABLED: 'true'
+      TRIP_STATUS_POLLING_ENABLED: 'true'
+      STORY_RESULT_LISTENER_ENABLED: 'true'
+      STORY_STATUS_POLLING_ENABLED: 'true'
+    springProperties:
+      app:
+        trip:
+          result-listener-enabled: true
+        outbox:
+          receipt-listener-enabled: true
