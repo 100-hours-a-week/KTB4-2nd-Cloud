@@ -252,6 +252,7 @@
   "additionalProperties": false,
   "properties": {
     "backendContract": {"type": "boolean"},
+    "backendConnectionContract": {"type": "boolean"},
     "images": {
       "type": "object",
       "additionalProperties": false,

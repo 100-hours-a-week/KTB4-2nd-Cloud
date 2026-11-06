@@ -53,6 +53,25 @@ spec:
         {{- end }}
       {{- if eq $c.name "backend" }}
       initContainers:
+        {{- if $.Values.backendConnectionContract }}
+        - name: prepare-trust
+          image: {{ index $.Values.images $c.imageRef | quote }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+{{ $.Files.Get "files/prepare-trust.sh" | indent 14 }}
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: trust-input, mountPath: /etc/yeodam/ca, readOnly: true}
+            - {name: truststore, mountPath: /etc/yeodam/trust}
+            - {name: scratch, mountPath: /tmp}
+        {{- end }}
         - name: seed-catalog
           image: {{ index $.Values.images $c.imageRef | quote }}
           command: ["cp", "-R", "/app/data/.", "/catalog/"]
@@ -138,6 +157,9 @@ spec:
           volumeMounts:
             - name: scratch
               mountPath: /tmp
+            {{- if $.Values.backendConnectionContract }}
+            - {name: truststore, mountPath: /etc/yeodam/trust, readOnly: true}
+            {{- end }}
             {{- if eq $c.name "backend" }}
             - name: catalog
               mountPath: /app/data
@@ -148,6 +170,10 @@ spec:
               readOnly: true
             {{- end }}
       volumes:
+        {{- if $.Values.backendConnectionContract }}
+        - name: truststore
+          emptyDir: {sizeLimit: 4Mi}
+        {{- end }}
         - name: scratch
           emptyDir:
             sizeLimit: {{ $c.scratchSizeLimit | quote }}

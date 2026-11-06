@@ -1,0 +1,95 @@
+backendConnectionContract: true
+defaults:
+  configMapData:
+    MYSQL_URL: jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true
+    REDIS_HOST: redis-members.redis.svc.cluster.local
+    REDIS_PORT: '6379'
+    REDIS_USERNAME: app
+    REDIS_SSL_ENABLED: 'true'
+    KAFKA_BOOTSTRAP_SERVERS: yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093
+    AWS_EC2_METADATA_DISABLED: 'true'
+    JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts
+      -Djavax.net.ssl.trustStorePassword=public-ca-only
+    ATTACHMENT_S3_BUCKET: yeodam-v3-foundation-app-data-483175530259-ap-northeast-2
+  secretRefs:
+    REDIS_PASSWORD:
+      name: backend-credentials
+      key: REDIS_PASSWORD
+    REDIS_SENTINEL_PASSWORD:
+      name: backend-credentials
+      key: REDIS_SENTINEL_PASSWORD
+  secretVolumes:
+  - name: trust-input
+    secretName: backend-trust
+    mountPath: /etc/yeodam/ca
+  springProperties:
+    spring:
+      data:
+        redis:
+          username: app
+          ssl:
+            enabled: true
+          sentinel:
+            master: yeodam-v3-app-redis
+            nodes:
+            - sentinel-0.redis-sentinel.redis.svc.cluster.local:26379
+            - sentinel-1.redis-sentinel.redis.svc.cluster.local:26379
+            - sentinel-2.redis-sentinel.redis.svc.cluster.local:26379
+            username: sentinel-client
+            password: ${REDIS_SENTINEL_PASSWORD}
+      mongodb:
+        uri: ${MONGODB_URI}
+      datasource:
+        hikari:
+          maximum-pool-size: 3
+          minimum-idle: 1
+      jpa:
+        hibernate:
+          ddl-auto: validate
+      flyway:
+        enabled: false
+      kafka:
+        properties:
+          security.protocol: SASL_SSL
+          sasl.mechanism: SCRAM-SHA-512
+          sasl.jaas.config: org.apache.kafka.common.security.scram.ScramLoginModule
+            required username="${KAFKA_SASL_USERNAME}" password="${KAFKA_SASL_PASSWORD}";
+          ssl.endpoint.identification.algorithm: https
+          ssl.truststore.location: /etc/yeodam/trust/cacerts
+          ssl.truststore.password: public-ca-only
+workloads:
+  auth-api:
+    configMapData:
+      KAFKA_SASL_USERNAME: v3-auth-api
+    secretRefs:
+      KAFKA_SASL_PASSWORD:
+        name: kafka-auth-api
+        key: password
+  trip-api:
+    configMapData:
+      KAFKA_SASL_USERNAME: v3-trip-api
+    secretRefs:
+      KAFKA_SASL_PASSWORD:
+        name: kafka-trip-api
+        key: password
+  photo-api:
+    configMapData:
+      KAFKA_SASL_USERNAME: v3-photo-api
+    secretRefs:
+      KAFKA_SASL_PASSWORD:
+        name: kafka-photo-api
+        key: password
+  photo-converter:
+    configMapData:
+      KAFKA_SASL_USERNAME: v3-photo-converter
+    secretRefs:
+      KAFKA_SASL_PASSWORD:
+        name: kafka-photo-converter
+        key: password
+  trip-result-worker:
+    configMapData:
+      KAFKA_SASL_USERNAME: v3-trip-result-worker
+    secretRefs:
+      KAFKA_SASL_PASSWORD:
+        name: kafka-trip-result-worker
+        key: password

@@ -1,0 +1,73 @@
+{
+  "backendSourceCommit": "fba61303f90afecddf703de108e19fd821213601",
+  "roles": {
+    "auth-api": "auth",
+    "trip-api": "trip",
+    "trip-result-worker": "trip",
+    "photo-api": "photo",
+    "photo-converter": "photo"
+  },
+  "javaToolOptions": "-XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts -Djavax.net.ssl.trustStorePassword=public-ca-only",
+  "commonConfig": {
+    "MYSQL_URL": "jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true",
+    "REDIS_HOST": "redis-members.redis.svc.cluster.local",
+    "REDIS_PORT": "6379",
+    "REDIS_USERNAME": "app",
+    "REDIS_SSL_ENABLED": "true",
+    "KAFKA_BOOTSTRAP_SERVERS": "yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093",
+    "AWS_EC2_METADATA_DISABLED": "true",
+    "ATTACHMENT_S3_BUCKET": "yeodam-v3-foundation-app-data-483175530259-ap-northeast-2"
+  },
+  "spring": {
+    "data": {
+      "redis": {
+        "username": "app",
+        "ssl": {
+          "enabled": true
+        },
+        "sentinel": {
+          "master": "yeodam-v3-app-redis",
+          "nodes": [
+            "sentinel-0.redis-sentinel.redis.svc.cluster.local:26379",
+            "sentinel-1.redis-sentinel.redis.svc.cluster.local:26379",
+            "sentinel-2.redis-sentinel.redis.svc.cluster.local:26379"
+          ],
+          "username": "sentinel-client",
+          "password": "${REDIS_SENTINEL_PASSWORD}"
+        }
+      }
+    },
+    "mongodb": {
+      "uri": "${MONGODB_URI}"
+    },
+    "datasource": {
+      "hikari": {
+        "maximum-pool-size": 3,
+        "minimum-idle": 1
+      }
+    },
+    "jpa": {
+      "hibernate": {
+        "ddl-auto": "validate"
+      }
+    },
+    "flyway": {
+      "enabled": false
+    },
+    "kafka": {
+      "properties": {
+        "security.protocol": "SASL_SSL",
+        "sasl.mechanism": "SCRAM-SHA-512",
+        "sasl.jaas.config": "org.apache.kafka.common.security.scram.ScramLoginModule required username=\"${KAFKA_SASL_USERNAME}\" password=\"${KAFKA_SASL_PASSWORD}\";",
+        "ssl.endpoint.identification.algorithm": "https",
+        "ssl.truststore.location": "/etc/yeodam/trust/cacerts",
+        "ssl.truststore.password": "public-ca-only"
+      }
+    }
+  },
+  "extraSecrets": [
+    "REDIS_PASSWORD",
+    "REDIS_SENTINEL_PASSWORD"
+  ],
+  "sentinelFullFeatureCompatible": false
+}
