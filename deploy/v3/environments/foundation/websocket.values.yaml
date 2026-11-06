@@ -1,0 +1,96 @@
+# Disabled until reviewed image, origin, CA and Secrets are supplied.
+# Install as a separate Helm release from BE.
+websocketContract: true
+defaults:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+      ephemeral-storage: 32Mi
+    limits:
+      memory: 512Mi
+      ephemeral-storage: 128Mi
+  imagePullSecrets:
+  - ghcr-pull
+  configMapData:
+    SERVER_PORT: '8081'
+    REDIS_HOST: redis-members.redis.svc.cluster.local
+    REDIS_PORT: '6379'
+    REDIS_USERNAME: app
+    REDIS_SSL_ENABLED: 'true'
+    BACKEND_INTERNAL_BASE_URL: http://trip-api.trip.svc.cluster.local:8080
+    WEBSOCKET_EVENTS_CHANNEL: yeodam:v3:foundation:websocket:events:v1
+    WEBSOCKET_MAX_CONNECTIONS: '100'
+    SERVER_SHUTDOWN: graceful
+    SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: 30s
+    JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts
+      -Djavax.net.ssl.trustStorePassword=public-ca-only
+    WEBSOCKET_ALLOWED_ORIGINS: ''
+    RELEASE: ''
+  springProperties:
+    spring:
+      data:
+        redis:
+          username: app
+          ssl:
+            enabled: true
+          sentinel:
+            master: yeodam-v3-app-redis
+            nodes:
+            - sentinel-0.redis-sentinel.redis.svc.cluster.local:26379
+            - sentinel-1.redis-sentinel.redis.svc.cluster.local:26379
+            - sentinel-2.redis-sentinel.redis.svc.cluster.local:26379
+            username: sentinel-client
+            password: ${REDIS_SENTINEL_PASSWORD}
+  secretRefs:
+    REDIS_PASSWORD:
+      name: websocket-credentials
+      key: REDIS_PASSWORD
+    REDIS_SENTINEL_PASSWORD:
+      name: websocket-credentials
+      key: REDIS_SENTINEL_PASSWORD
+    WEBSOCKET_INTERNAL_SERVICE_TOKEN:
+      name: websocket-credentials
+      key: WEBSOCKET_INTERNAL_SERVICE_TOKEN
+  secretVolumes:
+  - name: trust-input
+    secretName: websocket-trust
+    mountPath: /etc/yeodam/ca
+  probes:
+    startup:
+      httpGet:
+        path: /api/actuator/health/liveness
+        port: http
+        scheme: HTTP
+      periodSeconds: 5
+      timeoutSeconds: 2
+      failureThreshold: 60
+      successThreshold: 1
+    liveness:
+      httpGet:
+        path: /api/actuator/health/liveness
+        port: http
+        scheme: HTTP
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+      successThreshold: 1
+    readiness:
+      httpGet:
+        path: /api/actuator/health/readiness
+        port: http
+        scheme: HTTP
+      periodSeconds: 5
+      timeoutSeconds: 2
+      failureThreshold: 3
+      successThreshold: 1
+  terminationGracePeriodSeconds: 60
+  preStopDelaySeconds: 5
+  rollout:
+    maxSurge: 0
+    maxUnavailable: 1
+  scratchSizeLimit: 64Mi
+  configurationRevision: ''
+workloads:
+  trip-websocket:
+    replicas: 1
