@@ -97,14 +97,16 @@ resource "aws_iam_role" "reader" {
 }
 
 resource "aws_iam_role_policy" "assume_readers" {
-  name = "namespace-readers"
-  role = aws_iam_role.controller.id
+  # Names are fixed; keep the policy reviewable before new roles exist.
+  depends_on = [aws_iam_role.reader]
+  name       = "namespace-readers"
+  role       = aws_iam_role.controller.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
       Action   = ["sts:AssumeRole", "sts:TagSession"]
-      Resource = [for ns in sort(tolist(local.namespaces)) : aws_iam_role.reader[ns].arn]
+      Resource = [for ns in sort(tolist(local.namespaces)) : "arn:aws:iam::483175530259:role/${local.cluster_name}-eso-${ns}"]
     }]
   })
 }
