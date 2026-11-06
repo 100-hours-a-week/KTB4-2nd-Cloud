@@ -128,6 +128,7 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-backend-access.py
 "${validation_dir}/venv/bin/python" scripts/check-v3-apps.py -f deploy/v3/environments/foundation/backend.values.yaml -f deploy/v3/environments/foundation/backend-connections.values.yaml
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_backend_connections.py'
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_backend_rollout.py'
 "${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py --directory "${validation_dir}" --output "${rendered_dir}" \
  -f deploy/v3/environments/foundation/mysql-cdc-secrets.values.yaml \
  -f deploy/v3/environments/foundation/redis-secrets.values.yaml \
