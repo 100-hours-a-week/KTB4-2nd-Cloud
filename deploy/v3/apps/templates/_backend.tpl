@@ -1,6 +1,7 @@
 {{- define "yeodam-v3-apps.resolveConfig" -}}
+{{- if and .root.Values.frontendServiceOnly (not .root.Values.frontendContract) }}{{ fail "Service-only bootstrap is FE-only" }}{{ end -}}
 {{- $c := mergeOverwrite (deepCopy .root.Values.defaults) .workload -}}
-{{- if and .root.Values.backendContract .root.Values.websocketContract }}{{ fail "BE and WebSocket use separate release profiles" }}{{ end -}}
+{{- if or (and .root.Values.backendContract .root.Values.websocketContract) (and .root.Values.frontendContract (or .root.Values.backendContract .root.Values.websocketContract)) }}{{ fail "BE and WebSocket use separate release profiles" }}{{ end -}}
 {{- if and $c.enabled (not (or .root.Values.backendContract .root.Values.websocketContract)) (not (empty $c.springProperties)) }}{{ fail "springProperties requires the BE runtime contract" }}{{ end -}}
 {{- if and (or .root.Values.backendContract .root.Values.websocketContract) $c.enabled -}}
 {{- if hasKey $c.configMapData "SPRING_APPLICATION_JSON" }}{{ fail "Use structured springProperties; raw SPRING_APPLICATION_JSON can shadow role settings" }}{{ end -}}

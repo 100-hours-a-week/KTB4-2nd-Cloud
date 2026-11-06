@@ -98,6 +98,11 @@ def prepare(directory):
     if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != karpenter['sha256']:
         archive.write_bytes(download_karpenter(karpenter))
 
+    controller = json.loads((ROOT / 'deploy/v3/load-balancer-controller/upstream.lock.json').read_text())
+    archive = directory / 'load-balancer-controller.tgz'
+    if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != controller['sha256']:
+        archive.write_bytes(download(controller))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

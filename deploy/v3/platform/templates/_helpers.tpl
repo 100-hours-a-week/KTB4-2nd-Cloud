@@ -3,6 +3,9 @@ app.kubernetes.io/part-of: yeodam
 app.kubernetes.io/managed-by: {{ .root.Release.Service | quote }}
 yeodam.io/stage: v3
 yeodam.io/domain: {{ .namespace | quote }}
+{{- if and .root.Values.albReadinessGates (ne .namespace "ai") }}
+elbv2.k8s.aws/pod-readiness-gate-inject: enabled
+{{- end }}
 {{- end -}}
 
 {{/* Reuse the same stable labels on future Deployment pod templates. */}}
