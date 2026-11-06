@@ -68,6 +68,9 @@ capabilities:
 {{- if or (hasKey $c.environment $key) (hasKey $c.secretRefs $key) -}}{{ fail (cat $prefix "duplicate ConfigMap/environment/Secret key" $key) }}{{- end -}}
 {{- end -}}
 {{- if has (printf "%s-runtime" .instance) $c.configMapRefs -}}{{ fail (cat $prefix "generated ConfigMap must not be imported twice") }}{{- end -}}
+{{- if .root.Values.frontendContract -}}
+{{- include "yeodam-v3-apps.frontendCheck" . -}}
+{{- end -}}
 {{- if .root.Values.websocketContract -}}
 {{- include "yeodam-v3-apps.websocketCheck" . -}}
 {{- end -}}

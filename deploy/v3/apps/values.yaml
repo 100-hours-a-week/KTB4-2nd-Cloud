@@ -10,6 +10,8 @@ images:
 backendContract: false
 backendConnectionContract: false
 websocketContract: false
+frontendContract: false
+frontendServiceOnly: false
 defaults:
   resources:
     requests:

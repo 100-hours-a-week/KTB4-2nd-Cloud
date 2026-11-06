@@ -254,6 +254,8 @@
     "backendContract": {"type": "boolean"},
     "backendConnectionContract": {"type": "boolean"},
     "websocketContract": {"type": "boolean"},
+    "frontendContract": {"type": "boolean"},
+    "frontendServiceOnly": {"type": "boolean"},
     "images": {
       "type": "object",
       "additionalProperties": false,

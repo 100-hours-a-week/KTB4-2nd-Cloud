@@ -64,12 +64,13 @@ def resource_budget(resources):
 
 
 def validate(documents, values):
-    require(not (values.get('websocketContract') and values.get('backendContract')), 'BE and WebSocket use separate release profiles')
+    require(sum(bool(values.get(k)) for k in ['backendContract','websocketContract','frontendContract'])<=1, 'BE and WebSocket use separate release profiles')
     require(not values.get('backendConnectionContract') or values.get('backendContract'), 'Connections require the BE runtime contract')
+    require(not values.get('frontendServiceOnly') or values.get('frontendContract'), 'Service-only bootstrap is FE-only')
     platform_values = platform.load_documents((ROOT / 'deploy/v3/platform/values.yaml').read_text())[0]
     accounts = platform.expected_accounts(platform_values)
     configs = {name: merge(values['defaults'], item) for name, item in values['workloads'].items() if item['enabled']}
-    expected = {('Deployment', c['namespace'], name) for name, c in configs.items()}
+    expected = {('Deployment', c['namespace'], name) for name, c in configs.items() if not (values.get('frontendContract') and values.get('frontendServiceOnly'))}
     expected |= {('Service', c['namespace'], name) for name, c in configs.items() if c['service']['enabled']}
     expected |= {('ConfigMap', c['namespace'], name + '-runtime') for name, c in configs.items() if c.get('configMapData')}
     identities = {(doc['kind'], doc['metadata'].get('namespace'), doc['metadata']['name']) for doc in documents}
@@ -90,6 +91,10 @@ def validate(documents, values):
         for config in configs.values():
             websocket.prepare(config)
         websocket.validate(configs)
+    elif values.get('frontendContract'):
+        fe_spec = importlib.util.spec_from_file_location('v3_frontend', ROOT / 'scripts/v3_frontend_contract.py')
+        frontend = importlib.util.module_from_spec(fe_spec);fe_spec.loader.exec_module(frontend)
+        frontend.validate(configs, values['images'])
     else:
         require(all(not c.get('springProperties') for c in configs.values()), 'Structured Spring properties require the BE contract')
     for doc in documents:
@@ -177,6 +182,10 @@ def validate(documents, values):
             storage_extra = 4 * 1024 * 1024
         else:
             storage_extra = 0
+        if values.get('frontendContract'):
+            volumes = {'next-cache':{'name':'next-cache','emptyDir':{'sizeLimit':'128Mi'}}, **volumes}
+            mounts.append({'name':'next-cache','mountPath':'/app/.next/cache'})
+            storage_extra += 128 * 1024 * 1024
         storage = quantity(config['scratchSizeLimit'], 'ephemeral-storage') + storage_extra
         if config['name'] == 'backend':
             volumes['catalog'] = {'name': 'catalog', 'emptyDir': {'sizeLimit': config['catalogSizeLimit']}}
