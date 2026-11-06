@@ -53,6 +53,7 @@ on:
       - 'scripts/create-v3-mongodb-bootstrap-secret.py'
       - 'tests/ci/test_v3_mongodb.py'
       - 'scripts/check-v3-redis.py'
+      - 'scripts/verify-v3-redis-aof.py'
       - 'scripts/create-v3-redis-bootstrap-secret.py'
       - 'tests/ci/test_v3_redis.py'
       - 'tests/ci/test_v3_validation_download.py'
@@ -118,6 +119,12 @@ jobs:
         env:
           V3_RENDERED_DIR: ${{ runner.temp }}/v3-rendered
         run: bash scripts/validate-v3-platform.sh
+
+      - name: Verify Redis transaction replay with isolated fixture data
+        run: |
+          image=$(sed -n 's/^image: //p' deploy/v3/redis/values.yaml)
+          docker pull "$image"
+          python3 scripts/verify-v3-redis-aof.py
 
       - name: Verify disabled production release contract without credentials
         run: python3 -m unittest discover -s tests/ci -p 'test_production_release_prepare.py'
