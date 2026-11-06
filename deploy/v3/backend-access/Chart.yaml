@@ -2,4 +2,4 @@ apiVersion: v2
 name: yeodam-v3-backend-access
 version: 0.1.0
 type: application
-kubeVersion: ">=1.36.0 <1.37.0"
+kubeVersion: ">=1.36.0-0 <1.37.0-0"
