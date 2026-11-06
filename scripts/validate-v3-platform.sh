@@ -135,3 +135,10 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
  -f deploy/v3/environments/foundation/mongodb-secrets.values.yaml \
  -f deploy/v3/environments/foundation/outbox-secrets.values.yaml \
  -f deploy/v3/environments/foundation/backend-secrets.values.yaml
+
+# Standalone WebSocket release: no BE deployment or secret source changes.
+"${V3_HELM}" lint --strict deploy/v3/apps -f deploy/v3/environments/foundation/websocket.values.yaml
+"${V3_HELM}" lint --strict deploy/v3/websocket-access
+"${validation_dir}/venv/bin/python" scripts/check-v3-apps.py -f deploy/v3/environments/foundation/websocket.values.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-websocket.py
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_websocket.py'
