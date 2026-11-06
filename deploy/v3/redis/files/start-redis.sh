@@ -18,7 +18,7 @@ fi
 {
  printf 'user default off\n'
  printf 'user admin on #%s ~* &* +@all\n' "$(hash_password admin)"
- printf 'user app on #%s ~* &* +@connection +@read +@write +@transaction +@scripting +@pubsub -@admin -@dangerous +wait\n' "$(hash_password app)"
+ printf 'user app on #%s ~* &* +@connection +@read +@write +@transaction +@scripting +@pubsub -@admin -@dangerous +wait +info\n' "$(hash_password app)"
  printf 'user replication on #%s +ping +psync +replconf\n' "$(hash_password replication)"
  printf 'user monitor on #%s ~* &__sentinel__:hello +multi +slaveof +replicaof +ping +exec +subscribe +publish +info +role +config|rewrite +client|setname +client|kill +script|kill\n' "$(hash_password monitor)"
  printf 'user health on #%s +ping +info +role\n' "$(hash_password health)"
