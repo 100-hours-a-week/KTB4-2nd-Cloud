@@ -1,0 +1,113 @@
+{
+  "sourceBaseline": "21ae667fba060fcec08089f81824723e6f866ec2",
+  "commonEnvironment": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1",
+    "AWS_REGION": "ap-northeast-2",
+    "AWS_DEFAULT_REGION": "ap-northeast-2",
+    "AWS_EC2_METADATA_DISABLED": "true",
+    "IMAGE_SOURCE": "s3",
+    "S3_BUCKET": "yeodam-v3-foundation-app-data-483175530259-ap-northeast-2",
+    "JOBS_ENV": "v3-foundation",
+    "EMBED_MODEL": "qwen3-vl-embedding-2b",
+    "EMBEDDING_SERVED_MODEL_NAME": "qwen3-vl-embedding-2b",
+    "SEARCH_ENABLED": "true",
+    "JOBS_PROCESS_HANDLER": "app.jobs.process_handler:run",
+    "JOBS_STORY_HANDLER": "app.story.handler:run",
+    "JOBS_FAKE_PIPELINE": "false",
+    "FAKE_PIPELINE": "false",
+    "JOBS_PROCESS_STANDBY": "0",
+    "JOBS_STORY_CONCURRENCY": "1",
+    "GPU_GENERATION_INFLIGHT": "1",
+    "GPU_SEARCH_EMBEDDING_INFLIGHT": "1",
+    "PROCESS_AGENT_CONCURRENCY": "1",
+    "PROCESS_AGENT_ENABLED": "true",
+    "JOBS_PROCESS_TIMEOUT_SEC": "3000",
+    "PROCESS_AGENT_BUDGET_SEC": "2700",
+    "JOBS_SHUTDOWN_GRACE_SEC": "60",
+    "VLM_MODEL": "gemma-4",
+    "KAFKA_BOOTSTRAP_SERVERS": "yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093",
+    "KAFKA_SECURITY_PROTOCOL": "SASL_SSL",
+    "KAFKA_SASL_MECHANISM": "SCRAM-SHA-512",
+    "KAFKA_SASL_USERNAME": "v3-ai",
+    "KAFKA_SSL_CAFILE": "/etc/yeodam/ca/kafka.crt",
+    "QDRANT_URL": "https://qdrant.qdrant.svc.cluster.local:6333",
+    "SSL_CERT_FILE": "/etc/yeodam/trust/ca-bundle.pem",
+    "REQUESTS_CA_BUNDLE": "/etc/yeodam/trust/ca-bundle.pem",
+    "AWS_CA_BUNDLE": "/etc/yeodam/trust/ca-bundle.pem",
+    "XDG_CACHE_HOME": "/tmp/.cache",
+    "KAFKA_TRIP_CREATE_REQUEST_TOPIC": "prod.yeodam.trip-create.request",
+    "KAFKA_TRIP_CREATE_RESULT_TOPIC": "prod.yeodam.trip-create.result",
+    "KAFKA_TRIP_UPDATE_REQUEST_TOPIC": "prod.yeodam.trip-update.request",
+    "KAFKA_TRIP_UPDATE_RESULT_TOPIC": "prod.yeodam.trip-update.result",
+    "KAFKA_STORY_CREATE_REQUEST_TOPIC": "prod.yeodam.story-create.request",
+    "KAFKA_STORY_CREATE_RESULT_TOPIC": "prod.yeodam.story-create.result"
+  },
+  "secretKeys": [
+    "API_KEY",
+    "REDIS_URL",
+    "QDRANT_API_KEY",
+    "KAFKA_SASL_PASSWORD",
+    "VLM_BASE_URL",
+    "VLM_API_KEY",
+    "EMBEDDING_BASE_URL",
+    "EMBEDDING_API_KEY"
+  ],
+  "runnerExtraSecrets": [
+    "KAKAO_REST_API_KEY"
+  ],
+  "workloads": {
+    "api": {
+      "name": "ai-api",
+      "nodeRole": "api",
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "256Mi",
+          "ephemeral-storage": "128Mi"
+        },
+        "limits": {
+          "memory": "512Mi",
+          "ephemeral-storage": "512Mi"
+        }
+      },
+      "grace": 120,
+      "command": [
+        "uvicorn",
+        "app.v2_main:create_app",
+        "--factory",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--timeout-graceful-shutdown",
+        "35"
+      ]
+    },
+    "runner": {
+      "name": "ai-runner",
+      "nodeRole": "worker",
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "512Mi",
+          "ephemeral-storage": "2560Mi"
+        },
+        "limits": {
+          "memory": "1Gi",
+          "ephemeral-storage": "4Gi"
+        }
+      },
+      "grace": 30,
+      "command": [
+        "python",
+        "/runtime/start-runner.py"
+      ],
+      "environment": {
+        "PLACE_INDEX_S3_URI": "s3://yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/places/v2026-10-30/places.sqlite",
+        "PLACE_INDEX_SHA256": "41f531891d9bdc5417e91c80a92e51f2e92e2661a641cb627cbdb16e5f0f3b1d",
+        "PLACE_INDEX_PATH": "/data/ai-reference/places-v2026-10-30.sqlite"
+      }
+    }
+  }
+}

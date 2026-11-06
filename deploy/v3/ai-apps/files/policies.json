@@ -1,0 +1,346 @@
+[
+  {
+    "name": "allow-ai-kafka",
+    "namespace": "ai",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "ai",
+          "app.kubernetes.io/part-of": "yeodam",
+          "yeodam.io/stage": "v3",
+          "yeodam.io/ai-runtime": "true"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "kafka"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "strimzi.io/cluster": "yeodam-v3-kafka",
+                  "strimzi.io/kind": "Kafka"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 9093
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "allow-kafka-from-ai",
+    "namespace": "kafka",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "strimzi.io/cluster": "yeodam-v3-kafka",
+          "strimzi.io/kind": "Kafka"
+        }
+      },
+      "policyTypes": [
+        "Ingress"
+      ],
+      "ingress": [
+        {
+          "from": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "ai"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/name": "ai",
+                  "app.kubernetes.io/part-of": "yeodam",
+                  "yeodam.io/stage": "v3",
+                  "yeodam.io/ai-runtime": "true"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 9093
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "allow-ai-public-and-identity",
+    "namespace": "ai",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "ai",
+          "app.kubernetes.io/part-of": "yeodam",
+          "yeodam.io/stage": "v3",
+          "yeodam.io/ai-runtime": "true"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "ipBlock": {
+                "cidr": "0.0.0.0/0",
+                "except": [
+                  "10.0.0.0/8",
+                  "172.16.0.0/12",
+                  "192.168.0.0/16",
+                  "169.254.0.0/16",
+                  "127.0.0.0/8"
+                ]
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 443
+            }
+          ]
+        },
+        {
+          "to": [
+            {
+              "ipBlock": {
+                "cidr": "169.254.170.23/32"
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 80
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "allow-trip-api-to-ai",
+    "namespace": "trip",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "backend",
+          "app.kubernetes.io/instance": "trip-api",
+          "yeodam.io/stage": "v3"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "ai"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/name": "ai",
+                  "app.kubernetes.io/part-of": "yeodam",
+                  "yeodam.io/stage": "v3",
+                  "yeodam.io/ai-runtime": "true",
+                  "app.kubernetes.io/instance": "ai-api"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 8000
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "allow-trip-result-worker-to-ai",
+    "namespace": "trip",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "backend",
+          "app.kubernetes.io/instance": "trip-result-worker",
+          "yeodam.io/stage": "v3"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "ai"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/name": "ai",
+                  "app.kubernetes.io/part-of": "yeodam",
+                  "yeodam.io/stage": "v3",
+                  "yeodam.io/ai-runtime": "true",
+                  "app.kubernetes.io/instance": "ai-api"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 8000
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "allow-photo-api-to-ai",
+    "namespace": "photo",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "backend",
+          "app.kubernetes.io/instance": "photo-api",
+          "yeodam.io/stage": "v3"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "ai"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/name": "ai",
+                  "app.kubernetes.io/part-of": "yeodam",
+                  "yeodam.io/stage": "v3",
+                  "yeodam.io/ai-runtime": "true",
+                  "app.kubernetes.io/instance": "ai-api"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 8000
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "allow-be-to-ai-api",
+    "namespace": "ai",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "ai",
+          "app.kubernetes.io/part-of": "yeodam",
+          "yeodam.io/stage": "v3",
+          "yeodam.io/ai-runtime": "true",
+          "app.kubernetes.io/instance": "ai-api"
+        }
+      },
+      "policyTypes": [
+        "Ingress"
+      ],
+      "ingress": [
+        {
+          "from": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "trip"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/name": "backend",
+                  "app.kubernetes.io/instance": "trip-api",
+                  "yeodam.io/stage": "v3"
+                }
+              }
+            },
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "trip"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/name": "backend",
+                  "app.kubernetes.io/instance": "trip-result-worker",
+                  "yeodam.io/stage": "v3"
+                }
+              }
+            },
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "photo"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/name": "backend",
+                  "app.kubernetes.io/instance": "photo-api",
+                  "yeodam.io/stage": "v3"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 8000
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,17 @@
+# Disabled until a corrected immutable AI image, Secret supply and model paths are reviewed.
+accessEnabled: false
+workloads:
+  api: false
+  runner: false
+image: ''
+source: ''
+configurationRevision: ''
+review:
+  sourceCompatible: false
+  imageReviewed: false
+  connectionsReviewed: false
+trust:
+  redis: ''
+  qdrant: ''
+  kafka: ''
+privateModelPeers: []

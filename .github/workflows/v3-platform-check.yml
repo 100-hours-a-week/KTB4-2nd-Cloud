@@ -5,6 +5,12 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'terraform/v3/ai/**'
+      - 'scripts/check-v3-ai.py'
+      - 'scripts/check-v3-ai-plan.py'
+      - 'scripts/inspect-v3-ai-source.py'
+      - 'scripts/prepare-v3-ai-values.py'
+      - 'tests/ci/test_v3_ai.py'
       - 'scripts/check-v3-ai-storage.py'
       - 'scripts/check-v3-ai-storage-plan.py'
       - 'scripts/prepare-v3-ai-storage-secrets.py'
@@ -187,3 +193,10 @@ jobs:
           terraform -chdir=terraform/v3/ingress init -backend=false -input=false -lockfile=readonly
           terraform -chdir=terraform/v3/ingress validate
           terraform -chdir=terraform/v3/ingress test -no-color
+
+      - name: Validate read-only AI Pod Identities using mock AWS
+        run: |
+          terraform -chdir=terraform/v3/ai fmt -check -recursive
+          terraform -chdir=terraform/v3/ai init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=terraform/v3/ai validate
+          terraform -chdir=terraform/v3/ai test -no-color

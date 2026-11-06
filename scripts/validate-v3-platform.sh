@@ -156,3 +156,9 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-ai-storage.py --output "${rendered_dir}"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_ai_storage.py'
 "${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py --directory "${validation_dir}" --output "${rendered_dir}" -f deploy/v3/environments/foundation/ai-storage-secrets.values.yaml
+
+# AI source/runtime preparation: no models or live services.
+"${V3_HELM}" lint --strict deploy/v3/ai-apps
+"${validation_dir}/venv/bin/python" scripts/check-v3-ai.py --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_ai.py'
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py --directory "${validation_dir}" --output "${rendered_dir}" -f deploy/v3/environments/foundation/ai-secrets.values.yaml
