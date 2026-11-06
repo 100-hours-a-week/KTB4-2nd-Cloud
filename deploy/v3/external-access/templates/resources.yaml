@@ -1,0 +1,76 @@
+{{- if and .Values.backendRoutesEnabled (not .Values.ingressEnabled) }}{{ fail "Full backend routes require ingress enabled" }}{{ end }}
+{{- if .Values.ingressEnabled }}
+{{- if not .Values.controllerPolicyEnabled }}{{ fail "Enable Controller policy first" }}{{ end }}
+{{- $_ := required "Issued V3 certificate ARN required" .Values.certificateArn }}
+{{- $_ := required "Terraform-owned V3 ALB SG required" .Values.albSecurityGroupId }}
+{{- $contract := .Files.Get "files/routes.json" | fromJson }}
+{{- range $route := $contract.routes }}
+{{- if or $.Values.backendRoutesEnabled (not (has $route.name (list "trip" "photo"))) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: v3-{{ $route.name }}
+  namespace: {{ $route.namespace }}
+  labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+  annotations:
+    alb.ingress.kubernetes.io/group.name: {{ $contract.group | quote }}
+    alb.ingress.kubernetes.io/group.order: {{ $route.order | quote }}
+    alb.ingress.kubernetes.io/load-balancer-name: yeodam-v3-validation
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/ip-address-type: ipv4
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/subnets: subnet-04bfb590e5cf0b665,subnet-02bd8039080de3864
+    alb.ingress.kubernetes.io/security-groups: {{ $.Values.albSecurityGroupId | quote }}
+    alb.ingress.kubernetes.io/manage-backend-security-group-rules: "false"
+    alb.ingress.kubernetes.io/certificate-arn: {{ $.Values.certificateArn | quote }}
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=120,routing.http.drop_invalid_header_fields.enabled=true
+    {{- if hasKey $route "action" }}
+    alb.ingress.kubernetes.io/actions.reject: {{ dict "type" "fixed-response" "fixedResponseConfig" (dict "contentType" "application/json" "statusCode" (toString $route.action) "messageBody" "{\"error\":\"unavailable\"}") | toJson | quote }}
+    {{- else }}
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-port: {{ $route.healthPort | quote }}
+    alb.ingress.kubernetes.io/healthcheck-path: {{ $route.health | quote }}
+    alb.ingress.kubernetes.io/success-codes: "200"
+    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=60
+    {{- end }}
+spec:
+  ingressClassName: yeodam-v3-alb
+  rules:
+    - host: {{ $contract.host }}
+      http:
+        paths:
+          {{- range $path := $route.paths }}
+          - path: {{ index $path 0 | quote }}
+            pathType: {{ index $path 1 }}
+            backend:
+              service:
+                {{- if hasKey $route "action" }}
+                name: reject
+                port: {name: use-annotation}
+                {{- else }}
+                name: {{ $route.service }}
+                port: {number: {{ $route.port }}}
+                {{- end }}
+          {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- $policies := .Files.Get "files/policies.json" | fromJson }}
+{{- $active := list }}
+{{- if .Values.controllerPolicyEnabled }}{{ $active = append $active $policies.controller }}{{ end }}
+{{- if .Values.ingressEnabled }}{{ $active = concat $active $policies.applications }}{{ end }}
+{{- range $p := $active }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $p.name }}
+  namespace: {{ $p.namespace }}
+  labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+spec:
+  {{- toYaml $p.spec | nindent 2 }}
+{{- end }}

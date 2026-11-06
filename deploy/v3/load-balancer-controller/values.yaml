@@ -1,0 +1,54 @@
+replicaCount: 1
+revisionHistoryLimit: 2
+image:
+  repository: public.ecr.aws/eks/aws-load-balancer-controller
+  tag: v3.6.2@sha256:fd51f0ec82f8d357837aa57fdfaa4fca7137b75f25a09b421d95c425c9dc2d94
+fullnameOverride: yeodam-v3-load-balancer-controller
+clusterName: yeodam-v3-foundation
+region: ap-northeast-2
+vpcId: vpc-0ecc3132f3b2170e9
+ingressClass: yeodam-v3-alb
+createIngressClassResource: true
+ingressClassParams:
+  create: false
+ingressClassConfig:
+  default: false
+serviceAccount:
+  create: true
+  name: yeodam-v3-load-balancer-controller
+  automountServiceAccountToken: true
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+nodeSelector:
+  yeodam.io/role: system
+enableCertManager: false
+keepTLSSecret: true
+enableServiceMutatorWebhook: false
+enableBackendSecurityGroup: false
+enableManageBackendSecurityGroupRules: false
+enableWaf: false
+enableWafv2: false
+enableShield: false
+disableIngressClassAnnotation: true
+controllerConfig:
+  featureGates:
+    ALBGatewayAPI: false
+    NLBGatewayAPI: false
+    GlobalAcceleratorController: false
+    EnableServiceController: false
+podLabels:
+  yeodam.io/stage: v3
+  app.kubernetes.io/part-of: yeodam
+env:
+  AWS_EC2_METADATA_DISABLED: 'true'
+priorityClassName: ''
+clusterSecretsPermissions:
+  allowAllSecrets: false
+webhookConfig:
+  ingressValidationObjectSelector:
+    matchLabels:
+      yeodam.io/stage: v3
