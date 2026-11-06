@@ -38,6 +38,10 @@ class Connections(unittest.TestCase):
  def test_spring_credential_literal_or_wrong_mongo_binding_rejected(self):self.reject({'defaults':{'springProperties':{'spring':{'mongodb':{'uri':'mongodb://wrong:password@localhost'}}}}})
  def test_sentinel_name_and_admin_identity_rejected(self):self.reject({'defaults':{'springProperties':{'spring':{'data':{'redis':{'sentinel':{'username':'admin'}}}}}}})
  def test_jvm_override_rejected(self):self.reject({'defaults':{'configMapData':{'JAVA_TOOL_OPTIONS':'-XX:MaxRAMPercentage=90'}}})
+ def test_actual_eks_version_suffix_is_accepted(self):
+  source=subprocess.check_output([os.environ['V3_HELM'],'template','yeodam-v3-backend-access',str(ROOT/'deploy/v3/backend-access'),'--kube-version','1.36.5-eks-577a51e','-f',str(self.access_file)],text=True)
+  access.validate(access.platform.load_documents(source),True)
+  with self.assertRaises(subprocess.CalledProcessError):subprocess.check_output([os.environ['V3_HELM'],'template','yeodam-v3-backend-access',str(ROOT/'deploy/v3/backend-access'),'--kube-version','1.37.0-eks-example','-f',str(self.access_file)],text=True,stderr=subprocess.DEVNULL)
  def test_access_and_public_ca_schema(self):
   source=access.render([self.access_file]);docs=access.platform.load_documents(source);access.validate(docs,True);access.platform.schema_check(source)
  def test_policy_peer_widening_rejected(self):
