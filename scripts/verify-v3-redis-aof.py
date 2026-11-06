@@ -22,7 +22,7 @@ RUNTIME = ROOT / 'deploy/v3/redis/files'
 def docker(*args, check=True, timeout=60):
     result = subprocess.run(['docker', *args], capture_output=True, text=True, timeout=timeout)
     if check and result.returncode:
-        raise RuntimeError('Docker operation failed; raw output suppressed')
+        raise RuntimeError('Docker ' + str(args[0]) + ' failed (exit ' + str(result.returncode) + ')')
     return result
 
 
@@ -134,7 +134,7 @@ def exercise(image, vulnerable):
             # UID999 owns the bind-mounted AOF dirs; make only this scratch tree
             # removable by the host runner before TemporaryDirectory cleanup.
             docker('run', '--rm', '--network', 'none', '--user', '999:999', '--cap-drop', 'ALL',
-                   '-v', str(data) + ':/data', image, '/bin/bash', '-ec', 'chmod -R a+rwX /data')
+                   '-v', str(data) + ':/data', image, '/bin/bash', '-ec', 'find /data -mindepth 1 -maxdepth 1 -exec chmod -R a+rwX {} +')
 
 
 def main():
