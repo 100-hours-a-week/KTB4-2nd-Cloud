@@ -1,0 +1,35 @@
+name: V3 Connect image checks
+on:
+  workflow_call:
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'deploy/v3/connect-image/**'
+      - 'deploy/v3/connect/**'
+      - 'deploy/v3/kafka-operator/upstream.lock.json'
+      - 'scripts/prepare-v3-connect-image.py'
+      - 'scripts/validate-v3-connect-image.sh'
+      - 'tests/ci/smoke-v3-connect.py'
+      - 'tests/ci/v3/CheckConnectPlugins.java'
+      - '.github/workflows/v3-connect-check.yml'
+      - '.github/workflows/v3-connect-image.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    name: Minimum-budget Connect runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false}
+      - name: Build pinned image and verify synthetic TLS runtime and restart
+        run: bash scripts/validate-v3-connect-image.sh
+      - name: Preserve synthetic runtime results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: v3-connect-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/yeodam-v3-connect-results
+          retention-days: 3
+          if-no-files-found: warn

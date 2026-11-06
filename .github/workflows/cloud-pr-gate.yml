@@ -26,6 +26,9 @@ jobs:
     outputs:
       runtime_required: ${{ steps.scope.outputs.runtime_required }}
       v2_runtime_required: ${{ steps.scope.outputs.v2_runtime_required }}
+      connect_image_required: ${{ steps.scope.outputs.connect_image_required }}
+      schema_image_required: ${{ steps.scope.outputs.schema_image_required }}
+      outbox_required: ${{ steps.scope.outputs.outbox_required }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,10 +104,34 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+  v3-connect:
+    name: V3 Connect runtime
+    needs: validate
+    if: needs.validate.outputs.connect_image_required == 'true'
+    uses: ./.github/workflows/v3-connect-check.yml
+    permissions:
+      contents: read
+
+  v3-mysql-schema:
+    name: V3 MySQL schema runtime
+    needs: validate
+    if: needs.validate.outputs.schema_image_required == 'true'
+    uses: ./.github/workflows/v3-mysql-schema-check.yml
+    permissions:
+      contents: read
+
+  v3-outbox:
+    name: V3 Outbox CDC runtime
+    needs: validate
+    if: needs.validate.outputs.outbox_required == 'true'
+    uses: ./.github/workflows/v3-outbox-check.yml
+    permissions:
+      contents: read
+
   cloud-ci-gate:
     name: cloud-ci-gate
     if: always()
-    needs: [validate, integration, v2-integration, v3-platform]
+    needs: [validate, integration, v2-integration, v3-platform, v3-connect, v3-mysql-schema, v3-outbox]
     runs-on: ubuntu-latest
     steps:
       - name: Require validation and applicable integration
@@ -115,6 +142,12 @@ jobs:
           V2_INTEGRATION_RESULT: ${{ needs.v2-integration.result }}
           V2_RUNTIME_REQUIRED: ${{ needs.validate.outputs.v2_runtime_required }}
           V3_PLATFORM_RESULT: ${{ needs.v3-platform.result }}
+          CONNECT_IMAGE_REQUIRED: ${{ needs.validate.outputs.connect_image_required }}
+          CONNECT_IMAGE_RESULT: ${{ needs.v3-connect.result }}
+          SCHEMA_IMAGE_REQUIRED: ${{ needs.validate.outputs.schema_image_required }}
+          SCHEMA_IMAGE_RESULT: ${{ needs.v3-mysql-schema.result }}
+          OUTBOX_REQUIRED: ${{ needs.validate.outputs.outbox_required }}
+          OUTBOX_RESULT: ${{ needs.v3-outbox.result }}
         run: |
           set -Eeuo pipefail
           [[ "${VALIDATE_RESULT}" == success ]] || exit 1
@@ -130,4 +163,22 @@ jobs:
             [[ "${V2_INTEGRATION_RESULT}" == success ]] || exit 1
           else
             [[ "${V2_INTEGRATION_RESULT}" == skipped ]] || exit 1
+          fi
+          [[ "${CONNECT_IMAGE_REQUIRED}" == true || "${CONNECT_IMAGE_REQUIRED}" == false ]] || exit 1
+          if [[ "${CONNECT_IMAGE_REQUIRED}" == true ]]; then
+            [[ "${CONNECT_IMAGE_RESULT}" == success ]] || exit 1
+          else
+            [[ "${CONNECT_IMAGE_RESULT}" == skipped ]] || exit 1
+          fi
+          [[ "${SCHEMA_IMAGE_REQUIRED}" == true || "${SCHEMA_IMAGE_REQUIRED}" == false ]] || exit 1
+          if [[ "${SCHEMA_IMAGE_REQUIRED}" == true ]]; then
+            [[ "${SCHEMA_IMAGE_RESULT}" == success ]] || exit 1
+          else
+            [[ "${SCHEMA_IMAGE_RESULT}" == skipped ]] || exit 1
+          fi
+          [[ "${OUTBOX_REQUIRED}" == true || "${OUTBOX_REQUIRED}" == false ]] || exit 1
+          if [[ "${OUTBOX_REQUIRED}" == true ]]; then
+            [[ "${OUTBOX_RESULT}" == success ]] || exit 1
+          else
+            [[ "${OUTBOX_RESULT}" == skipped ]] || exit 1
           fi

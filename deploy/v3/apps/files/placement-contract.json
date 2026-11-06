@@ -1,0 +1,10 @@
+{
+  "frontend": "api",
+  "auth-api": "api",
+  "trip-api": "api",
+  "photo-api": "api",
+  "trip-websocket": "api",
+  "photo-converter": "worker",
+  "trip-result-worker": "worker",
+  "ai": "worker"
+}

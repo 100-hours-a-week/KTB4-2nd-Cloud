@@ -1,0 +1,3 @@
+enabled: false
+# Public CA certificates only; no private keys or passwords.
+certificates: {mysql: "", redis: "", mongodb: "", kafka: ""}

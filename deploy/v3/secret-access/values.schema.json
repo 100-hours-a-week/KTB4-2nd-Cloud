@@ -40,6 +40,9 @@
         },
         "mongodb": {
           "$ref": "#/definitions/store"
+        },
+        "kafka": {
+          "$ref": "#/definitions/store"
         }
       }
     }

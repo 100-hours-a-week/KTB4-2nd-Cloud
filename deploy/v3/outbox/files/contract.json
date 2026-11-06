@@ -1,0 +1,25 @@
+{
+  "backendCommit": "fba61303f90afecddf703de108e19fd821213601",
+  "tables": [
+    "trip_creation_outbox",
+    "additional_attachment_upload_outbox",
+    "story_generation_outbox",
+    "attachment_conversion_outbox"
+  ],
+  "historyTopic": "prod.yeodam.schema-history",
+  "connectorName": "yeodam-v3-outbox",
+  "outputs": [
+    "prod.yeodam.trip-create.request",
+    "prod.yeodam.trip-update.request",
+    "prod.yeodam.story-create.request",
+    "prod.yeodam.image.initial-light",
+    "prod.yeodam.image.initial-heic",
+    "prod.yeodam.image.additional-light",
+    "prod.yeodam.image.additional-heic"
+  ],
+  "headers": {
+    "id": "outbox_id",
+    "outbox-source": "event_source",
+    "X-Request-ID": "request_id"
+  }
+}

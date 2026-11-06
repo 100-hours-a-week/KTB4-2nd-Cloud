@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = json.loads((ROOT / 'deploy/v3/apps/files/backend-contract.json').read_text())
+CONNECTION = json.loads((ROOT / 'deploy/v3/apps/files/connection-contract.json').read_text())
+KAFKA_NAMES = json.loads((ROOT / 'deploy/v3/apps/files/business-contract.json').read_text())
 
 
 def require(ok, message):
@@ -58,9 +60,11 @@ def prepare_config(config):
     config['configMapData']['SPRING_APPLICATION_JSON'] = encoded.replace('&', chr(92) + 'u0026').replace('<', chr(92) + 'u003c').replace('>', chr(92) + 'u003e')
 
 
-def validate_json(text, role):
+def validate_json(text, role, connected=False):
     spring = structured_settings(text)
-    require(isinstance(spring, dict) and set(spring) == {'app'}, 'Only reviewed non-secret app settings belong in JSON')
+    require(isinstance(spring, dict) and set(spring) == ({'app', 'spring'} if connected else {'app'}), 'Only reviewed non-secret app settings belong in JSON')
+    if connected:
+        require(spring['spring'] == CONNECTION['spring'], 'Unreviewed TLS/connection/DB pool properties')
     app = spring['app']
     require(set(app) == {'trip', 'story', 'outbox', 'attachment-conversion'}, 'Unreviewed/secret structured properties')
     require(set(app['trip']) == {'result-listener-enabled', 'result-consumer-group'}, 'Explicit trip result listener/group required')
@@ -70,7 +74,8 @@ def validate_json(text, role):
     require(set(app['outbox']) == {'receipt-listener-enabled', 'receipt-consumer-group'}, 'Explicit receipt switch/group required')
     require(app['outbox']['receipt-listener-enabled'] is role['outboxReceiptListener'], 'Outbox receipt Listener must match role')
     groups = [app['trip']['result-consumer-group'], app['story']['result-consumer-group'], app['outbox']['receipt-consumer-group']]
-    require(all(isinstance(g, str) and g.startswith(CONTRACT['topicPrefix']) for g in groups), 'Do not join V2/default groups')
+    require(groups == [KAFKA_NAMES['backendSpringGroups'][k] for k in ('trip', 'story', 'outbox')],
+            'Use exact BE handoff consumer groups; cluster endpoint isolates V3')
     require(len(set(groups)) == len(groups), 'Different logical consumers need different groups')
     conversion = app['attachment-conversion']
     require(set(conversion) == {'admission', 'operations'} and conversion['operations'] == {'enabled': False},
@@ -88,7 +93,7 @@ def validate_json(text, role):
     return spring
 
 
-def validate_backend(configs):
+def validate_backend(configs, connected=False):
     common = None
     for instance, config in configs.items():
         require(config['name'] == 'backend' and config['replicas'] == 1, 'Initial runtime profile is BE-only, one replica per copy')
@@ -97,11 +102,19 @@ def validate_backend(configs):
         require(all(isinstance(data.get(k), str) and data[k].strip() for k in CONTRACT['requiredConfig'] + CONTRACT['topicConfig']),
                 'Missing BE connection or runtime configuration')
         allowed = set(CONTRACT['requiredConfig'] + CONTRACT['topicConfig'] + CONTRACT['conversionConfig'] + CONTRACT['conversionTopicConfig'] + CONTRACT['optionalConfig'] + ['SPRING_APPLICATION_JSON'])
+        if connected:
+            allowed |= set(CONNECTION['commonConfig']) | {'KAFKA_SASL_USERNAME'}
         require(set(data) <= allowed, 'Unreviewed ConfigMap key could bypass the role contract')
-        require(data.get('JAVA_TOOL_OPTIONS') == CONTRACT['javaToolOptions'], 'Use the reviewed heap settings; no JVM property override of role flags')
-        require(set(config['secretRefs']) == set(CONTRACT['requiredSecrets']), 'Only reviewed BE Secret bindings may inject environment values')
+        require(data.get('JAVA_TOOL_OPTIONS') == (CONNECTION['javaToolOptions'] if connected else CONTRACT['javaToolOptions']), 'Use the reviewed heap settings; no JVM property override of role flags')
+        require(set(config['secretRefs']) == set(CONTRACT['requiredSecrets']) | (set(CONNECTION['extraSecrets']) | {'KAFKA_SASL_PASSWORD'} if connected else set()), 'Only reviewed BE Secret bindings may inject environment values')
         for key in CONTRACT['requiredSecrets']:
             require(config['secretRefs'].get(key) == {'name': 'backend-credentials', 'key': key}, 'Missing or incorrect BE Secret key reference')
+        if connected:
+            require(all(config['secretRefs'].get(k) == {'name':'backend-credentials','key':k} for k in CONNECTION['extraSecrets']), 'Redis app/Sentinel credentials required')
+            require(config['secretRefs']['KAFKA_SASL_PASSWORD'] == {'name':'kafka-'+instance,'key':'password'}, 'Kafka password must match role')
+            require(data.get('KAFKA_SASL_USERNAME') == 'v3-'+instance, 'Kafka identity must match role')
+            require(all(data.get(k)==v for k,v in CONNECTION['commonConfig'].items()), 'Connected V3 endpoint mismatch')
+            require(config['secretVolumes'] == [{'name':'trust-input','secretName':'backend-trust','mountPath':'/etc/yeodam/ca'}], 'Exact public CA mount required')
         require('SPRING_MONGODB_URI' not in config['secretRefs'], 'Use one explicit MONGODB_URI binding')
         require(not {'KAFKA_TRIP_RESULT_LISTENER_ENABLED', 'KAFKA_TRIP_RESULT_CONSUMER_GROUP'}.intersection(data), 'Do not use local-only aliases in prod')
         require(instance in CONTRACT['workloadRoles'], 'Unknown BE role')
@@ -124,7 +137,8 @@ def validate_backend(configs):
             require(parsed.port is not None and 0 < parsed.port < 65536, 'Kafka bootstrap port required')
         require(data['AUTH_SESSION_KEY_PREFIX'].startswith('yeodam:v3:foundation:')
                 and data['WEBSOCKET_EVENTS_CHANNEL'].startswith('yeodam:v3:foundation:'), 'Separate V3 Redis keys and channels')
-        require(all(data[k].startswith(CONTRACT['topicPrefix']) for k in CONTRACT['topicConfig']), 'Use V3 AI topic names')
+        require(all(data.get(k) == v for k, v in KAFKA_NAMES['backendEnvironment'].items()),
+                'Topic and Group names must match the shared BE Kafka contract')
         require(len({data[k] for k in CONTRACT['topicConfig']}) == 6, 'Six distinct AI topics required')
         for name in ('startup', 'liveness', 'readiness'):
             path = '/actuator/health/readiness' if name == 'readiness' else '/actuator/health/liveness'
@@ -134,15 +148,13 @@ def validate_backend(configs):
         require(config['terminationGracePeriodSeconds'] >= CONTRACT['minimumTerminationGraceSeconds'] and config['terminationGracePeriodSeconds'] > config['preStopDelaySeconds'] + grace + 60, 'Budget conversion drain plus shutdown after preStop')
         mode = data['ATTACHMENT_CONVERSION_MODE']
         require(mode == 'KAFKA', 'All roles retain KAFKA mode, including disabled consumers')
-        validate_json(data['SPRING_APPLICATION_JSON'], role)
-        require(data['KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP'].startswith(CONTRACT['topicPrefix']),
-                'Trip update listener reads a direct environment Group; do not use its V2 default')
+        validate_json(data['SPRING_APPLICATION_JSON'], role, connected)
         app = structured_settings(data['SPRING_APPLICATION_JSON'])['app']
         require(data['KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP'] not in {
             app['trip']['result-consumer-group'], app['story']['result-consumer-group'], app['outbox']['receipt-consumer-group']},
                 'Trip update must not reuse another logical consumer group')
         require(all(data.get(k, '').strip() for k in CONTRACT['conversionConfig'] + CONTRACT['conversionTopicConfig']), 'Missing conversion Kafka settings')
-        require(all(data[k].startswith(CONTRACT['topicPrefix']) for k in CONTRACT['conversionTopicConfig'] + ['ATTACHMENT_CONVERSION_GROUP_PREFIX']), 'Separate V3 conversion topics and groups')
+        require(all(data[k] == KAFKA_NAMES['backendEnvironment'][k] for k in CONTRACT['conversionTopicConfig'] + ['ATTACHMENT_CONVERSION_GROUP_PREFIX']), 'Use BE handoff conversion names')
         topics = [data[k] for k in CONTRACT['conversionTopicConfig']]
         require(len(set(topics)) == 5, 'Four conversion topics and DLT must be distinct')
         require(not set(topics).intersection(data[k] for k in CONTRACT['topicConfig']), 'Do not reuse an AI topic for image conversion')
@@ -155,10 +167,10 @@ def validate_backend(configs):
                 require(data[key].isdigit() and int(data[key]) > 0, 'Kafka count/byte settings must be positive integers')
         require(int(data['ATTACHMENT_CONVERSION_FETCH_MAX_BYTES']) >= int(data['ATTACHMENT_CONVERSION_PARTITION_FETCH_MAX_BYTES'])
                 >= int(data['ATTACHMENT_CONVERSION_MAX_MESSAGE_BYTES']), 'Inconsistent conversion fetch/message budgets')
-        common_data = {k: v for k, v in data.items() if k not in role['environment'] and k != 'SPRING_APPLICATION_JSON'}
+        common_data = {k: v for k, v in data.items() if k not in role['environment'] and k not in ('SPRING_APPLICATION_JSON', 'KAFKA_SASL_USERNAME')}
         shared_spring = deepcopy(app)
         del shared_spring['trip']['result-listener-enabled']
         del shared_spring['outbox']['receipt-listener-enabled']
-        identity = (common_data, shared_spring, config['secretRefs'])
+        identity = (common_data, shared_spring, {k:v for k,v in config['secretRefs'].items() if k != 'KAFKA_SASL_PASSWORD'})
         require(common is None or identity == common, 'Common dependencies, budgets and logical groups must stay identical across roles')
         common = identity

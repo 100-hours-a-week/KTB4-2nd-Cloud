@@ -5,6 +5,17 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'terraform/v3/backend/**'
+      - 'scripts/check-v3-backend-access.py'
+      - 'scripts/check-v3-backend-plan.py'
+      - 'scripts/prepare-v3-backend-supply.py'
+      - 'scripts/prepare-v3-backend-values.py'
+      - 'scripts/prepare_v3_backend_values_contract.py'
+      - 'tests/ci/test_v3_backend_connections.py'
+      - 'scripts/v3_outbox_contract.py'
+      - 'scripts/check-v3-outbox.py'
+      - 'scripts/prepare-v3-outbox-ca.py'
+      - 'tests/ci/test_v3_outbox.py'
       - 'terraform/v2/production/websocket.tf'
       - 'terraform/v2/production/backend-service.tf'
       - 'scripts/configure-production-websocket.py'
@@ -20,10 +31,20 @@ on:
       - 'scripts/check-v3-redis.py'
       - 'scripts/create-v3-redis-bootstrap-secret.py'
       - 'tests/ci/test_v3_redis.py'
+      - 'tests/ci/test_v3_validation_download.py'
+      - 'scripts/check-v3-mysql-schema.py'
+      - 'scripts/manage-v3-mysql-cdc.py'
+      - 'scripts/prepare-v3-mysql-schema-image.py'
+      - 'tests/ci/test_v3_mysql_schema.py'
       - 'scripts/check-v3-mysql.py'
       - 'scripts/create-v3-mysql-bootstrap-secret.py'
       - 'tests/ci/test_v3_mysql.py'
       - 'scripts/check-v3-kafka.py'
+      - 'scripts/check-v3-connect.py'
+      - 'scripts/prepare-v3-connect-image.py'
+      - 'tests/ci/test_v3_connect.py'
+      - 'scripts/check-v3-kafka-access.py'
+      - 'tests/ci/test_v3_kafka_access.py'
       - 'tests/ci/test_v3_kafka.py'
       - 'scripts/check-v3-data-plan.py'
       - 'tests/ci/test_v3_data_plan.py'
@@ -33,6 +54,8 @@ on:
       - 'tests/ci/test_v3_storage.py'
       - 'scripts/check-v3-platform.py'
       - 'scripts/check-v3-apps.py'
+      - 'scripts/check-v3-nodepools.py'
+      - 'tests/ci/test_v3_nodepools.py'
       - 'scripts/v3_backend_contract.py'
       - 'scripts/check-v3-secrets.py'
       - 'terraform/v3/karpenter/**'
@@ -132,3 +155,10 @@ jobs:
           path: ${{ runner.temp }}/v3-rendered
           retention-days: 7
           if-no-files-found: warn
+
+      - name: Validate independent BE IAM and private storage without AWS
+        run: |
+          terraform -chdir=terraform/v3/backend init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=terraform/v3/backend fmt -check
+          terraform -chdir=terraform/v3/backend validate
+          terraform -chdir=terraform/v3/backend test -no-color

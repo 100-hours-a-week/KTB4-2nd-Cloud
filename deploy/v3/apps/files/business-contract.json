@@ -1,0 +1,22 @@
+{
+  "backendEnvironment": {
+    "KAFKA_TRIP_CREATE_REQUEST_TOPIC": "prod.yeodam.trip-create.request",
+    "KAFKA_TRIP_CREATE_RESULT_TOPIC": "prod.yeodam.trip-create.result",
+    "KAFKA_TRIP_UPDATE_REQUEST_TOPIC": "prod.yeodam.trip-update.request",
+    "KAFKA_TRIP_UPDATE_RESULT_TOPIC": "prod.yeodam.trip-update.result",
+    "KAFKA_STORY_CREATE_REQUEST_TOPIC": "prod.yeodam.story-create.request",
+    "KAFKA_STORY_CREATE_RESULT_TOPIC": "prod.yeodam.story-create.result",
+    "ATTACHMENT_CONVERSION_INITIAL_LIGHT_TOPIC": "prod.yeodam.image.initial-light",
+    "ATTACHMENT_CONVERSION_INITIAL_HEIC_TOPIC": "prod.yeodam.image.initial-heic",
+    "ATTACHMENT_CONVERSION_ADDITIONAL_LIGHT_TOPIC": "prod.yeodam.image.additional-light",
+    "ATTACHMENT_CONVERSION_ADDITIONAL_HEIC_TOPIC": "prod.yeodam.image.additional-heic",
+    "ATTACHMENT_CONVERSION_DLT_TOPIC": "prod.yeodam.image.conversion-dlt",
+    "ATTACHMENT_CONVERSION_GROUP_PREFIX": "prod.yeodam.image-conversion",
+    "KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP": "yeodam-trip-update-results"
+  },
+  "backendSpringGroups": {
+    "trip": "prod.yeodam-trip-results",
+    "story": "prod.yeodam-story-results",
+    "outbox": "prod.yeodam-outbox-receipts"
+  }
+}

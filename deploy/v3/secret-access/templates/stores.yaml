@@ -1,7 +1,8 @@
-{{- $namespaces := list "frontend" "auth" "trip" "photo" "ai" "mysql" "redis" "mongodb" -}}
+{{- $namespaces := list "frontend" "auth" "trip" "photo" "ai" "mysql" "redis" "mongodb" "kafka" -}}
 {{- range $ns, $store := .Values.stores }}
 {{- if not (has $ns $namespaces) }}{{ fail "Unknown Secret namespace" }}{{ end }}
 {{- if $store.enabled }}
+{{- if and (eq $ns "kafka") (ne (len $store.secrets) 1) }}{{ fail "Kafka may only expose one dedicated CDC Secret" }}{{ end }}
 {{- $role := printf "arn:aws:iam::483175530259:role/yeodam-v3-foundation-eso-%s" $ns }}
 {{- if ne $store.roleArn $role }}{{ fail "SecretStore role must match its namespace reader role" }}{{ end }}
 ---
@@ -23,6 +24,7 @@ spec:
 {{- range $binding := $store.secrets }}
 {{- $name := required "Secret target name is required" $binding.name }}
 {{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $name) }}{{ fail "Invalid target Secret name" }}{{ end }}
+{{- if and (eq $ns "kafka") (or (ne $name "mysql-cdc") (ne (len $binding.data) 2)) }}{{ fail "Kafka only accepts the CDC username and password mapping" }}{{ end }}
 {{- if not $binding.data }}{{ fail "Explicit Secret key mappings are required" }}{{ end }}
 ---
 apiVersion: external-secrets.io/v1
@@ -51,7 +53,11 @@ spec:
   data:
     {{- range $mapping := $binding.data }}
     {{- $key := required "remoteKey is required" $mapping.remoteKey }}
+    {{- if eq $ns "kafka" }}
+    {{- if or (ne $key "yeodam/v3/foundation/mysql/cdc") (not (has $mapping.property (list "username" "password"))) (ne $mapping.secretKey $mapping.property) }}{{ fail "Kafka reader cannot access bootstrap or unrelated Secret keys" }}{{ end }}
+    {{- else }}
     {{- if not (hasPrefix (printf "yeodam/v3/foundation/%s/" $ns) $key) }}{{ fail "Remote Secret must belong to the same namespace prefix" }}{{ end }}
+    {{- end }}
     {{- if not (regexMatch "^[A-Za-z0-9/_+=.@-]+$" $key) }}{{ fail "Invalid remote Secret key" }}{{ end }}
     - secretKey: {{ required "secretKey is required" $mapping.secretKey | quote }}
       remoteRef:

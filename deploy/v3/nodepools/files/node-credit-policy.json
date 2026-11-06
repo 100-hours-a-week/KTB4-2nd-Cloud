@@ -1,0 +1,32 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OwnedAppNodeCreditMode",
+      "Effect": "Allow",
+      "Action": "ec2:ModifyInstanceCreditSpecification",
+      "Resource": "arn:aws:ec2:ap-northeast-2:483175530259:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "aws:ResourceTag/kubernetes.io/cluster/yeodam-v3-foundation": "owned",
+          "aws:ResourceTag/karpenter.sh/nodepool": [
+            "api",
+            "worker"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ReadRegionalCreditMode",
+      "Effect": "Allow",
+      "Action": "ec2:DescribeInstanceCreditSpecifications",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    }
+  ]
+}

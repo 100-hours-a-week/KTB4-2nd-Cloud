@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled",
+    "image",
+    "imagePullSecret"
+  ],
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "image": {
+      "type": "string",
+      "pattern": "^$|^ghcr.io/100-hours-a-week/yeodam-v3-mysql-schema@sha256:[a-f0-9]{64}$"
+    },
+    "imagePullSecret": {
+      "const": "ghcr-pull"
+    }
+  }
+}

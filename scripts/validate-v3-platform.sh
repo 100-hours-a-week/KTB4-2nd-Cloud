@@ -85,3 +85,52 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-karpenter.py \
   --directory "${validation_dir}" --output "${rendered_dir}"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_karpenter.py'
+
+"${V3_HELM}" lint --strict deploy/v3/nodepools
+"${V3_HELM}" lint --strict deploy/v3/nodepools -f deploy/v3/environments/foundation/nodepools.values.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-nodepools.py \
+  --directory "${validation_dir}" --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_nodepools.py'
+
+"${V3_HELM}" lint --strict deploy/v3/kafka-access
+"${V3_HELM}" lint --strict deploy/v3/kafka-access -f deploy/v3/environments/foundation/kafka-access.values.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-kafka-access.py \
+  --directory "${validation_dir}" --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_kafka_access.py'
+
+"${V3_HELM}" lint --strict deploy/v3/connect
+"${validation_dir}/venv/bin/python" scripts/check-v3-connect.py --directory "${validation_dir}" --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_connect.py'
+
+"${V3_HELM}" lint --strict deploy/v3/mysql-schema
+"${validation_dir}/venv/bin/python" scripts/check-v3-mysql-schema.py --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_mysql_schema.py'
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py \
+  --directory "${validation_dir}" --output "${rendered_dir}" \
+  -f deploy/v3/environments/foundation/mysql-cdc-secrets.values.yaml \
+  -f deploy/v3/environments/foundation/redis-secrets.values.yaml \
+  -f deploy/v3/environments/foundation/mongodb-secrets.values.yaml
+
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_validation_download.py'
+
+"${V3_HELM}" lint --strict deploy/v3/outbox
+"${validation_dir}/venv/bin/python" scripts/check-v3-outbox.py --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_outbox.py'
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py \
+ --directory "${validation_dir}" --output "${rendered_dir}" \
+ -f deploy/v3/environments/foundation/mysql-cdc-secrets.values.yaml \
+ -f deploy/v3/environments/foundation/redis-secrets.values.yaml \
+ -f deploy/v3/environments/foundation/mongodb-secrets.values.yaml \
+ -f deploy/v3/environments/foundation/outbox-secrets.values.yaml
+
+# BE dependency supply and TLS/role contracts; synthetic CA only, no cluster access.
+"${V3_HELM}" lint --strict deploy/v3/backend-access
+"${validation_dir}/venv/bin/python" scripts/check-v3-backend-access.py
+"${validation_dir}/venv/bin/python" scripts/check-v3-apps.py -f deploy/v3/environments/foundation/backend.values.yaml -f deploy/v3/environments/foundation/backend-connections.values.yaml
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_backend_connections.py'
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py --directory "${validation_dir}" --output "${rendered_dir}" \
+ -f deploy/v3/environments/foundation/mysql-cdc-secrets.values.yaml \
+ -f deploy/v3/environments/foundation/redis-secrets.values.yaml \
+ -f deploy/v3/environments/foundation/mongodb-secrets.values.yaml \
+ -f deploy/v3/environments/foundation/outbox-secrets.values.yaml \
+ -f deploy/v3/environments/foundation/backend-secrets.values.yaml

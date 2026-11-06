@@ -1,0 +1,32 @@
+{{- if .Values.enabled }}
+{{- $contract := .Files.Get "files/business-contract.json" | fromJson }}
+{{- range $topic := $contract.topics }}
+{{- $policy := index $.Values.topicPolicies $topic.kind }}
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: {{ $topic.name }}
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: {{ $.Values.clusterName }}
+    app.kubernetes.io/part-of: yeodam
+    app.kubernetes.io/instance: kafka-business
+    yeodam.io/stage: v3
+  annotations: {helm.sh/resource-policy: keep}
+spec:
+  topicName: {{ $topic.name }}
+  partitions: {{ $topic.partitions }}
+  replicas: {{ $.Values.replicas }}
+  config:
+    min.insync.replicas: {{ $.Values.minInSyncReplicas }}
+    cleanup.policy: delete
+    retention.ms: {{ $policy.retentionMs | int64 }}
+    retention.bytes: {{ $.Values.retentionBytes | int64 }}
+    segment.bytes: {{ $.Values.segmentBytes | int64 }}
+    segment.ms: {{ $.Values.segmentMs | int64 }}
+    max.message.bytes: {{ $policy.maxMessageBytes | int64 }}
+    message.timestamp.type: {{ $policy.timestampType }}
+{{- end }}
+{{- else if .Values.verification.enabled }}{{ fail "Enable V3 business access before verification" }}
+{{- end }}

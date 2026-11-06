@@ -1,0 +1,44 @@
+{{- if .Values.enabled }}
+{{- range $role, $pool := .Values.pools }}
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: {{ $role }}
+  labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+spec:
+  template:
+    metadata:
+      labels:
+        yeodam.io/role: {{ $role }}
+        yeodam.io/stage: v3
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: {{ $.Values.nodeClass.name }}
+      taints:
+        - key: yeodam.io/role
+          value: {{ $role }}
+          effect: NoSchedule
+      requirements:
+        - {key: kubernetes.io/arch, operator: In, values: [amd64]}
+        - {key: kubernetes.io/os, operator: In, values: [linux]}
+        - {key: node.kubernetes.io/instance-type, operator: In, values: [{{ $pool.instanceType }}]}
+        - {key: karpenter.sh/capacity-type, operator: In, values: [on-demand]}
+        - {key: topology.kubernetes.io/zone, operator: In, values: [ap-northeast-2a, ap-northeast-2c]}
+      expireAfter: Never
+      terminationGracePeriod: 5m
+  limits:
+    cpu: {{ $pool.cpuLimit | quote }}
+    memory: {{ $pool.memoryLimit }}
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 60s
+    budgets:
+      - nodes: '1'
+        reasons: [Empty]
+      - nodes: '0'
+        reasons: [Underutilized, Drifted]
+{{- end }}
+{{- end }}

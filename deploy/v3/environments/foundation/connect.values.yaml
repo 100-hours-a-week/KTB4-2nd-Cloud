@@ -1,0 +1,3 @@
+# Image publication and Kafka namespace ghcr-pull must be verified before enabling.
+enabled: false
+image: ''

@@ -1,0 +1,32 @@
+# Existing V3 Kafka only. No Broker, Node, PVC, app or Connect deployment.
+# Size retention may delete before the time limit; it is not a disk quota.
+enabled: false
+clusterName: yeodam-v3-kafka
+replicas: 3
+minInSyncReplicas: 2
+retentionBytes: 67108864
+segmentBytes: 16777216
+segmentMs: 86400000
+topicPolicies:
+  ai-request:
+    retentionMs: 604800000
+    maxMessageBytes: 1048576
+    timestampType: LogAppendTime
+  ai-result:
+    retentionMs: 604800000
+    maxMessageBytes: 1048576
+    timestampType: CreateTime
+  ai-dlt:
+    retentionMs: 2592000000
+    maxMessageBytes: 2097152
+    timestampType: CreateTime
+  image-request:
+    retentionMs: 604800000
+    maxMessageBytes: 262144
+    timestampType: LogAppendTime
+  image-dlt:
+    retentionMs: 2592000000
+    maxMessageBytes: 524288
+    timestampType: CreateTime
+verification:
+  enabled: false

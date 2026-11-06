@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled",
+    "certificates"
+  ],
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "certificates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mysql",
+        "redis",
+        "mongodb",
+        "kafka"
+      ],
+      "properties": {
+        "mysql": {
+          "type": "string"
+        },
+        "redis": {
+          "type": "string"
+        },
+        "mongodb": {
+          "type": "string"
+        },
+        "kafka": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
