@@ -1,0 +1,61 @@
+[
+  {
+    "namespace": "mysql",
+    "selector": {
+      "matchLabels": {
+        "app.kubernetes.io/name": "mysql",
+        "app.kubernetes.io/instance": "yeodam-v3-mysql"
+      }
+    },
+    "ports": [
+      3306
+    ]
+  },
+  {
+    "namespace": "redis",
+    "selector": {
+      "matchLabels": {
+        "app.kubernetes.io/name": "redis",
+        "app.kubernetes.io/instance": "yeodam-v3-redis"
+      },
+      "matchExpressions": [
+        {
+          "key": "yeodam.io/redis-process",
+          "operator": "In",
+          "values": [
+            "redis",
+            "sentinel"
+          ]
+        }
+      ]
+    },
+    "ports": [
+      6379,
+      26379
+    ]
+  },
+  {
+    "namespace": "mongodb",
+    "selector": {
+      "matchLabels": {
+        "app.kubernetes.io/name": "mongodb",
+        "app.kubernetes.io/instance": "yeodam-v3-mongodb"
+      }
+    },
+    "ports": [
+      27017
+    ]
+  },
+  {
+    "namespace": "kafka",
+    "selector": {
+      "matchLabels": {
+        "strimzi.io/cluster": "yeodam-v3-kafka",
+        "strimzi.io/kind": "Kafka"
+      }
+    },
+    "ports": [
+      9093
+    ]
+  }
+]

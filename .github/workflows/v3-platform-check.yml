@@ -5,6 +5,13 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'terraform/v3/backend/**'
+      - 'scripts/check-v3-backend-access.py'
+      - 'scripts/check-v3-backend-plan.py'
+      - 'scripts/prepare-v3-backend-supply.py'
+      - 'scripts/prepare-v3-backend-values.py'
+      - 'scripts/prepare_v3_backend_values_contract.py'
+      - 'tests/ci/test_v3_backend_connections.py'
       - 'scripts/v3_outbox_contract.py'
       - 'scripts/check-v3-outbox.py'
       - 'scripts/prepare-v3-outbox-ca.py'
@@ -148,3 +155,10 @@ jobs:
           path: ${{ runner.temp }}/v3-rendered
           retention-days: 7
           if-no-files-found: warn
+
+      - name: Validate independent BE IAM and private storage without AWS
+        run: |
+          terraform -chdir=terraform/v3/backend init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=terraform/v3/backend fmt -check
+          terraform -chdir=terraform/v3/backend validate
+          terraform -chdir=terraform/v3/backend test -no-color

@@ -18,15 +18,36 @@
 {{- range $key := concat $contract.requiredConfig $contract.topicConfig $contract.conversionConfig $contract.conversionTopicConfig -}}
 {{- $_ := required (printf "BE ConfigMap requires %s" $key) (index $c.configMapData $key) -}}
 {{- end -}}
+{{- $connection := .root.Files.Get "files/connection-contract.json" | fromJson -}}
+{{- $connected := .root.Values.backendConnectionContract -}}
 {{- $allowed := concat $contract.requiredConfig $contract.topicConfig $contract.conversionConfig $contract.conversionTopicConfig $contract.optionalConfig (list "SPRING_APPLICATION_JSON") -}}
+{{- if $connected }}{{ $allowed = concat $allowed (keys $connection.commonConfig) (list "KAFKA_SASL_USERNAME") }}{{ end -}}
 {{- range $key, $_ := $c.configMapData -}}
 {{- if not (has $key $allowed) }}{{ fail (printf "Unreviewed BE ConfigMap key %s" $key) }}{{ end -}}
 {{- end -}}
-{{- if ne $c.configMapData.JAVA_TOOL_OPTIONS $contract.javaToolOptions }}{{ fail "Use reviewed heap settings without JVM role-property overrides" }}{{ end -}}
-{{- if ne (len $c.secretRefs) (len $contract.requiredSecrets) }}{{ fail "Only reviewed BE Secret bindings may inject environment values" }}{{ end -}}
+{{- $java := $contract.javaToolOptions -}}
+{{- if $connected }}{{ $java = $connection.javaToolOptions }}{{ end -}}
+{{- if ne $c.configMapData.JAVA_TOOL_OPTIONS $java }}{{ fail "Use reviewed heap settings without JVM role-property overrides" }}{{ end -}}
+{{- $secretCount := len $contract.requiredSecrets -}}
+{{- if $connected }}{{ $secretCount = add $secretCount 3 }}{{ end -}}
+{{- if ne (len $c.secretRefs) (int $secretCount) }}{{ fail "Only reviewed BE Secret bindings may inject environment values" }}{{ end -}}
 {{- range $key := $contract.requiredSecrets -}}
 {{- $ref := required (printf "BE requires Secret reference %s" $key) (index $c.secretRefs $key) -}}
 {{- if or (ne $ref.name "backend-credentials") (ne $ref.key $key) }}{{ fail "BE Secret references must match backend-credentials keys" }}{{ end -}}
+{{- end -}}
+{{- if $connected -}}
+{{- range $key := $connection.extraSecrets -}}
+{{- $ref := required "Connected BE requires Redis Secret references" (index $c.secretRefs $key) -}}
+{{- if or (ne $ref.name "backend-credentials") (ne $ref.key $key) }}{{ fail "Use dedicated backend Redis key references" }}{{ end -}}
+{{- end -}}
+{{- $ref := required "Role Kafka credential required" $c.secretRefs.KAFKA_SASL_PASSWORD -}}
+{{- if or (ne $ref.name (printf "kafka-%s" .instance)) (ne $ref.key "password") }}{{ fail "Kafka password must belong to this BE role" }}{{ end -}}
+{{- range $key, $v := $connection.commonConfig -}}
+{{- if ne (index $c.configMapData $key) $v }}{{ fail (printf "V3 connection mismatch: %s" $key) }}{{ end -}}
+{{- end -}}
+{{- if ne $c.configMapData.KAFKA_SASL_USERNAME (printf "v3-%s" .instance) }}{{ fail "Kafka username must match the BE role" }}{{ end -}}
+{{- if ne (mustToJson $c.springProperties.spring) (mustToJson $connection.spring) }}{{ fail "Use the reviewed TLS/Sentinel/Mongo/DB pool configuration" }}{{ end -}}
+{{- if ne (mustToJson $c.secretVolumes) (mustToJson (list (dict "name" "trust-input" "secretName" "backend-trust" "mountPath" "/etc/yeodam/ca"))) }}{{ fail "Only public trust input is mounted" }}{{ end -}}
 {{- end -}}
 {{- if hasKey $c.secretRefs "SPRING_MONGODB_URI" }}{{ fail "Use MONGODB_URI once; do not shadow it with a second Mongo binding" }}{{ end -}}
 {{- if ne $c.configMapData.SPRING_PROFILES_ACTIVE "prod,internal-metrics" }}{{ fail "Use prod,internal-metrics for BE" }}{{ end -}}
