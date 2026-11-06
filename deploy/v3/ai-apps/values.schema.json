@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "accessEnabled",
+    "workloads",
+    "image",
+    "source",
+    "configurationRevision",
+    "review",
+    "trust",
+    "privateModelPeers"
+  ],
+  "properties": {
+    "accessEnabled": {
+      "type": "boolean"
+    },
+    "workloads": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api",
+        "runner"
+      ],
+      "properties": {
+        "api": {
+          "type": "boolean"
+        },
+        "runner": {
+          "type": "boolean"
+        }
+      }
+    },
+    "image": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "configurationRevision": {
+      "type": "string"
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceCompatible",
+        "imageReviewed",
+        "connectionsReviewed"
+      ],
+      "properties": {
+        "sourceCompatible": {
+          "type": "boolean"
+        },
+        "imageReviewed": {
+          "type": "boolean"
+        },
+        "connectionsReviewed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "trust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "redis",
+        "qdrant",
+        "kafka"
+      ],
+      "properties": {
+        "redis": {
+          "type": "string"
+        },
+        "qdrant": {
+          "type": "string"
+        },
+        "kafka": {
+          "type": "string"
+        }
+      }
+    },
+    "privateModelPeers": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cidr",
+          "port"
+        ],
+        "properties": {
+          "cidr": {
+            "type": "string",
+            "pattern": "^10\\.[0-9]+\\.[0-9]+\\.[0-9]+/32$"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          }
+        }
+      }
+    }
+  }
+}
