@@ -47,6 +47,15 @@ class RedisContracts(unittest.TestCase):
         self.reject('StatefulSet', ['spec', 'template', 'spec', 'automountServiceAccountToken'], True)
         self.reject('StatefulSet', ['spec', 'template', 'spec', 'affinity', 'podAntiAffinity', 'requiredDuringSchedulingIgnoredDuringExecution'], [], 'sentinel')
 
+    def test_restricted_or_enabled_default_user_is_rejected(self):
+        for rule in ['user default off', 'user default on ~* &* +@all']:
+            docs = copy.deepcopy(self.base)
+            config = next(d for d in docs if d['kind'] == 'ConfigMap')['data']
+            config['start-redis.sh'] = config['start-redis.sh'].replace(
+                'user default reset off ~* &* +@all', rule)
+            with self.assertRaises(m.platform.ContractError):
+                m.validate(docs, True)
+
     def test_no_unknown_values_or_accidental_initial_bootstrap(self):
         for value in ['initialBootstrap=true', 'image=redis:latest', 'replicas=1']:
             q = subprocess.run([os.environ['V3_HELM'], 'template', 'test', str(m.CHART), '--set', value], capture_output=True)
