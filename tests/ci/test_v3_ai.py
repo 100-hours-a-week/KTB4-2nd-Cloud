@@ -1,0 +1,95 @@
+import copy,importlib.util,json,os,subprocess,tempfile,unittest
+from pathlib import Path
+from unittest.mock import patch
+ROOT=Path(__file__).resolve().parents[2]
+def module(name,file):
+    s=importlib.util.spec_from_file_location(name,ROOT/'scripts'/file);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
+ai=module('ai_contract','check-v3-ai.py');source=module('ai_source','inspect-v3-ai-source.py');prepare=module('ai_prepare','prepare-v3-ai-values.py');guard=module('ai_plan','check-v3-ai-plan.py')
+def compatible_files():
+    files={k:'' for k in source.FILES}
+    files['app/jobs/config.py']='class JobsSettings:\n KAFKA_SECURITY_PROTOCOL: Literal["PLAINTEXT", "SASL_SSL"]\n'+''.join(' '+k+': str\n' for k in ['KAFKA_SASL_MECHANISM','KAFKA_SASL_USERNAME','KAFKA_SASL_PASSWORD','KAFKA_SSL_CAFILE','PLACE_INDEX_PATH','PLACE_INDEX_SHA256','PLACE_INDEX_S3_URI','KAKAO_REST_API_KEY'])
+    files['app/core/config.py']='class Settings:\n QDRANT_API_KEY: str\n'
+    files['app/jobs/kafka.py']='def connection_options(cfg):\n return {"ssl_context": cfg.context, "sasl_mechanism":cfg.mechanism,"sasl_plain_username":cfg.username,"sasl_plain_password":cfg.password}\n'
+    files['app/infra/qdrant.py']='a=QdrantClient(url=location,api_key=key)\nb=AsyncQdrantClient(url=location,api_key=key)\n'
+    files['app/jobs/runner.py']='prepare_place_index(cfg)\n'
+    return files
+class AITests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):cls.values=ai.fixture();cls.docs=ai.platform.load_documents(ai.render(cls.values))
+    def mutate(self,callback):
+        docs=copy.deepcopy(self.docs);callback(docs)
+        with self.assertRaises((ValueError,KeyError,StopIteration)):ai.validate(docs,self.values)
+    def deployment(self,ds):return next(d for d in ds if d['kind']=='Deployment')
+    def test_default_empty(self):self.assertEqual(ai.platform.load_documents(ai.render()),[])
+    def test_full_contract(self):ai.validate(self.docs,self.values)
+    def test_unreviewed_source_blocks(self):
+        v=copy.deepcopy(self.values);v['review']['sourceCompatible']=False
+        with self.assertRaises(subprocess.CalledProcessError):ai.render(v)
+    def test_unreviewed_models_block(self):
+        v=copy.deepcopy(self.values);v['review']['connectionsReviewed']=False
+        with self.assertRaises(subprocess.CalledProcessError):ai.render(v)
+    def test_mutable_image_blocks(self):
+        v=copy.deepcopy(self.values);v['image']='ghcr.io/100-hours-a-week/yeodam-ai-app:latest'
+        with self.assertRaises(subprocess.CalledProcessError):ai.render(v)
+    def test_replica_increase(self):self.mutate(lambda ds:self.deployment(ds)['spec'].update(replicas=2))
+    def test_resource_increase(self):self.mutate(lambda ds:self.deployment(ds)['spec']['template']['spec']['containers'][0]['resources']['limits'].update(memory='16Gi'))
+    def test_wrong_nodepool(self):self.mutate(lambda ds:self.deployment(ds)['spec']['template']['spec'].update(nodeSelector={'yeodam.io/role':'data'}))
+    def test_secret_payload(self):self.mutate(lambda ds:ds.append({'kind':'Secret','metadata':{'name':'bad','namespace':'ai'}}))
+    def test_cross_source(self):self.mutate(lambda ds:next(d for d in ds if d['kind']=='ExternalSecret')['spec']['data'][0]['remoteRef'].update(key='yeodam/v2/production/ai'))
+    def test_public_service(self):self.mutate(lambda ds:next(d for d in ds if d['kind']=='Service')['spec'].update(type='LoadBalancer'))
+    def test_network_widening(self):self.mutate(lambda ds:next(d for d in ds if d['kind']=='NetworkPolicy')['spec'].update(egress=[{}]))
+    def test_production_queue_prefix(self):self.mutate(lambda ds:next(d for d in ds if d['kind']=='ConfigMap' and d['metadata']['name']=='ai-api-runtime')['data'].update(JOBS_ENV='production'))
+    def test_no_host_storage(self):self.mutate(lambda ds:self.deployment(ds)['spec']['template']['spec']['volumes'].append({'name':'host','hostPath':{'path':'/'}}))
+    def test_source_screen_valid(self):self.assertEqual(source.inspect(compatible_files(),'b'*40)['status'],'compatible')
+    def test_source_plaintext_blocks(self):
+        f=compatible_files();f['app/jobs/config.py']=f['app/jobs/config.py'].replace(', "SASL_SSL"','');r=source.inspect(f,'b'*40);self.assertIn('kafkaProtocol',r['missing'])
+    def test_qdrant_both_clients_required(self):
+        f=compatible_files();f['app/infra/qdrant.py']=f['app/infra/qdrant.py'].replace('AsyncQdrantClient(url=location,api_key=key)','AsyncQdrantClient(url=location)');self.assertIn('qdrantClients',source.inspect(f,'b'*40)['missing'])
+    def reviews(self):
+        v=self.values;return source.inspect(compatible_files(),v['source']),{'image':v['image'],'source':v['source'],'runAsUser':10001,'registryDigestVerified':True,'readOnlyRootSupported':True,'minimumMemoryReviewed':True,'healthDependenciesAvailable':True},{'sharedCapacityApproved':True,'routeAndSecurityGroupVerified':True,'privatePeers':[]}
+    def test_staged_inputs(self):
+        screen,image,models=self.reviews();r=prepare.prepare(self.values['image'],self.values['source'],screen,image,models,self.values['trust'],'1'*32);self.assertFalse(r['access.values.json']['workloads']['api']);self.assertFalse(r['api.values.json']['workloads']['runner']);self.assertTrue(r['full.values.json']['workloads']['runner'])
+    def test_source_mismatch_blocks(self):
+        s,i,m=self.reviews();s['source']='d'*40
+        with self.assertRaises(ValueError):prepare.prepare(self.values['image'],self.values['source'],s,i,m,self.values['trust'],'1'*32)
+    def test_blocked_screen_blocks(self):
+        s,i,m=self.reviews();s['status']='blocked'
+        with self.assertRaises(ValueError):prepare.prepare(self.values['image'],self.values['source'],s,i,m,self.values['trust'],'1'*32)
+    def test_private_model_cidr_widening_blocks(self):
+        s,i,m=self.reviews();m['privatePeers']=[{'cidr':'10.30.0.0/16','port':8000}]
+        with self.assertRaises(ValueError):prepare.prepare(self.values['image'],self.values['source'],s,i,m,self.values['trust'],'1'*32)
+    def test_image_review_secret_field_blocks(self):
+        s,i,m=self.reviews();i['password']='must-not-enter-public-inputs'
+        with self.assertRaises(ValueError):prepare.prepare(self.values['image'],self.values['source'],s,i,m,self.values['trust'],'1'*32)
+    def test_private_key_in_trust_blocks(self):
+        s,i,m=self.reviews();trust=copy.deepcopy(self.values['trust']);trust['redis']='PRIVATE KEY'
+        with self.assertRaises(ValueError):prepare.prepare(self.values['image'],self.values['source'],s,i,m,trust,'1'*32)
+    def test_plan_noop(self):self.assertEqual(guard.validate({'complete':True}),{'creates':0,'updates':0,'deletes':0})
+    def test_plan_gpu_change_blocks(self):
+        with self.assertRaises(ValueError):guard.validate({'complete':True,'resource_changes':[{'mode':'managed','type':'aws_instance','address':'aws_instance.gpu','change':{'actions':['update']}}]})
+    def test_api_liveness_dependency503(self):
+        s=importlib.util.spec_from_file_location('ai_health',ROOT/'deploy/v3/ai-apps/files/runtime/health.py');h=importlib.util.module_from_spec(s);s.loader.exec_module(h)
+        from urllib.error import HTTPError
+        with patch.object(h.urllib.request,'urlopen',side_effect=HTTPError('http://local',503,'degraded',{},None)):self.assertTrue(h.api_live())
+        with patch.object(h.urllib.request,'urlopen',side_effect=HTTPError('http://local',500,'bad',{},None)):self.assertFalse(h.api_live())
+    def test_secret_version_changes_revision(self):
+        screen,image,models=self.reviews();args=(self.values['image'],self.values['source'],screen,image,models,self.values['trust']);a=prepare.prepare(*args,'1'*32);b=prepare.prepare(*args,'2'*32)
+        self.assertNotEqual(a['full.values.json']['configurationRevision'],b['full.values.json']['configurationRevision'])
+        self.assertEqual(a['backend-ai.values.json']['defaults']['configMapData']['AI_SERVER_BASE_URL'],'http://ai-api.ai.svc.cluster.local:8000')
+    def test_exact_private_model_peer(self):
+        v=copy.deepcopy(self.values);v['privateModelPeers']=[{'cidr':'10.20.10.162/32','port':8000}];ai.validate(ai.platform.load_documents(ai.render(v)),v)
+    def plan_fixture(self):
+        changes=[]
+        for role in ['ai-api','ai-runner']:
+            condition={'StringEquals':{'aws:SourceAccount':'483175530259','aws:RequestTag/kubernetes-namespace':'ai','aws:RequestTag/kubernetes-service-account':role},'ArnEquals':{'aws:SourceArn':'arn:aws:eks:ap-northeast-2:483175530259:cluster/yeodam-v3-foundation'}}
+            trust={'Version':'2012-10-17','Statement':[{'Effect':'Allow','Principal':{'Service':'pods.eks.amazonaws.com'},'Action':['sts:AssumeRole','sts:TagSession'],'Condition':condition}]}
+            objects=['arn:aws:s3:::yeodam-v3-foundation-app-data-483175530259-ap-northeast-2/trip-uploads/*/derived/*','arn:aws:s3:::yeodam-v3-foundation-app-data-483175530259-ap-northeast-2/trip-additions/*/derived/*']
+            if role=='ai-runner':objects+=['arn:aws:s3:::yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/places/v2026-10-30/places.sqlite']
+            records=[('aws_iam_role','app',{'name':'yeodam-v3-foundation-'+role,'assume_role_policy':json.dumps(trust)}),('aws_eks_pod_identity_association','app',{'cluster_name':'yeodam-v3-foundation','namespace':'ai','service_account':role}),('aws_iam_role_policy','read',{'policy':json.dumps({'Version':'2012-10-17','Statement':[{'Effect':'Allow','Action':['s3:GetObject'],'Resource':objects}]})})]
+            for typ,name,after in records:changes.append({'mode':'managed','type':typ,'address':typ+'.'+name+'["'+role+'"]','change':{'actions':['create'],'after':after}})
+        return {'complete':True,'resource_changes':changes}
+    def test_identity_plan_positive(self):self.assertEqual(guard.validate(self.plan_fixture()),{'creates':6,'updates':0,'deletes':0})
+    def test_identity_write_permission_rejected(self):
+        p=self.plan_fixture();record=p['resource_changes'][-1];policy=json.loads(record['change']['after']['policy']);policy['Statement'][0]['Action']+=['s3:PutObject'];record['change']['after']['policy']=json.dumps(policy)
+        with self.assertRaises(ValueError):guard.validate(p)
+if __name__=='__main__':unittest.main()
