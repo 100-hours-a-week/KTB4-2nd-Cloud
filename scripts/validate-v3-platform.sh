@@ -142,3 +142,11 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-apps.py -f deploy/v3/environments/foundation/websocket.values.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-websocket.py
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_websocket.py'
+
+# FE and validation ALB only; no AWS calls or controller deployment.
+"${V3_HELM}" lint --strict deploy/v3/apps -f deploy/v3/environments/foundation/frontend.values.yaml
+"${V3_HELM}" lint --strict deploy/v3/external-access
+"${validation_dir}/venv/bin/python" scripts/check-v3-apps.py -f deploy/v3/environments/foundation/frontend.values.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-external.py --controller-directory "${validation_dir}" --output "${rendered_dir}/load-balancer-controller-public.yaml"
+"${validation_dir}/venv/bin/python" scripts/check-v3-external.py
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_external.py'

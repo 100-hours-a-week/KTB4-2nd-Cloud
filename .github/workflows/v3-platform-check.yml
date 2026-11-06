@@ -5,6 +5,12 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'terraform/v3/ingress/**'
+      - 'scripts/check-v3-external.py'
+      - 'scripts/check-v3-ingress-plan.py'
+      - 'scripts/prepare-v3-external-values.py'
+      - 'scripts/v3_frontend_contract.py'
+      - 'tests/ci/test_v3_external.py'
       - 'scripts/v3_websocket_contract.py'
       - 'scripts/check-v3-websocket.py'
       - 'scripts/prepare-v3-websocket-values.py'
@@ -169,3 +175,10 @@ jobs:
           terraform -chdir=terraform/v3/backend fmt -check
           terraform -chdir=terraform/v3/backend validate
           terraform -chdir=terraform/v3/backend test -no-color
+
+      - name: Validate isolated ingress IAM, SG and validation certificate without AWS
+        run: |
+          terraform -chdir=terraform/v3/ingress fmt -check -recursive
+          terraform -chdir=terraform/v3/ingress init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=terraform/v3/ingress validate
+          terraform -chdir=terraform/v3/ingress test -no-color
