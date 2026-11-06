@@ -1,0 +1,46 @@
+name: V3 Outbox CDC checks
+on:
+  workflow_call:
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'deploy/v3/outbox/**'
+      - 'deploy/v3/connect/**'
+      - 'deploy/v3/connect-image/**'
+      - 'deploy/v3/mysql/**'
+      - 'deploy/v3/kafka-access/**'
+      - 'scripts/v3_outbox_contract.py'
+      - 'scripts/check-v3-outbox.py'
+      - 'scripts/prepare-v3-outbox-ca.py'
+      - 'scripts/validate-v3-outbox.sh'
+      - 'scripts/prepare-v3-connect-image.py'
+      - 'scripts/manage-v3-mysql-cdc.py'
+      - 'scripts/create-v3-mysql-bootstrap-secret.py'
+      - 'tests/ci/smoke-v3-connect.py'
+      - 'tests/ci/smoke-v3-outbox.py'
+      - 'tests/ci/v3/OutboxWire.java'
+      - 'tests/ci/test_v3_outbox.py'
+      - 'deploy/v3/environments/foundation/connect-outbox.values.yaml'
+      - 'deploy/v3/environments/foundation/outbox.values.yaml'
+      - 'deploy/v3/environments/foundation/outbox-secrets.values.yaml'
+      - '.github/workflows/v3-outbox-check.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    name: Minimum-budget Outbox CDC runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false}
+      - name: Build pinned Connect image and exercise synthetic CDC
+        run: bash scripts/validate-v3-outbox.sh
+      - name: Preserve synthetic runtime results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: v3-outbox-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/yeodam-v3-outbox-results
+          retention-days: 3
+          if-no-files-found: warn

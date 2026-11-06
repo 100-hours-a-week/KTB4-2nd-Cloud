@@ -92,3 +92,22 @@ run "mongodb_preserves_existing_readers" {
     error_message = "MongoDB reader must stay in its namespace and retain existing readers."
   }
 }
+
+run "kafka_reads_only_dedicated_cdc_and_preserves_readers" {
+  command = apply
+  variables {
+    enable_mysql_reader   = true
+    enable_redis_reader   = true
+    enable_mongodb_reader = true
+    enable_kafka_reader   = true
+  }
+  assert {
+    condition = (
+      length(aws_iam_role.reader) == 9 &&
+      jsondecode(aws_iam_role_policy.read["kafka"].policy).Statement[0].Resource == ["arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/mysql/cdc-??????"] &&
+      toset(jsondecode(aws_iam_role_policy.read["kafka"].policy).Statement[0].Action) == toset(["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]) &&
+      contains(keys(aws_iam_role.reader), "mysql") && contains(keys(aws_iam_role.reader), "redis") && contains(keys(aws_iam_role.reader), "mongodb")
+    )
+    error_message = "Kafka may only read the exact dedicated CDC secret; existing readers must be retained."
+  }
+}

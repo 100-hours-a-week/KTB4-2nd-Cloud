@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled",
+    "connectorEnabled",
+    "mysqlTruststore"
+  ],
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "connectorEnabled": {
+      "type": "boolean"
+    },
+    "mysqlTruststore": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/=]*$",
+      "maxLength": 16384
+    }
+  }
+}

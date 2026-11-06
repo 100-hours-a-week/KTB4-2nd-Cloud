@@ -1,0 +1,4 @@
+# Prepare public CA/Secret/ACL first; enable Connector only after Connect is Ready.
+enabled: false
+connectorEnabled: false
+mysqlTruststore: ''

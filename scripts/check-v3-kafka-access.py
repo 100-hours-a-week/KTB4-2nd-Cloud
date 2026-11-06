@@ -72,8 +72,11 @@ def expected_access():
     users['ai'] = access(read=requests, write=results + [t + '-dlt' for t in requests],
         groups=['yeodam-ai-' + f for f in ('trip-create', 'trip-update', 'story-create')])
     internal = ['prod.connect-configs', 'prod.connect-offsets', 'prod.connect-status']
-    users['connect-outbox'] = access(read=internal, write=requests + images + internal, groups=['connect-v3'])
+    users['connect-outbox'] = access(read=internal, write=requests + images + internal, groups=['connect-v3', 'v3.yeodam.outbox-schemahistory'])
     users['connect-outbox']['extraTopicOperations'] = {t: ['Create', 'DescribeConfigs'] for t in internal}
+    users['connect-outbox']['readTopics'] += ['prod.yeodam.schema-history']
+    users['connect-outbox']['writeTopics'] += ['prod.yeodam.schema-history']
+    users['connect-outbox']['extraTopicOperations']['prod.yeodam.schema-history'] = ['DescribeConfigs']
     users['connect-outbox']['clusterOperations'] = ['Describe']
     return users
 

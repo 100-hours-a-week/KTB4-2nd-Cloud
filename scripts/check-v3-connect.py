@@ -11,6 +11,9 @@ import re
 import subprocess
 
 import yaml
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+from v3_outbox_contract import ENV_CONFIG,ENV_REFS
 
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('kafka',ROOT/'scripts/check-v3-kafka.py')
@@ -27,9 +30,9 @@ def render(files=()):
     return subprocess.check_output(args,text=True)
 
 
-def validate(documents,enabled=False,smoke=False):
+def validate(documents,enabled=False,smoke=False,outbox=False):
     if not enabled:
-        require(not documents and not smoke,'Default and unpublished foundation image must create zero objects');return
+        require(not documents and not smoke and not outbox,'Default and unpublished foundation image must create zero objects');return
     require(Counter(d['kind'] for d in documents)=={'KafkaConnect':1,'KafkaTopic':3,'NetworkPolicy':4,**({'Job':1} if smoke else {})},'No DB Connector, Broker, Node, PVC, Secret, RBAC, Namespace or public entrypoint allowed')
     require(all(d['metadata'].get('namespace')=='kafka' and d['metadata'].get('labels',{}).get('yeodam.io/stage')=='v3' for d in documents),'V3 kafka namespace ownership required')
     require(len({(d['kind'],d['metadata']['name']) for d in documents})==len(documents),'Duplicate resource identity')
@@ -43,15 +46,20 @@ def validate(documents,enabled=False,smoke=False):
     require(c['authentication']=={'type':'scram-sha-512','username':'v3-connect-outbox','passwordSecret':{'secretName':'v3-connect-outbox','password':'password'}} and c['tls']=={'trustedCertificates':[{'secretName':'yeodam-v3-kafka-cluster-ca-cert','certificate':'ca.crt'}]},'TLS/SCRAM references only; no credentials in values')
     require(c['resources']=={'requests':{'cpu':'100m','memory':'512Mi'},'limits':{'cpu':'500m','memory':'768Mi'}} and c['jvmOptions']=={'-Xms':'128m','-Xmx':'256m','gcLoggingEnabled':False},'Keep the measured initial CPU/memory/heap budget')
     expected={'config.storage.replication.factor':3,'offset.storage.replication.factor':3,'status.storage.replication.factor':3,'offset.storage.partitions':1,'status.storage.partitions':1,'key.converter':'org.apache.kafka.connect.storage.StringConverter','value.converter':'org.apache.kafka.connect.storage.StringConverter','connector.client.config.override.policy':'None','offset.flush.interval.ms':60000,'producer.acks':'all','producer.enable.idempotence':True,'producer.compression.type':'lz4','ssl.endpoint.identification.algorithm':'HTTPS'}
+    if outbox:expected.update(ENV_CONFIG)
     require(c['config']==expected,'Preserve RF3, minimal partitions, idempotent acks=all and hostname verification; no DB/file provider/override bypass')
     for name,delay,failure in [('livenessProbe',120,6),('readinessProbe',10,3)]:
         require(c[name]=={'initialDelaySeconds':delay,'periodSeconds':10,'timeoutSeconds':5,'failureThreshold':failure,'successThreshold':1},'Probe startup/failure budgets changed')
     t=c['template'];require(set(t)=={'pod','connectContainer'},'No alternate operator build or control-plane permissions')
     pod=t['pod']
-    require(set(pod)=={'metadata','imagePullSecrets','affinity','enableServiceLinks','terminationGracePeriodSeconds','tmpDirSizeLimit','securityContext'},'No host mounts, tolerations, extra secrets or networking overrides')
+    require(set(pod)==({'metadata','imagePullSecrets','affinity','enableServiceLinks','terminationGracePeriodSeconds','tmpDirSizeLimit','securityContext'} | ({'volumes'} if outbox else set())),'No host mounts, tolerations, extra secrets or networking overrides')
     require(pod['affinity']==kafka.system_affinity() and pod['imagePullSecrets']==[{'name':'ghcr-pull'}],'Existing system Nodes and explicit private registry prerequisite only')
     require(pod['enableServiceLinks'] is False and pod['terminationGracePeriodSeconds']==90 and pod['tmpDirSizeLimit']=='128Mi','Bound shutdown and scratch')
-    require(pod['securityContext']=={'runAsNonRoot':True,'seccompProfile':{'type':'RuntimeDefault'}} and t['connectContainer']=={'securityContext':{'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}}},'Restricted worker required')
+    container={'securityContext':{'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}}}
+    if outbox:
+        require(pod['volumes']==[{'name':'mysql-ca','configMap':{'name':'v3-outbox-mysql-ca'}}],'Only the public CA ConfigMap may be mounted')
+        container.update({'env':ENV_REFS,'volumeMounts':[{'name':'mysql-ca','mountPath':'/mnt/mysql-ca','readOnly':True}]})
+    require(pod['securityContext']=={'runAsNonRoot':True,'seccompProfile':{'type':'RuntimeDefault'}} and t['connectContainer']==container,'Restricted worker and exact Secret references required')
     topics=[d for d in documents if d['kind']=='KafkaTopic'];require({d['metadata']['name'] for d in topics}==set(INTERNAL),'Exactly three state topics')
     for d in topics:
         require(d['metadata']['labels'].get('strimzi.io/cluster')=='yeodam-v3-kafka' and d['metadata'].get('annotations')=={'helm.sh/resource-policy':'keep'},'Preserve durable state topics')

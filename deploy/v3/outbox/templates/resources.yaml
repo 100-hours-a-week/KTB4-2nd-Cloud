@@ -1,0 +1,76 @@
+{{- if and .Values.connectorEnabled (not .Values.enabled) }}{{ fail "Prepare Outbox dependencies before enabling its Connector" }}{{ end }}
+{{- if .Values.enabled }}
+{{- $_ := required "Supply only the reviewed public MySQL CA truststore" .Values.mysqlTruststore }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: v3-outbox-mysql-ca
+  namespace: kafka
+  labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+binaryData:
+  mysql-truststore.jks: {{ .Values.mysqlTruststore | quote }}
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: prod.yeodam.schema-history
+  namespace: kafka
+  labels: {strimzi.io/cluster: yeodam-v3-kafka, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+  annotations: {helm.sh/resource-policy: keep}
+spec:
+  topicName: prod.yeodam.schema-history
+  partitions: 1
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    cleanup.policy: delete
+    retention.ms: -1
+    retention.bytes: -1
+    segment.bytes: 1048576
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-outbox-to-mysql
+  namespace: kafka
+  labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+spec:
+  podSelector: {matchLabels: {strimzi.io/cluster: yeodam-v3-connect, strimzi.io/kind: KafkaConnect}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: mysql}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: mysql, app.kubernetes.io/instance: yeodam-v3-mysql}}
+      ports: [{protocol: TCP, port: 3306}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mysql-from-outbox
+  namespace: mysql
+  labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: mysql, app.kubernetes.io/instance: yeodam-v3-mysql}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kafka}}
+          podSelector: {matchLabels: {strimzi.io/cluster: yeodam-v3-connect, strimzi.io/kind: KafkaConnect}}
+      ports: [{protocol: TCP, port: 3306}]
+{{- if .Values.connectorEnabled }}
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaConnector
+metadata:
+  name: yeodam-v3-outbox
+  namespace: kafka
+  labels: {strimzi.io/cluster: yeodam-v3-connect, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+spec:
+  class: io.debezium.connector.mysql.MySqlConnector
+  tasksMax: 1
+  state: running
+  autoRestart: {enabled: false}
+  config:
+    {{- omit (.Files.Get "files/connector.json" | fromJson) "connector.class" "tasks.max" | toYaml | nindent 4 }}
+{{- end }}
+{{- end }}

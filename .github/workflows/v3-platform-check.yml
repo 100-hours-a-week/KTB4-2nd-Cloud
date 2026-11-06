@@ -5,6 +5,10 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'scripts/v3_outbox_contract.py'
+      - 'scripts/check-v3-outbox.py'
+      - 'scripts/prepare-v3-outbox-ca.py'
+      - 'tests/ci/test_v3_outbox.py'
       - 'terraform/v2/production/websocket.tf'
       - 'terraform/v2/production/backend-service.tf'
       - 'scripts/configure-production-websocket.py'
