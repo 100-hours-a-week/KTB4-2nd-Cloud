@@ -92,7 +92,7 @@ def validate_operator(documents):
 
 
 def validate_access(documents, stores):
-    require(platform.NAMESPACES <= set(stores) <= platform.NAMESPACES | {'mysql', 'redis', 'mongodb', 'kafka'},
+    require(platform.NAMESPACES <= set(stores) <= platform.NAMESPACES | {'mysql', 'redis', 'mongodb', 'kafka', 'ai-redis', 'qdrant'},
             'Five application slots and optional data/Kafka slots only')
     actual = {}
     for doc in documents:

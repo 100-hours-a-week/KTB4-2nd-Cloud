@@ -150,3 +150,9 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-external.py --controller-directory "${validation_dir}" --output "${rendered_dir}/load-balancer-controller-public.yaml"
 "${validation_dir}/venv/bin/python" scripts/check-v3-external.py
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_external.py'
+
+# Isolated AI stores: no production values or cluster access.
+"${V3_HELM}" lint --strict deploy/v3/ai-storage
+"${validation_dir}/venv/bin/python" scripts/check-v3-ai-storage.py --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_ai_storage.py'
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py --directory "${validation_dir}" --output "${rendered_dir}" -f deploy/v3/environments/foundation/ai-storage-secrets.values.yaml
