@@ -111,3 +111,18 @@ run "kafka_reads_only_dedicated_cdc_and_preserves_readers" {
     error_message = "Kafka may only read the exact dedicated CDC secret; existing readers must be retained."
   }
 }
+
+run "ai_storage_readers" {
+  command = plan
+  variables {
+    enable_mysql_reader       = true
+    enable_redis_reader       = true
+    enable_mongodb_reader     = true
+    enable_kafka_reader       = true
+    enable_ai_storage_readers = true
+  }
+  assert {
+    condition     = length(aws_iam_role.reader) == 11 && jsondecode(aws_iam_role_policy.read["qdrant"].policy).Statement[0].Resource[0] == "arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/qdrant/*" && jsondecode(aws_iam_role_policy.read["ai-redis"].policy).Statement[0].Resource[0] == "arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/ai-redis/*"
+    error_message = "Two opt-in readers must retain existing readers and stay within their own V3 prefix."
+  }
+}

@@ -5,6 +5,11 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'scripts/check-v3-ai-storage.py'
+      - 'scripts/check-v3-ai-storage-plan.py'
+      - 'scripts/prepare-v3-ai-storage-secrets.py'
+      - 'scripts/verify-v3-ai-storage.py'
+      - 'tests/ci/test_v3_ai_storage.py'
       - 'terraform/v3/ingress/**'
       - 'scripts/check-v3-external.py'
       - 'scripts/check-v3-ingress-plan.py'
