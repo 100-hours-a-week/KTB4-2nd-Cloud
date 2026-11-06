@@ -74,6 +74,7 @@ spec:
         yeodam.io/stage: v3
         yeodam.io/ai-runtime: "true"
       annotations:
+        checksum/runtime: {{ (printf "%s%s" ($.Files.Get "files/contract.json") (($.Files.Glob "files/runtime/*").AsConfig)) | sha256sum }}
         yeodam.io/configuration-revision: {{ $.Values.configurationRevision | quote }}
     spec:
       serviceAccountName: {{ $w.name }}

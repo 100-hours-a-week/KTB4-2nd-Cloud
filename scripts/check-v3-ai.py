@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Offline minimum AI runtime/connection contracts. No cluster, image pull or model call."""
-import argparse,copy,importlib.util,json,os,subprocess,tempfile
+import argparse,copy,importlib.util,json,os,re,subprocess,tempfile
 from collections import Counter
 from pathlib import Path
 import yaml
@@ -42,6 +42,7 @@ def validate(docs,v):
         elif kind=='Service':require(name=='ai-api' and d['spec']=={'type':'ClusterIP','selector':{'app.kubernetes.io/instance':'ai-api','yeodam.io/stage':'v3'},'ports':[{'name':'http','port':8000,'targetPort':'http'}]},'Private API service only')
         elif kind=='Deployment':
             role=next(k for k,w in CONTRACT['workloads'].items() if w['name']==name);w=CONTRACT['workloads'][role];s=d['spec'];pod=s['template']['spec'];c=pod['containers'][0]
+            annotations=s['template']['metadata']['annotations'];require(annotations.get('yeodam.io/configuration-revision')==v['configurationRevision'] and re.fullmatch('[a-f0-9]{64}',annotations.get('checksum/runtime','')),'Secret-version and Chart configuration must trigger Pod replacement')
             require(role in roles and s['replicas']==1 and s['strategy']=={'type':'Recreate'},'One process copy per role; no surge')
             require(pod['serviceAccountName']==name and not pod['automountServiceAccountToken'] and pod['imagePullSecrets']==[{'name':'ghcr-pull'}],'Exact identity and registry references')
             require(pod['nodeSelector']=={'yeodam.io/role':w['nodeRole'],'yeodam.io/stage':'v3'} and pod['tolerations']==[{'key':'yeodam.io/role','operator':'Equal','value':w['nodeRole'],'effect':'NoSchedule'}],'API/worker NodePool placement')

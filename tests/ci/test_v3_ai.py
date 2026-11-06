@@ -92,4 +92,11 @@ class AITests(unittest.TestCase):
     def test_identity_write_permission_rejected(self):
         p=self.plan_fixture();record=p['resource_changes'][-1];policy=json.loads(record['change']['after']['policy']);policy['Statement'][0]['Action']+=['s3:PutObject'];record['change']['after']['policy']=json.dumps(policy)
         with self.assertRaises(ValueError):guard.validate(p)
+    def test_revision_annotation_required(self):self.mutate(lambda ds:self.deployment(ds)['spec']['template']['metadata']['annotations'].pop('checksum/runtime'))
+    def test_chart_config_change_replaces_pod(self):
+        import shutil,yaml
+        with tempfile.TemporaryDirectory() as d:
+            chart=Path(d)/'chart';shutil.copytree(ai.CHART,chart,ignore=shutil.ignore_patterns('__pycache__','*.pyc'));p=chart/'files/contract.json';v=json.loads(p.read_text());v['commonEnvironment']['STORY_MAX_TOKENS']='1024';p.write_text(json.dumps(v))
+            source=subprocess.check_output([os.environ['V3_HELM'],'template','check',str(chart),'-n','ai','--kube-version','1.36.0','-f','-'],input=yaml.safe_dump(self.values),text=True);new=ai.platform.load_documents(source)
+            self.assertNotEqual(self.deployment(self.docs)['spec']['template']['metadata']['annotations']['checksum/runtime'],self.deployment(new)['spec']['template']['metadata']['annotations']['checksum/runtime'])
 if __name__=='__main__':unittest.main()
