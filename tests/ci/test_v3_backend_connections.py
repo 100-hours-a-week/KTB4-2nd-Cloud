@@ -53,6 +53,14 @@ class Connections(unittest.TestCase):
  def raw(self):return {'mysql':{'appPassword':'a'*48,'tlsCa':self.pem,'rootPassword':'must-not-export'},'redis':{'appPassword':'b'*48,'sentinelClientPassword':'c'*48,'tlsCa':self.pem,'adminPassword':'must-not-export'},'mongodb':{'appPassword':'d'*48,'tlsCa':self.pem},'kafkaCa':self.pem,'kafkaPasswords':{r:'synthetic-fixture-password' for r in values.ROLES},'external':{k:'fixture-'+('e'*32) for k in supply.EXTERNAL}}
  def test_supply_projects_app_credentials_only(self):
   sources,public=supply.prepare(self.raw());self.assertEqual(set(sources),{'auth','trip','photo'});self.assertNotIn('must-not-export',json.dumps(sources));self.assertNotIn('synthetic-fixture-password',json.dumps(public));self.assertIn('tls=true',sources['auth']['MONGODB_URI']);self.assertNotIn('KAFKA_PHOTO_CONVERTER_PASSWORD',sources['auth'])
+ def test_supply_selected_namespaces_reuses_common_session_identity(self):
+  raw=self.raw();raw['kafkaPasswords'].pop('auth-api');sources,_=supply.prepare(raw,['trip','photo'])
+  self.assertEqual(set(sources),{'trip','photo'})
+  for key in ['JWT_SECRET','WEBSOCKET_INTERNAL_SERVICE_TOKEN']:
+   self.assertEqual(sources['trip'][key],sources['photo'][key])
+  self.assertNotIn('KAFKA_AUTH_API_PASSWORD',json.dumps(sources))
+  for selected in [[],['auth','auth'],['production']]:
+   with self.assertRaises(ValueError):supply.prepare(raw,selected)
  def test_unsafe_jaas_or_missing_external_rejected(self):
   raw=self.raw();raw['kafkaPasswords']['auth-api']='bad"quoted-password'
   with self.assertRaises(ValueError):supply.prepare(raw)
