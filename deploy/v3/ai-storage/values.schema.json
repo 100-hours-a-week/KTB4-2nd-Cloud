@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled",
+    "images"
+  ],
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "redis",
+        "qdrant"
+      ],
+      "properties": {
+        "redis": {
+          "type": "string",
+          "const": "public.ecr.aws/docker/library/redis@sha256:b6b6e3dc0c0952737748e55d5d885272840c7e42ba41ab1d5489f693419882f5"
+        },
+        "qdrant": {
+          "type": "string",
+          "const": "qdrant/qdrant:v1.19.1@sha256:12364fe851b9f17356fc88189fc06d1b521262e04659ec7345975b00c9246a10"
+        }
+      }
+    }
+  }
+}

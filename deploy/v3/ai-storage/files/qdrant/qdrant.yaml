@@ -1,0 +1,29 @@
+log_level: WARN
+telemetry_disabled: true
+storage:
+  storage_path: /data/storage
+  snapshots_path: /data/snapshots
+  temp_path: /data/tmp
+  on_disk_payload: true
+  wal:
+    wal_capacity_mb: 8
+    wal_segments_ahead: 0
+  performance:
+    max_search_threads: 1
+    optimizer_cpu_budget: 1
+  optimizers:
+    default_segment_number: 1
+    max_optimization_threads: 1
+service:
+  host: 0.0.0.0
+  http_port: 6333
+  grpc_port: null
+  enable_tls: true
+  enable_cors: false
+  max_request_size_mb: 8
+  max_workers: 1
+tls:
+  cert: /credentials/tls.crt
+  key: /credentials/tls.key
+cluster:
+  enabled: false
