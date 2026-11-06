@@ -5,6 +5,10 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'scripts/v3_websocket_contract.py'
+      - 'scripts/check-v3-websocket.py'
+      - 'scripts/prepare-v3-websocket-values.py'
+      - 'tests/ci/test_v3_websocket.py'
       - 'terraform/v3/backend/**'
       - 'scripts/check-v3-backend-access.py'
       - 'scripts/check-v3-backend-plan.py'

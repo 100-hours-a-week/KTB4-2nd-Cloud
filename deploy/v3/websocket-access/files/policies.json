@@ -1,0 +1,183 @@
+[
+  {
+    "namespace": "trip",
+    "name": "allow-websocket-dependencies",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "websocket",
+          "app.kubernetes.io/instance": "trip-websocket",
+          "app.kubernetes.io/part-of": "yeodam",
+          "yeodam.io/stage": "v3"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "redis"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/name": "redis",
+                  "app.kubernetes.io/instance": "yeodam-v3-redis"
+                },
+                "matchExpressions": [
+                  {
+                    "key": "yeodam.io/redis-process",
+                    "operator": "In",
+                    "values": [
+                      "redis",
+                      "sentinel"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 6379
+            },
+            {
+              "protocol": "TCP",
+              "port": 26379
+            }
+          ]
+        },
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "trip"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/name": "backend",
+                  "app.kubernetes.io/instance": "trip-api",
+                  "app.kubernetes.io/part-of": "yeodam",
+                  "yeodam.io/stage": "v3"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 8080
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "namespace": "redis",
+    "name": "allow-from-v3-websocket",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "redis",
+          "app.kubernetes.io/instance": "yeodam-v3-redis"
+        },
+        "matchExpressions": [
+          {
+            "key": "yeodam.io/redis-process",
+            "operator": "In",
+            "values": [
+              "redis",
+              "sentinel"
+            ]
+          }
+        ]
+      },
+      "policyTypes": [
+        "Ingress"
+      ],
+      "ingress": [
+        {
+          "from": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "trip"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/name": "websocket",
+                  "app.kubernetes.io/instance": "trip-websocket",
+                  "app.kubernetes.io/part-of": "yeodam",
+                  "yeodam.io/stage": "v3"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 6379
+            },
+            {
+              "protocol": "TCP",
+              "port": 26379
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "namespace": "trip",
+    "name": "allow-websocket-to-trip-api",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/name": "backend",
+          "app.kubernetes.io/instance": "trip-api",
+          "app.kubernetes.io/part-of": "yeodam",
+          "yeodam.io/stage": "v3"
+        }
+      },
+      "policyTypes": [
+        "Ingress"
+      ],
+      "ingress": [
+        {
+          "from": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "trip"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/name": "websocket",
+                  "app.kubernetes.io/instance": "trip-websocket",
+                  "app.kubernetes.io/part-of": "yeodam",
+                  "yeodam.io/stage": "v3"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 8080
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

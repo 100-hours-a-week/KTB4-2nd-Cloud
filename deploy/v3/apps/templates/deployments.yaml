@@ -51,6 +51,26 @@ spec:
         {{- range $c.imagePullSecrets }}
         - name: {{ . }}
         {{- end }}
+      {{- if $.Values.websocketContract }}
+      initContainers:
+        - name: prepare-trust
+          image: {{ index $.Values.images $c.imageRef | quote }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+{{ $.Files.Get "files/prepare-websocket-trust.sh" | indent 14 }}
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: trust-input, mountPath: /etc/yeodam/ca, readOnly: true}
+            - {name: truststore, mountPath: /etc/yeodam/trust}
+            - {name: scratch, mountPath: /tmp}
+      {{- end }}
       {{- if eq $c.name "backend" }}
       initContainers:
         {{- if $.Values.backendConnectionContract }}
@@ -157,7 +177,7 @@ spec:
           volumeMounts:
             - name: scratch
               mountPath: /tmp
-            {{- if $.Values.backendConnectionContract }}
+            {{- if or $.Values.backendConnectionContract $.Values.websocketContract }}
             - {name: truststore, mountPath: /etc/yeodam/trust, readOnly: true}
             {{- end }}
             {{- if eq $c.name "backend" }}
@@ -170,7 +190,7 @@ spec:
               readOnly: true
             {{- end }}
       volumes:
-        {{- if $.Values.backendConnectionContract }}
+        {{- if or $.Values.backendConnectionContract $.Values.websocketContract }}
         - name: truststore
           emptyDir: {sizeLimit: 4Mi}
         {{- end }}

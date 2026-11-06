@@ -1,0 +1,3 @@
+# Public CA only. No source reads, credentials or IAM creation.
+enabled: false
+redisCa: ""

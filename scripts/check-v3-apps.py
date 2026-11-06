@@ -64,6 +64,7 @@ def resource_budget(resources):
 
 
 def validate(documents, values):
+    require(not (values.get('websocketContract') and values.get('backendContract')), 'BE and WebSocket use separate release profiles')
     require(not values.get('backendConnectionContract') or values.get('backendContract'), 'Connections require the BE runtime contract')
     platform_values = platform.load_documents((ROOT / 'deploy/v3/platform/values.yaml').read_text())[0]
     accounts = platform.expected_accounts(platform_values)
@@ -81,6 +82,14 @@ def validate(documents, values):
         for config in configs.values():
             backend.prepare_config(config)
         backend.validate_backend(configs, values.get('backendConnectionContract', False))
+    elif values.get('websocketContract'):
+        require(not configs or re.fullmatch(r'ghcr.io/100-hours-a-week/yeodam-websocket@sha256:[a-f0-9]{64}', values['images']['websocket']), 'Use the separate immutable WebSocket image')
+        ws_spec = importlib.util.spec_from_file_location('v3_websocket', ROOT / 'scripts/v3_websocket_contract.py')
+        websocket = importlib.util.module_from_spec(ws_spec)
+        ws_spec.loader.exec_module(websocket)
+        for config in configs.values():
+            websocket.prepare(config)
+        websocket.validate(configs)
     else:
         require(all(not c.get('springProperties') for c in configs.values()), 'Structured Spring properties require the BE contract')
     for doc in documents:
@@ -162,7 +171,7 @@ def validate(documents, values):
         require(container.get('envFrom', []) == expected_env_from, 'Only configured ConfigMap references may be imported')
         volumes = {'scratch': {'name': 'scratch', 'emptyDir': {'sizeLimit': config['scratchSizeLimit']}}}
         mounts = [{'name': 'scratch', 'mountPath': '/tmp'}]
-        if values.get('backendConnectionContract'):
+        if values.get('backendConnectionContract') or values.get('websocketContract'):
             volumes = {'truststore':{'name':'truststore','emptyDir':{'sizeLimit':'4Mi'}}, **volumes}
             mounts.append({'name':'truststore','mountPath':'/etc/yeodam/trust','readOnly':True})
             storage_extra = 4 * 1024 * 1024
@@ -188,8 +197,14 @@ def validate(documents, values):
                     'Catalog seed must copy the bundled data using the shared backend image')
             require(seed['volumeMounts'] == [{'name': 'catalog', 'mountPath': '/catalog'}], 'Catalog seed must not mask its bundled source')
             require(seed['resources'] == expected_resources, 'Init resources must fit the explicit Pod budget')
+        elif values.get('websocketContract'):
+            require(pod.get('initContainers') == [{'name':'prepare-trust','image':image,'command':['/bin/sh','-ec'],
+                'args':[(CHART/'files/prepare-websocket-trust.sh').read_text()],
+                'resources':{'requests':{'cpu':'25m','memory':'64Mi'},'limits':{'cpu':'250m','memory':'128Mi'}},
+                'securityContext':{'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}},
+                'volumeMounts':[{'name':'trust-input','mountPath':'/etc/yeodam/ca','readOnly':True},{'name':'truststore','mountPath':'/etc/yeodam/trust'},{'name':'scratch','mountPath':'/tmp'}]}], 'WebSocket trust init must preserve original roots without catalog seed')
         else:
-            require(not pod.get('initContainers'), 'Only backend images have the catalog seed contract')
+            require(not pod.get('initContainers'), 'Only reviewed profiles have init containers')
         require(storage <= quantity(config['resources']['limits']['ephemeral-storage'], 'ephemeral-storage'),
                 'Scratch/catalog volume budgets exceed the Pod ephemeral-storage limit')
         mount_paths = {m['mountPath'] for m in mounts}

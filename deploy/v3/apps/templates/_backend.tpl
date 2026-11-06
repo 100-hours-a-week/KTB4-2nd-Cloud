@@ -1,7 +1,8 @@
 {{- define "yeodam-v3-apps.resolveConfig" -}}
 {{- $c := mergeOverwrite (deepCopy .root.Values.defaults) .workload -}}
-{{- if and $c.enabled (not .root.Values.backendContract) (not (empty $c.springProperties)) }}{{ fail "springProperties requires the BE runtime contract" }}{{ end -}}
-{{- if and .root.Values.backendContract $c.enabled -}}
+{{- if and .root.Values.backendContract .root.Values.websocketContract }}{{ fail "BE and WebSocket use separate release profiles" }}{{ end -}}
+{{- if and $c.enabled (not (or .root.Values.backendContract .root.Values.websocketContract)) (not (empty $c.springProperties)) }}{{ fail "springProperties requires the BE runtime contract" }}{{ end -}}
+{{- if and (or .root.Values.backendContract .root.Values.websocketContract) $c.enabled -}}
 {{- if hasKey $c.configMapData "SPRING_APPLICATION_JSON" }}{{ fail "Use structured springProperties; raw SPRING_APPLICATION_JSON can shadow role settings" }}{{ end -}}
 {{- if not (kindIs "map" $c.springProperties) }}{{ fail "springProperties must be a structured mapping" }}{{ end -}}
 {{- $_ := set $c.configMapData "SPRING_APPLICATION_JSON" (mustToJson $c.springProperties) -}}
