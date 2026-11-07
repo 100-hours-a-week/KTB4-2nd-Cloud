@@ -66,6 +66,7 @@ jobs:
           "$RUNNER_TEMP/release-venv/bin/python" scripts/prepare-v3-gitops-release.py "${source[@]}" \
             --expected-previous "$EXPECTED_PREVIOUS" --directory "$RUNNER_TEMP/v3-release-preview"
       - name: Preserve public bundle and disabled or prepared result
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: v3-release-preview-${{ github.run_id }}

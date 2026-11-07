@@ -183,6 +183,12 @@ def verify_approval(context):
     require(bool(re.fullmatch('[1-9][0-9]*', runid)) and bool(SHA.fullmatch(context.get('GITHUB_SHA', ''))), 'Workflow identity missing')
     main = legacy.checks.api(f'repos/{CLOUD}/commits/main')['sha']
     require(main == context['GITHUB_SHA'], 'Workflow main changed since selection')
+    run = legacy.checks.api(f'repos/{CLOUD}/actions/runs/{runid}')
+    require(run.get('event') == 'workflow_dispatch' and run.get('head_branch') == 'main'
+            and run.get('head_sha') == context['GITHUB_SHA'] and run.get('run_attempt') == 1
+            and run.get('path') == '.github/workflows/v3-approved-release.yml'
+            and run.get('status') == 'in_progress'
+            and (run.get('head_repository') or {}).get('full_name') == CLOUD, 'Approval must belong to this active release workflow')
     environment = legacy.checks.api(f'repos/{CLOUD}/environments/{ENVIRONMENT}')
     require(any(r['type'] == 'required_reviewers' and r.get('reviewers') for r in environment.get('protection_rules', [])), 'Environment needs actual required reviewers')
     require(environment.get('deployment_branch_policy') == {'protected_branches': False, 'custom_branch_policies': True}, 'Environment must restrict deployment to main')

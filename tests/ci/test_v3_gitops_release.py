@@ -70,6 +70,7 @@ class GitOpsReleaseTests(unittest.TestCase):
     def api(self,change=None):
         responses={
             f'repos/{m.CLOUD}/commits/main':{'sha':'a'*40},
+            f'repos/{m.CLOUD}/actions/runs/123':{'event':'workflow_dispatch','head_branch':'main','head_sha':'a'*40,'run_attempt':1,'path':'.github/workflows/v3-approved-release.yml','status':'in_progress','head_repository':{'full_name':m.CLOUD}},
             f'repos/{m.CLOUD}/environments/{m.ENVIRONMENT}':{'id':9,'protection_rules':[{'type':'required_reviewers','reviewers':[{'type':'User','reviewer':{'login':'operator'}}]}],'deployment_branch_policy':{'protected_branches':False,'custom_branch_policies':True}},
             f'repos/{m.CLOUD}/environments/{m.ENVIRONMENT}/deployment-branch-policies':{'branch_policies':[{'name':'main','type':'branch'}]},
             f'repos/{m.CLOUD}/rules/branches/deploy%2Fv3-approved':[{'type':x}for x in ['update','deletion','non_fast_forward']],
@@ -152,3 +153,20 @@ class GitOpsReleaseTests(unittest.TestCase):
             (root/'charts/apps/symlink').symlink_to('/tmp/untrusted-target')
             git('add','.');git('commit','-m','invalid snapshot');third=git('rev-parse','HEAD')
             with patch.object(m,'ROOT',root),self.assertRaises(ValueError):m.source_files(third,'charts/apps')
+
+    def test_completed_or_other_workflow_approval_cannot_be_reused(self):
+        base=self.api()(f'repos/{m.CLOUD}/actions/runs/123')
+        for change in [{'status':'completed'},{'path':'.github/workflows/other.yml'},{'head_sha':'b'*40},{'run_attempt':2}]:
+            with self.subTest(change=change),patch.object(m.legacy.checks,'api',side_effect=self.api({f'repos/{m.CLOUD}/actions/runs/123':base|change})),self.assertRaises(ValueError):m.verify_approval(CTX)
+
+    def test_disabled_cli_records_rejection_without_overwriting_previous_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output=Path(directory)/'rejected'
+            args=[sys.executable,str(ROOT/'scripts/prepare-v3-gitops-release.py'),'--pr','100','--expected-previous','absent','--directory',str(output),'--publish']
+            run=subprocess.run(args,capture_output=True,text=True)
+            self.assertEqual(run.returncode,1)
+            report=json.loads((output/'report.json').read_text())
+            self.assertFalse(report['published']);self.assertIn('disabled',report['reason'])
+            original=(output/'report.json').read_bytes()
+            subprocess.run(args,capture_output=True,text=True)
+            self.assertEqual((output/'report.json').read_bytes(),original)

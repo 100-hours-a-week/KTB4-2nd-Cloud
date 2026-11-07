@@ -38,7 +38,13 @@ def main():
                 output.write('release_id=' + result['releaseId'] + '\n')
         print(json.dumps(result))
     except (ValueError, KeyError, OSError, TypeError, subprocess.CalledProcessError) as error:
-        raise SystemExit('V3 release rejected (' + type(error).__name__ + '); no cluster operation attempted')
+        reason = str(error) if isinstance(error, ValueError) else 'Evidence lookup or rendering failed (' + type(error).__name__ + ')'
+        result = {'status': 'rejected', 'published': False, 'deployed': False, 'reason': reason}
+        if not args.directory.exists():
+            args.directory.mkdir(parents=True)
+            (args.directory / 'report.json').write_text(json.dumps(result, indent=2) + '\n')
+        print(json.dumps(result))
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':
