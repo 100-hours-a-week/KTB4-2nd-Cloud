@@ -1,0 +1,10 @@
+{
+  "url": "https://github.com/argoproj/argo-helm/releases/download/argo-cd-10.14.0/argo-cd-10.14.0.tgz",
+  "sha256": "ba5b583c4e9b8e86b7bb8a619316319d3007330538a3f2c834068974372d4616",
+  "version": "10.14.0",
+  "appVersion": "v3.6.1",
+  "images": {
+    "argocd": "quay.io/argoproj/argocd:v3.6.1@sha256:296e3d74f449b2ce45265613fcb68c18ed7366488360c8ea32f5f2a93d2e5c54",
+    "redis": "docker.io/library/redis:8.6.4-alpine@sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763"
+  }
+}
