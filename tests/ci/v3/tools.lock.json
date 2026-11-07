@@ -108,6 +108,18 @@
     "role": {
       "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/role-rbac-v1.json",
       "sha256": "dfe8fb03b1642f985b57b12edd1727b6867c13ed4b6761ef81bdd51b1d236711"
+    },
+    "ingress": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/ingress.json",
+      "sha256": "768a77ec0fa32a9b4dbe3ad4e72095502a2fdf792f5775ae3aaecb3e2518d77f"
+    },
+    "ingressclass": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/ingressclass.json",
+      "sha256": "2a2d381ace9fe7630a3a474130ebc7defa0b1ddce39d683ba5fb5d307de1cda5"
+    },
+    "mutatingwebhookconfiguration": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/mutatingwebhookconfiguration.json",
+      "sha256": "1ba2e70597ad0d467250beb82ef8075a6a60f67c79f9960e80909672ac399028"
     }
   }
 }

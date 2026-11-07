@@ -9,6 +9,9 @@ images:
 # Enable the stricter BE runtime contract with the foundation BE overlay only.
 backendContract: false
 backendConnectionContract: false
+websocketContract: false
+frontendContract: false
+frontendServiceOnly: false
 defaults:
   resources:
     requests:

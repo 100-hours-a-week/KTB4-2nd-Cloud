@@ -135,3 +135,30 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
  -f deploy/v3/environments/foundation/mongodb-secrets.values.yaml \
  -f deploy/v3/environments/foundation/outbox-secrets.values.yaml \
  -f deploy/v3/environments/foundation/backend-secrets.values.yaml
+
+# Standalone WebSocket release: no BE deployment or secret source changes.
+"${V3_HELM}" lint --strict deploy/v3/apps -f deploy/v3/environments/foundation/websocket.values.yaml
+"${V3_HELM}" lint --strict deploy/v3/websocket-access
+"${validation_dir}/venv/bin/python" scripts/check-v3-apps.py -f deploy/v3/environments/foundation/websocket.values.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-websocket.py
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_websocket.py'
+
+# FE and validation ALB only; no AWS calls or controller deployment.
+"${V3_HELM}" lint --strict deploy/v3/apps -f deploy/v3/environments/foundation/frontend.values.yaml
+"${V3_HELM}" lint --strict deploy/v3/external-access
+"${validation_dir}/venv/bin/python" scripts/check-v3-apps.py -f deploy/v3/environments/foundation/frontend.values.yaml
+"${validation_dir}/venv/bin/python" scripts/check-v3-external.py --controller-directory "${validation_dir}" --output "${rendered_dir}/load-balancer-controller-public.yaml"
+"${validation_dir}/venv/bin/python" scripts/check-v3-external.py
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_external.py'
+
+# Isolated AI stores: no production values or cluster access.
+"${V3_HELM}" lint --strict deploy/v3/ai-storage
+"${validation_dir}/venv/bin/python" scripts/check-v3-ai-storage.py --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_ai_storage.py'
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py --directory "${validation_dir}" --output "${rendered_dir}" -f deploy/v3/environments/foundation/ai-storage-secrets.values.yaml
+
+# AI source/runtime preparation: no models or live services.
+"${V3_HELM}" lint --strict deploy/v3/ai-apps
+"${validation_dir}/venv/bin/python" scripts/check-v3-ai.py --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_ai.py'
+"${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py --directory "${validation_dir}" --output "${rendered_dir}" -f deploy/v3/environments/foundation/ai-secrets.values.yaml

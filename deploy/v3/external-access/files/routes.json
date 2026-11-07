@@ -1,0 +1,174 @@
+{
+  "backendSourceCommit": "3f4fd318466f52a317e770e33e2d33e9800ed525",
+  "host": "v3.yeodam-2gether.com",
+  "group": "yeodam-v3-validation",
+  "routes": [
+    {
+      "name": "guard-internal",
+      "namespace": "frontend",
+      "order": 1,
+      "action": 403,
+      "paths": [
+        [
+          "/api/internal",
+          "Prefix"
+        ],
+        [
+          "/api/actuator",
+          "Prefix"
+        ],
+        [
+          "/actuator",
+          "Prefix"
+        ],
+        [
+          "/metrics",
+          "Prefix"
+        ]
+      ]
+    },
+    {
+      "name": "websocket",
+      "namespace": "trip",
+      "order": 5,
+      "service": "trip-websocket",
+      "port": 8081,
+      "health": "/api/actuator/health/readiness",
+      "healthPort": "8081",
+      "paths": [
+        [
+          "/api/ws",
+          "Exact"
+        ]
+      ]
+    },
+    {
+      "name": "auth",
+      "namespace": "auth",
+      "order": 10,
+      "service": "auth-api",
+      "port": 8080,
+      "health": "/actuator/health/readiness",
+      "healthPort": "9091",
+      "paths": [
+        [
+          "/api/auth",
+          "Prefix"
+        ],
+        [
+          "/api/users",
+          "Prefix"
+        ]
+      ]
+    },
+    {
+      "name": "photo",
+      "namespace": "photo",
+      "order": 20,
+      "service": "photo-api",
+      "port": 8080,
+      "health": "/actuator/health/readiness",
+      "healthPort": "9091",
+      "paths": [
+        [
+          "/api/attachments",
+          "Prefix"
+        ],
+        [
+          "/api/trips/*/attachments",
+          "ImplementationSpecific"
+        ],
+        [
+          "/api/trips/*/attachments/*",
+          "ImplementationSpecific"
+        ],
+        [
+          "/api/trips/*/initial-attachments",
+          "ImplementationSpecific"
+        ],
+        [
+          "/api/trips/*/initial-attachments/*",
+          "ImplementationSpecific"
+        ],
+        [
+          "/api/trips/*/unclassified-folders",
+          "ImplementationSpecific"
+        ],
+        [
+          "/api/trips/*/unclassified-folders/*",
+          "ImplementationSpecific"
+        ],
+        [
+          "/api/trips/*/place-folders/*/attachments",
+          "ImplementationSpecific"
+        ]
+      ]
+    },
+    {
+      "name": "trip",
+      "namespace": "trip",
+      "order": 30,
+      "service": "trip-api",
+      "port": 8080,
+      "health": "/actuator/health/readiness",
+      "healthPort": "9091",
+      "paths": [
+        [
+          "/api/trips",
+          "Prefix"
+        ],
+        [
+          "/api/places",
+          "Prefix"
+        ],
+        [
+          "/api/stories",
+          "Prefix"
+        ],
+        [
+          "/api/story-generations",
+          "Prefix"
+        ],
+        [
+          "/api/story-generation",
+          "Prefix"
+        ],
+        [
+          "/api/search",
+          "Prefix"
+        ],
+        [
+          "/api/ai/runpod/status",
+          "Exact"
+        ]
+      ]
+    },
+    {
+      "name": "guard-api",
+      "namespace": "frontend",
+      "order": 90,
+      "action": 404,
+      "paths": [
+        [
+          "/api",
+          "Prefix"
+        ]
+      ]
+    },
+    {
+      "name": "frontend",
+      "namespace": "frontend",
+      "order": 100,
+      "service": "frontend",
+      "port": 3000,
+      "health": "/login",
+      "healthPort": "3000",
+      "paths": [
+        [
+          "/",
+          "Prefix"
+        ]
+      ]
+    }
+  ]
+}

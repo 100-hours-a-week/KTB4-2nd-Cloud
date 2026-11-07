@@ -1,0 +1,9 @@
+{
+  "chartVersion": "3.6.2",
+  "controllerVersion": "v3.6.2",
+  "url": "https://aws.github.io/eks-charts/aws-load-balancer-controller-3.6.2.tgz",
+  "sha256": "9255bf39873b6cb31106dbe61dc87c3617bff4197783b5b94381811a13f99c3c",
+  "image": "public.ecr.aws/eks/aws-load-balancer-controller:v3.6.2@sha256:fd51f0ec82f8d357837aa57fdfaa4fca7137b75f25a09b421d95c425c9dc2d94",
+  "iamPolicyUrl": "https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v3.6.2/docs/install/iam_policy.json",
+  "iamPolicySha256": "16f232c9d9f79366fe949c4550ad517a202380058a9e48d45a4e215044a20a6a"
+}

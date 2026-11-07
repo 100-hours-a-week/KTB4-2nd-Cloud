@@ -1,0 +1,6 @@
+# Disabled until Controller, identity, SG, certificate and Services are reviewed.
+controllerPolicyEnabled: false
+ingressEnabled: false
+certificateArn: ''
+albSecurityGroupId: ''
+backendRoutesEnabled: false

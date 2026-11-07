@@ -1,0 +1,346 @@
+{
+  "controller": {
+    "namespace": "kube-system",
+    "name": "allow-v3-load-balancer-controller",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/instance": "yeodam-v3-load-balancer-controller"
+        }
+      },
+      "policyTypes": [
+        "Ingress",
+        "Egress"
+      ],
+      "ingress": [
+        {
+          "from": [
+            {
+              "ipBlock": {
+                "cidr": "10.40.0.0/16"
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 9443
+            }
+          ]
+        }
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "kube-system"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "k8s-app": "kube-dns"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "UDP",
+              "port": 53
+            },
+            {
+              "protocol": "TCP",
+              "port": 53
+            }
+          ]
+        },
+        {
+          "to": [
+            {
+              "ipBlock": {
+                "cidr": "0.0.0.0/0"
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 443
+            }
+          ]
+        },
+        {
+          "to": [
+            {
+              "ipBlock": {
+                "cidr": "169.254.170.23/32"
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 80
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "applications": [
+    {
+      "namespace": "frontend",
+      "name": "allow-v3-alb-frontend",
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "frontend",
+            "app.kubernetes.io/instance": "frontend",
+            "app.kubernetes.io/part-of": "yeodam",
+            "yeodam.io/stage": "v3"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "ipBlock": {
+                  "cidr": "10.40.0.0/24"
+                }
+              },
+              {
+                "ipBlock": {
+                  "cidr": "10.40.1.0/24"
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 3000
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "namespace": "auth",
+      "name": "allow-v3-alb-auth-api",
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "backend",
+            "app.kubernetes.io/instance": "auth-api",
+            "app.kubernetes.io/part-of": "yeodam",
+            "yeodam.io/stage": "v3"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "ipBlock": {
+                  "cidr": "10.40.0.0/24"
+                }
+              },
+              {
+                "ipBlock": {
+                  "cidr": "10.40.1.0/24"
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8080
+              },
+              {
+                "protocol": "TCP",
+                "port": 9091
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "namespace": "trip",
+      "name": "allow-v3-alb-trip-api",
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "backend",
+            "app.kubernetes.io/instance": "trip-api",
+            "app.kubernetes.io/part-of": "yeodam",
+            "yeodam.io/stage": "v3"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "ipBlock": {
+                  "cidr": "10.40.0.0/24"
+                }
+              },
+              {
+                "ipBlock": {
+                  "cidr": "10.40.1.0/24"
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8080
+              },
+              {
+                "protocol": "TCP",
+                "port": 9091
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "namespace": "photo",
+      "name": "allow-v3-alb-photo-api",
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "backend",
+            "app.kubernetes.io/instance": "photo-api",
+            "app.kubernetes.io/part-of": "yeodam",
+            "yeodam.io/stage": "v3"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "ipBlock": {
+                  "cidr": "10.40.0.0/24"
+                }
+              },
+              {
+                "ipBlock": {
+                  "cidr": "10.40.1.0/24"
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8080
+              },
+              {
+                "protocol": "TCP",
+                "port": 9091
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "namespace": "trip",
+      "name": "allow-v3-alb-trip-websocket",
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "websocket",
+            "app.kubernetes.io/instance": "trip-websocket",
+            "app.kubernetes.io/part-of": "yeodam",
+            "yeodam.io/stage": "v3"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "ipBlock": {
+                  "cidr": "10.40.0.0/24"
+                }
+              },
+              {
+                "ipBlock": {
+                  "cidr": "10.40.1.0/24"
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8081
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "namespace": "frontend",
+      "name": "allow-fe-dependencies",
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "frontend",
+            "app.kubernetes.io/instance": "frontend",
+            "app.kubernetes.io/part-of": "yeodam",
+            "yeodam.io/stage": "v3"
+          }
+        },
+        "policyTypes": [
+          "Egress"
+        ],
+        "egress": [
+          {
+            "to": [
+              {
+                "ipBlock": {
+                  "cidr": "0.0.0.0/0",
+                  "except": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "127.0.0.0/8"
+                  ]
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 80
+              },
+              {
+                "protocol": "TCP",
+                "port": 443
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

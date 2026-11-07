@@ -343,6 +343,9 @@
           }
         }
       }
+    },
+    "albReadinessGates": {
+      "type": "boolean"
     }
   }
 }

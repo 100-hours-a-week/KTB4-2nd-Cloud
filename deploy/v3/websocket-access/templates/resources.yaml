@@ -1,0 +1,48 @@
+{{- if .Values.enabled -}}
+{{- if or (not (contains "-----BEGIN CERTIFICATE-----" .Values.redisCa)) (contains "PRIVATE KEY" .Values.redisCa) }}{{ fail "Supply Redis public CA only" }}{{ end -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: websocket-trust
+  namespace: trip
+  labels: {yeodam.io/stage: v3, app.kubernetes.io/part-of: yeodam}
+type: Opaque
+stringData:
+  redis.crt: {{ .Values.redisCa | quote }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: websocket-credentials
+  namespace: trip
+  labels: {yeodam.io/stage: v3, app.kubernetes.io/part-of: yeodam}
+spec:
+  refreshPolicy: Periodic
+  refreshInterval: 1h
+  secretStoreRef: {kind: SecretStore, name: aws-secretsmanager}
+  target:
+    name: websocket-credentials
+    creationPolicy: Orphan
+    deletionPolicy: Retain
+    template: {type: Opaque}
+  data:
+    {{- range $key := list "REDIS_PASSWORD" "REDIS_SENTINEL_PASSWORD" "WEBSOCKET_INTERNAL_SERVICE_TOKEN" }}
+    - secretKey: {{ $key }}
+      remoteRef:
+        key: yeodam/v3/foundation/trip/backend
+        property: {{ $key }}
+        version: AWSCURRENT
+        decodingStrategy: None
+    {{- end }}
+{{- range $p := .Files.Get "files/policies.json" | fromJsonArray }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $p.name }}
+  namespace: {{ $p.namespace }}
+  labels: {yeodam.io/stage: v3, app.kubernetes.io/part-of: yeodam}
+spec:
+  {{- toYaml $p.spec | nindent 2 }}
+{{- end }}
+{{- end }}
