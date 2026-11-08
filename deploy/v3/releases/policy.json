@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "target": "yeodam-v3-foundation",
-  "deploymentEnabled": false,
+  "deploymentEnabled": true,
   "branch": "deploy/v3-approved",
   "environment": "v3-production",
   "deliveryUnits": [
@@ -15,6 +15,6 @@
     "ai-api",
     "ai-runner"
   ],
-  "adoptionReviewed": false,
-  "observerInstanceId": ""
+  "adoptionReviewed": true,
+  "observerInstanceId": "i-0bd83a35c27d8c053"
 }

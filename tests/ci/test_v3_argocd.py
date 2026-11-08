@@ -73,7 +73,10 @@ class ArgoContracts(unittest.TestCase):
         publish=workflow['jobs']['publish']
         self.assertEqual(publish['environment'],'v3-production')
         self.assertEqual(publish['if'],"needs.preview.outputs.publication_enabled == 'true'")
-        self.assertEqual(publish['permissions']['contents'],'write')
+        self.assertEqual(publish['permissions']['contents'],'read')
+        writer = next(s for s in publish['steps'] if s.get('id') == 'publication')
+        self.assertEqual(writer['env']['V3_GIT_WRITE_TOKEN'], '${{ secrets.CLOUD_RELEASE_TOKEN }}')
+        self.assertTrue(all('V3_GIT_WRITE_TOKEN' not in s.get('env',{}) for s in workflow['jobs']['preview']['steps']))
         self.assertEqual(publish['permissions']['id-token'],'write')
         self.assertNotIn('id-token',workflow['jobs']['preview'].get('permissions',workflow['permissions']))
         for job in workflow['jobs'].values():
