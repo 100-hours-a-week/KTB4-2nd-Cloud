@@ -126,6 +126,7 @@ jobs:
       - name: Render, validate and test V3 platform, apps and Secret supply
         env:
           V3_RENDERED_DIR: ${{ runner.temp }}/v3-rendered
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/validate-v3-platform.sh
 
       - name: Verify Redis transaction replay with isolated fixture data

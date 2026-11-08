@@ -10,18 +10,36 @@ import tarfile
 import urllib.request
 import urllib.error
 import time
+import os
+import urllib.parse
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class ReleaseRedirect(urllib.request.HTTPRedirectHandler):
+    """Never forward the Actions token to release-asset storage hosts."""
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        redirected = super().redirect_request(request, response, code, message, headers, new_url)
+        target = urllib.parse.urlsplit(new_url)
+        if redirected is not None and (target.scheme != 'https' or urllib.parse.urlsplit(request.full_url).netloc != target.netloc):
+            redirected.remove_header('Authorization')
+        return redirected
 
 
 def download(entry):
     headers = {'User-Agent': 'yeodam-v3-validation'}
     if 'accept' in entry:
         headers['Accept'] = entry['accept']
+    open_request = urllib.request.urlopen
+    url = urllib.parse.urlsplit(entry['url'])
+    token = os.environ.get('GITHUB_TOKEN')
+    if token and url.scheme == 'https' and url.netloc == 'api.github.com':
+        headers['Authorization'] = 'Bearer ' + token
+        open_request = urllib.request.build_opener(ReleaseRedirect()).open
     request = urllib.request.Request(entry['url'], headers=headers)
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
+            with open_request(request, timeout=120) as response:
                 data = response.read()
             break
         except urllib.error.HTTPError as error:
