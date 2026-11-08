@@ -30,7 +30,7 @@ run "minimum_identity_and_storage" {
     error_message = "Pod Identity trust must select exact namespace/service account/account/cluster."
   }
   assert {
-    condition     = length(aws_s3_bucket_cors_configuration.qa) == 1 && toset(aws_s3_bucket_cors_configuration.qa[0].cors_rule[0].allowed_origins) == toset(["https://v3.yeodam-2gether.com"])
+    condition     = length(aws_s3_bucket_cors_configuration.qa) == 1 && toset(one(aws_s3_bucket_cors_configuration.qa[0].cors_rule).allowed_origins) == toset(["https://v3.yeodam-2gether.com"])
     error_message = "CORS is V3 browser origin only; no wildcard origin."
   }
 
