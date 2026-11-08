@@ -5,6 +5,10 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'scripts/v3_service_access.py'
+      - 'scripts/prepare-v3-service-access.py'
+      - 'scripts/check-v3-service-access.py'
+      - 'tests/ci/test_v3_service_access.py'
       - 'scripts/check-v3-argocd.py'
       - 'scripts/v3_gitops_release.py'
       - 'scripts/prepare-v3-gitops-release.py'

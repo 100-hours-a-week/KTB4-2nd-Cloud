@@ -50,6 +50,9 @@ class Rollout(unittest.TestCase):
                 self.assertEqual(c['resources']['limits']['memory'], '1Gi')
             current = candidate
 
+    def test_foundation_replacement_does_not_double_pods(self):
+        self.assertEqual(self.current['defaults']['rollout'], {'maxSurge': 0, 'maxUnavailable': 1})
+
     def test_no_skipping_or_removing_roles(self):
         with self.assertRaises(ValueError): rollout.prepare(self.current, 'all', self.review)
         apis = rollout.prepare(self.current, 'apis', self.review)
