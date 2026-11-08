@@ -91,6 +91,14 @@ class Connections(unittest.TestCase):
   self.assertEqual(guard.validate({'complete':True,'resource_changes':[]})['creates'],0)
   for address,actions in [('aws_instance.gpu',['create']),('aws_iam_role.app["auth-api"]',['delete']),('aws_iam_role.app["auth-api"]',['create'])]:
    with self.assertRaises(ValueError):guard.validate({'complete':True,'resource_changes':[{'mode':'managed','address':address,'change':{'actions':actions,'after':{}}}]})
+ def test_exact_cors_only_addition_and_wildcard_rejection(self):
+  guard=module('cors_plan','scripts/check-v3-backend-plan.py')
+  after={'bucket':values.BUCKET,'cors_rule':[{'id':'v3-browser-qa','allowed_origins':['https://v3.yeodam-2gether.com'],'allowed_methods':['GET','HEAD','PUT','POST'],'allowed_headers':['*'],'expose_headers':['ETag','x-amz-request-id'],'max_age_seconds':600}]}
+  plan={'complete':True,'resource_changes':[{'mode':'managed','address':'aws_s3_bucket_cors_configuration.qa[0]','change':{'actions':['create'],'before':None,'after':after}}]}
+  self.assertEqual(guard.validate(plan,True)['creates'],1)
+  with self.assertRaises(ValueError):guard.validate(plan)
+  after['cors_rule'][0]['allowed_origins']=['*']
+  with self.assertRaises(ValueError):guard.validate(plan,True)
  def settings(self):return {**{k:'https://example.invalid' for k in values.KEYS},'AI_EC2_INSTANCE_ID':'i-'+'1'*17,'redisSentinelFeatureReviewed':False}
  def test_stage_requires_compatibility_review_and_immutable_image(self):
   s=self.settings();i='ghcr.io/100-hours-a-week/backend@sha256:'+'a'*64
