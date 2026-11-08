@@ -12,6 +12,9 @@ on:
       - 'tests/ci/test_v3_gitops_release.py'
       - '.github/workflows/v3-approved-release.yml'
       - 'terraform/v3/ai/**'
+      - 'terraform/v3/shared-embedding/**'
+      - 'scripts/check-v3-model-path-plan.py'
+      - 'tests/ci/test_v3_model_path.py'
       - 'scripts/check-v3-ai.py'
       - 'scripts/check-v3-ai-plan.py'
       - 'scripts/inspect-v3-ai-source.py'
@@ -216,3 +219,11 @@ jobs:
           terraform -chdir=terraform/v3/ai init -backend=false -input=false -lockfile=readonly
           terraform -chdir=terraform/v3/ai validate
           terraform -chdir=terraform/v3/ai test -no-color
+
+      - name: Validate additive shared embedding path with mock AWS only
+        working-directory: terraform/v3/shared-embedding
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false -input=false -lockfile=readonly
+          terraform validate
+          terraform test
