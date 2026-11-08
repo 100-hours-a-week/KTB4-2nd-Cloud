@@ -1,18 +1,23 @@
 name: Update Release Image Manifest
 
 on:
-  repository_dispatch:
-    types: [image-published]
+  workflow_dispatch:
+    inputs:
+      payload:
+        description: 'Public image metadata JSON: component, source_repository, source_sha, image, digest'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: yeodam-v1-release-manifest-${{ github.event.client_payload.component }}
+  group: yeodam-v1-release-manifest-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
   update-manifest:
+    if: github.ref == 'refs/heads/main'
     name: Update release candidate
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -34,15 +39,19 @@ jobs:
           ref: main
           token: ${{ secrets.CLOUD_RELEASE_TOKEN }}
 
+      - name: Validate explicit manual candidate input
+        id: manual
+        run: python3 scripts/prepare-legacy-manifest-input.py --generation v1 --output "$RUNNER_TEMP/legacy-v1-event.json"
+
       - name: Validate event and update release candidate branch
         id: update
         env:
           BRANCH_NAME: automation/release-manifest
-          COMPONENT: ${{ github.event.client_payload.component }}
-          SOURCE_REPOSITORY: ${{ github.event.client_payload.source_repository }}
-          SOURCE_SHA: ${{ github.event.client_payload.source_sha }}
-          IMAGE: ${{ github.event.client_payload.image }}
-          DIGEST: ${{ github.event.client_payload.digest }}
+          COMPONENT: ${{ steps.manual.outputs.component }}
+          SOURCE_REPOSITORY: ${{ steps.manual.outputs.source_repository }}
+          SOURCE_SHA: ${{ steps.manual.outputs.source_sha }}
+          IMAGE: ${{ steps.manual.outputs.image }}
+          DIGEST: ${{ steps.manual.outputs.digest }}
         run: |
           set -Eeuo pipefail
           git config user.name "github-actions[bot]"
