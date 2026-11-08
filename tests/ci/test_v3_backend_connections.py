@@ -47,6 +47,10 @@ class Connections(unittest.TestCase):
  def test_mysql_identity_bypass_rejected(self):self.reject({'defaults':{'configMapData':{'MYSQL_URL':'jdbc:mysql://mysql-primary.mysql.svc.cluster.local/yeodam?sslMode=REQUIRED'}}})
  def test_spring_credential_literal_or_wrong_mongo_binding_rejected(self):self.reject({'defaults':{'springProperties':{'spring':{'mongodb':{'uri':'mongodb://wrong:password@localhost'}}}}})
  def test_sentinel_name_and_admin_identity_rejected(self):self.reject({'defaults':{'springProperties':{'spring':{'data':{'redis':{'sentinel':{'username':'admin'}}}}}}})
+ def test_kafka_dedicated_security_protocol_cannot_fall_back_to_plaintext(self):
+  docs,values=self.rendered()
+  self.assertEqual(values['defaults']['springProperties']['spring']['kafka']['security']['protocol'],'SASL_SSL')
+  self.reject({'defaults':{'springProperties':{'spring':{'kafka':{'security':{'protocol':'PLAINTEXT'}}}}}})
  def test_jvm_override_rejected(self):self.reject({'defaults':{'configMapData':{'JAVA_TOOL_OPTIONS':'-XX:MaxRAMPercentage=90'}}})
  def test_actual_eks_version_suffix_is_accepted(self):
   source=subprocess.check_output([os.environ['V3_HELM'],'template','yeodam-v3-backend-access',str(ROOT/'deploy/v3/backend-access'),'--kube-version','1.36.5-eks-577a51e','-f',str(self.access_file)],text=True)
@@ -91,6 +95,14 @@ class Connections(unittest.TestCase):
   self.assertEqual(guard.validate({'complete':True,'resource_changes':[]})['creates'],0)
   for address,actions in [('aws_instance.gpu',['create']),('aws_iam_role.app["auth-api"]',['delete']),('aws_iam_role.app["auth-api"]',['create'])]:
    with self.assertRaises(ValueError):guard.validate({'complete':True,'resource_changes':[{'mode':'managed','address':address,'change':{'actions':actions,'after':{}}}]})
+ def test_exact_cors_only_addition_and_wildcard_rejection(self):
+  guard=module('cors_plan','scripts/check-v3-backend-plan.py')
+  after={'bucket':values.BUCKET,'cors_rule':[{'id':'v3-browser-qa','allowed_origins':['https://v3.yeodam-2gether.com'],'allowed_methods':['GET','HEAD','PUT','POST'],'allowed_headers':['*'],'expose_headers':['ETag','x-amz-request-id'],'max_age_seconds':600}]}
+  plan={'complete':True,'resource_changes':[{'mode':'managed','address':'aws_s3_bucket_cors_configuration.qa[0]','change':{'actions':['create'],'before':None,'after':after}}]}
+  self.assertEqual(guard.validate(plan,True)['creates'],1)
+  with self.assertRaises(ValueError):guard.validate(plan)
+  after['cors_rule'][0]['allowed_origins']=['*']
+  with self.assertRaises(ValueError):guard.validate(plan,True)
  def settings(self):return {**{k:'https://example.invalid' for k in values.KEYS},'AI_EC2_INSTANCE_ID':'i-'+'1'*17,'redisSentinelFeatureReviewed':False}
  def test_stage_requires_compatibility_review_and_immutable_image(self):
   s=self.settings();i='ghcr.io/100-hours-a-week/backend@sha256:'+'a'*64

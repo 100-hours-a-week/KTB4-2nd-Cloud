@@ -29,4 +29,9 @@ run "minimum_identity_and_storage" {
     condition     = alltrue([for k, r in aws_iam_role.app : jsondecode(r.assume_role_policy).Statement[0].Condition.StringEquals["aws:RequestTag/kubernetes-service-account"] == k && jsondecode(r.assume_role_policy).Statement[0].Condition.StringEquals["aws:SourceAccount"] == "483175530259"])
     error_message = "Pod Identity trust must select exact namespace/service account/account/cluster."
   }
+  assert {
+    condition     = length(aws_s3_bucket_cors_configuration.qa) == 1 && toset(one(aws_s3_bucket_cors_configuration.qa[0].cors_rule).allowed_origins) == toset(["https://v3.yeodam-2gether.com"])
+    error_message = "CORS is V3 browser origin only; no wildcard origin."
+  }
+
 }

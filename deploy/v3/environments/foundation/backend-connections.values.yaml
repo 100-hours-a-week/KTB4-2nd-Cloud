@@ -49,6 +49,8 @@ defaults:
       flyway:
         enabled: false
       kafka:
+        security:
+          protocol: SASL_SSL
         properties:
           security.protocol: SASL_SSL
           sasl.mechanism: SCRAM-SHA-512

@@ -62,6 +62,9 @@
         "ssl.endpoint.identification.algorithm": "https",
         "ssl.truststore.location": "/etc/yeodam/trust/cacerts",
         "ssl.truststore.password": "public-ca-only"
+      },
+      "security": {
+        "protocol": "SASL_SSL"
       }
     }
   },
