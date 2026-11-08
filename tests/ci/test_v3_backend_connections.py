@@ -47,6 +47,10 @@ class Connections(unittest.TestCase):
  def test_mysql_identity_bypass_rejected(self):self.reject({'defaults':{'configMapData':{'MYSQL_URL':'jdbc:mysql://mysql-primary.mysql.svc.cluster.local/yeodam?sslMode=REQUIRED'}}})
  def test_spring_credential_literal_or_wrong_mongo_binding_rejected(self):self.reject({'defaults':{'springProperties':{'spring':{'mongodb':{'uri':'mongodb://wrong:password@localhost'}}}}})
  def test_sentinel_name_and_admin_identity_rejected(self):self.reject({'defaults':{'springProperties':{'spring':{'data':{'redis':{'sentinel':{'username':'admin'}}}}}}})
+ def test_kafka_dedicated_security_protocol_cannot_fall_back_to_plaintext(self):
+  docs,values=self.rendered()
+  self.assertEqual(values['defaults']['springProperties']['spring']['kafka']['security']['protocol'],'SASL_SSL')
+  self.reject({'defaults':{'springProperties':{'spring':{'kafka':{'security':{'protocol':'PLAINTEXT'}}}}}})
  def test_jvm_override_rejected(self):self.reject({'defaults':{'configMapData':{'JAVA_TOOL_OPTIONS':'-XX:MaxRAMPercentage=90'}}})
  def test_actual_eks_version_suffix_is_accepted(self):
   source=subprocess.check_output([os.environ['V3_HELM'],'template','yeodam-v3-backend-access',str(ROOT/'deploy/v3/backend-access'),'--kube-version','1.36.5-eks-577a51e','-f',str(self.access_file)],text=True)
