@@ -1,0 +1,25 @@
+# Preparation only; never upgrade an existing release with this disabled overlay.
+images:
+  backend: ghcr.io/100-hours-a-week/yeodam-backend@sha256:ad9fda499e65404d8c4e2f9ed144b362e1be1155da81f1ca9185464893a6c470
+defaults:
+  configMapData:
+    RELEASE: 34e4d80be73f860a105364dfab79fc0864638d66
+    AI_SERVER_BASE_URL: http://ai-api.ai.svc.cluster.local:8000
+    PHOTO_LIST_CACHE_ENABLED: 'false'
+    TRIP_EDIT_LOCK_ENABLED: 'false'
+    JWT_ISSUER: https://yeodam-2gether.com
+    FRONTEND_ORIGIN: https://v3.yeodam-2gether.com
+    FRONTEND_OAUTH_CALLBACK_URI: https://v3.yeodam-2gether.com/auth/callback
+    KAKAO_REDIRECT_URI: https://v3.yeodam-2gether.com/api/auth/kakao/callback
+    AI_EC2_INSTANCE_ID: i-05e1ad9dd96dba4ae
+workloads:
+  auth-api:
+    enabled: false
+  trip-api:
+    enabled: false
+  photo-api:
+    enabled: false
+  photo-converter:
+    enabled: false
+  trip-result-worker:
+    enabled: false

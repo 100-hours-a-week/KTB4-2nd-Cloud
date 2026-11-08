@@ -166,3 +166,10 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-argocd.py --directory "${validation_dir}" --output "${rendered_dir}"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p "test_v3_argocd.py"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p "test_v3_gitops_release.py"
+
+# Frozen, disabled BE/AI preparation inputs; no source checkout or credentials in CI.
+"${validation_dir}/venv/bin/python" scripts/check-v3-app-candidate.py > "${rendered_dir}/be-ai-candidate-plan.json"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p test_v3_app_candidate.py
+"${V3_HELM}" template yeodam-v3-be-candidate deploy/v3/apps --kube-version 1.36.0 -f deploy/v3/environments/foundation/backend.values.yaml -f deploy/v3/environments/foundation/backend-connections.values.yaml -f deploy/v3/candidates/be-ai/backend.values.yaml > "${rendered_dir}/be-candidate-disabled.yaml"
+"${V3_HELM}" template yeodam-v3-ai-candidate deploy/v3/ai-apps --kube-version 1.36.0 -f deploy/v3/candidates/be-ai/ai.values.yaml > "${rendered_dir}/ai-candidate-disabled.yaml"
+"${validation_dir}/venv/bin/python" -c 'import sys,yaml; sys.exit(any(d is not None for p in sys.argv[1:] for d in yaml.safe_load_all(open(p))))' "${rendered_dir}/be-candidate-disabled.yaml" "${rendered_dir}/ai-candidate-disabled.yaml"

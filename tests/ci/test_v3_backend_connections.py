@@ -24,6 +24,16 @@ class Connections(unittest.TestCase):
   with self.assertRaises((ValueError,KeyError,subprocess.CalledProcessError)):self.rendered(override)
  def test_disabled_creates_nothing(self):
   self.assertEqual(apps.platform.load_documents(apps.render([BASE,PROFILE])),[]);self.assertEqual(access.platform.load_documents(access.render()),[])
+ def test_exact_cluster_ai_service_allowed_without_external_http(self):
+  settings=self.settings();settings['AI_SERVER_BASE_URL']='http://ai-api.ai.svc.cluster.local:8000'
+  image='ghcr.io/100-hours-a-week/backend@sha256:'+'a'*64
+  self.assertEqual(values.prepare('auth',image,'b'*40,settings,'c'*64)['defaults']['configMapData']['AI_SERVER_BASE_URL'],settings['AI_SERVER_BASE_URL'])
+  for bad in ['http://example.invalid:8000','http://ai-api.ai.svc.cluster.local:8001','http://ai-api.ai.svc.cluster.local:8000/path','http://ai-api.ai.svc.cluster.local:8000?token=x','http://ai-api.ai.svc.cluster.local.evil:8000']:
+   settings['AI_SERVER_BASE_URL']=bad
+   with self.subTest(url=bad),self.assertRaises(ValueError):values.prepare('auth',image,'b'*40,settings,'c'*64)
+ def test_public_endpoints_still_require_https(self):
+  settings=self.settings();settings['FRONTEND_ORIGIN']='http://v3.yeodam-2gether.com'
+  with self.assertRaises(ValueError):values.prepare('auth','ghcr.io/100-hours-a-week/backend@sha256:'+'a'*64,'b'*40,settings,'c'*64)
  def test_first_auth_and_all_role_budget(self):
   docs,v=self.rendered({'workloads':{r:{'enabled':True} for r in values.ROLES}})
   self.assertEqual(len(docs),13);apps.platform.schema_check(yaml.safe_dump_all(docs))
