@@ -1,0 +1,41 @@
+{{- if .Values.enabled }}
+{{- $a := .Values.serviceAddresses }}
+{{- if eq $a.aiApi $a.tripApi }}{{ fail "Distinct Service addresses required" }}{{ end }}
+{{- range $ip := list $a.aiApi $a.tripApi }}
+{{- if or (eq $ip "172.20.0.0") (eq $ip "172.20.255.255") }}{{ fail "Exact usable Service IPv4 required" }}{{ end }}
+{{- end }}
+{{- range $namespace := list "trip" "photo" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-be-to-ai-service
+  namespace: {{ $namespace }}
+  labels: {yeodam.io/stage: v3, app.kubernetes.io/part-of: yeodam}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: backend, yeodam.io/stage: v3}
+    matchExpressions:
+      - key: app.kubernetes.io/instance
+        operator: In
+        values: {{ if eq $namespace "trip" }}[trip-api, trip-result-worker]{{ else }}[photo-api]{{ end }}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ipBlock: {cidr: {{ printf "%s/32" $.Values.serviceAddresses.aiApi | quote }}}}]
+      ports: [{protocol: TCP, port: 8000}]
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-websocket-to-trip-service
+  namespace: trip
+  labels: {yeodam.io/stage: v3, app.kubernetes.io/part-of: yeodam}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: websocket, app.kubernetes.io/instance: trip-websocket, yeodam.io/stage: v3}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ipBlock: {cidr: {{ printf "%s/32" .Values.serviceAddresses.tripApi | quote }}}}]
+      ports: [{protocol: TCP, port: 8080}]
+{{- end }}

@@ -1,0 +1,3 @@
+{{- if and .Values.backendConnectionContract (not .Values.backendContract) -}}
+{{- fail "BE connection profile requires backendContract and the foundation BE values" -}}
+{{- end -}}

@@ -1,0 +1,219 @@
+{{- range $instance, $workload := .Values.workloads }}
+{{- $c := include "yeodam-v3-apps.resolveConfig" (dict "root" $ "instance" $instance "workload" $workload) | fromYaml }}
+{{- if and $c.enabled (not (and $.Values.frontendContract $.Values.frontendServiceOnly)) }}
+{{- $ctx := dict "root" $ "instance" $instance "config" $c }}
+{{- include "yeodam-v3-apps.check" $ctx }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $instance }}
+  namespace: {{ $c.namespace }}
+  labels:
+    {{- include "yeodam-v3-apps.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ $c.replicas }}
+  revisionHistoryLimit: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ $c.rollout.maxSurge }}
+      maxUnavailable: {{ $c.rollout.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "yeodam-v3-apps.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "yeodam-v3-apps.labels" $ctx | nindent 8 }}
+      annotations:
+        yeodam.io/image: {{ index $.Values.images $c.imageRef | quote }}
+        yeodam.io/configuration-revision: {{ $c.configurationRevision | quote }}
+        {{- if $c.configMapData }}
+        yeodam.io/configuration-checksum: {{ $c.configMapData | toJson | sha256sum | quote }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ $c.serviceAccountName }}
+      nodeSelector:
+        {{- toYaml $c.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml $c.tolerations | nindent 8 }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ $c.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ $c.security.runAsUser }}
+        runAsGroup: {{ $c.security.runAsGroup }}
+        fsGroup: {{ $c.security.fsGroup }}
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        {{- range $c.imagePullSecrets }}
+        - name: {{ . }}
+        {{- end }}
+      {{- if $.Values.websocketContract }}
+      initContainers:
+        - name: prepare-trust
+          image: {{ index $.Values.images $c.imageRef | quote }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+{{ $.Files.Get "files/prepare-websocket-trust.sh" | indent 14 }}
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: trust-input, mountPath: /etc/yeodam/ca, readOnly: true}
+            - {name: truststore, mountPath: /etc/yeodam/trust}
+            - {name: scratch, mountPath: /tmp}
+      {{- end }}
+      {{- if eq $c.name "backend" }}
+      initContainers:
+        {{- if $.Values.backendConnectionContract }}
+        - name: prepare-trust
+          image: {{ index $.Values.images $c.imageRef | quote }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+{{ $.Files.Get "files/prepare-trust.sh" | indent 14 }}
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: trust-input, mountPath: /etc/yeodam/ca, readOnly: true}
+            - {name: truststore, mountPath: /etc/yeodam/trust}
+            - {name: scratch, mountPath: /tmp}
+        {{- end }}
+        - name: seed-catalog
+          image: {{ index $.Values.images $c.imageRef | quote }}
+          command: ["cp", "-R", "/app/data/.", "/catalog/"]
+          securityContext:
+            {{- include "yeodam-v3-apps.containerSecurity" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: {{ $c.resources.requests.cpu | quote }}
+              memory: {{ $c.resources.requests.memory | quote }}
+              ephemeral-storage: {{ index $c.resources.requests "ephemeral-storage" | quote }}
+            limits:
+              memory: {{ $c.resources.limits.memory | quote }}
+              ephemeral-storage: {{ index $c.resources.limits "ephemeral-storage" | quote }}
+              {{- if $c.resources.limits.cpu }}
+              cpu: {{ $c.resources.limits.cpu | quote }}
+              {{- end }}
+          volumeMounts:
+            - name: catalog
+              mountPath: /catalog
+      {{- end }}
+      containers:
+        - name: {{ $c.name }}
+          image: {{ index $.Values.images $c.imageRef | quote }}
+          securityContext:
+            {{- include "yeodam-v3-apps.containerSecurity" . | nindent 12 }}
+          ports:
+            {{- range $portName, $port := $c.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $port }}
+              protocol: TCP
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ $c.resources.requests.cpu | quote }}
+              memory: {{ $c.resources.requests.memory | quote }}
+              ephemeral-storage: {{ index $c.resources.requests "ephemeral-storage" | quote }}
+            limits:
+              memory: {{ $c.resources.limits.memory | quote }}
+              ephemeral-storage: {{ index $c.resources.limits "ephemeral-storage" | quote }}
+              {{- if $c.resources.limits.cpu }}
+              cpu: {{ $c.resources.limits.cpu | quote }}
+              {{- end }}
+          {{- if or $c.configMapRefs $c.configMapData }}
+          envFrom:
+            {{- if $c.configMapData }}
+            - configMapRef:
+                name: {{ $instance }}-runtime
+                optional: false
+            {{- end }}
+            {{- range $c.configMapRefs }}
+            - configMapRef:
+                name: {{ . }}
+                optional: false
+            {{- end }}
+          {{- end }}
+          {{- if or $c.environment $c.secretRefs }}
+          env:
+            {{- range $key, $value := $c.environment }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- range $key, $secret := $c.secretRefs }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret.name }}
+                  key: {{ $secret.key }}
+                  optional: false
+            {{- end }}
+          {{- end }}
+          startupProbe:
+            {{- toYaml $c.probes.startup | nindent 12 }}
+          livenessProbe:
+            {{- toYaml $c.probes.liveness | nindent 12 }}
+          readinessProbe:
+            {{- toYaml $c.probes.readiness | nindent 12 }}
+          {{- if $c.preStopDelaySeconds }}
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ $c.preStopDelaySeconds }}
+          {{- end }}
+          volumeMounts:
+            - name: scratch
+              mountPath: /tmp
+            {{- if $.Values.frontendContract }}
+            - {name: next-cache, mountPath: /app/.next/cache}
+            {{- end }}
+            {{- if or $.Values.backendConnectionContract $.Values.websocketContract }}
+            - {name: truststore, mountPath: /etc/yeodam/trust, readOnly: true}
+            {{- end }}
+            {{- if eq $c.name "backend" }}
+            - name: catalog
+              mountPath: /app/data
+            {{- end }}
+            {{- range $c.secretVolumes }}
+            - name: {{ .name }}
+              mountPath: {{ .mountPath | quote }}
+              readOnly: true
+            {{- end }}
+      volumes:
+        {{- if $.Values.frontendContract }}
+        - name: next-cache
+          emptyDir: {sizeLimit: 128Mi}
+        {{- end }}        {{- if or $.Values.backendConnectionContract $.Values.websocketContract }}
+        - name: truststore
+          emptyDir: {sizeLimit: 4Mi}
+        {{- end }}
+        - name: scratch
+          emptyDir:
+            sizeLimit: {{ $c.scratchSizeLimit | quote }}
+        {{- if eq $c.name "backend" }}
+        - name: catalog
+          emptyDir:
+            sizeLimit: {{ $c.catalogSizeLimit | quote }}
+        {{- end }}
+        {{- range $c.secretVolumes }}
+        - name: {{ .name }}
+          secret:
+            secretName: {{ .secretName }}
+            optional: false
+            defaultMode: 0440
+        {{- end }}
+{{- end }}
+{{- end }}

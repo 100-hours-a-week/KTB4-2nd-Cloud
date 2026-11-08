@@ -1,0 +1,253 @@
+# All workloads are disabled until real images, configuration and access are reviewed.
+# Empty runtime values are intentional; enabling an incomplete target fails rendering.
+# Placement selects only bounded Karpenter app pools.
+images:
+  backend: ''
+  websocket: ''
+  frontend: ''
+  ai: ''
+# Enable the stricter BE runtime contract with the foundation BE overlay only.
+backendContract: false
+backendConnectionContract: false
+websocketContract: false
+frontendContract: false
+frontendServiceOnly: false
+defaults:
+  resources:
+    requests:
+      cpu: ''
+      memory: ''
+      ephemeral-storage: ''
+    limits:
+      cpu: ''
+      memory: ''
+      ephemeral-storage: ''
+  imagePullSecrets: []
+  environment: {}
+  configMapRefs: []
+  configMapData: {}
+  springProperties: {}
+  secretRefs: {}
+  probes:
+    startup: {}
+    liveness: {}
+    readiness: {}
+  terminationGracePeriodSeconds: 0
+  preStopDelaySeconds: 0
+  rollout:
+    maxSurge: 0
+    maxUnavailable: 0
+  security:
+    runAsUser: 0
+    runAsGroup: 0
+    fsGroup: 0
+  scratchSizeLimit: ''
+  catalogSizeLimit: ''
+  secretVolumes: []
+  configurationRevision: ''
+  nodeSelector: {}
+  tolerations: []
+workloads:
+  frontend:
+    enabled: false
+    namespace: frontend
+    name: frontend
+    component: frontend
+    purpose: web
+    imageRef: frontend
+    serviceAccountName: frontend
+    replicas: 1
+    ports: {}
+    service:
+      enabled: true
+      port: 0
+    nodeSelector:
+      yeodam.io/role: api
+      yeodam.io/stage: v3
+    tolerations:
+    - key: yeodam.io/role
+      operator: Equal
+      value: api
+      effect: NoSchedule
+  auth-api:
+    enabled: false
+    namespace: auth
+    name: backend
+    component: backend
+    purpose: api
+    imageRef: backend
+    serviceAccountName: auth-api
+    replicas: 1
+    ports:
+      http: 8080
+      management: 9091
+    service:
+      enabled: true
+      port: 8080
+    security:
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+    nodeSelector:
+      yeodam.io/role: api
+      yeodam.io/stage: v3
+    tolerations:
+    - key: yeodam.io/role
+      operator: Equal
+      value: api
+      effect: NoSchedule
+  trip-api:
+    enabled: false
+    namespace: trip
+    name: backend
+    component: backend
+    purpose: api
+    imageRef: backend
+    serviceAccountName: trip-api
+    replicas: 1
+    ports:
+      http: 8080
+      management: 9091
+    service:
+      enabled: true
+      port: 8080
+    security:
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+    nodeSelector:
+      yeodam.io/role: api
+      yeodam.io/stage: v3
+    tolerations:
+    - key: yeodam.io/role
+      operator: Equal
+      value: api
+      effect: NoSchedule
+  trip-result-worker:
+    enabled: false
+    namespace: trip
+    name: backend
+    component: backend
+    purpose: result-worker
+    imageRef: backend
+    serviceAccountName: trip-result-worker
+    replicas: 1
+    ports:
+      http: 8080
+      management: 9091
+    service:
+      enabled: false
+      port: 8080
+    security:
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+    nodeSelector:
+      yeodam.io/role: worker
+      yeodam.io/stage: v3
+    tolerations:
+    - key: yeodam.io/role
+      operator: Equal
+      value: worker
+      effect: NoSchedule
+  trip-websocket:
+    enabled: false
+    namespace: trip
+    name: websocket
+    component: websocket
+    purpose: websocket
+    imageRef: websocket
+    serviceAccountName: trip-websocket
+    replicas: 2
+    ports:
+      http: 8081
+    service:
+      enabled: true
+      port: 8081
+    security:
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+    nodeSelector:
+      yeodam.io/role: api
+      yeodam.io/stage: v3
+    tolerations:
+    - key: yeodam.io/role
+      operator: Equal
+      value: api
+      effect: NoSchedule
+  photo-api:
+    enabled: false
+    namespace: photo
+    name: backend
+    component: backend
+    purpose: api
+    imageRef: backend
+    serviceAccountName: photo-api
+    replicas: 1
+    ports:
+      http: 8080
+      management: 9091
+    service:
+      enabled: true
+      port: 8080
+    security:
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+    nodeSelector:
+      yeodam.io/role: api
+      yeodam.io/stage: v3
+    tolerations:
+    - key: yeodam.io/role
+      operator: Equal
+      value: api
+      effect: NoSchedule
+  photo-converter:
+    enabled: false
+    namespace: photo
+    name: backend
+    component: backend
+    purpose: conversion-worker
+    imageRef: backend
+    serviceAccountName: photo-converter
+    replicas: 1
+    ports:
+      http: 8080
+      management: 9091
+    service:
+      enabled: false
+      port: 8080
+    security:
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+    nodeSelector:
+      yeodam.io/role: worker
+      yeodam.io/stage: v3
+    tolerations:
+    - key: yeodam.io/role
+      operator: Equal
+      value: worker
+      effect: NoSchedule
+  ai:
+    enabled: false
+    namespace: ai
+    name: ai
+    component: ai
+    purpose: application
+    imageRef: ai
+    serviceAccountName: ai
+    replicas: 1
+    ports: {}
+    service:
+      enabled: true
+      port: 0
+    nodeSelector:
+      yeodam.io/role: worker
+      yeodam.io/stage: v3
+    tolerations:
+    - key: yeodam.io/role
+      operator: Equal
+      value: worker
+      effect: NoSchedule

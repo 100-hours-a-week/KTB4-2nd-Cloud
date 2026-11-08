@@ -1,0 +1,126 @@
+{
+  "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
+  "sourceCommit": "d28885364219a38c0cca1af5f0b7320e366339a5",
+  "requiredConfig": [
+    "SPRING_PROFILES_ACTIVE",
+    "MANAGEMENT_SERVER_ADDRESS",
+    "MYSQL_URL",
+    "REDIS_HOST",
+    "REDIS_PORT",
+    "KAFKA_BOOTSTRAP_SERVERS",
+    "ATTACHMENT_S3_BUCKET",
+    "AWS_REGION",
+    "AI_SERVER_BASE_URL",
+    "AI_EC2_INSTANCE_ID",
+    "JWT_ISSUER",
+    "FRONTEND_ORIGIN",
+    "FRONTEND_OAUTH_CALLBACK_URI",
+    "KAKAO_REDIRECT_URI",
+    "AUTH_SESSION_KEY_PREFIX",
+    "WEBSOCKET_EVENTS_CHANNEL",
+    "ATTACHMENT_CONVERSION_MODE",
+    "RELEASE",
+    "KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP",
+    "ATTACHMENT_CONVERSION_CONSUMER_ENABLED",
+    "ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED",
+    "ATTACHMENT_CONVERSION_RECOVERY_ENABLED",
+    "TRIP_RESULT_WORKER_ENABLED",
+    "TRIP_STATUS_POLLING_ENABLED",
+    "STORY_RESULT_LISTENER_ENABLED",
+    "STORY_STATUS_POLLING_ENABLED"
+  ],
+  "requiredSecrets": [
+    "MYSQL_USERNAME",
+    "MYSQL_PASSWORD",
+    "JWT_SECRET",
+    "KAKAO_CLIENT_ID",
+    "KAKAO_CLIENT_SECRET",
+    "AI_SERVER_API_KEY",
+    "WEBSOCKET_INTERNAL_SERVICE_TOKEN",
+    "MONGODB_URI"
+  ],
+  "topicConfig": [
+    "KAFKA_TRIP_CREATE_REQUEST_TOPIC",
+    "KAFKA_TRIP_CREATE_RESULT_TOPIC",
+    "KAFKA_TRIP_UPDATE_REQUEST_TOPIC",
+    "KAFKA_TRIP_UPDATE_RESULT_TOPIC",
+    "KAFKA_STORY_CREATE_REQUEST_TOPIC",
+    "KAFKA_STORY_CREATE_RESULT_TOPIC"
+  ],
+  "conversionTopicConfig": [
+    "ATTACHMENT_CONVERSION_INITIAL_LIGHT_TOPIC",
+    "ATTACHMENT_CONVERSION_INITIAL_HEIC_TOPIC",
+    "ATTACHMENT_CONVERSION_ADDITIONAL_LIGHT_TOPIC",
+    "ATTACHMENT_CONVERSION_ADDITIONAL_HEIC_TOPIC",
+    "ATTACHMENT_CONVERSION_DLT_TOPIC"
+  ],
+  "conversionConfig": [
+    "ATTACHMENT_CONVERSION_GROUP_PREFIX",
+    "ATTACHMENT_CONVERSION_TECHNICAL_BACKOFF",
+    "ATTACHMENT_CONVERSION_RECOVERY_INTERVAL",
+    "ATTACHMENT_CONVERSION_RECOVERY_PAGE_SIZE",
+    "ATTACHMENT_CONVERSION_RECOVERY_MAX_PAGES_PER_RUN",
+    "ATTACHMENT_CONVERSION_RECOVERY_MAX_REISSUES_PER_RUN",
+    "ATTACHMENT_CONVERSION_FETCH_MAX_BYTES",
+    "ATTACHMENT_CONVERSION_PARTITION_FETCH_MAX_BYTES",
+    "ATTACHMENT_CONVERSION_MAX_MESSAGE_BYTES"
+  ],
+  "mongoStatus": "Story completion calls MongoDB storage in this source; every full BE role requires its connection and readiness dependency.",
+  "workloadRoles": {
+    "auth-api": "api",
+    "trip-api": "api",
+    "photo-api": "api",
+    "photo-converter": "conversion",
+    "trip-result-worker": "result"
+  },
+  "roleProfiles": {
+    "api": {
+      "environment": {
+        "ATTACHMENT_CONVERSION_CONSUMER_ENABLED": "false",
+        "ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED": "false",
+        "ATTACHMENT_CONVERSION_RECOVERY_ENABLED": "false",
+        "TRIP_RESULT_WORKER_ENABLED": "false",
+        "TRIP_STATUS_POLLING_ENABLED": "false",
+        "STORY_RESULT_LISTENER_ENABLED": "false",
+        "STORY_STATUS_POLLING_ENABLED": "false"
+      },
+      "tripResultListener": false,
+      "outboxReceiptListener": false
+    },
+    "conversion": {
+      "environment": {
+        "ATTACHMENT_CONVERSION_CONSUMER_ENABLED": "true",
+        "ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED": "true",
+        "ATTACHMENT_CONVERSION_RECOVERY_ENABLED": "true",
+        "TRIP_RESULT_WORKER_ENABLED": "false",
+        "TRIP_STATUS_POLLING_ENABLED": "false",
+        "STORY_RESULT_LISTENER_ENABLED": "false",
+        "STORY_STATUS_POLLING_ENABLED": "false"
+      },
+      "tripResultListener": false,
+      "outboxReceiptListener": false
+    },
+    "result": {
+      "environment": {
+        "ATTACHMENT_CONVERSION_CONSUMER_ENABLED": "false",
+        "ATTACHMENT_CONVERSION_RECEIPT_LISTENER_ENABLED": "false",
+        "ATTACHMENT_CONVERSION_RECOVERY_ENABLED": "false",
+        "TRIP_RESULT_WORKER_ENABLED": "true",
+        "TRIP_STATUS_POLLING_ENABLED": "true",
+        "STORY_RESULT_LISTENER_ENABLED": "true",
+        "STORY_STATUS_POLLING_ENABLED": "true"
+      },
+      "tripResultListener": true,
+      "outboxReceiptListener": true
+    }
+  },
+  "minimumTerminationGraceSeconds": 180,
+  "optionalConfig": [
+    "SERVER_SHUTDOWN",
+    "SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE",
+    "JAVA_TOOL_OPTIONS",
+    "VIPS_CONCURRENCY"
+  ],
+  "javaToolOptions": "-XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5",
+  "kafkaNamesSource": "files/business-contract.json"
+}
