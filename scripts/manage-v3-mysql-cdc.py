@@ -79,7 +79,7 @@ def main():
   require(sql('mysql-0',f"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='yeodam' AND table_name='{table}';")=='1','Required Outbox schema absent')
  history="SELECT CONCAT(COUNT(*),':',SUM(success),':',COUNT(DISTINCT version),':',MAX(CAST(version AS UNSIGNED))) FROM yeodam.flyway_schema_history;"
  for member in ['mysql-0','mysql-1']:
-  require(sql(member,history)=='34:34:34:34','Both schema histories must reach exactly V34 without failed rows')
+  require(sql(member,history)=='35:35:35:35','Both schema histories must reach exactly V35 without failed rows')
   require(sql(member,'SELECT script FROM yeodam.flyway_schema_history ORDER BY installed_rank;')=='\n'.join(x['name'] for x in LOCK['migrations']),'Migration script set differs')
  raw=json.loads(execute(aws+['secretsmanager','get-secret-value','--secret-id',NAME,'--output','json']));auth=json.loads(raw['SecretString'])
  require(auth['username']==USER and re.fullmatch('[a-f0-9]{48}',auth['password']))
