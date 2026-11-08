@@ -161,8 +161,11 @@ def verify_approval(context):
 
 def write_api(path, method, payload):
     require(path.startswith(f'repos/{CLOUD}/git/'), 'Only approved repository Git objects may be written')
+    token = os.environ.get('V3_GIT_WRITE_TOKEN')
+    require(bool(token), 'Approved Cloud release writer token is required; no fallback to the Actions token')
     result = subprocess.run(['gh', 'api', path, '--method', method, '--input', '-'],
-        input=json.dumps(payload), text=True, capture_output=True, check=True)
+        input=json.dumps(payload), text=True, capture_output=True, check=True,
+        env=dict(os.environ, GH_TOKEN=token))
     return json.loads(result.stdout)
 
 

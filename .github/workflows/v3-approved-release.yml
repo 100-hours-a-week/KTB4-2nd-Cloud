@@ -20,6 +20,7 @@ on:
 permissions:
   contents: read
   actions: read
+  deployments: read
   pull-requests: read
   packages: read
 
@@ -88,8 +89,9 @@ jobs:
     permissions:
       id-token: write
       packages: read
-      contents: write
+      contents: read
       actions: read
+      deployments: read
       pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -118,6 +120,7 @@ jobs:
           ROLLBACK_COMMIT: ${{ inputs.rollback_commit }}
           EXPECTED_PREVIOUS: ${{ inputs.expected_previous }}
           APPROVED_RELEASE_ID: ${{ needs.preview.outputs.release_id }}
+          V3_GIT_WRITE_TOKEN: ${{ secrets.CLOUD_RELEASE_TOKEN }}
         run: |
           set -Eeuo pipefail
           source=(--pr "$CANDIDATE_PR")

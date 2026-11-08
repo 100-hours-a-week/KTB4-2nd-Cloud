@@ -9,6 +9,9 @@ import v3_release_bundle as bundle
 def trim_defaults(live,expected):
  if isinstance(live,dict)and isinstance(expected,dict):
   result=deepcopy(live)
+  # Kubernetes still serializes the deprecated alias alongside serviceAccountName.
+  if 'serviceAccount' not in expected and result.get('serviceAccount')==result.get('serviceAccountName')==expected.get('serviceAccountName'):
+   result.pop('serviceAccount',None)
   defaults={'creationTimestamp':None,'restartPolicy':'Always','dnsPolicy':'ClusterFirst','schedulerName':'default-scheduler',
             'enableServiceLinks':True,'terminationMessagePath':'/dev/termination-log','terminationMessagePolicy':'File',
             'imagePullPolicy':'IfNotPresent','protocol':'TCP','scheme':'HTTP',

@@ -117,10 +117,15 @@ class DeliveryTests(unittest.TestCase):
         self.assertTrue(adoption.verify(self.files, live)['ownershipOnly'])
         # API defaults are safe to remove; an explicitly changed health threshold is not.
         ai = next(d for d in live['items'] if d['kind'] == 'Deployment' and d['metadata']['name'] == 'ai-api')
+        ai['spec']['template']['spec']['serviceAccount'] = ai['spec']['template']['spec']['serviceAccountName']
         probe = ai['spec']['template']['spec']['containers'][0]['readinessProbe']
         probe['successThreshold'] = 1
         probe['httpGet']['scheme'] = 'HTTP'
         self.assertTrue(adoption.verify(self.files, live)['ownershipOnly'])
+        ai['spec']['template']['spec']['serviceAccount'] = 'different-account'
+        with self.assertRaisesRegex(ValueError, 'Pod template differs'):
+            adoption.verify(self.files, live)
+        ai['spec']['template']['spec']['serviceAccount'] = ai['spec']['template']['spec']['serviceAccountName']
         probe['successThreshold'] = 2
         with self.assertRaisesRegex(ValueError, 'Pod template differs'):
             adoption.verify(self.files, live)

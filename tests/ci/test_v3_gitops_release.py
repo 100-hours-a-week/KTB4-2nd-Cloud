@@ -28,7 +28,7 @@ class GitOpsReleaseTests(unittest.TestCase):
         cls.release_id=json.loads(cls.bundle['release.json'])['releaseId']
 
     def test_default_policy_and_deterministic_public_snapshot(self):
-        self.assertEqual(m.read_policy(),POLICY)
+        self.assertEqual(m.read_policy(),POLICY|{'deploymentEnabled':True,'adoptionReviewed':True,'observerInstanceId':'i-0bd83a35c27d8c053'})
         self.assertEqual(m.build(self.candidate),self.bundle)
         meta=m.validate_bundle(self.bundle)
         self.assertEqual(meta['evidence']['cloudCommit'],self.source)
@@ -36,7 +36,7 @@ class GitOpsReleaseTests(unittest.TestCase):
         self.assertTrue(all(not n.startswith('.github') for n in self.bundle))
 
     def test_disabled_publish_fails_before_evidence_or_write(self):
-        with patch.object(m.legacy.checks,'api',side_effect=AssertionError('No API')),patch.object(m,'write_api',side_effect=AssertionError('No writes')):
+        with patch.object(m,'read_policy',return_value=POLICY),patch.object(m.legacy.checks,'api',side_effect=AssertionError('No API')),patch.object(m,'write_api',side_effect=AssertionError('No writes')):
             with self.assertRaises(ValueError):m.publish('100',None,'absent',self.release_id,CTX)
 
     def test_policy_rejects_unsupported_scope_or_activation_without_adoption(self):
@@ -44,7 +44,7 @@ class GitOpsReleaseTests(unittest.TestCase):
             with self.subTest(change=change),patch.object(m.POLICY.__class__,'read_text',return_value=json.dumps(POLICY|change)),self.assertRaises(ValueError):m.read_policy()
 
     def test_prepare_uses_existing_candidate_validator_and_records_no_deployment(self):
-        with patch.object(m,'current_ref',return_value='absent'),patch.object(m,'verify_merged',return_value=self.candidate) as verify,patch.object(m,'write_api',side_effect=AssertionError('No writes')):
+        with patch.object(m,'read_policy',return_value=POLICY),patch.object(m,'current_ref',return_value='absent'),patch.object(m,'verify_merged',return_value=self.candidate) as verify,patch.object(m,'write_api',side_effect=AssertionError('No writes')):
             files,report=m.prepare('100',None,'absent')
         verify.assert_called_once()
         self.assertEqual(files,self.bundle);self.assertEqual(report['status'],'disabled');self.assertFalse(report['published']);self.assertFalse(report['deployed'])
@@ -160,14 +160,26 @@ class GitOpsReleaseTests(unittest.TestCase):
         for change in [{'status':'completed'},{'path':'.github/workflows/other.yml'},{'head_sha':'b'*40},{'run_attempt':2}]:
             with self.subTest(change=change),patch.object(m.legacy.checks,'api',side_effect=self.api({f'repos/{m.CLOUD}/actions/runs/123':base|change})),self.assertRaises(ValueError):m.verify_approval(CTX)
 
-    def test_disabled_cli_records_rejection_without_overwriting_previous_report(self):
+    def test_writer_token_required_and_kept_out_of_command_arguments(self):
+        path=f'repos/{m.CLOUD}/git/blobs'
+        with patch.dict(os.environ,{},clear=True),patch.object(m.subprocess,'run') as run,self.assertRaises(ValueError):
+            m.write_api(path,'POST',{'content':'fixture'})
+        run.assert_not_called()
+        with patch.dict(os.environ,{'GH_TOKEN':'fixture-read','V3_GIT_WRITE_TOKEN':'fixture-write'},clear=True),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'{"sha":"fixture"}')) as run:
+            m.write_api(path,'POST',{'content':'fixture'})
+            self.assertEqual(run.call_args.kwargs['env']['GH_TOKEN'],'fixture-write')
+            self.assertNotIn('fixture-write',str(run.call_args.args))
+            self.assertEqual(os.environ['GH_TOKEN'],'fixture-read')
+
+    def test_cli_records_rejection_without_overwriting_previous_report(self):
         with tempfile.TemporaryDirectory() as directory:
             output=Path(directory)/'rejected'
             args=[sys.executable,str(ROOT/'scripts/prepare-v3-gitops-release.py'),'--pr','100','--expected-previous','absent','--directory',str(output),'--publish']
-            run=subprocess.run(args,capture_output=True,text=True)
+            context=dict(os.environ,GITHUB_ACTIONS='false')
+            run=subprocess.run(args,capture_output=True,text=True,env=context)
             self.assertEqual(run.returncode,1)
             report=json.loads((output/'report.json').read_text())
-            self.assertFalse(report['published']);self.assertIn('disabled',report['reason'])
+            self.assertFalse(report['published']);self.assertIn('first-attempt',report['reason'])
             original=(output/'report.json').read_bytes()
-            subprocess.run(args,capture_output=True,text=True)
+            subprocess.run(args,capture_output=True,text=True,env=context)
             self.assertEqual((output/'report.json').read_bytes(),original)
