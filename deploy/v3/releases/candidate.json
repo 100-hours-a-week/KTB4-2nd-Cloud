@@ -27,7 +27,7 @@
     "websocket": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
       "sourceSha": "1f46254e1100aa9e3f5ebd2a0da088a021b3135d",
-      "image": "ghcr.io/100-hours-a-week/yeodam-websocket@sha256:330c073357b7b34b07220c6fc9638abb53c4fa0c4b8390ac029fcfaf541e0ca8",
+      "image": "ghcr.io/100-hours-a-week/yeodam-websocket@sha256:cfef5c0c9b9a6a2fe0852f4af45d43748acc2a703fb24aa5dd69a0af05d99f83",
       "buildRunId": 41836683635,
       "buildSourceSha": "b2630abbbb1b6072bfae6f811b8405ad13840bc9"
     }
@@ -696,7 +696,7 @@
     },
     "websocket": {
       "images": {
-        "websocket": "ghcr.io/100-hours-a-week/yeodam-websocket@sha256:330c073357b7b34b07220c6fc9638abb53c4fa0c4b8390ac029fcfaf541e0ca8"
+        "websocket": "ghcr.io/100-hours-a-week/yeodam-websocket@sha256:cfef5c0c9b9a6a2fe0852f4af45d43748acc2a703fb24aa5dd69a0af05d99f83"
       },
       "backendContract": false,
       "backendConnectionContract": false,
