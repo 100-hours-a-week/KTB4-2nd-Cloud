@@ -20,6 +20,14 @@ jobs:
     permissions:
       contents: read
 
+  v3-candidate:
+    name: V3 candidate evidence
+    uses: ./.github/workflows/v3-candidate-check.yml
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+
   validate:
     name: Release configuration
     runs-on: ubuntu-latest
@@ -131,7 +139,7 @@ jobs:
   cloud-ci-gate:
     name: cloud-ci-gate
     if: always()
-    needs: [validate, integration, v2-integration, v3-platform, v3-connect, v3-mysql-schema, v3-outbox]
+    needs: [validate, integration, v2-integration, v3-platform, v3-connect, v3-mysql-schema, v3-outbox, v3-candidate]
     runs-on: ubuntu-latest
     steps:
       - name: Require validation and applicable integration
@@ -141,6 +149,7 @@ jobs:
           RUNTIME_REQUIRED: ${{ needs.validate.outputs.runtime_required }}
           V2_INTEGRATION_RESULT: ${{ needs.v2-integration.result }}
           V2_RUNTIME_REQUIRED: ${{ needs.validate.outputs.v2_runtime_required }}
+          V3_CANDIDATE_RESULT: ${{ needs.v3-candidate.result }}
           V3_PLATFORM_RESULT: ${{ needs.v3-platform.result }}
           CONNECT_IMAGE_REQUIRED: ${{ needs.validate.outputs.connect_image_required }}
           CONNECT_IMAGE_RESULT: ${{ needs.v3-connect.result }}
@@ -152,6 +161,7 @@ jobs:
           set -Eeuo pipefail
           [[ "${VALIDATE_RESULT}" == success ]] || exit 1
           [[ "${V3_PLATFORM_RESULT}" == success ]] || exit 1
+          [[ "${V3_CANDIDATE_RESULT}" == success ]] || exit 1
           [[ "${RUNTIME_REQUIRED}" == true || "${RUNTIME_REQUIRED}" == false ]] || exit 1
           [[ "${V2_RUNTIME_REQUIRED}" == true || "${V2_RUNTIME_REQUIRED}" == false ]] || exit 1
           if [[ "${RUNTIME_REQUIRED}" == true ]]; then

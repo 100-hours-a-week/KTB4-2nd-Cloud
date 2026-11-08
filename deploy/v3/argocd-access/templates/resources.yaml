@@ -33,57 +33,63 @@ spec:
     # GitHub/registry HTTPS and the Kubernetes API; scoped SA/RBAC is the API write boundary.
     - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
       ports: [{protocol: TCP, port: 443}]
+{{- $delivery := .Files.Get "files/delivery.json" | fromJson }}
+{{- range $ns := $delivery.namespaces }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
-metadata: {name: argocd-frontend, namespace: frontend}
+metadata: {name: argocd-apps, namespace: {{ $ns }}}
 rules:
-  - apiGroups: [apps]
-    resources: [deployments]
-    verbs: [get, list, watch, create, update, patch]
-  - apiGroups: ['']
-    resources: [services, configmaps]
-    verbs: [get, list, watch, create, update, patch]
-  - apiGroups: ['']
-    resources: [pods, events]
-    verbs: [get, list, watch]
+{{ index $delivery.roles $ns | toYaml | indent 2 }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
-metadata: {name: argocd-frontend, namespace: frontend}
-roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: argocd-frontend}
+metadata: {name: argocd-apps, namespace: {{ $ns }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: argocd-apps}
 subjects: [{kind: ServiceAccount, name: argocd-application-controller, namespace: argocd}]
-{{- if .Values.frontendAdoptionReviewed }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: delivery-status, namespace: argocd}
+rules:
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    resourceNames: [yeodam-v3-apps]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: delivery-status, namespace: argocd}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: delivery-status}
+subjects: [{kind: Group, name: yeodam-v3-delivery-observer, apiGroup: rbac.authorization.k8s.io}]
+{{- if .Values.appsAdoptionReviewed }}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
-metadata: {name: yeodam-v3-frontend, namespace: argocd}
+metadata: {name: yeodam-v3-apps, namespace: argocd}
 spec:
-  description: Approved FE delivery only; no platform, Secret or data ownership
+  description: Approved app bundle only; no Secret, PVC, data workload or cluster ownership
   sourceRepos: [https://github.com/100-hours-a-week/KTB4-2nd-Cloud.git]
-  destinations: [{server: https://kubernetes.default.svc, namespace: frontend}]
+  destinations:
+  {{- range $ns := $delivery.namespaces }}
+    - {server: https://kubernetes.default.svc, namespace: {{ $ns }}}
+  {{- end }}
   clusterResourceWhitelist: []
   namespaceResourceWhitelist:
-    - {group: apps, kind: Deployment}
-    - {group: '', kind: Service}
-    - {group: '', kind: ConfigMap}
+{{ $delivery.projectKinds | toYaml | indent 4 }}
   orphanedResources: {warn: true}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-metadata:
-  name: yeodam-v3-frontend
-  namespace: argocd
-  # No resources-finalizer: deleting the Application must not cascade into live FE.
+metadata: {name: yeodam-v3-apps, namespace: argocd}
 spec:
-  project: yeodam-v3-frontend
+  project: yeodam-v3-apps
   source:
     repoURL: https://github.com/100-hours-a-week/KTB4-2nd-Cloud.git
     targetRevision: deploy/v3-approved
-    path: charts/apps
-    helm:
-      releaseName: yeodam-v3-frontend
-      valueFiles: [../../values/frontend.json]
+    path: manifests
+    directory: {recurse: false, include: release.yaml}
   destination: {server: https://kubernetes.default.svc, namespace: frontend}
   revisionHistoryLimit: 3
   syncPolicy:
@@ -94,8 +100,8 @@ spec:
       allowEmpty: false
     syncOptions: [FailOnSharedResource=true]
 {{- else if .Values.automatedSync }}
-{{- fail "Frontend Helm ownership adoption must be reviewed before automated sync" }}
+{{- fail "All app Helm ownership must be reviewed before automated sync" }}
 {{- end }}
-{{- else if or .Values.frontendAdoptionReviewed .Values.automatedSync }}
+{{- else if or .Values.appsAdoptionReviewed .Values.automatedSync }}
 {{- fail "Argo CD access must be explicitly enabled first" }}
 {{- end }}

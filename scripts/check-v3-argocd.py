@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Offline Argo bootstrap/FE adoption checks; never connect to Kubernetes or AWS."""
+"""Offline Argo bootstrap/full app adoption checks; never connect to Kubernetes or AWS."""
 import argparse
+import sys
 from collections import Counter
 from copy import deepcopy
 import hashlib
@@ -13,6 +14,8 @@ import tarfile
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'scripts'))
+from v3_delivery_contract import NAMESPACES, role_rules, project_kinds
 ARG = ROOT / 'deploy/v3/argocd'
 ACCESS = ROOT / 'deploy/v3/argocd-access'
 LOCK = json.loads((ARG / 'upstream.lock.json').read_text())
@@ -28,31 +31,32 @@ def render_access(**values):
 
 
 def validate_access(docs, adopted=False, automated=False):
-    require(Counter(x['kind'] for x in docs) == Counter({'Namespace': 1, 'NetworkPolicy': 2, 'Role': 1, 'RoleBinding': 1} | ({'Application': 1, 'AppProject': 1} if adopted else {})), 'Unexpected Argo access inventory')
-    for obj in docs:
-        kind = obj['kind']; ns = obj['metadata'].get('namespace')
-        require(ns == (None if kind == 'Namespace' else 'frontend' if kind in ['Role','RoleBinding'] else 'argocd'), 'Argo ownership namespace widened')
-    namespace = next(x for x in docs if x['kind']=='Namespace')['metadata']
-    require(namespace['name']=='argocd' and namespace['annotations']['helm.sh/resource-policy']=='keep' and namespace['labels']['pod-security.kubernetes.io/enforce']=='restricted', 'Retained restricted argocd namespace required')
-    role = next(x for x in docs if x['kind'] == 'Role')
-    rules = role['rules']
-    require(rules == [
-        {'apiGroups':['apps'],'resources':['deployments'],'verbs':['get','list','watch','create','update','patch']},
-        {'apiGroups':[''],'resources':['services','configmaps'],'verbs':['get','list','watch','create','update','patch']},
-        {'apiGroups':[''],'resources':['pods','events'],'verbs':['get','list','watch']}], 'No Secret, deletion, data or cluster permissions')
-    binding = next(x for x in docs if x['kind'] == 'RoleBinding')
-    require(binding['roleRef']=={'apiGroup':'rbac.authorization.k8s.io','kind':'Role','name':'argocd-frontend'}, 'No ClusterRole or unrelated role binding')
-    require(binding['subjects'] == [{'kind':'ServiceAccount','name':'argocd-application-controller','namespace':'argocd'}], 'Only the Argo controller can sync FE')
+    expected = {'Namespace':1,'NetworkPolicy':2,'Role':7,'RoleBinding':7}
+    if adopted: expected.update(Application=1,AppProject=1)
+    require(Counter(x['kind'] for x in docs)==Counter(expected),'Exact app-only Argo access inventory')
+    namespace=next(x for x in docs if x['kind']=='Namespace')['metadata']
+    require(namespace['name']=='argocd' and namespace['annotations']['helm.sh/resource-policy']=='keep' and namespace['labels']['pod-security.kubernetes.io/enforce']=='restricted','Retained restricted argocd namespace')
+    contract=json.loads((ACCESS/'files/delivery.json').read_text())
+    require(contract=={'namespaces':NAMESPACES,'roles':{n:role_rules(n)for n in NAMESPACES},'projectKinds':project_kinds()},'Chart scope must match the reviewed app boundaries')
+    for ns in NAMESPACES:
+        role=next(x for x in docs if x['kind']=='Role'and x['metadata']['namespace']==ns)
+        require(role['metadata']['name']=='argocd-apps'and role['rules']==role_rules(ns),'No data/Secret/delete permissions or wider named updates')
+        binding=next(x for x in docs if x['kind']=='RoleBinding'and x['metadata']['namespace']==ns)
+        require(binding['roleRef']=={'apiGroup':'rbac.authorization.k8s.io','kind':'Role','name':'argocd-apps'}and binding['subjects']==[{'kind':'ServiceAccount','name':'argocd-application-controller','namespace':'argocd'}],'Only in-cluster Argo controller may manage apps')
+    read=next(x for x in docs if x['kind']=='Role'and x['metadata']['namespace']=='argocd')
+    require(read['metadata']['name']=='delivery-status'and read['rules']==[{'apiGroups':['argoproj.io'],'resources':['applications'],'resourceNames':['yeodam-v3-apps'],'verbs':['get']}],'Observer reads only this Application')
+    bind=next(x for x in docs if x['kind']=='RoleBinding'and x['metadata']['namespace']=='argocd')
+    require(bind['roleRef']=={'apiGroup':'rbac.authorization.k8s.io','kind':'Role','name':'delivery-status'}and bind['subjects']==[{'kind':'Group','name':'yeodam-v3-delivery-observer','apiGroup':'rbac.authorization.k8s.io'}],'Observer identity mismatch')
+    require(all(x['metadata'].get('namespace')in NAMESPACES+['argocd']for x in docs if x['kind']!='Namespace'),'Namespace widening')
     if adopted:
-        app = next(x for x in docs if x['kind'] == 'Application')
-        require(not app['metadata'].get('finalizers'), 'Application deletion must not cascade')
-        s = app['spec']
-        require(s['project'] == 'yeodam-v3-frontend' and s['source'] == {'repoURL':'https://github.com/100-hours-a-week/KTB4-2nd-Cloud.git','targetRevision':'deploy/v3-approved','path':'charts/apps','helm':{'releaseName':'yeodam-v3-frontend','valueFiles':['../../values/frontend.json']}}, 'Only approved branch and immutable bundled chart allowed')
-        require(s['destination'] == {'server':'https://kubernetes.default.svc','namespace':'frontend'}, 'Wrong FE destination')
-        require(s['syncPolicy'] == {'automated':{'enabled':automated,'prune':False,'selfHeal':False,'allowEmpty':False},'syncOptions':['FailOnSharedResource=true']}, 'No deletion or implicit self-heal')
-        project = next(x for x in docs if x['kind'] == 'AppProject')['spec']
-        require(project['sourceRepos'] == [s['source']['repoURL']] and project['destinations'] == [s['destination']], 'Project source/destination widened')
-        require(project['clusterResourceWhitelist'] == [] and project['namespaceResourceWhitelist'] == [{'group':'apps','kind':'Deployment'},{'group':'','kind':'Service'},{'group':'','kind':'ConfigMap'}], 'Project resource ownership widened')
+        app=next(x for x in docs if x['kind']=='Application');a=app['spec']
+        require(app['metadata']['name']=='yeodam-v3-apps'and not app['metadata'].get('finalizers'),'No cascading app deletion')
+        require(a['project']=='yeodam-v3-apps'and a['source']=={'repoURL':'https://github.com/100-hours-a-week/KTB4-2nd-Cloud.git','targetRevision':'deploy/v3-approved','path':'manifests','directory':{'recurse':False,'include':'release.yaml'}},'Only the approved full bundle')
+        require(a['destination']=={'server':'https://kubernetes.default.svc','namespace':'frontend'},'Exact in-cluster destination')
+        require(a['syncPolicy']=={'automated':{'enabled':automated,'prune':False,'selfHeal':False,'allowEmpty':False},'syncOptions':['FailOnSharedResource=true']},'No prune or implicit self-heal')
+        project=next(x for x in docs if x['kind']=='AppProject')['spec']
+        require(project['sourceRepos']==[a['source']['repoURL']]and project['destinations']==[{'server':'https://kubernetes.default.svc','namespace':n}for n in NAMESPACES],'Exact project namespaces and repository')
+        require(project['clusterResourceWhitelist']==[]and project['namespaceResourceWhitelist']==project_kinds(),'No Secret/PVC/cluster ownership')
     policies = {x['metadata']['name']: x['spec'] for x in docs if x['kind']=='NetworkPolicy'}
     require(policies['default-deny'] == {'podSelector':{},'policyTypes':['Ingress','Egress']}, 'Argo default deny widened')
     require(policies['control-egress'] == {'podSelector':{},'policyTypes':['Egress'],'egress':[{'to':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'kube-system'}},'podSelector':{'matchLabels':{'k8s-app':'kube-dns'}}}],'ports':[{'protocol':'UDP','port':53},{'protocol':'TCP','port':53}]},{'to':[{'namespaceSelector':{'matchLabels':{'kubernetes.io/metadata.name':'argocd'}}}],'ports':[{'protocol':'TCP','port':6379},{'protocol':'TCP','port':8081},{'protocol':'TCP','port':8080}]},{'to':[{'ipBlock':{'cidr':'0.0.0.0/0'}}],'ports':[{'protocol':'TCP','port':443}]}]}, 'Only HTTPS egress, DNS and reviewed internal ports')
@@ -82,10 +86,11 @@ def validate_controller(docs):
         if x['kind']=='Service':require(x['spec'].get('type','ClusterIP')=='ClusterIP' and not x['spec'].get('externalIPs'), 'No public service')
     cm = next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='argocd-cm')['data']
     require(cm['exec.enabled']=='false' and cm['users.anonymous.enabled']=='false' and cm['application.resourceTrackingMethod']=='annotation', 'No exec/anonymous access or Helm label tracking collision')
+    require(cm.get('resource.respectRBAC')=='strict' and 'c.status == \"True\"' in cm.get('resource.customizations.health.external-secrets.io_ExternalSecret',''),'Scoped cache and ExternalSecret readiness required')
     secrets={x['metadata']['name']:x for x in docs if x['kind']=='Secret'}
-    require(set(secrets)=={'argocd-secret','argocd-cluster-v3-frontend'} and not secrets['argocd-secret'].get('data') and not secrets['argocd-secret'].get('stringData'), 'No repository credential or admin password in render inputs')
-    credentials=next(x for x in docs if x['kind']=='Secret' and x['metadata']['name']=='argocd-cluster-v3-frontend')['stringData']
-    require(credentials['server']=='https://kubernetes.default.svc' and credentials['namespaces']=='frontend' and credentials['clusterResources']=='false', 'Cluster watch must stay frontend scoped')
+    require(set(secrets)=={'argocd-secret','argocd-cluster-v3-apps'} and not secrets['argocd-secret'].get('data') and not secrets['argocd-secret'].get('stringData'), 'No repository credential or admin password in render inputs')
+    credentials=next(x for x in docs if x['kind']=='Secret' and x['metadata']['name']=='argocd-cluster-v3-apps')['stringData']
+    require(credentials['server']=='https://kubernetes.default.svc' and credentials['namespaces']==','.join(NAMESPACES) and credentials['clusterResources']=='false', 'Cluster watch must stay frontend scoped')
     require(json.loads(credentials['config'])=={'tlsClientConfig':{'insecure':False}}, 'No static cluster token or insecure TLS')
 
 
@@ -106,7 +111,7 @@ def check(directory, output):
     output.mkdir(parents=True,exist_ok=True)
     (output/'argocd-reviewed.yaml').write_text(yaml.safe_dump_all(safe))
     require(not platform.load_documents(render_access()), 'Default bootstrap must be empty')
-    for name,params,adopted,automated in [('access',{'enabled':True},False,False),('adoption',{'enabled':True,'frontendAdoptionReviewed':True},True,False),('approved-sync',{'enabled':True,'frontendAdoptionReviewed':True,'automatedSync':True},True,True)]:
+    for name,params,adopted,automated in [('access',{'enabled':True},False,False),('adoption',{'enabled':True,'appsAdoptionReviewed':True},True,False),('approved-sync',{'enabled':True,'appsAdoptionReviewed':True,'automatedSync':True},True,True)]:
         text=render_access(**params);validate_access(platform.load_documents(text),adopted,automated);platform.schema_check(text);(output/('argocd-'+name+'.yaml')).write_text(text)
     print(json.dumps({'residentPods':4,'requestsCpuMilli':185,'requestsMemoryMi':480,'limitsMemoryMi':1408,'applicationSetReplicas':0,'namespace':'argocd','defaultEnabled':False,'clusterAccessed':False,'awsAccessed':False}))
 

@@ -1,0 +1,6 @@
+{
+  "sessionManagerPlugin": {
+    "url": "https://s3.amazonaws.com/session-manager-downloads/plugin/1.2.896.0/ubuntu_64bit/session-manager-plugin.deb",
+    "sha256": "53f51fcc67314a4bf85888a38a3967cd41f8d0f28a60a9469a63acf935ba713e"
+  }
+}

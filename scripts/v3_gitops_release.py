@@ -1,4 +1,4 @@
-"""Approved FE GitOps bundles. No AWS, kubeconfig, registry credentials or cluster calls.
+"""Approved full-app GitOps bundles. No AWS, kubeconfig, registry credentials or cluster calls.
 
 Publication defaults off. An enabled policy still needs a first-attempt main-only
 workflow_dispatch, protected Environment approval, adoption review, unchanged main,
@@ -21,6 +21,9 @@ CLOUD = '100-hours-a-week/KTB4-2nd-Cloud'
 BRANCH = 'deploy/v3-approved'
 ENVIRONMENT = 'v3-production'
 POLICY = ROOT / 'deploy/v3/releases/policy.json'
+import v3_release_bundle as bundle
+from v3_delivery_contract import UNITS, CHARTS
+from v3_release_candidate import verify_merged
 SHA = re.compile(r'[a-f0-9]{40}')
 
 
@@ -50,12 +53,14 @@ def digest(data):
 
 def read_policy():
     policy = json.loads(POLICY.read_text(), object_pairs_hook=legacy.checks.manifest.unique_object)
-    require(set(policy) == {'schemaVersion', 'target', 'deploymentEnabled', 'branch', 'environment', 'deliveryUnits', 'adoptionReviewed'}, 'Unexpected release policy fields')
-    require(type(policy['schemaVersion']) is int and policy['schemaVersion'] == 1, 'Unknown release schema')
+    require(set(policy) == {'schemaVersion', 'target', 'deploymentEnabled', 'branch', 'environment', 'deliveryUnits', 'adoptionReviewed', 'observerInstanceId'}, 'Unexpected release policy fields')
+    require(type(policy['schemaVersion']) is int and policy['schemaVersion'] == 2, 'Unknown release schema')
     require(policy['target'] == 'yeodam-v3-foundation' and policy['branch'] == BRANCH and policy['environment'] == ENVIRONMENT, 'Only the exact V3 destination is allowed')
-    require(policy['deliveryUnits'] == ['frontend'], 'Only FE adoption is implemented; no implicit BE/WS/AI release')
+    require(policy['deliveryUnits'] == UNITS, 'Exactly all nine reviewed app roles required')
     require(type(policy['deploymentEnabled']) is bool and type(policy['adoptionReviewed']) is bool, 'Explicit boolean switches required')
     require(not policy['deploymentEnabled'] or policy['adoptionReviewed'], 'Existing Helm ownership must be reviewed before activation')
+    require(isinstance(policy['observerInstanceId'],str) and (not policy['observerInstanceId'] or re.fullmatch('i-[a-f0-9]{17}',policy['observerInstanceId'])), 'Exact observer system instance required')
+    require(not policy['deploymentEnabled'] or bool(policy['observerInstanceId']), 'Read-only delivery observation must be configured before activation')
     return policy
 
 
@@ -80,65 +85,18 @@ def source_files(commit, prefix):
 
 
 def build(candidate):
-    require(candidate.get('candidateVerified') is True and candidate.get('status') == 'disabled', 'Exact verified candidate evidence required')
-    commit = candidate['cloudCommit']
-    component = candidate['manifest']['components']['frontend']
-    image = candidate['images']['frontend']
-    require(bool(re.fullmatch(r'ghcr.io/100-hours-a-week/yeodam-frontend@sha256:[a-f0-9]{64}', image)), 'Digest-pinned FE image required')
-    require(bool(SHA.fullmatch(component['sourceSha'])), 'FE source SHA required')
-    prefix = 'deploy/v3/apps/'
-    chart = source_files(commit, prefix)
-    files = {'charts/apps/' + n[len(prefix):]: v for n, v in chart.items()}
-    overlay = yaml.safe_load(git('show', commit + ':deploy/v3/environments/foundation/frontend.values.yaml'))
-    overlay['images'] = {'frontend': image}
-    overlay['workloads']['frontend']['enabled'] = True
-    overlay['defaults']['configMapData']['RELEASE'] = component['sourceSha']
-    overlay['defaults']['configurationRevision'] = digest(canonical(overlay))
-    files['values/frontend.json'] = canonical(overlay) + b'\n'
-    evidence = {'candidatePr': candidate['pr'], 'cloudCommit': commit, 'cloudGateRunId': candidate['ciRunId'],
-                'frontendSource': component['sourceSha'], 'frontendImage': image}
-    metadata = {'schemaVersion': 1, 'target': 'yeodam-v3-foundation', 'units': ['frontend'],
-                'evidence': evidence, 'files': {n: digest(v) for n, v in sorted(files.items())}}
-    metadata['releaseId'] = digest(canonical(metadata))
-    files['release.json'] = canonical(metadata) + b'\n'
-    validate_bundle(files)
-    return files
+    require(candidate.get('candidateVerified') is True and candidate.get('status') == 'verified', 'Exact verified V3 candidate required')
+    files = {}
+    for chart in CHARTS:
+        prefix = 'deploy/v3/' + chart + '/'
+        files.update({'charts/' + chart + '/' + n[len(prefix):]: v for n, v in source_files(candidate['cloudCommit'], prefix).items()})
+    result = bundle.build(candidate['candidate'], files, {'candidatePr': candidate['pr'], 'cloudCommit': candidate['cloudCommit'], 'cloudGateRunId': candidate['ciRunId']})
+    validate_bundle(result)
+    return result
 
 
 def validate_bundle(files):
-    require('release.json' in files and 'values/frontend.json' in files, 'Incomplete FE bundle')
-    require(len(files) < 100 and sum(map(len, files.values())) < 2 * 1024 * 1024, 'Bundle size limit exceeded')
-    for name in files:
-        path = PurePosixPath(name)
-        require(not path.is_absolute() and '..' not in path.parts and str(path) == name, 'Unsafe bundle path')
-        require(name in ['release.json', 'values/frontend.json'] or name.startswith('charts/apps/'), 'Only FE chart and values may be published')
-    metadata = json.loads(files['release.json'], object_pairs_hook=legacy.checks.manifest.unique_object)
-    require(set(metadata) == {'schemaVersion', 'target', 'units', 'evidence', 'files', 'releaseId'}, 'Unexpected bundle metadata')
-    require(metadata['schemaVersion'] == 1 and metadata['target'] == 'yeodam-v3-foundation' and metadata['units'] == ['frontend'], 'Wrong bundle destination')
-    expected = deepcopy(metadata); expected.pop('releaseId')
-    require(metadata['releaseId'] == digest(canonical(expected)), 'Release identity mismatch')
-    require(metadata['files'] == {n: digest(v) for n, v in sorted(files.items()) if n != 'release.json'}, 'Bundle file checksum mismatch')
-    require('charts/apps/Chart.yaml' in files, 'Pinned Chart snapshot missing')
-    image = metadata['evidence']['frontendImage']
-    require(bool(re.fullmatch(r'ghcr.io/100-hours-a-week/yeodam-frontend@sha256:[a-f0-9]{64}', image)), 'Wrong FE registry/image')
-    with tempfile.TemporaryDirectory(prefix='v3-gitops-render-') as directory:
-        root = Path(directory)
-        for name, value in files.items():
-            path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(value)
-        helm = os.environ['V3_HELM']
-        source = subprocess.check_output([helm, 'template', 'yeodam-v3-frontend', str(root / 'charts/apps'),
-            '--namespace', 'default', '--kube-version', '1.36.0', '-f', str(root / 'values/frontend.json')], text=True, stderr=subprocess.DEVNULL)
-        documents = apps.platform.load_documents(source)
-        values = apps.merge(yaml.safe_load(files['charts/apps/values.yaml']), json.loads(files['values/frontend.json']))
-        apps.validate(documents, values)
-        expected_objects = {('Deployment', 'frontend'), ('Service', 'frontend'), ('ConfigMap', 'frontend-runtime')}
-        require({(d['kind'], d['metadata']['name']) for d in documents} == expected_objects and len(documents) == 3, 'No platform, Secret or other workload ownership')
-        require(all(d['metadata']['namespace'] == 'frontend' for d in documents), 'FE-only namespace boundary')
-        deployment = next(d for d in documents if d['kind'] == 'Deployment')
-        require(deployment['spec']['template']['spec']['containers'][0]['image'] == image, 'Rendered image differs from approval')
-        require(values['defaults']['configMapData']['RELEASE'] == metadata['evidence']['frontendSource'], 'Source and runtime revision differ')
-        apps.platform.schema_check(source)
-    return metadata
+    return bundle.validate(files)
 
 
 def rollback_bundle(commit, current):
@@ -165,14 +123,14 @@ def prepare(pr, rollback, expected_previous):
     if rollback:
         files = rollback_bundle(rollback, expected_previous)
     else:
-        candidate = legacy.prepare(pr_number=pr)
+        candidate = verify_merged(pr, legacy.checks.api)
         files = build(candidate)
     metadata = validate_bundle(files)
-    return files, {'schemaVersion': 1, 'status': 'prepared' if policy['deploymentEnabled'] else 'disabled',
+    return files, {'schemaVersion': 2, 'status': 'prepared' if policy['deploymentEnabled'] else 'disabled',
         'publicationEnabled': policy['deploymentEnabled'], 'published': False, 'deployed': False,
         'releaseId': metadata['releaseId'], 'expectedPrevious': expected_previous,
         'action': 'rollback' if rollback else 'deploy', 'rollbackCommit': rollback,
-        'candidatePr': int(pr) if pr else None, 'targetBranch': BRANCH, 'units': ['frontend']}
+        'candidatePr': int(pr) if pr else None, 'targetBranch': BRANCH, 'units': UNITS}
 
 
 def verify_approval(context):
@@ -224,7 +182,7 @@ def publish(pr, rollback, expected_previous, approved_release_id, context=None):
         blob = write_api(f'repos/{CLOUD}/git/blobs', 'POST', {'content': base64.b64encode(value).decode(), 'encoding': 'base64'})
         tree.append({'path': name, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']})
     result = write_api(f'repos/{CLOUD}/git/trees', 'POST', {'tree': tree})
-    commit = write_api(f'repos/{CLOUD}/git/commits', 'POST', {'message': 'deploy: V3 FE ' + metadata['releaseId'], 'tree': result['sha'],
+    commit = write_api(f'repos/{CLOUD}/git/commits', 'POST', {'message': 'deploy: V3 apps ' + metadata['releaseId'], 'tree': result['sha'],
         'parents': [] if expected_previous == 'absent' else [expected_previous]})
     if expected_previous == 'absent':
         write_api(f'repos/{CLOUD}/git/refs', 'POST', {'ref': 'refs/heads/' + BRANCH, 'sha': commit['sha']})

@@ -180,3 +180,7 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${V3_HELM}" lint --strict deploy/v3/service-access
 "${validation_dir}/venv/bin/python" scripts/check-v3-service-access.py --output "${rendered_dir}"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p test_v3_service_access.py
+
+# Complete approved app snapshots and observer boundaries; fixture data only.
+"${validation_dir}/venv/bin/python" scripts/prepare-v3-release-candidate.py
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p test_v3_delivery.py

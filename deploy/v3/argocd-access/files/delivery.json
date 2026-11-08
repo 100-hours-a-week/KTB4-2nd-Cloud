@@ -1,0 +1,841 @@
+{
+  "namespaces": [
+    "frontend",
+    "auth",
+    "trip",
+    "photo",
+    "ai",
+    "kafka"
+  ],
+  "roles": {
+    "frontend": [
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "resourceNames": [
+          "frontend"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "resourceNames": [
+          "frontend"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "resourceNames": [
+          "frontend-runtime"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "pods",
+          "events"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "replicasets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      }
+    ],
+    "auth": [
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "resourceNames": [
+          "auth-api"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "resourceNames": [
+          "auth-api"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "resourceNames": [
+          "auth-api-runtime"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "pods",
+          "events"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "replicasets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      }
+    ],
+    "trip": [
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "resourceNames": [
+          "trip-api",
+          "trip-result-worker",
+          "trip-websocket"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "resourceNames": [
+          "trip-api",
+          "trip-websocket"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "resourceNames": [
+          "trip-api-runtime",
+          "trip-result-worker-runtime",
+          "trip-websocket-runtime"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "resourceNames": [
+          "allow-trip-api-to-ai",
+          "allow-trip-result-worker-to-ai",
+          "allow-be-to-ai-service",
+          "allow-websocket-to-trip-service"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "pods",
+          "events"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "replicasets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      }
+    ],
+    "photo": [
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "resourceNames": [
+          "photo-api",
+          "photo-converter"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "resourceNames": [
+          "photo-api"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "resourceNames": [
+          "photo-api-runtime",
+          "photo-converter-runtime"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "resourceNames": [
+          "allow-photo-api-to-ai",
+          "allow-be-to-ai-service"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "pods",
+          "events"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "replicasets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      }
+    ],
+    "ai": [
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "resourceNames": [
+          "ai-api",
+          "ai-runner"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "resourceNames": [
+          "ai-api"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "resourceNames": [
+          "ai-trust",
+          "ai-runtime-scripts",
+          "ai-api-runtime",
+          "ai-runner-runtime"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "serviceaccounts"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "serviceaccounts"
+        ],
+        "resourceNames": [
+          "ai-api",
+          "ai-runner"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "external-secrets.io"
+        ],
+        "resources": [
+          "externalsecrets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          "external-secrets.io"
+        ],
+        "resources": [
+          "externalsecrets"
+        ],
+        "resourceNames": [
+          "ai-runtime"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "resourceNames": [
+          "allow-ai-kafka",
+          "allow-ai-public-and-identity",
+          "allow-ai-storage",
+          "allow-be-to-ai-api",
+          "allow-ai-reviewed-private-models"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "pods",
+          "events"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "replicasets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      }
+    ],
+    "kafka": [
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch",
+          "create"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "resourceNames": [
+          "allow-kafka-from-ai"
+        ],
+        "verbs": [
+          "update",
+          "patch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "pods",
+          "events"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "replicasets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      }
+    ]
+  },
+  "projectKinds": [
+    {
+      "group": "apps",
+      "kind": "Deployment"
+    },
+    {
+      "group": "",
+      "kind": "Service"
+    },
+    {
+      "group": "",
+      "kind": "ConfigMap"
+    },
+    {
+      "group": "",
+      "kind": "ServiceAccount"
+    },
+    {
+      "group": "external-secrets.io",
+      "kind": "ExternalSecret"
+    },
+    {
+      "group": "networking.k8s.io",
+      "kind": "NetworkPolicy"
+    }
+  ]
+}

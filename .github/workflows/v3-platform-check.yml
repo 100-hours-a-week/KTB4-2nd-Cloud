@@ -5,6 +5,14 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'terraform/v3/delivery/**'
+      - 'scripts/*v3*release*'
+      - 'scripts/*v3*delivery*'
+      - 'scripts/*v3*candidate*'
+      - 'scripts/check-v3-adoption.py'
+      - 'tests/ci/test_v3_delivery.py'
+      - '.github/workflows/v3-candidate-check.yml'
+      - '.github/workflows/v3-release-candidate.yml'
       - 'scripts/v3_service_access.py'
       - 'scripts/prepare-v3-service-access.py'
       - 'scripts/check-v3-service-access.py'
@@ -231,3 +239,11 @@ jobs:
           terraform init -backend=false -input=false -lockfile=readonly
           terraform validate
           terraform test
+
+      - name: Validate read-only delivery observer using mock AWS only
+        working-directory: terraform/v3/delivery
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false -input=false -lockfile=readonly
+          terraform validate -no-color
+          terraform test -no-color

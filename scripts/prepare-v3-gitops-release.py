@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare approved FE GitOps inputs; no deployment occurs by default."""
+"""Prepare approved full-app GitOps inputs; no deployment occurs by default."""
 import argparse
 import json
 import os
@@ -36,6 +36,9 @@ def main():
             with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
                 output.write('publication_enabled=' + str(result['publicationEnabled']).lower() + '\n')
                 output.write('release_id=' + result['releaseId'] + '\n')
+        if args.publish and result.get('published') and os.environ.get('GITHUB_OUTPUT'):
+            with open(os.environ['GITHUB_OUTPUT'],'a') as out:
+                out.write('approved_commit='+result['approvedCommit']+'\n')
         print(json.dumps(result))
     except (ValueError, KeyError, OSError, TypeError, subprocess.CalledProcessError) as error:
         reason = str(error) if isinstance(error, ValueError) else 'Evidence lookup or rendering failed (' + type(error).__name__ + ')'

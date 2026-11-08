@@ -4,14 +4,14 @@
   "additionalProperties": false,
   "required": [
     "enabled",
-    "frontendAdoptionReviewed",
+    "appsAdoptionReviewed",
     "automatedSync"
   ],
   "properties": {
     "enabled": {
       "type": "boolean"
     },
-    "frontendAdoptionReviewed": {
+    "appsAdoptionReviewed": {
       "type": "boolean"
     },
     "automatedSync": {
