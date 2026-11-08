@@ -1,0 +1,44 @@
+name: Update V3 Release Candidate
+on:
+  repository_dispatch:
+    types: [v2-image-published]
+  workflow_run:
+    workflows: [Production WebSocket Image]
+    types: [completed]
+permissions:
+  contents: read
+  packages: read
+  actions: read
+jobs:
+  candidate:
+    if: github.event_name == 'repository_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ secrets.CLOUD_RELEASE_TOKEN }}
+      - name: Prepare immutable validation tools
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/prepare-v3-validation.py "$RUNNER_TEMP/v3-tools"
+          echo "V3_HELM=$RUNNER_TEMP/v3-tools/helm" >> "$GITHUB_ENV"
+          echo "V3_KUBECONFORM=$RUNNER_TEMP/v3-tools/kubeconform" >> "$GITHUB_ENV"
+          echo "V3_SCHEMA_DIR=$RUNNER_TEMP/v3-tools/schemas" >> "$GITHUB_ENV"
+          python3 -m venv "$RUNNER_TEMP/v3-venv"
+          "$RUNNER_TEMP/v3-venv/bin/pip" install -q -r scripts/requirements-v3-validation.txt
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Verify publishers and propose candidate only
+        env:
+          GH_TOKEN: ${{ secrets.CLOUD_RELEASE_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          gh auth setup-git
+          "$RUNNER_TEMP/v3-venv/bin/python" scripts/update-v3-release-candidate.py

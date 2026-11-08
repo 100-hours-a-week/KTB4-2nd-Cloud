@@ -9,7 +9,7 @@ def validate(configs,images):
     for c in configs.values():
         require(re.fullmatch(r'ghcr.io/100-hours-a-week/yeodam-frontend@sha256:[a-f0-9]{64}',images['frontend']),'Immutable separate FE image required')
         require(not any(c[k] for k in ['environment','configMapRefs','secretRefs','secretVolumes','springProperties']),'FE only uses public config and existing registry Secret')
-        data=c['configMapData'];require(set(data)==set(CONTRACT['config'])|{'RELEASE'} and all(data.get(k)==v for k,v in CONTRACT['config'].items()),'FE runtime/SSR endpoint mismatch')
+        data=c['configMapData'];require(set(data)==set(CONTRACT['config'])|{'RELEASE'} and all(data.get(k)==v for k,v in CONTRACT['config'].items() if k!='SERVER_API_BASE_URL') and data.get('SERVER_API_BASE_URL') in ['https://v3.yeodam-2gether.com/api','https://yeodam-2gether.com/api'],'FE runtime/SSR endpoint mismatch')
         require(re.fullmatch('[a-f0-9]{40}',data['RELEASE']) and re.fullmatch('[a-f0-9]{64}',c['configurationRevision']),'Explicit source and config revision required')
         res=json.loads(json.dumps(CONTRACT['resources']));res['limits']['cpu']=''
         require(c['resources']==res and c['replicas']==1,'Initial FE budget changed')

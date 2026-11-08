@@ -94,20 +94,32 @@ configs:
     users.anonymous.enabled: 'false'
     timeout.reconciliation: 180s
     application.resourceTrackingMethod: annotation
+    resource.respectRBAC: strict
+    resource.customizations.health.external-secrets.io_ExternalSecret: |
+      hs = {status = "Progressing", message = "Waiting for V3 runtime references"}
+      if obj.status ~= nil and obj.status.conditions ~= nil then
+        for _, c in ipairs(obj.status.conditions) do
+          if c.type == "Ready" and c.status == "True" then
+            hs.status = "Healthy"
+            hs.message = "Runtime references ready"
+          end
+        end
+      end
+      return hs
     url: https://localhost:8080
   params:
     controller.repo.server.strict.tls: true
     server.repo.server.strict.tls: true
   rbac:
     policy.default: role:no-access
-    policy.csv: 'p, role:frontend-viewer, applications, get, yeodam-v3-frontend/*,
+    policy.csv: 'p, role:apps-viewer, applications, get, yeodam-v3-apps/*,
       allow
 
       '
   clusterCredentials:
-    v3-frontend:
+    v3-apps:
       server: https://kubernetes.default.svc
-      namespaces: frontend
+      namespaces: frontend,auth,trip,photo,ai,kafka
       clusterResources: 'false'
       config:
         tlsClientConfig:

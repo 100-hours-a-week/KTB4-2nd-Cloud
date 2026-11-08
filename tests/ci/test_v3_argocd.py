@@ -14,7 +14,7 @@ m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class ArgoContracts(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.access=m.platform.load_documents(m.render_access(enabled=True,frontendAdoptionReviewed=True))
+        cls.access=m.platform.load_documents(m.render_access(enabled=True,appsAdoptionReviewed=True))
         archive=Path(os.environ['V3_HELM']).parent/'argocd.tgz'
         text=subprocess.check_output([os.environ['V3_HELM'],'template','argocd',str(archive),'-n','argocd','--include-crds','-f',str(m.ARG/'values.yaml')],text=True)
         cls.controller=m.platform.load_documents(text)
@@ -25,7 +25,7 @@ class ArgoContracts(unittest.TestCase):
         m.validate_controller(self.controller)
 
     def test_sync_before_access_or_adoption_is_rejected(self):
-        for values in [{'automatedSync':True},{'frontendAdoptionReviewed':True},{'enabled':True,'automatedSync':True},{'enabled':'invalid'},{'unknown':True}]:
+        for values in [{'automatedSync':True},{'appsAdoptionReviewed':True},{'enabled':True,'automatedSync':True},{'enabled':'invalid'},{'unknown':True}]:
             with self.subTest(values=values), self.assertRaises(subprocess.CalledProcessError):m.render_access(**values)
 
     def test_main_tracking_prune_selfheal_or_finalizer_rejected(self):
@@ -63,7 +63,7 @@ class ArgoContracts(unittest.TestCase):
             elif mode=='memory':obj['spec']['template']['spec']['containers'][0]['resources']['limits']['memory']='2Gi'
             elif mode=='image':obj['spec']['template']['spec']['containers'][0]['image']='argocd:latest'
             elif mode=='public':next(x for x in docs if x['kind']=='Service')['spec']['type']='LoadBalancer'
-            else:next(x for x in docs if x['kind']=='Secret' and x['metadata']['name']=='argocd-cluster-v3-frontend')['stringData']['namespaces']='frontend,mysql'
+            else:next(x for x in docs if x['kind']=='Secret' and x['metadata']['name']=='argocd-cluster-v3-apps')['stringData']['namespaces']='frontend,mysql'
             with self.subTest(mode=mode),self.assertRaises(ValueError):m.validate_controller(docs)
 
     def test_workflow_has_no_push_trigger_and_write_only_after_environment(self):
@@ -74,7 +74,8 @@ class ArgoContracts(unittest.TestCase):
         self.assertEqual(publish['environment'],'v3-production')
         self.assertEqual(publish['if'],"needs.preview.outputs.publication_enabled == 'true'")
         self.assertEqual(publish['permissions']['contents'],'write')
-        self.assertNotIn('id-token',publish['permissions'])
+        self.assertEqual(publish['permissions']['id-token'],'write')
+        self.assertNotIn('id-token',workflow['jobs']['preview'].get('permissions',workflow['permissions']))
         for job in workflow['jobs'].values():
             for step in job['steps']:
                 if step.get('uses','').startswith('actions/checkout@'):self.assertFalse(step['with']['persist-credentials'])

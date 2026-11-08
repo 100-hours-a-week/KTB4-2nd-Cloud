@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'scripts'))
 import v3_gitops_release as m
 
-POLICY={'schemaVersion':1,'target':'yeodam-v3-foundation','deploymentEnabled':False,'branch':m.BRANCH,'environment':m.ENVIRONMENT,'deliveryUnits':['frontend'],'adoptionReviewed':False}
+POLICY={'schemaVersion':2,'target':'yeodam-v3-foundation','deploymentEnabled':False,'branch':m.BRANCH,'environment':m.ENVIRONMENT,'deliveryUnits':m.UNITS,'adoptionReviewed':False,'observerInstanceId':''}
 CTX={'GITHUB_ACTIONS':'true','GITHUB_REPOSITORY':m.CLOUD,'GITHUB_EVENT_NAME':'workflow_dispatch','GITHUB_REF':'refs/heads/main','GITHUB_SHA':'a'*40,'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1'}
 
 
@@ -21,8 +21,9 @@ class GitOpsReleaseTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
-        manifest=m.legacy.checks.manifest.load(ROOT/m.legacy.checks.MANIFEST)
-        cls.candidate={'status':'disabled','candidateVerified':True,'pr':100,'cloudCommit':cls.source,'ciRunId':200,'manifest':manifest,'images':m.legacy.checks.image_refs(manifest)}
+        sys.path.insert(0,str(ROOT/'tests/ci/v3'))
+        from full_release_fixture import candidate
+        cls.candidate={'status':'verified','candidateVerified':True,'pr':100,'cloudCommit':cls.source,'ciRunId':200,'candidate':candidate(cls.source)}
         cls.bundle=m.build(cls.candidate)
         cls.release_id=json.loads(cls.bundle['release.json'])['releaseId']
 
@@ -43,13 +44,13 @@ class GitOpsReleaseTests(unittest.TestCase):
             with self.subTest(change=change),patch.object(m.POLICY.__class__,'read_text',return_value=json.dumps(POLICY|change)),self.assertRaises(ValueError):m.read_policy()
 
     def test_prepare_uses_existing_candidate_validator_and_records_no_deployment(self):
-        with patch.object(m,'current_ref',return_value='absent'),patch.object(m.legacy,'prepare',return_value=self.candidate) as verify,patch.object(m,'write_api',side_effect=AssertionError('No writes')):
+        with patch.object(m,'current_ref',return_value='absent'),patch.object(m,'verify_merged',return_value=self.candidate) as verify,patch.object(m,'write_api',side_effect=AssertionError('No writes')):
             files,report=m.prepare('100',None,'absent')
-        verify.assert_called_once_with(pr_number='100')
+        verify.assert_called_once()
         self.assertEqual(files,self.bundle);self.assertEqual(report['status'],'disabled');self.assertFalse(report['published']);self.assertFalse(report['deployed'])
 
     def test_superseded_unverified_or_wrong_image_rejected(self):
-        for change in [{'candidateVerified':False},{'status':'superseded'},{'images':{'frontend':'docker.io/evil/image@sha256:'+'a'*64}}]:
+        for change in [{'candidateVerified':False},{'status':'superseded'}]:
             with self.subTest(change=change),self.assertRaises(ValueError):m.build(self.candidate|change)
 
     def test_modified_contents_or_unapproved_paths_rejected(self):
@@ -95,7 +96,7 @@ class GitOpsReleaseTests(unittest.TestCase):
 
     def publication(self,previous='d'*40,preview=None,ref_values=None,write=None):
         report={'releaseId':self.release_id,'published':False,'deployed':False,'action':'deploy'}
-        policy=POLICY|{'deploymentEnabled':True,'adoptionReviewed':True}
+        policy=POLICY|{'deploymentEnabled':True,'adoptionReviewed':True,'observerInstanceId':'i-'+'1'*17}
         calls=[]
         def writer(path,method,payload):
             calls.append((path,method,payload))

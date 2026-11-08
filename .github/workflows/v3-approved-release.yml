@@ -21,6 +21,7 @@ permissions:
   contents: read
   actions: read
   pull-requests: read
+  packages: read
 
 concurrency:
   group: yeodam-v3-approved-release
@@ -49,7 +50,12 @@ jobs:
           echo "V3_SCHEMA_DIR=$RUNNER_TEMP/yeodam-v3-validation/schemas" >> "$GITHUB_ENV"
           python3 -m venv "$RUNNER_TEMP/release-venv"
           "$RUNNER_TEMP/release-venv/bin/pip" install -q -r scripts/requirements-v3-validation.txt
-      - name: Validate candidate and prepare immutable FE bundle
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Validate candidate and prepare immutable full-app bundle
         id: preview
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,8 +84,10 @@ jobs:
     if: needs.preview.outputs.publication_enabled == 'true'
     environment: v3-production
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
+      id-token: write
+      packages: read
       contents: write
       actions: read
       pull-requests: read
@@ -97,7 +105,13 @@ jobs:
           echo "V3_SCHEMA_DIR=$RUNNER_TEMP/yeodam-v3-validation/schemas" >> "$GITHUB_ENV"
           python3 -m venv "$RUNNER_TEMP/release-venv"
           "$RUNNER_TEMP/release-venv/bin/pip" install -q -r scripts/requirements-v3-validation.txt
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Recheck approval and publish only to the approved GitOps ref
+        id: publication
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_PR: ${{ inputs.candidate_pr }}
@@ -114,8 +128,37 @@ jobs:
           "$RUNNER_TEMP/release-venv/bin/python" scripts/prepare-v3-gitops-release.py "${source[@]}" \
             --expected-previous "$EXPECTED_PREVIOUS" --approved-release-id "$APPROVED_RELEASE_ID" \
             --directory "$RUNNER_TEMP/v3-release-publication" --publish
+      - name: Use approved read-only V3 observer role
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          role-to-assume: arn:aws:iam::483175530259:role/yeodam-v3-foundation-delivery-status
+          role-session-name: v3-cd-${{ github.run_id }}
+          role-duration-seconds: 1800
+          aws-region: ap-northeast-2
+      - name: Install pinned management tunnel client
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PYTHON'
+          import hashlib,json,subprocess,urllib.request
+          from pathlib import Path
+          d=json.loads(Path('deploy/v3/releases/tools.lock.json').read_text())['sessionManagerPlugin']
+          body=urllib.request.urlopen(d['url'],timeout=30).read()
+          assert hashlib.sha256(body).hexdigest()==d['sha256']
+          Path('/tmp/session-manager-plugin.deb').write_bytes(body)
+          subprocess.run(['sudo','dpkg','-i','/tmp/session-manager-plugin.deb'],check=True)
+          PYTHON
+      - name: Wait for actual approved revision and all nine app Deployments
+        env:
+          APPROVED_COMMIT: ${{ steps.publication.outputs.approved_commit }}
+        run: |
+          set -Eeuo pipefail
+          INSTANCE=$(python3 -c 'import json; print(json.load(open("deploy/v3/releases/policy.json"))["observerInstanceId"])')
+          "$RUNNER_TEMP/release-venv/bin/python" scripts/observe-v3-release.py \
+            --commit "$APPROVED_COMMIT" --instance "$INSTANCE" \
+            --report "$RUNNER_TEMP/v3-release-publication/deployment-status.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
         with:
           name: v3-release-publication-${{ github.run_id }}
-          path: ${{ runner.temp }}/v3-release-publication/report.json
+          path: ${{ runner.temp }}/v3-release-publication/*.json
           retention-days: 30

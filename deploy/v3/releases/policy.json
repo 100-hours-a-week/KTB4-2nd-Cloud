@@ -1,11 +1,20 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "target": "yeodam-v3-foundation",
   "deploymentEnabled": false,
   "branch": "deploy/v3-approved",
   "environment": "v3-production",
   "deliveryUnits": [
-    "frontend"
+    "frontend",
+    "auth-api",
+    "trip-api",
+    "photo-api",
+    "photo-converter",
+    "trip-result-worker",
+    "trip-websocket",
+    "ai-api",
+    "ai-runner"
   ],
-  "adoptionReviewed": false
+  "adoptionReviewed": false,
+  "observerInstanceId": ""
 }

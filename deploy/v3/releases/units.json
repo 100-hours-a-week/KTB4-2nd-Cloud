@@ -7,41 +7,41 @@
   "auth-api": {
     "namespace": "auth",
     "component": "backend",
-    "deliverySupported": false
+    "deliverySupported": true
   },
   "trip-api": {
     "namespace": "trip",
     "component": "backend",
-    "deliverySupported": false
+    "deliverySupported": true
   },
   "photo-api": {
     "namespace": "photo",
     "component": "backend",
-    "deliverySupported": false
+    "deliverySupported": true
   },
   "photo-converter": {
     "namespace": "photo",
     "component": "backend",
-    "deliverySupported": false
+    "deliverySupported": true
   },
   "trip-result-worker": {
     "namespace": "trip",
     "component": "backend",
-    "deliverySupported": false
+    "deliverySupported": true
   },
   "trip-websocket": {
     "namespace": "trip",
     "component": "websocket",
-    "deliverySupported": false
+    "deliverySupported": true
   },
   "ai-api": {
     "namespace": "ai",
     "component": "ai-app",
-    "deliverySupported": false
+    "deliverySupported": true
   },
   "ai-runner": {
     "namespace": "ai",
     "component": "ai-app",
-    "deliverySupported": false
+    "deliverySupported": true
   }
 }
