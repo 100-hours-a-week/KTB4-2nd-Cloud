@@ -32,3 +32,15 @@ run "observer" {
     error_message = "Only observer/tunnel actions."
   }
 }
+
+run "immutable_repository_subject" {
+  command = plan
+  variables {
+    enabled             = true
+    system_instance_ids = ["i-11111111111111111"]
+  }
+  assert {
+    condition     = jsondecode(aws_iam_role.status[0].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:100-hours-a-week@167328634/KTB4-2nd-Cloud@1344655631:environment:v3-production"
+    error_message = "Use the repository's real immutable subject and only the approved Environment."
+  }
+}

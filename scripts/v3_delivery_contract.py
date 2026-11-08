@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 UNITS = ['frontend','auth-api','trip-api','photo-api','photo-converter','trip-result-worker','trip-websocket','ai-api','ai-runner']
 NAMESPACES = ['frontend','auth','trip','photo','ai','kafka']
+OIDC_SUBJECT = 'repo:100-hours-a-week@167328634/KTB4-2nd-Cloud@1344655631:environment:v3-production'
 COMPONENTS = {
  'frontend': ('100-hours-a-week/KTB4-2nd-FE','yeodam-frontend','frontend-image.yml'),
  'backend': ('100-hours-a-week/KTB4-2nd-BE','yeodam-backend','backend-image.yml'),
@@ -36,10 +37,13 @@ KINDS = {'deployments':'Deployment','services':'Service','configmaps':'ConfigMap
 
 
 def role_rules(namespace):
- rules=[]
+ # The pinned cache retains a kind if ANY managed namespace permits it, then
+ # lists that kind in ALL managed namespaces. Keep reads uniform, writes scoped.
+ rules=[{'apiGroups':[group],'resources':[resource],'verbs':['get','list','watch']}
+        for resource,group in GROUPS.items()]
  for resource,names in RESOURCES[namespace].items():
   group=GROUPS[resource]
-  rules += [{'apiGroups':[group],'resources':[resource],'verbs':['get','list','watch','create']},
+  rules += [{'apiGroups':[group],'resources':[resource],'verbs':['create']},
             {'apiGroups':[group],'resources':[resource],'resourceNames':names,'verbs':['update','patch']}]
  rules += [{'apiGroups':[''],'resources':['pods','events'],'verbs':['get','list','watch']},
            {'apiGroups':['apps'],'resources':['replicasets'],'verbs':['get','list','watch']}]

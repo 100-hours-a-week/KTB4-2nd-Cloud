@@ -19,7 +19,82 @@
         "verbs": [
           "get",
           "list",
-          "watch",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "serviceaccounts"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "external-secrets.io"
+        ],
+        "resources": [
+          "externalsecrets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "verbs": [
           "create"
         ]
       },
@@ -46,9 +121,6 @@
           "services"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -75,9 +147,6 @@
           "configmaps"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -135,7 +204,82 @@
         "verbs": [
           "get",
           "list",
-          "watch",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "serviceaccounts"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "external-secrets.io"
+        ],
+        "resources": [
+          "externalsecrets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "verbs": [
           "create"
         ]
       },
@@ -162,9 +306,6 @@
           "services"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -191,9 +332,6 @@
           "configmaps"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -251,7 +389,82 @@
         "verbs": [
           "get",
           "list",
-          "watch",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "serviceaccounts"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "external-secrets.io"
+        ],
+        "resources": [
+          "externalsecrets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "verbs": [
           "create"
         ]
       },
@@ -280,9 +493,6 @@
           "services"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -310,9 +520,6 @@
           "configmaps"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -341,9 +548,6 @@
           "networkpolicies"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -404,7 +608,82 @@
         "verbs": [
           "get",
           "list",
-          "watch",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "serviceaccounts"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "external-secrets.io"
+        ],
+        "resources": [
+          "externalsecrets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "verbs": [
           "create"
         ]
       },
@@ -432,9 +711,6 @@
           "services"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -461,9 +737,6 @@
           "configmaps"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -491,9 +764,6 @@
           "networkpolicies"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -552,7 +822,82 @@
         "verbs": [
           "get",
           "list",
-          "watch",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "serviceaccounts"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "external-secrets.io"
+        ],
+        "resources": [
+          "externalsecrets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "verbs": [
           "create"
         ]
       },
@@ -580,9 +925,6 @@
           "services"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -609,9 +951,6 @@
           "configmaps"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -641,9 +980,6 @@
           "serviceaccounts"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -671,9 +1007,6 @@
           "externalsecrets"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -700,9 +1033,6 @@
           "networkpolicies"
         ],
         "verbs": [
-          "get",
-          "list",
-          "watch",
           "create"
         ]
       },
@@ -756,6 +1086,71 @@
     "kafka": [
       {
         "apiGroups": [
+          "apps"
+        ],
+        "resources": [
+          "deployments"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "services"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "configmaps"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "serviceaccounts"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "external-secrets.io"
+        ],
+        "resources": [
+          "externalsecrets"
+        ],
+        "verbs": [
+          "get",
+          "list",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
           "networking.k8s.io"
         ],
         "resources": [
@@ -764,7 +1159,17 @@
         "verbs": [
           "get",
           "list",
-          "watch",
+          "watch"
+        ]
+      },
+      {
+        "apiGroups": [
+          "networking.k8s.io"
+        ],
+        "resources": [
+          "networkpolicies"
+        ],
+        "verbs": [
           "create"
         ]
       },

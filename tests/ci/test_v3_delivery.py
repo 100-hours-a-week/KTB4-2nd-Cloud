@@ -167,6 +167,36 @@ class DeliveryTests(unittest.TestCase):
         with patch.object(updater, 'api', return_value={'status': 'completed', 'conclusion': 'failure'}), self.assertRaises(ValueError):
             updater.wait_for_publication('owner/repo', 1)
 
+    def test_cache_reads_are_uniform_but_writes_stay_named_and_namespaced(self):
+        from v3_delivery_contract import NAMESPACES, GROUPS, role_rules
+        def allows(namespace, group, resource, verb, name=None):
+            return any(group in r['apiGroups'] and resource in r['resources'] and verb in r['verbs']
+                       and ('resourceNames' not in r or name in r['resourceNames']) for r in role_rules(namespace))
+        for namespace in NAMESPACES:
+            for resource, group in GROUPS.items():
+                self.assertTrue(all(allows(namespace, group, resource, verb) for verb in ['get','list','watch']))
+            for forbidden in ['secrets','persistentvolumeclaims','statefulsets','roles']:
+                self.assertFalse(allows(namespace, '', forbidden, 'list'))
+            self.assertFalse(allows(namespace, 'apps', 'deployments', 'delete'))
+        self.assertFalse(allows('kafka', '', 'configmaps', 'create'))
+        self.assertFalse(allows('kafka', 'apps', 'deployments', 'patch', 'unrelated'))
+        self.assertTrue(allows('kafka', 'networking.k8s.io', 'networkpolicies', 'patch', 'allow-kafka-from-ai'))
+        self.assertFalse(allows('kafka', 'networking.k8s.io', 'networkpolicies', 'patch', 'other-policy'))
+
+    def test_plan_accepts_only_exact_immutable_subject_repair(self):
+        from v3_delivery_contract import OIDC_SUBJECT
+        before = {'name': 'yeodam-v3-foundation-delivery-status', 'max_session_duration': 3600,
+                  'assume_role_policy': json.dumps(plan.trust('repo:100-hours-a-week/KTB4-2nd-Cloud:environment:v3-production'))}
+        after = before | {'assume_role_policy': json.dumps(plan.trust(OIDC_SUBJECT))}
+        review = {'systemInstanceIds': ['i-'+'1'*17], 'eksEndpoint': 'https://'+'A'*32+'.gr7.ap-northeast-2.eks.amazonaws.com'}
+        value = {'resource_changes': [{'address': 'aws_iam_role.status[0]', 'change': {'actions': ['update'], 'before': before, 'after': after}}]}
+        self.assertEqual(plan.validate(value, review)['updates'], 1)
+        for change in [{'max_session_duration': 7200}, {'name': 'other-role'},
+                       {'assume_role_policy': json.dumps(plan.trust(OIDC_SUBJECT.replace(':v3-production', ':other')))}]:
+            mutated = deepcopy(value);mutated['resource_changes'][0]['change']['after'].update(change)
+            with self.subTest(change=list(change)), self.assertRaises(ValueError):
+                plan.validate(mutated, review)
+
     def test_plan_rejects_non_observer_or_production_mutation(self):
         self.assertEqual(plan.validate({})['creates'], 0)
         for action in ['create', 'update', 'delete']:
