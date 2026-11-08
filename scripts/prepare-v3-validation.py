@@ -88,6 +88,11 @@ def prepare(directory):
     if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != operator['sha256']:
         archive.write_bytes(download(operator))
 
+    argocd = json.loads((ROOT / 'deploy/v3/argocd/upstream.lock.json').read_text())
+    archive = directory / 'argocd.tgz'
+    if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != argocd['sha256']:
+        archive.write_bytes(download(argocd))
+
     strimzi = json.loads((ROOT / 'deploy/v3/kafka-operator/upstream.lock.json').read_text())
     archive = directory / 'strimzi.tgz'
     if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != strimzi['sha256']:

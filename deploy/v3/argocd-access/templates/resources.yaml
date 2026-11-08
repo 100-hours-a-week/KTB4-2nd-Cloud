@@ -1,0 +1,101 @@
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  annotations: {helm.sh/resource-policy: keep}
+  labels:
+    app.kubernetes.io/part-of: yeodam
+    yeodam.io/stage: v3
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.36
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: argocd}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: control-egress, namespace: argocd}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: argocd}}}]
+      ports: [{protocol: TCP, port: 6379}, {protocol: TCP, port: 8081}, {protocol: TCP, port: 8080}]
+    # GitHub/registry HTTPS and the Kubernetes API; scoped SA/RBAC is the API write boundary.
+    - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: argocd-frontend, namespace: frontend}
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: ['']
+    resources: [services, configmaps]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: ['']
+    resources: [pods, events]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: argocd-frontend, namespace: frontend}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: argocd-frontend}
+subjects: [{kind: ServiceAccount, name: argocd-application-controller, namespace: argocd}]
+{{- if .Values.frontendAdoptionReviewed }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata: {name: yeodam-v3-frontend, namespace: argocd}
+spec:
+  description: Approved FE delivery only; no platform, Secret or data ownership
+  sourceRepos: [https://github.com/100-hours-a-week/KTB4-2nd-Cloud.git]
+  destinations: [{server: https://kubernetes.default.svc, namespace: frontend}]
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - {group: apps, kind: Deployment}
+    - {group: '', kind: Service}
+    - {group: '', kind: ConfigMap}
+  orphanedResources: {warn: true}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: yeodam-v3-frontend
+  namespace: argocd
+  # No resources-finalizer: deleting the Application must not cascade into live FE.
+spec:
+  project: yeodam-v3-frontend
+  source:
+    repoURL: https://github.com/100-hours-a-week/KTB4-2nd-Cloud.git
+    targetRevision: deploy/v3-approved
+    path: charts/apps
+    helm:
+      releaseName: yeodam-v3-frontend
+      valueFiles: [../../values/frontend.json]
+  destination: {server: https://kubernetes.default.svc, namespace: frontend}
+  revisionHistoryLimit: 3
+  syncPolicy:
+    automated:
+      enabled: {{ .Values.automatedSync }}
+      prune: false
+      selfHeal: false
+      allowEmpty: false
+    syncOptions: [FailOnSharedResource=true]
+{{- else if .Values.automatedSync }}
+{{- fail "Frontend Helm ownership adoption must be reviewed before automated sync" }}
+{{- end }}
+{{- else if or .Values.frontendAdoptionReviewed .Values.automatedSync }}
+{{- fail "Argo CD access must be explicitly enabled first" }}
+{{- end }}

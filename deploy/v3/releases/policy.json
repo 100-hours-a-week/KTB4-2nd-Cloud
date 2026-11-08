@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "target": "yeodam-v3-foundation",
+  "deploymentEnabled": false,
+  "branch": "deploy/v3-approved",
+  "environment": "v3-production",
+  "deliveryUnits": [
+    "frontend"
+  ],
+  "adoptionReviewed": false
+}
