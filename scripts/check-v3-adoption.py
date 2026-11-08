@@ -11,7 +11,11 @@ def trim_defaults(live,expected):
   result=deepcopy(live)
   defaults={'creationTimestamp':None,'restartPolicy':'Always','dnsPolicy':'ClusterFirst','schedulerName':'default-scheduler',
             'enableServiceLinks':True,'terminationMessagePath':'/dev/termination-log','terminationMessagePolicy':'File',
-            'imagePullPolicy':'IfNotPresent','protocol':'TCP'}
+            'imagePullPolicy':'IfNotPresent','protocol':'TCP','scheme':'HTTP',
+            'successThreshold':1,'failureThreshold':3,'periodSeconds':10,'timeoutSeconds':1,
+            'initialDelaySeconds':0,'defaultMode':420,'apiVersion':'v1',
+            'engineVersion':'v2','mergePolicy':'Replace','conversionStrategy':'Default',
+            'decodingStrategy':'None','metadataPolicy':'None'}
   for key,value in defaults.items():
    if key not in expected and result.get(key,object())==value:result.pop(key,None)
   for key in set(result)&set(expected):result[key]=trim_defaults(result[key],expected[key])
@@ -41,7 +45,7 @@ def verify(files,live):
   if d['kind']=='ConfigMap':
    bundle.require(current.get('data',{})==d.get('data',{})and current.get('binaryData',{})==d.get('binaryData',{}),'Runtime configuration differs before adoption')
   if d['kind']in ['ExternalSecret','NetworkPolicy']:
-   bundle.require(current['spec']==d['spec'],'Access or runtime-reference policy differs before adoption')
+   bundle.require(trim_defaults(current['spec'],d['spec'])==d['spec'],'Access or runtime-reference policy differs before adoption')
  return {'deployments':9,'podTemplateChanges':0,'ownershipOnly':True,'deployed':False}
 
 

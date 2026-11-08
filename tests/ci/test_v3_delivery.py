@@ -115,6 +115,16 @@ class DeliveryTests(unittest.TestCase):
     def test_ownership_adoption_requires_identical_templates_and_no_secrets(self):
         live = {'kind': 'List', 'items': deepcopy(self.docs)}
         self.assertTrue(adoption.verify(self.files, live)['ownershipOnly'])
+        # API defaults are safe to remove; an explicitly changed health threshold is not.
+        ai = next(d for d in live['items'] if d['kind'] == 'Deployment' and d['metadata']['name'] == 'ai-api')
+        probe = ai['spec']['template']['spec']['containers'][0]['readinessProbe']
+        probe['successThreshold'] = 1
+        probe['httpGet']['scheme'] = 'HTTP'
+        self.assertTrue(adoption.verify(self.files, live)['ownershipOnly'])
+        probe['successThreshold'] = 2
+        with self.assertRaisesRegex(ValueError, 'Pod template differs'):
+            adoption.verify(self.files, live)
+        probe['successThreshold'] = 1
         d = next(d for d in live['items'] if d['kind'] == 'Deployment')
         d['spec']['template']['spec']['containers'][0]['image'] = 'changed'
         with self.assertRaisesRegex(ValueError, 'Pod template differs'):
