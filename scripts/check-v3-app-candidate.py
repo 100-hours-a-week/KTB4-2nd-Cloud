@@ -92,7 +92,7 @@ def validate(folder=DEFAULT, backend_source=None, ai_source=None):
                     'AI selected files must permit the existing chart UID 10001')
 
         source_files(component['sourceFiles'], backend_source if role == 'backend' else ai_source)
-    baseline = load(ROOT / 'deploy/v3/mysql-schema-image/source.lock.json')
+    baseline = load(ROOT / 'deploy/v3/mysql-schema-image/v34-baseline.lock.json')
     migration = candidate['migration']
     require(migration['applied'] is False, 'V35 must remain unapplied')
     require(migration == {**migration, 'baselineSource': baseline['sourceCommit'], 'baselineVersion': 34,

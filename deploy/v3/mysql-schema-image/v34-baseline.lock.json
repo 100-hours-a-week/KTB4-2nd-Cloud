@@ -1,0 +1,194 @@
+{
+  "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
+  "sourceCommit": "fba61303f90afecddf703de108e19fd821213601",
+  "archiveUrl": "https://codeload.github.com/100-hours-a-week/KTB4-2nd-BE/tar.gz/fba61303f90afecddf703de108e19fd821213601",
+  "archiveSha256": "6351824246fdbb98b1232aaf45501376e4cbe29cf314baa7729b546bf5a2f1a1",
+  "archiveBytes": 1947549,
+  "flywayVersion": "12.4.0",
+  "baseImage": "redgate/flyway@sha256:0472749995c526ef293a9d1651bc6af7e485def77fe7b9b23f223203af1cb5ac",
+  "schemaVersion": 34,
+  "migrations": [
+    {
+      "name": "V1__create_user_tables.sql",
+      "sha256": "736a65f6fdb24d273ab823ebbabf0d71434cc779d5a91de1a9cad266572470b1",
+      "bytes": 3416
+    },
+    {
+      "name": "V2__create_trip_attachment_tables.sql",
+      "sha256": "71ba2f2024966560948206bd500ec3cd5938eceeae801def80430a3f6c64f42f",
+      "bytes": 3836
+    },
+    {
+      "name": "V3__create_auth_tables.sql",
+      "sha256": "e41cadc1a0776279534fde25c03fc8924e1439154b631ca43a64a1bfc272ae30",
+      "bytes": 6920
+    },
+    {
+      "name": "V4__add_trip_list_indexes.sql",
+      "sha256": "27474c038c5956fe15a1b98620525986193312a321b326648aadfa6530c5e18f",
+      "bytes": 193
+    },
+    {
+      "name": "V5__add_profile_image_url.sql",
+      "sha256": "f7ae6ea5e35b556d6c114566f5a578f06dec3130d8b0965e8956f8baf21a1f56",
+      "bytes": 270
+    },
+    {
+      "name": "V6__add_place_folder_list_index.sql",
+      "sha256": "d4ea52b24ffe302404a1fdfba072307f36699879359823667881d2fce7c19a20",
+      "bytes": 124
+    },
+    {
+      "name": "V7__add_attachment_display_storage_key.sql",
+      "sha256": "3f55ea0a3e52d987fc3fed1cf9e3b3cdee985293a9b8f9f47d46d7ac5a0a0ac5",
+      "bytes": 113
+    },
+    {
+      "name": "V8__change_trip_list_indexes_to_start_date.sql",
+      "sha256": "0d01163399d3a2ada377a1d7b1956cc4bac7eef6f5d4f51e9fdf693afe64b0d2",
+      "bytes": 298
+    },
+    {
+      "name": "V9__create_initial_attachment_upload_tables.sql",
+      "sha256": "0d1849b8ce4450531c3986aaf13bf92e9860685e09297b27f86adba5672cbac4",
+      "bytes": 3810
+    },
+    {
+      "name": "V10__preserve_initial_upload_taken_at_offset.sql",
+      "sha256": "a2d720fcfff2d5b523d3eebc1f4c6b135823d934eb1a2669f8459f9fbeeec41b",
+      "bytes": 98
+    },
+    {
+      "name": "V11__add_attachment_storage_sizes.sql",
+      "sha256": "4c3d91bd927e5556c552c99637171183bb9b8364e416b168aebb6ccd3dcb77c0",
+      "bytes": 236
+    },
+    {
+      "name": "V12__create_story_tables.sql",
+      "sha256": "15f74ab1081477a360c84a9e08b44de39f6d78f3c51c23b66286c4b5fbed332a",
+      "bytes": 2386
+    },
+    {
+      "name": "V13__enforce_trip_attachment_file_unique.sql",
+      "sha256": "1e99049c6be61b6a55c1b737950d67476e1974261ef6e6fe20ccc263a7e894cc",
+      "bytes": 90
+    },
+    {
+      "name": "V14__create_story_generation_tables.sql",
+      "sha256": "04b0ea25ee6c7acaf69b8f3d1807aacf98178909642197efe87931ff168b13d1",
+      "bytes": 4048
+    },
+    {
+      "name": "V15__create_story_generation_outbox.sql",
+      "sha256": "5fa56eb71bd31ef657761ab9b540d5e3c657132616c35e23880c0fa69797aced",
+      "bytes": 1550
+    },
+    {
+      "name": "V16__create_trip_creation_execution.sql",
+      "sha256": "5c7c8f068c310bd1b783829ae7f470fbb8f78ee836cb014185743bba08df11a5",
+      "bytes": 3226
+    },
+    {
+      "name": "V17__create_additional_attachment_upload_tables.sql",
+      "sha256": "36e3df579dc15c7e0aeab3781c15d61d9a05b675e46ce0abeda4b37794f19b01",
+      "bytes": 4481
+    },
+    {
+      "name": "V18__create_additional_attachment_upload_outbox.sql",
+      "sha256": "caa0c4e9a8423c41d683c96077503bca4b3a462445e630e21182d68d3a012096",
+      "bytes": 1129
+    },
+    {
+      "name": "V19__preserve_story_block_place_and_date.sql",
+      "sha256": "742510b26838c02366e75fb3113753d386222334414ba814aaddef23829571a8",
+      "bytes": 270
+    },
+    {
+      "name": "V20__create_additional_attachment_executions.sql",
+      "sha256": "e7b31df2e53df7670308ac163603ed2cfb93b674c1ad19b228383ce7467d7697",
+      "bytes": 2502
+    },
+    {
+      "name": "V21__add_additional_attachment_conversion_state.sql",
+      "sha256": "b84433b35e10a588cf9914d63fed2f6c6ee0f4a3681ca9ca159c85b167426006",
+      "bytes": 708
+    },
+    {
+      "name": "V22__add_additional_attachment_delivery_state.sql",
+      "sha256": "510286ca9a66144ce37aa0e94c1ff85ff62f8c7a0c86ca09944794ac23de4b1c",
+      "bytes": 90
+    },
+    {
+      "name": "V23__add_additional_outbox_leases.sql",
+      "sha256": "d69b72a4a84f3a56583ac224bc6a88d67eefe8c97160caa2bb9eea14c0274c9a",
+      "bytes": 320
+    },
+    {
+      "name": "V24__prepare_outbox_cdc.sql",
+      "sha256": "252b0775f3fc279aedbff0a42dd7bc41991fcbaff67616f1e4b14d51a91f75da",
+      "bytes": 1945
+    },
+    {
+      "name": "V25__add_attachment_cleanup_index.sql",
+      "sha256": "30e0b84626a004da5c0d65e7a68b2efddeda82c1e29fb8bdea9122f85606501e",
+      "bytes": 94
+    },
+    {
+      "name": "V26__align_user_trip_ids_unsigned.sql",
+      "sha256": "d8d3e2a2242147aa7b6e0625ed6ea25d5a534129ac29f1d0550cd23ab071a65e",
+      "bytes": 7618
+    },
+    {
+      "name": "V27__create_trip_share_users.sql",
+      "sha256": "2f68751a444bbb0fd5c4759ad5bb30afc97abeaa95e8f1d92a9f952abe552317",
+      "bytes": 1068
+    },
+    {
+      "name": "V28__add_processing_status_versions.sql",
+      "sha256": "f9e8b768393f2e81ebf459e42830018a1dd85e0b297d4d5aae13271cdc22f44c",
+      "bytes": 1009
+    },
+    {
+      "name": "V29__start_processing_status_versions_at_one.sql",
+      "sha256": "459d87c6c1ca9d7e6f8b4c714db526d329fbd293eace3927bf7d8293d889b754",
+      "bytes": 486
+    },
+    {
+      "name": "V30__add_trip_change_sequence.sql",
+      "sha256": "38792d7da595224493bfc572770b26e8e6f265d442377efccf35f8a1913b5e1c",
+      "bytes": 72
+    },
+    {
+      "name": "V31__create_trip_edit_command_records.sql",
+      "sha256": "19a951f6500783622a4f1e32898eac3e314dbf22385d73ded473e9813aa36e50",
+      "bytes": 694
+    },
+    {
+      "name": "V32__create_trip_edit_notification_outbox.sql",
+      "sha256": "b7fc0696ddb39f2bd4a571f459d9833d22f3f4c964b586f2ee9dcb8fe15a0a0b",
+      "bytes": 677
+    },
+    {
+      "name": "V33__create_attachment_conversion_tasks.sql",
+      "sha256": "d2d5b770fa17edbb8d15cb129684cd1e990d4b79e1eb06ae84afb8c42b8b7da3",
+      "bytes": 3761
+    },
+    {
+      "name": "V34__add_invited_trip_list_index.sql",
+      "sha256": "962c1e6b4f7f63ef6e593df8aa9890d6c656742b1eec275fec2e3bda21b26db4",
+      "bytes": 207
+    }
+  ],
+  "cdcTables": [
+    "trip_creation_outbox",
+    "additional_attachment_upload_outbox",
+    "story_generation_outbox",
+    "attachment_conversion_outbox"
+  ],
+  "jdbcArtifact": {
+    "url": "https://repo.maven.apache.org/maven2/com/mysql/mysql-connector-j/9.7.0/mysql-connector-j-9.7.0.jar",
+    "sha256": "0353648eaa1c91e0f4020c959abf756bc866ffd583df22ae6b6f6e0cbd43eb44",
+    "bytes": 2607237,
+    "version": "9.7.0"
+  }
+}

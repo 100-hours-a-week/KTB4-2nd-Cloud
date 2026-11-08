@@ -26,6 +26,28 @@ class Contracts(unittest.TestCase):
  def test_network_widening_rejected(self):
   docs=copy.deepcopy(self.docs);next(x for x in docs if x['kind']=='NetworkPolicy')['spec']['egress'][0]['to']=[{'podSelector':{}}]
   with self.assertRaises(ValueError):c.validate(docs,True)
+ def test_v34_sql_hashes_cannot_change(self):
+  migrations=copy.deepcopy(c.LOCK['migrations']);migrations[0]['sha256']='f'*64
+  with patch.dict(c.LOCK,{'migrations':migrations}):
+   with self.assertRaisesRegex(ValueError,'V1-V34'):c.validate_source()
+ def test_only_candidate_v35_source_is_accepted(self):
+  with patch.dict(c.LOCK,{'sourceCommit':'f'*40}):
+   with self.assertRaisesRegex(ValueError,'candidate'):c.validate_source()
+ def test_v35_cannot_be_omitted(self):
+  with patch.dict(c.LOCK,{'schemaVersion':34,'migrations':c.LOCK['migrations'][:-1]}):
+   with self.assertRaisesRegex(ValueError,'complete migrations'):c.validate_source()
+ def test_production_target_cannot_stay_v34(self):
+  original=Path.read_text
+  def modified(path,*args,**kwargs):
+   text=original(path,*args,**kwargs)
+   return text.replace('flyway.target=35','flyway.target=34') if path.name=='migrate.sh' else text
+  with patch.object(Path,'read_text',modified):
+   with self.assertRaisesRegex(ValueError,'flyway.target=35'):c.validate_source()
+ def test_fixture_does_not_enable_production_target_override(self):
+  script=(ROOT/'deploy/v3/mysql-schema-image/migrate.sh').read_text()
+  self.assertIn('[[ $# == 0 ]] || exit 1',script)
+  self.assertEqual(script.count('flyway.target='),1)
+  self.assertNotIn('FLYWAY_TARGET',script)
  def test_cdc_table_scope_cannot_expand(self):
   with patch.dict(c.LOCK,{'cdcTables':['users']}):
    with self.assertRaisesRegex(ValueError,'Outbox'):c.validate_source()
@@ -36,6 +58,11 @@ class Contracts(unittest.TestCase):
  def test_unexpected_grants_rejected(self):
   grants="GRANT RELOAD, SHOW DATABASES, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO `v3_connect_cdc`@`%`\n"+'\n'.join(f'GRANT SELECT ON `yeodam`.`{t}` TO `v3_connect_cdc`@`%`' for t in a.TABLES)
   self.assertTrue(a.grants_match(grants));self.assertFalse(a.grants_match(grants.replace('GRANT SELECT','GRANT SELECT, UPDATE',1)));self.assertFalse(a.grants_match(grants+'\nGRANT SELECT ON *.* TO `v3_connect_cdc`@`%`'))
+ def test_image_preparation_rejects_changed_baseline_before_download(self):
+  migrations=copy.deepcopy(p.LOCK['migrations']);migrations[0]['sha256']='f'*64
+  with tempfile.TemporaryDirectory() as d,patch.dict(p.LOCK,{'migrations':migrations}),patch.object(p.urllib.request,'urlopen') as download:
+   with self.assertRaisesRegex(ValueError,'V1-V34'):p.prepare(Path(d))
+   download.assert_not_called()
  def test_cached_archive_tamper_rejected_before_extraction(self):
   with tempfile.TemporaryDirectory() as d:
    Path(d,'source.tar.gz').write_bytes(b'tampered')

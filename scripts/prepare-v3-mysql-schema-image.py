@@ -6,6 +6,14 @@ ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/'deploy/v3/mysql-schema-image'
 LOCK=json.loads((SOURCE/'source.lock.json').read_text())
 def prepare(directory):
+ baseline=json.loads((SOURCE/'v34-baseline.lock.json').read_text())
+ candidate=json.loads((ROOT/'deploy/v3/candidates/be-ai/manifest.json').read_text())
+ if LOCK['schemaVersion']!=35 or LOCK['migrations'][:-1]!=baseline['migrations']:
+  raise ValueError('Preserve V1-V34 and append only V35')
+ if LOCK['sourceCommit']!=candidate['components']['backend']['sourceSha'] or LOCK['migrations'][-1]!=candidate['migration']['additionalMigration']:
+  raise ValueError('V35 must match the selected BE candidate')
+ if any(LOCK[k]!=baseline[k] for k in ['baseImage','flywayVersion','jdbcArtifact','cdcTables']):
+  raise ValueError('Existing base/JDBC/CDC scope must remain fixed')
  directory=Path(directory);directory.mkdir(parents=True,exist_ok=True)
  if directory.is_symlink():raise ValueError('Symlink context rejected')
  sql=directory/'sql';sql.mkdir(exist_ok=True)
@@ -41,6 +49,6 @@ def prepare(directory):
  for name in ['Dockerfile','source.lock.json','migrate.sh']:shutil.copyfile(SOURCE/name,directory/name)
  (directory/'checksums.sha256').write_text(''.join(x['sha256']+'  '+x['name']+'\n' for x in LOCK['migrations']))
  (directory/'.dockerignore').write_text('*\n!Dockerfile\n!sql/\n!sql/**\n!source.lock.json\n!checksums.sha256\n!migrate.sh\n!mysql-jdbc.jar\n')
- print('Prepared pinned BE V1-V34 migration image context; no credentials included')
+ print('Prepared pinned BE V1-V35 migration image context; no credentials included')
 if __name__=='__main__':
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--directory',required=True,type=Path);prepare(p.parse_args().directory)
