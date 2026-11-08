@@ -106,7 +106,8 @@
       "environment": {
         "PLACE_INDEX_S3_URI": "s3://yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/places/v2026-10-30/places.sqlite",
         "PLACE_INDEX_SHA256": "41f531891d9bdc5417e91c80a92e51f2e92e2661a641cb627cbdb16e5f0f3b1d",
-        "PLACE_INDEX_PATH": "/data/ai-reference/places-v2026-10-30.sqlite"
+        "PLACE_INDEX_PATH": "/data/ai-reference/places-v2026-10-30.sqlite",
+        "PYTHONPATH": "/app"
       }
     }
   }

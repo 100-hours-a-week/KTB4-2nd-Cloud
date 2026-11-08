@@ -116,8 +116,9 @@ defaults:
   terminationGracePeriodSeconds: 180
   preStopDelaySeconds: 5
   rollout:
-    maxSurge: 1
-    maxUnavailable: 0
+    # QA budget: replace the single replica without a temporary duplicate.
+    maxSurge: 0
+    maxUnavailable: 1
   scratchSizeLimit: 256Mi
   catalogSizeLimit: 32Mi
   configurationRevision: ''

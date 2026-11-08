@@ -1,0 +1,5 @@
+# Prepare from current public Service metadata; no lookup or live API during render.
+enabled: false
+serviceAddresses:
+  aiApi: ""
+  tripApi: ""

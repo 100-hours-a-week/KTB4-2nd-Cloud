@@ -76,6 +76,25 @@ class AITests(unittest.TestCase):
         screen,image,models=self.reviews();args=(self.values['image'],self.values['source'],screen,image,models,self.values['trust']);a=prepare.prepare(*args,'1'*32);b=prepare.prepare(*args,'2'*32)
         self.assertNotEqual(a['full.values.json']['configurationRevision'],b['full.values.json']['configurationRevision'])
         self.assertEqual(a['backend-ai.values.json']['defaults']['configMapData']['AI_SERVER_BASE_URL'],'http://ai-api.ai.svc.cluster.local:8000')
+    def test_file_entrypoint_resolves_app_with_rendered_environment(self):
+        # Reproduce Python file execution outside /app, using the actual rendered runner CM.
+        docs = ai.platform.load_documents(ai.render(self.values))
+        env = next(d['data'] for d in docs if d['kind'] == 'ConfigMap' and d['metadata']['name'] == 'ai-runner-runtime')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'app').mkdir()
+            (root / 'app/__init__.py').write_text('')
+            (root / 'runtime').mkdir()
+            entry = root / 'runtime/probe.py'
+            entry.write_text('import app; print("resolved")')
+            clean = dict(os.environ);clean.pop('PYTHONPATH', None)
+            self.assertNotEqual(subprocess.run([os.sys.executable, str(entry)], cwd=root, env=clean, capture_output=True).returncode, 0)
+            self.assertEqual(env['PYTHONPATH'], '/app')
+            clean['PYTHONPATH'] = str(root)  # temporary fixture represents the image /app directory
+            result = subprocess.run([os.sys.executable, str(entry)], cwd=root, env=clean, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout.strip(), 'resolved')
+
     def test_exact_private_model_peer(self):
         v=copy.deepcopy(self.values);v['privateModelPeers']=[{'cidr':'10.20.10.162/32','port':8000}];ai.validate(ai.platform.load_documents(ai.render(v)),v)
     def plan_fixture(self):

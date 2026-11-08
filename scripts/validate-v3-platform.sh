@@ -175,3 +175,8 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" -c 'import sys,yaml; sys.exit(any(d is not None for p in sys.argv[1:] for d in yaml.safe_load_all(open(p))))' "${rendered_dir}/be-candidate-disabled.yaml" "${rendered_dir}/ai-candidate-disabled.yaml"
 
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p test_v3_model_path.py
+
+# Public Service identity review and exact egress aliases. No live discovery.
+"${V3_HELM}" lint --strict deploy/v3/service-access
+"${validation_dir}/venv/bin/python" scripts/check-v3-service-access.py --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p test_v3_service_access.py

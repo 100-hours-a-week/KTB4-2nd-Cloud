@@ -15,6 +15,7 @@ def render(values=None):
     args=[os.environ['V3_HELM'],'template','yeodam-v3-ai-apps',str(CHART),'-n','ai','--kube-version','1.36.0']
     return subprocess.check_output(args+(['-f','-'] if values else []),input=yaml.safe_dump(values) if values else None,text=True,stderr=subprocess.PIPE)
 def validate(docs,v):
+    require(CONTRACT['workloads']['runner'].get('environment',{}).get('PYTHONPATH')=='/app','File-based runner must resolve the /app package')
     enabled=v['accessEnabled'];roles=[r for r,x in v['workloads'].items() if x];expected={}
     if enabled:
         expected={'ConfigMap':4,'ServiceAccount':2,'ExternalSecret':1,'NetworkPolicy':7+bool(v['privateModelPeers'])}
