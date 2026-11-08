@@ -22,7 +22,8 @@
         "member": "linux-amd64/helm"
       },
       "kubeconform": {
-        "url": "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz",
+        "url": "https://api.github.com/repos/yannh/kubeconform/releases/assets/438612666",
+        "accept": "application/octet-stream",
         "sha256": "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883",
         "member": "kubeconform"
       }
