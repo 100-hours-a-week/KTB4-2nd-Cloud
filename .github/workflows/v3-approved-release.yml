@@ -1,0 +1,121 @@
+name: V3 Approved GitOps Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_pr:
+        description: '병합된 Cloud 이미지 후보 PR (rollback 시 비움)'
+        type: string
+        required: false
+      rollback_commit:
+        description: '복구할 승인 브랜치의 과거 Commit (새 배포 시 비움)'
+        type: string
+        required: false
+      expected_previous:
+        description: '현재 deploy/v3-approved Commit SHA, 최초 준비는 absent'
+        type: string
+        required: true
+        default: absent
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: yeodam-v3-approved-release
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      publication_enabled: ${{ steps.preview.outputs.publication_enabled }}
+      release_id: ${{ steps.preview.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare pinned render tools
+        run: |
+          python3 scripts/prepare-v3-validation.py "$RUNNER_TEMP/yeodam-v3-validation"
+          echo "V3_HELM=$RUNNER_TEMP/yeodam-v3-validation/helm" >> "$GITHUB_ENV"
+          echo "V3_KUBECONFORM=$RUNNER_TEMP/yeodam-v3-validation/kubeconform" >> "$GITHUB_ENV"
+          echo "V3_SCHEMA_DIR=$RUNNER_TEMP/yeodam-v3-validation/schemas" >> "$GITHUB_ENV"
+          python3 -m venv "$RUNNER_TEMP/release-venv"
+          "$RUNNER_TEMP/release-venv/bin/pip" install -q -r scripts/requirements-v3-validation.txt
+      - name: Validate candidate and prepare immutable FE bundle
+        id: preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_PR: ${{ inputs.candidate_pr }}
+          ROLLBACK_COMMIT: ${{ inputs.rollback_commit }}
+          EXPECTED_PREVIOUS: ${{ inputs.expected_previous }}
+        run: |
+          set -Eeuo pipefail
+          source=(--pr "$CANDIDATE_PR")
+          if [[ -n "$ROLLBACK_COMMIT" ]]; then
+            [[ -z "$CANDIDATE_PR" ]]
+            source=(--rollback "$ROLLBACK_COMMIT")
+          fi
+          "$RUNNER_TEMP/release-venv/bin/python" scripts/prepare-v3-gitops-release.py "${source[@]}" \
+            --expected-previous "$EXPECTED_PREVIOUS" --directory "$RUNNER_TEMP/v3-release-preview"
+      - name: Preserve public bundle and disabled or prepared result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: v3-release-preview-${{ github.run_id }}
+          path: ${{ runner.temp }}/v3-release-preview
+          retention-days: 30
+
+  publish:
+    needs: preview
+    if: needs.preview.outputs.publication_enabled == 'true'
+    environment: v3-production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare pinned render tools
+        run: |
+          python3 scripts/prepare-v3-validation.py "$RUNNER_TEMP/yeodam-v3-validation"
+          echo "V3_HELM=$RUNNER_TEMP/yeodam-v3-validation/helm" >> "$GITHUB_ENV"
+          echo "V3_KUBECONFORM=$RUNNER_TEMP/yeodam-v3-validation/kubeconform" >> "$GITHUB_ENV"
+          echo "V3_SCHEMA_DIR=$RUNNER_TEMP/yeodam-v3-validation/schemas" >> "$GITHUB_ENV"
+          python3 -m venv "$RUNNER_TEMP/release-venv"
+          "$RUNNER_TEMP/release-venv/bin/pip" install -q -r scripts/requirements-v3-validation.txt
+      - name: Recheck approval and publish only to the approved GitOps ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_PR: ${{ inputs.candidate_pr }}
+          ROLLBACK_COMMIT: ${{ inputs.rollback_commit }}
+          EXPECTED_PREVIOUS: ${{ inputs.expected_previous }}
+          APPROVED_RELEASE_ID: ${{ needs.preview.outputs.release_id }}
+        run: |
+          set -Eeuo pipefail
+          source=(--pr "$CANDIDATE_PR")
+          if [[ -n "$ROLLBACK_COMMIT" ]]; then
+            [[ -z "$CANDIDATE_PR" ]]
+            source=(--rollback "$ROLLBACK_COMMIT")
+          fi
+          "$RUNNER_TEMP/release-venv/bin/python" scripts/prepare-v3-gitops-release.py "${source[@]}" \
+            --expected-previous "$EXPECTED_PREVIOUS" --approved-release-id "$APPROVED_RELEASE_ID" \
+            --directory "$RUNNER_TEMP/v3-release-publication" --publish
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: v3-release-publication-${{ github.run_id }}
+          path: ${{ runner.temp }}/v3-release-publication/report.json
+          retention-days: 30

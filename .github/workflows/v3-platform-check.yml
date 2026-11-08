@@ -5,6 +5,12 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'scripts/check-v3-argocd.py'
+      - 'scripts/v3_gitops_release.py'
+      - 'scripts/prepare-v3-gitops-release.py'
+      - 'tests/ci/test_v3_argocd.py'
+      - 'tests/ci/test_v3_gitops_release.py'
+      - '.github/workflows/v3-approved-release.yml'
       - 'terraform/v3/ai/**'
       - 'scripts/check-v3-ai.py'
       - 'scripts/check-v3-ai-plan.py'

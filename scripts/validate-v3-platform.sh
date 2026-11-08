@@ -162,3 +162,7 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" scripts/check-v3-ai.py --output "${rendered_dir}"
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_ai.py'
 "${validation_dir}/venv/bin/python" scripts/check-v3-secrets.py --directory "${validation_dir}" --output "${rendered_dir}" -f deploy/v3/environments/foundation/ai-secrets.values.yaml
+
+"${validation_dir}/venv/bin/python" scripts/check-v3-argocd.py --directory "${validation_dir}" --output "${rendered_dir}"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p "test_v3_argocd.py"
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p "test_v3_gitops_release.py"
