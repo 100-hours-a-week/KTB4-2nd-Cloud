@@ -87,6 +87,18 @@ class Candidate(unittest.TestCase):
     def test_model_route_prerequisite_cannot_be_removed(self):
         self.reject('manifest.json', lambda d: d['pending'].remove('shared-model-route-and-capacity-review'))
 
+    def test_registry_report_source_mismatch_rejected(self):
+        self.reject('registry-inspection.json', lambda d: d['ai'].update(source='f' * 40))
+
+    def test_registry_report_image_mismatch_rejected(self):
+        self.reject('registry-inspection.json', lambda d: d['backend'].update(image='wrong'))
+
+    def test_registry_root_user_rejected(self):
+        self.reject('registry-inspection.json', lambda d: d['ai'].update(defaultUser='root'))
+
+    def test_ai_file_unreadable_for_chart_uid_rejected(self):
+        self.reject('registry-inspection.json', lambda d: d['ai']['filesystem']['selectedFiles']['app/app/v2_main.py'].update(mode='0o600'))
+
     def test_renamed_ai_capability_rejected(self):
         def change(data):
             data['checks']['unknown'] = data['checks'].pop('kafkaClientOptions')

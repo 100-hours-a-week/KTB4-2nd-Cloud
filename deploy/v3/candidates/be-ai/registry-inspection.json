@@ -1,0 +1,249 @@
+{
+  "backend": {
+    "image": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:ad9fda499e65404d8c4e2f9ed144b362e1be1155da81f1ca9185464893a6c470",
+    "source": "34e4d80be73f860a105364dfab79fc0864638d66",
+    "manifestDigestVerified": true,
+    "configDigest": "sha256:d6d99f03c25053d2c70496fc9b8c3cb711425deac6422bdd5388c136bb1a9b29",
+    "platform": "linux/amd64",
+    "defaultUser": "spring",
+    "workingDir": "/app",
+    "entrypoint": [
+      "/__cacert_entrypoint.sh"
+    ],
+    "cmd": [
+      "java",
+      "--enable-native-access=ALL-UNNAMED",
+      "-jar",
+      "/app/app.jar"
+    ],
+    "layers": [
+      {
+        "digest": "sha256:7a48b8f0e5c73d0cc2a85b008978396aa19d253dc1b96fdb0b769ee6dcbeca4a",
+        "bytes": 29767612
+      },
+      {
+        "digest": "sha256:a0a13467ca2984f233300265c6a4a992f032ed3ac196b4bd448d2715b1a78f72",
+        "bytes": 11455128
+      },
+      {
+        "digest": "sha256:0b66beed9de898af8acc45c290898c836ccedf44b1c0c3e904a3af468b6ac2bd",
+        "bytes": 63096904
+      },
+      {
+        "digest": "sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1",
+        "bytes": 32
+      },
+      {
+        "digest": "sha256:6275d18c9cfc77e725305b39b89287625a7b9f02ba7727c105b2a93ebe111ef6",
+        "bytes": 2465
+      },
+      {
+        "digest": "sha256:b583d2cf896d122a3313c4bedad62ecaf4722833679dfb2e2e9cd8747009625a",
+        "bytes": 91
+      },
+      {
+        "digest": "sha256:e15c035b0456c346ee6fd686068f1aa8cd0301f0f9432d72317c166cdd598a7c",
+        "bytes": 63820853
+      },
+      {
+        "digest": "sha256:5e87887a512c89f8a3ac612f3821474aeb5027ce6ab97e65989d687fba821fd5",
+        "bytes": 138727570
+      },
+      {
+        "digest": "sha256:430991f674fa9ade211061d42e10dd7b7b162b419d98c00bbef8d6ee8218f54a",
+        "bytes": 8911
+      }
+    ],
+    "runtimeVerified": false,
+    "releaseEnvironment": [],
+    "filesystem": {
+      "selectedFiles": {
+        "app": {
+          "mode": "0o755",
+          "uid": 0,
+          "gid": 0,
+          "link": ""
+        },
+        "userEntry": [
+          [
+            "spring",
+            "x",
+            "1001",
+            "1001"
+          ]
+        ],
+        "app/app.jar": {
+          "mode": "0o644",
+          "uid": 1001,
+          "gid": 1001,
+          "link": ""
+        }
+      },
+      "sourceFileMatches": {
+        "V34__add_invited_trip_list_index.sql": true,
+        "V35__add_story_prepared_content_metadata.sql": true
+      },
+      "inspectedLayers": [
+        "sha256:b583d2cf896d122a3313c4bedad62ecaf4722833679dfb2e2e9cd8747009625a",
+        "sha256:e15c035b0456c346ee6fd686068f1aa8cd0301f0f9432d72317c166cdd598a7c",
+        "sha256:5e87887a512c89f8a3ac612f3821474aeb5027ce6ab97e65989d687fba821fd5"
+      ],
+      "containerExecuted": false,
+      "runtimeVerified": false
+    }
+  },
+  "ai": {
+    "image": "ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:202d77f657a28f9451d6271ba2c2241f396c1a53061c8304a72324a7bdec1741",
+    "source": "a72b18ccc45a6385fb6e55ef161131de72e140a9",
+    "manifestDigestVerified": true,
+    "configDigest": "sha256:e5c312abd7ed779abc80630be1364f3c1587ded2fba26ea989a46bc7d1d76bb6",
+    "platform": "linux/amd64",
+    "defaultUser": "ai",
+    "workingDir": "/app",
+    "entrypoint": [],
+    "cmd": [
+      "uvicorn",
+      "app.v2_main:create_app",
+      "--factory",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "8000",
+      "--timeout-graceful-shutdown",
+      "35"
+    ],
+    "layers": [
+      {
+        "digest": "sha256:37fb86c2a767b88d500c6872195f88078f64765fe0d2f9cc375cc2efbd4c0a41",
+        "bytes": 29856132
+      },
+      {
+        "digest": "sha256:68bced9e0afa4479df17c3646e27c7c7e9ce9ba70c0e6c73b6826487b89037d9",
+        "bytes": 1289792
+      },
+      {
+        "digest": "sha256:2dc99d2d0a39fce31e37615eb4c932e16dcc4c2b0ce9993714280081b5dbe085",
+        "bytes": 12122550
+      },
+      {
+        "digest": "sha256:05e0eee5572e9c9f50408a2132590133b830a668a1cf2ff2b150f19c57707e2b",
+        "bytes": 248
+      },
+      {
+        "digest": "sha256:81e633ae00b825f08a920cd9086ebe06f8a146a9e6eff5d0e843b44e6b33ec04",
+        "bytes": 93
+      },
+      {
+        "digest": "sha256:5a6c1056d807d25d27f7dc86850f0944159c114a24d99592eb854ec0ce6a0402",
+        "bytes": 6991034
+      },
+      {
+        "digest": "sha256:13afa4daa8ed54567059f3392a8646ca9aa9173367db10cb39090ff9dcbaf864",
+        "bytes": 22029848
+      },
+      {
+        "digest": "sha256:425b085894dc7d020efcf4755cd5ec42e49d31b68d6c4629313307c98c424e02",
+        "bytes": 58227
+      },
+      {
+        "digest": "sha256:c8b7c69cec7b2d5fefd8e0ad20e4714eade160ca65e71b657852cd4ce1fbc60c",
+        "bytes": 505745034
+      },
+      {
+        "digest": "sha256:769b1f8720fe597c085499ffaf6a80aab18b553d60ecee60d302255141c2613c",
+        "bytes": 160340
+      },
+      {
+        "digest": "sha256:915fa73aaff643b98be46fe4b96c2f78ac8c274444f8de846adacf0d170d68a3",
+        "bytes": 506357363
+      }
+    ],
+    "runtimeVerified": false,
+    "releaseEnvironment": [
+      "RELEASE=a72b18ccc45a6385fb6e55ef161131de72e140a9"
+    ],
+    "filesystem": {
+      "selectedFiles": {
+        "app": {
+          "mode": "0o755",
+          "uid": 999,
+          "gid": 999,
+          "link": ""
+        },
+        "app/.venv": {
+          "mode": "0o755",
+          "uid": 999,
+          "gid": 999,
+          "link": ""
+        },
+        "app/.venv/bin": {
+          "mode": "0o755",
+          "uid": 999,
+          "gid": 999,
+          "link": ""
+        },
+        "app/.venv/bin/python": {
+          "mode": "0o777",
+          "uid": 999,
+          "gid": 999,
+          "link": "/usr/local/bin/python3"
+        },
+        "app/.venv/bin/uvicorn": {
+          "mode": "0o755",
+          "uid": 999,
+          "gid": 999,
+          "link": ""
+        },
+        "app/.venv/lib/python3.12/site-packages/aiokafka/__init__.py": {
+          "mode": "0o644",
+          "uid": 999,
+          "gid": 999,
+          "link": ""
+        },
+        "app/.venv/lib/python3.12/site-packages/qdrant_client/__init__.py": {
+          "mode": "0o644",
+          "uid": 999,
+          "gid": 999,
+          "link": ""
+        },
+        "app/app": {
+          "mode": "0o755",
+          "uid": 999,
+          "gid": 999,
+          "link": ""
+        },
+        "app/app/jobs/runner.py": {
+          "mode": "0o644",
+          "uid": 999,
+          "gid": 999,
+          "link": ""
+        },
+        "app/app/v2_main.py": {
+          "mode": "0o644",
+          "uid": 999,
+          "gid": 999,
+          "link": ""
+        },
+        "userEntry": [
+          [
+            "ai",
+            "x",
+            "999",
+            "999"
+          ]
+        ]
+      },
+      "sourceFileMatches": {
+        "app/app/infra/place_index.py": true,
+        "app/app/jobs/config.py": true,
+        "app/app/jobs/kafka.py": true,
+        "app/app/v2_main.py": true
+      },
+      "inspectedLayers": [
+        "sha256:915fa73aaff643b98be46fe4b96c2f78ac8c274444f8de846adacf0d170d68a3"
+      ],
+      "containerExecuted": false,
+      "runtimeVerified": false
+    }
+  }
+}

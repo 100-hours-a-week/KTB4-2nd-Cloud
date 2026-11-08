@@ -12,6 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT = ROOT / 'deploy/v3/candidates/be-ai'
 ROLES = ('auth-api', 'trip-api', 'photo-api', 'photo-converter', 'trip-result-worker')
 AI_URL = 'http://ai-api.ai.svc.cluster.local:8000'
+PUBLIC_SETTINGS = {
+    'AI_EC2_INSTANCE_ID': 'i-05e1ad9dd96dba4ae',
+    'JWT_ISSUER': 'https://yeodam-2gether.com',
+    'FRONTEND_ORIGIN': 'https://v3.yeodam-2gether.com',
+    'FRONTEND_OAUTH_CALLBACK_URI': 'https://v3.yeodam-2gether.com/auth/callback',
+    'KAKAO_REDIRECT_URI': 'https://v3.yeodam-2gether.com/api/auth/kakao/callback',
+}
 
 
 def require(condition, message):
@@ -66,6 +73,24 @@ def validate(folder=DEFAULT, backend_source=None, ai_source=None):
                     inspection['manifestDigestVerified'] is True and inspection['platform'] == component['platform'] and
                     re.fullmatch('sha256:[a-f0-9]{64}', inspection['configDigest']) and inspection['runtimeVerified'] is False,
                     'Matching immutable registry inspection required')
+            require(inspection['defaultUser'] == ('spring' if role == 'backend' else 'ai') and
+                    inspection['workingDir'] == '/app', 'Unexpected image execution identity')
+            filesystem = inspection['filesystem']
+            require(filesystem['containerExecuted'] is False and filesystem['runtimeVerified'] is False and
+                    filesystem['sourceFileMatches'] and all(v is True for v in filesystem['sourceFileMatches'].values()),
+                    'Source/file evidence required without runtime claim')
+            require(set(filesystem['inspectedLayers']) <= {x['digest'] for x in inspection['layers']},
+                    'Filesystem evidence must refer to the selected manifest layers')
+            if role == 'ai':
+                selected = filesystem['selectedFiles']
+                require(all(int(selected[p]['mode'], 8) & 5 == 5 for p in (
+                    'app', 'app/.venv', 'app/.venv/bin', 'app/app')) and
+                    int(selected['app/.venv/bin/uvicorn']['mode'], 8) & 5 == 5 and
+                    all(int(selected[p]['mode'], 8) & 4 == 4 for p in ('app/app/v2_main.py',
+                        'app/app/jobs/runner.py', 'app/.venv/lib/python3.12/site-packages/aiokafka/__init__.py',
+                        'app/.venv/lib/python3.12/site-packages/qdrant_client/__init__.py')),
+                    'AI selected files must permit the existing chart UID 10001')
+
         source_files(component['sourceFiles'], backend_source if role == 'backend' else ai_source)
     baseline = load(ROOT / 'deploy/v3/mysql-schema-image/source.lock.json')
     migration = candidate['migration']
@@ -105,7 +130,7 @@ def validate(folder=DEFAULT, backend_source=None, ai_source=None):
     backend = yaml.safe_load((folder / 'backend.values.yaml').read_text())
     expected_backend = {'images': {'backend': candidate['components']['backend']['image']},
         'defaults': {'configMapData': {'RELEASE': candidate['components']['backend']['sourceSha'],
-            'AI_SERVER_BASE_URL': AI_URL, 'PHOTO_LIST_CACHE_ENABLED': 'false', 'TRIP_EDIT_LOCK_ENABLED': 'false'}},
+            **PUBLIC_SETTINGS, 'AI_SERVER_BASE_URL': AI_URL, 'PHOTO_LIST_CACHE_ENABLED': 'false', 'TRIP_EDIT_LOCK_ENABLED': 'false'}},
         'workloads': {role: {'enabled': False} for role in ROLES}}
     require(all(backend['workloads'][role]['enabled'] is False for role in ROLES), 'BE roles must be disabled')
     require(backend == expected_backend, 'Exact disabled BE overlay required; no secret values or resource overrides')
@@ -129,7 +154,7 @@ def validate(folder=DEFAULT, backend_source=None, ai_source=None):
         r = contract['workloads'][role]['resources']
         require(r['requests']['cpu'] == '100m' and r['requests']['memory'] == memory and r['limits']['memory'] == limit,
                 'Keep existing minimum AI budget')
-    require(set(candidate['pending']) == {'registry-image-inspection', 'minimum-memory-runtime-test',
+    require(set(candidate['pending']) == {'image-readonly-startup-test', 'minimum-memory-runtime-test',
         'v35-backup-migration-and-validation', 'secret-supply-and-ca-review', 'shared-model-route-and-capacity-review',
         'cluster-cold-start-and-dependency-check', 'application-e2e'}, 'Keep explicit activation prerequisites')
     return {'candidatePrepared': True, 'deploymentEnabled': False, 'runtimeVerified': False,

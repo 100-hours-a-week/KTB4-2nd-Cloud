@@ -12,7 +12,7 @@
       "buildWorkflow": "Backend Image",
       "buildConclusion": "success",
       "digestEvidence": "successful-build-log",
-      "registryDigestVerified": false,
+      "registryDigestVerified": true,
       "runtimeVerified": false,
       "sourceFiles": {
         "Dockerfile": "8f5e51a5b4f73950ea9c172bb39b3562e9b12e533b037f16ab00bdf10b27a877",
@@ -31,7 +31,7 @@
       "buildWorkflow": "AI v2 App Image",
       "buildConclusion": "success",
       "digestEvidence": "successful-build-log",
-      "registryDigestVerified": false,
+      "registryDigestVerified": true,
       "runtimeVerified": false,
       "sourceFiles": {
         "docker/jobs/Dockerfile": "c359cb9f19d2a0816041421331441dd4180b8c0278e33f809590c5712a6059d5",
@@ -226,7 +226,7 @@
     "applied": false
   },
   "pending": [
-    "registry-image-inspection",
+    "image-readonly-startup-test",
     "minimum-memory-runtime-test",
     "v35-backup-migration-and-validation",
     "secret-supply-and-ca-review",

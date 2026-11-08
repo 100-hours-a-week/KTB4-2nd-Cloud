@@ -1,4 +1,4 @@
-# Preparation only; keep workloads disabled until the separate activation review.
+# Preparation only; never upgrade an existing release with this disabled overlay.
 accessEnabled: false
 workloads:
   api: false
