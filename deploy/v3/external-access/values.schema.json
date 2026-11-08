@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "controllerPolicyEnabled": {
+      "type": "boolean"
+    },
+    "ingressEnabled": {
+      "type": "boolean"
+    },
+    "certificateArn": {
+      "type": "string",
+      "pattern": "^$|^arn:aws:acm:ap-northeast-2:483175530259:certificate/[a-f0-9-]{36}$"
+    },
+    "albSecurityGroupId": {
+      "type": "string",
+      "pattern": "^$|^sg-[a-f0-9]{17}$"
+    },
+    "backendRoutesEnabled": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "controllerPolicyEnabled",
+    "ingressEnabled",
+    "certificateArn",
+    "albSecurityGroupId",
+    "backendRoutesEnabled"
+  ]
+}

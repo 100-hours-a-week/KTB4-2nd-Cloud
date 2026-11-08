@@ -1,0 +1,8 @@
+# Explicit image digest and pull Secret required; no business Connector or DB credentials.
+enabled: false
+image: ''
+imagePullSecret: ghcr-pull
+smoke:
+  enabled: false
+outbox:
+  enabled: false

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: yeodam-v3-outbox
+version: 0.1.0
+appVersion: '3.4.3.Final'
+type: application
+description: Explicit V3 Outbox CDC; one task, no plaintext credentials or data resets

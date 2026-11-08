@@ -64,10 +64,13 @@ def resource_budget(resources):
 
 
 def validate(documents, values):
+    require(sum(bool(values.get(k)) for k in ['backendContract','websocketContract','frontendContract'])<=1, 'BE and WebSocket use separate release profiles')
+    require(not values.get('backendConnectionContract') or values.get('backendContract'), 'Connections require the BE runtime contract')
+    require(not values.get('frontendServiceOnly') or values.get('frontendContract'), 'Service-only bootstrap is FE-only')
     platform_values = platform.load_documents((ROOT / 'deploy/v3/platform/values.yaml').read_text())[0]
     accounts = platform.expected_accounts(platform_values)
     configs = {name: merge(values['defaults'], item) for name, item in values['workloads'].items() if item['enabled']}
-    expected = {('Deployment', c['namespace'], name) for name, c in configs.items()}
+    expected = {('Deployment', c['namespace'], name) for name, c in configs.items() if not (values.get('frontendContract') and values.get('frontendServiceOnly'))}
     expected |= {('Service', c['namespace'], name) for name, c in configs.items() if c['service']['enabled']}
     expected |= {('ConfigMap', c['namespace'], name + '-runtime') for name, c in configs.items() if c.get('configMapData')}
     identities = {(doc['kind'], doc['metadata'].get('namespace'), doc['metadata']['name']) for doc in documents}
@@ -79,7 +82,19 @@ def validate(documents, values):
         backend_spec.loader.exec_module(backend)
         for config in configs.values():
             backend.prepare_config(config)
-        backend.validate_backend(configs)
+        backend.validate_backend(configs, values.get('backendConnectionContract', False))
+    elif values.get('websocketContract'):
+        require(not configs or re.fullmatch(r'ghcr.io/100-hours-a-week/yeodam-websocket@sha256:[a-f0-9]{64}', values['images']['websocket']), 'Use the separate immutable WebSocket image')
+        ws_spec = importlib.util.spec_from_file_location('v3_websocket', ROOT / 'scripts/v3_websocket_contract.py')
+        websocket = importlib.util.module_from_spec(ws_spec)
+        ws_spec.loader.exec_module(websocket)
+        for config in configs.values():
+            websocket.prepare(config)
+        websocket.validate(configs)
+    elif values.get('frontendContract'):
+        fe_spec = importlib.util.spec_from_file_location('v3_frontend', ROOT / 'scripts/v3_frontend_contract.py')
+        frontend = importlib.util.module_from_spec(fe_spec);fe_spec.loader.exec_module(frontend)
+        frontend.validate(configs, values['images'])
     else:
         require(all(not c.get('springProperties') for c in configs.values()), 'Structured Spring properties require the BE contract')
     for doc in documents:
@@ -118,6 +133,10 @@ def validate(documents, values):
                 'Pod security must remain non-root with RuntimeDefault seccomp')
         require(all(value > 0 for value in config['security'].values()), 'Use explicit non-root user/group IDs')
         require(pod['imagePullSecrets'] == [{'name': item} for item in config['imagePullSecrets']], 'Pull Secret references mismatch')
+        roles = json.loads((CHART / 'files/placement-contract.json').read_text())
+        role = roles[name]
+        require(config['nodeSelector'] == {'yeodam.io/role': role, 'yeodam.io/stage': 'v3'} and pod.get('nodeSelector') == config['nodeSelector'], 'App must select its own V3 CPU pool')
+        require(config['tolerations'] == [{'key': 'yeodam.io/role', 'operator': 'Equal', 'value': role, 'effect': 'NoSchedule'}] and pod.get('tolerations') == config['tolerations'], 'Do not tolerate other or fixed-node roles')
         container = pod['containers'][0]
         require(not container.get('command') and not container.get('args'), 'Use image default startup, not per-role commands')
         require(len(pod['containers']) == 1, 'Unreviewed sidecars are outside this chart')
@@ -157,20 +176,44 @@ def validate(documents, values):
         require(container.get('envFrom', []) == expected_env_from, 'Only configured ConfigMap references may be imported')
         volumes = {'scratch': {'name': 'scratch', 'emptyDir': {'sizeLimit': config['scratchSizeLimit']}}}
         mounts = [{'name': 'scratch', 'mountPath': '/tmp'}]
-        storage = quantity(config['scratchSizeLimit'], 'ephemeral-storage')
+        if values.get('backendConnectionContract') or values.get('websocketContract'):
+            volumes = {'truststore':{'name':'truststore','emptyDir':{'sizeLimit':'4Mi'}}, **volumes}
+            mounts.append({'name':'truststore','mountPath':'/etc/yeodam/trust','readOnly':True})
+            storage_extra = 4 * 1024 * 1024
+        else:
+            storage_extra = 0
+        if values.get('frontendContract'):
+            volumes = {'next-cache':{'name':'next-cache','emptyDir':{'sizeLimit':'128Mi'}}, **volumes}
+            mounts.append({'name':'next-cache','mountPath':'/app/.next/cache'})
+            storage_extra += 128 * 1024 * 1024
+        storage = quantity(config['scratchSizeLimit'], 'ephemeral-storage') + storage_extra
         if config['name'] == 'backend':
             volumes['catalog'] = {'name': 'catalog', 'emptyDir': {'sizeLimit': config['catalogSizeLimit']}}
             mounts.append({'name': 'catalog', 'mountPath': '/app/data'})
             storage += quantity(config['catalogSizeLimit'], 'ephemeral-storage')
             initializers = pod.get('initContainers', [])
-            require(len(initializers) == 1, 'Backend catalog must be seeded from the same image')
-            seed = initializers[0]
+            connected = values.get('backendConnectionContract', False)
+            require(len(initializers) == (2 if connected else 1), 'Backend catalog must be seeded from the same image')
+            if connected:
+                trust = initializers[0]
+                require(trust == {'name':'prepare-trust','image':image,'command':['/bin/sh','-ec'],
+                    'args':[(CHART/'files/prepare-trust.sh').read_text()],
+                    'resources':{'requests':{'cpu':'25m','memory':'64Mi'},'limits':{'cpu':'250m','memory':'128Mi'}},
+                    'securityContext':{'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}},
+                    'volumeMounts':[{'name':'trust-input','mountPath':'/etc/yeodam/ca','readOnly':True},{'name':'truststore','mountPath':'/etc/yeodam/trust'},{'name':'scratch','mountPath':'/tmp'}]}, 'Trust init must preserve original roots and reviewed budget')
+            seed = initializers[-1]
             require(seed['name'] == 'seed-catalog' and seed['image'] == image and seed['command'] == ['cp', '-R', '/app/data/.', '/catalog/'],
                     'Catalog seed must copy the bundled data using the shared backend image')
             require(seed['volumeMounts'] == [{'name': 'catalog', 'mountPath': '/catalog'}], 'Catalog seed must not mask its bundled source')
             require(seed['resources'] == expected_resources, 'Init resources must fit the explicit Pod budget')
+        elif values.get('websocketContract'):
+            require(pod.get('initContainers') == [{'name':'prepare-trust','image':image,'command':['/bin/sh','-ec'],
+                'args':[(CHART/'files/prepare-websocket-trust.sh').read_text()],
+                'resources':{'requests':{'cpu':'25m','memory':'64Mi'},'limits':{'cpu':'250m','memory':'128Mi'}},
+                'securityContext':{'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}},
+                'volumeMounts':[{'name':'trust-input','mountPath':'/etc/yeodam/ca','readOnly':True},{'name':'truststore','mountPath':'/etc/yeodam/trust'},{'name':'scratch','mountPath':'/tmp'}]}], 'WebSocket trust init must preserve original roots without catalog seed')
         else:
-            require(not pod.get('initContainers'), 'Only backend images have the catalog seed contract')
+            require(not pod.get('initContainers'), 'Only reviewed profiles have init containers')
         require(storage <= quantity(config['resources']['limits']['ephemeral-storage'], 'ephemeral-storage'),
                 'Scratch/catalog volume budgets exceed the Pod ephemeral-storage limit')
         mount_paths = {m['mountPath'] for m in mounts}

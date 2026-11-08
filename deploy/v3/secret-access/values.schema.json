@@ -40,6 +40,15 @@
         },
         "mongodb": {
           "$ref": "#/definitions/store"
+        },
+        "kafka": {
+          "$ref": "#/definitions/store"
+        },
+        "ai-redis": {
+          "$ref": "#/definitions/store"
+        },
+        "qdrant": {
+          "$ref": "#/definitions/store"
         }
       }
     }

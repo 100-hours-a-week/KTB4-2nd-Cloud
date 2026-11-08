@@ -93,6 +93,7 @@ def validate_platform(documents, values):
         labels = metadata.get('labels', {})
         require(labels.get(PART_OF) == 'yeodam' and labels.get(STAGE) == 'v3', 'Missing platform identity labels')
         if kind == 'Namespace':
+            require(labels.get('elbv2.k8s.aws/pod-readiness-gate-inject') == ('enabled' if values.get('albReadinessGates') and name != 'ai' else None), 'ALB readiness gate labels must be explicit and exclude AI')
             require(labels.get('yeodam.io/domain') == name, 'Namespace domain label does not match its name')
             require(metadata.get('annotations', {}).get('helm.sh/resource-policy') == 'keep',
                     'Namespaces must survive release removal')

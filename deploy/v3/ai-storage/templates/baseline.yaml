@@ -1,0 +1,24 @@
+{{- $contract := .Files.Get "files/contract.json" | fromJson }}
+{{- range $name, $_ := $contract }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $name }}
+  annotations: {helm.sh/resource-policy: keep}
+  labels:
+    app.kubernetes.io/part-of: yeodam
+    yeodam.io/stage: v3
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.36
+{{- end }}
+{{- range $policy := .Files.Get "files/policies.json" | fromJsonArray }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $policy.name }}
+  namespace: {{ $policy.namespace }}
+spec:
+{{ $policy.spec | toYaml | indent 2 }}
+{{- end }}

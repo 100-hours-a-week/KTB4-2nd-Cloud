@@ -5,6 +5,47 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'scripts/check-v3-argocd.py'
+      - 'scripts/v3_gitops_release.py'
+      - 'scripts/prepare-v3-gitops-release.py'
+      - 'tests/ci/test_v3_argocd.py'
+      - 'tests/ci/test_v3_gitops_release.py'
+      - '.github/workflows/v3-approved-release.yml'
+      - 'terraform/v3/ai/**'
+      - 'scripts/check-v3-ai.py'
+      - 'scripts/check-v3-ai-plan.py'
+      - 'scripts/inspect-v3-ai-source.py'
+      - 'scripts/prepare-v3-ai-values.py'
+      - 'tests/ci/test_v3_ai.py'
+      - 'scripts/check-v3-ai-storage.py'
+      - 'scripts/check-v3-ai-storage-plan.py'
+      - 'scripts/prepare-v3-ai-storage-secrets.py'
+      - 'scripts/verify-v3-ai-storage.py'
+      - 'tests/ci/test_v3_ai_storage.py'
+      - 'terraform/v3/ingress/**'
+      - 'scripts/check-v3-external.py'
+      - 'scripts/check-v3-ingress-plan.py'
+      - 'scripts/prepare-v3-external-values.py'
+      - 'scripts/v3_frontend_contract.py'
+      - 'tests/ci/test_v3_external.py'
+      - 'scripts/v3_websocket_contract.py'
+      - 'scripts/check-v3-websocket.py'
+      - 'scripts/prepare-v3-websocket-values.py'
+      - 'tests/ci/test_v3_websocket.py'
+      - 'terraform/v3/backend/**'
+      - 'scripts/check-v3-backend-access.py'
+      - 'scripts/check-v3-backend-plan.py'
+      - 'scripts/prepare-v3-backend-supply.py'
+      - 'scripts/prepare-v3-backend-values.py'
+      - 'scripts/prepare-v3-backend-rollout.py'
+      - 'scripts/check-v3-backend-prerequisites.py'
+      - 'tests/ci/test_v3_backend_rollout.py'
+      - 'scripts/prepare_v3_backend_values_contract.py'
+      - 'tests/ci/test_v3_backend_connections.py'
+      - 'scripts/v3_outbox_contract.py'
+      - 'scripts/check-v3-outbox.py'
+      - 'scripts/prepare-v3-outbox-ca.py'
+      - 'tests/ci/test_v3_outbox.py'
       - 'terraform/v2/production/websocket.tf'
       - 'terraform/v2/production/backend-service.tf'
       - 'scripts/configure-production-websocket.py'
@@ -18,12 +59,23 @@ on:
       - 'scripts/create-v3-mongodb-bootstrap-secret.py'
       - 'tests/ci/test_v3_mongodb.py'
       - 'scripts/check-v3-redis.py'
+      - 'scripts/verify-v3-redis-aof.py'
       - 'scripts/create-v3-redis-bootstrap-secret.py'
       - 'tests/ci/test_v3_redis.py'
+      - 'tests/ci/test_v3_validation_download.py'
+      - 'scripts/check-v3-mysql-schema.py'
+      - 'scripts/manage-v3-mysql-cdc.py'
+      - 'scripts/prepare-v3-mysql-schema-image.py'
+      - 'tests/ci/test_v3_mysql_schema.py'
       - 'scripts/check-v3-mysql.py'
       - 'scripts/create-v3-mysql-bootstrap-secret.py'
       - 'tests/ci/test_v3_mysql.py'
       - 'scripts/check-v3-kafka.py'
+      - 'scripts/check-v3-connect.py'
+      - 'scripts/prepare-v3-connect-image.py'
+      - 'tests/ci/test_v3_connect.py'
+      - 'scripts/check-v3-kafka-access.py'
+      - 'tests/ci/test_v3_kafka_access.py'
       - 'tests/ci/test_v3_kafka.py'
       - 'scripts/check-v3-data-plan.py'
       - 'tests/ci/test_v3_data_plan.py'
@@ -33,6 +85,8 @@ on:
       - 'tests/ci/test_v3_storage.py'
       - 'scripts/check-v3-platform.py'
       - 'scripts/check-v3-apps.py'
+      - 'scripts/check-v3-nodepools.py'
+      - 'tests/ci/test_v3_nodepools.py'
       - 'scripts/v3_backend_contract.py'
       - 'scripts/check-v3-secrets.py'
       - 'terraform/v3/karpenter/**'
@@ -71,6 +125,12 @@ jobs:
         env:
           V3_RENDERED_DIR: ${{ runner.temp }}/v3-rendered
         run: bash scripts/validate-v3-platform.sh
+
+      - name: Verify Redis transaction replay with isolated fixture data
+        run: |
+          image=$(sed -n 's/^image: //p' deploy/v3/redis/values.yaml)
+          docker pull "$image"
+          python3 scripts/verify-v3-redis-aof.py
 
       - name: Verify disabled production release contract without credentials
         run: python3 -m unittest discover -s tests/ci -p 'test_production_release_prepare.py'
@@ -132,3 +192,24 @@ jobs:
           path: ${{ runner.temp }}/v3-rendered
           retention-days: 7
           if-no-files-found: warn
+
+      - name: Validate independent BE IAM and private storage without AWS
+        run: |
+          terraform -chdir=terraform/v3/backend init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=terraform/v3/backend fmt -check
+          terraform -chdir=terraform/v3/backend validate
+          terraform -chdir=terraform/v3/backend test -no-color
+
+      - name: Validate isolated ingress IAM, SG and validation certificate without AWS
+        run: |
+          terraform -chdir=terraform/v3/ingress fmt -check -recursive
+          terraform -chdir=terraform/v3/ingress init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=terraform/v3/ingress validate
+          terraform -chdir=terraform/v3/ingress test -no-color
+
+      - name: Validate read-only AI Pod Identities using mock AWS
+        run: |
+          terraform -chdir=terraform/v3/ai fmt -check -recursive
+          terraform -chdir=terraform/v3/ai init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=terraform/v3/ai validate
+          terraform -chdir=terraform/v3/ai test -no-color

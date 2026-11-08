@@ -31,11 +31,23 @@ variable "enable_mongodb_reader" {
   default     = false
 }
 
+variable "enable_kafka_reader" {
+  description = "Opt in to Kafka's exact V3 CDC secret reader; never grant MySQL bootstrap access."
+  type        = bool
+  default     = false
+}
+
+variable "enable_ai_storage_readers" {
+  description = "Opt in to AI Redis and Qdrant bootstrap readers; retain all already-applied reader flags."
+  type        = bool
+  default     = false
+}
+
 locals {
   cluster_name = "yeodam-v3-foundation"
-  namespaces   = setunion(toset(["frontend", "auth", "trip", "photo", "ai"]), var.enable_mysql_reader ? toset(["mysql"]) : toset([]), var.enable_redis_reader ? toset(["redis"]) : toset([]), var.enable_mongodb_reader ? toset(["mongodb"]) : toset([]))
+  namespaces   = setunion(toset(["frontend", "auth", "trip", "photo", "ai"]), var.enable_mysql_reader ? toset(["mysql"]) : toset([]), var.enable_redis_reader ? toset(["redis"]) : toset([]), var.enable_mongodb_reader ? toset(["mongodb"]) : toset([]), var.enable_kafka_reader ? toset(["kafka"]) : toset([]), var.enable_ai_storage_readers ? toset(["ai-redis", "qdrant"]) : toset([]))
   secret_arns = {
-    for ns in local.namespaces : ns => "arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/${ns}/*"
+    for ns in local.namespaces : ns => (ns == "kafka" ? "arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/mysql/cdc-??????" : "arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/${ns}/*")
   }
 }
 
@@ -85,14 +97,16 @@ resource "aws_iam_role" "reader" {
 }
 
 resource "aws_iam_role_policy" "assume_readers" {
-  name = "namespace-readers"
-  role = aws_iam_role.controller.id
+  # Names are fixed; keep the policy reviewable before new roles exist.
+  depends_on = [aws_iam_role.reader]
+  name       = "namespace-readers"
+  role       = aws_iam_role.controller.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
       Action   = ["sts:AssumeRole", "sts:TagSession"]
-      Resource = [for ns in sort(tolist(local.namespaces)) : aws_iam_role.reader[ns].arn]
+      Resource = [for ns in sort(tolist(local.namespaces)) : "arn:aws:iam::483175530259:role/${local.cluster_name}-eso-${ns}"]
     }]
   })
 }

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: yeodam-v3-kafka-access
+description: V3 business topics and literal least-privilege Kafka users
+type: application
+version: 0.1.0

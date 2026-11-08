@@ -1,0 +1,73 @@
+{{- if .Values.enabled -}}
+{{- range $name, $pem := .Values.certificates -}}
+{{- if or (not (contains "-----BEGIN CERTIFICATE-----" $pem)) (contains "PRIVATE KEY" $pem) }}{{ fail "Supply public CA certificates only" }}{{ end -}}
+{{- end -}}
+{{- range $ns := list "auth" "trip" "photo" }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-trust
+  namespace: {{ $ns }}
+  labels: {yeodam.io/stage: v3, app.kubernetes.io/part-of: yeodam}
+type: Opaque
+stringData:
+  {{- range $name, $pem := $.Values.certificates }}
+  {{ $name }}.crt: {{ $pem | quote }}
+  {{- end }}
+{{- end }}
+{{- $peers := .Files.Get "files/peers.json" | fromJsonArray }}
+{{- range $ns := list "auth" "trip" "photo" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-dependencies
+  namespace: {{ $ns }}
+  labels: {yeodam.io/stage: v3, app.kubernetes.io/part-of: yeodam}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: backend, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+  policyTypes: [Egress]
+  egress:
+    {{- range $peer := $peers }}
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: {{ $peer.namespace }}}
+          podSelector:
+            {{- toYaml $peer.selector | nindent 12 }}
+      ports:
+        {{- range $port := $peer.ports }}
+        - {protocol: TCP, port: {{ $port }}}
+        {{- end }}
+    {{- end }}
+    - to: [{ipBlock: {cidr: 169.254.170.23/32}}]
+      ports: [{protocol: TCP, port: 80}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
+      ports: [{protocol: TCP, port: 443}]
+{{- end }}
+{{- range $peer := $peers }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-v3-backend
+  namespace: {{ $peer.namespace }}
+  labels: {yeodam.io/stage: v3, app.kubernetes.io/part-of: yeodam}
+spec:
+  podSelector:
+    {{- toYaml $peer.selector | nindent 4 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - {key: kubernetes.io/metadata.name, operator: In, values: [auth, trip, photo]}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: backend, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+      ports:
+        {{- range $port := $peer.ports }}
+        - {protocol: TCP, port: {{ $port }}}
+        {{- end }}
+{{- end }}
+{{- end }}

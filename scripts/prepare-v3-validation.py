@@ -8,14 +8,26 @@ from pathlib import Path
 import platform
 import tarfile
 import urllib.request
+import urllib.error
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def download(entry):
     request = urllib.request.Request(entry['url'], headers={'User-Agent': 'yeodam-v3-validation'})
-    with urllib.request.urlopen(request, timeout=120) as response:
-        data = response.read()
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                data = response.read()
+            break
+        except urllib.error.HTTPError as error:
+            if error.code not in (429, 500, 502, 503, 504) or attempt == 2:
+                raise
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == 2:
+                raise
+        time.sleep(2 ** attempt)
     if hashlib.sha256(data).hexdigest() != entry['sha256']:
         raise ValueError('Downloaded validation input failed checksum verification')
     return data
@@ -76,6 +88,11 @@ def prepare(directory):
     if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != operator['sha256']:
         archive.write_bytes(download(operator))
 
+    argocd = json.loads((ROOT / 'deploy/v3/argocd/upstream.lock.json').read_text())
+    archive = directory / 'argocd.tgz'
+    if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != argocd['sha256']:
+        archive.write_bytes(download(argocd))
+
     strimzi = json.loads((ROOT / 'deploy/v3/kafka-operator/upstream.lock.json').read_text())
     archive = directory / 'strimzi.tgz'
     if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != strimzi['sha256']:
@@ -85,6 +102,11 @@ def prepare(directory):
     archive = directory / 'karpenter.tgz'
     if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != karpenter['sha256']:
         archive.write_bytes(download_karpenter(karpenter))
+
+    controller = json.loads((ROOT / 'deploy/v3/load-balancer-controller/upstream.lock.json').read_text())
+    archive = directory / 'load-balancer-controller.tgz'
+    if not archive.exists() or hashlib.sha256(archive.read_bytes()).hexdigest() != controller['sha256']:
+        archive.write_bytes(download(controller))
 
 
 if __name__ == '__main__':

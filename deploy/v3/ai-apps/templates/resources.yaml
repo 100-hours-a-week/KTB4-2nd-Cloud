@@ -1,0 +1,177 @@
+{{- $active := or .Values.workloads.api .Values.workloads.runner }}
+{{- if $active }}
+{{- if not (and .Values.accessEnabled .Values.review.sourceCompatible .Values.review.imageReviewed .Values.review.connectionsReviewed) }}{{ fail "Review compatible source, immutable image, Secret supply and shared model access before enabling AI" }}{{ end }}
+{{- if not (regexMatch "^ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:[a-f0-9]{64}$" .Values.image) }}{{ fail "Immutable AI app image required" }}{{ end }}
+{{- if not (and (regexMatch "^[a-f0-9]{40}$" .Values.source) (regexMatch "^[a-f0-9]{64}$" .Values.configurationRevision)) }}{{ fail "Source and metadata revision required" }}{{ end }}
+{{- end }}
+{{- if .Values.accessEnabled }}
+{{- range $key, $ca := .Values.trust }}{{ if not (contains "-----BEGIN CERTIFICATE-----" $ca) }}{{ fail "Public Redis/Qdrant/Kafka CA required" }}{{ end }}{{ end }}
+{{- $c := .Files.Get "files/contract.json" | fromJson }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: ai-trust, namespace: ai}
+data:
+  redis.crt: {{ .Values.trust.redis | quote }}
+  qdrant.crt: {{ .Values.trust.qdrant | quote }}
+  kafka.crt: {{ .Values.trust.kafka | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: ai-runtime-scripts, namespace: ai}
+data:
+{{ (.Files.Glob "files/runtime/*").AsConfig | indent 2 }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata: {name: ai-runtime, namespace: ai}
+spec:
+  refreshPolicy: Periodic
+  refreshInterval: 1h
+  secretStoreRef: {kind: SecretStore, name: aws-secretsmanager}
+  target: {name: ai-runtime, creationPolicy: Orphan, deletionPolicy: Retain, template: {type: Opaque}}
+  data:
+  {{- range $key := concat $c.secretKeys $c.runnerExtraSecrets }}
+    - secretKey: {{ $key }}
+      remoteRef: {key: yeodam/v3/foundation/ai/runtime, property: {{ $key }}, version: AWSCURRENT, decodingStrategy: None}
+  {{- end }}
+{{- range $role, $w := $c.workloads }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: {{ $w.name }}, namespace: ai}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: {{ $w.name }}-runtime, namespace: ai}
+data:
+  RELEASE: {{ $.Values.source | quote }}
+  {{- range $key, $value := $c.commonEnvironment }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  {{- range $key, $value := $w.environment }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- if index $.Values.workloads $role }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ $w.name }}, namespace: ai}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ $w.name }}, yeodam.io/stage: v3}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai
+        app.kubernetes.io/instance: {{ $w.name }}
+        app.kubernetes.io/component: {{ $role }}
+        app.kubernetes.io/part-of: yeodam
+        yeodam.io/stage: v3
+        yeodam.io/ai-runtime: "true"
+      annotations:
+        checksum/runtime: {{ (printf "%s%s" ($.Files.Get "files/contract.json") (($.Files.Glob "files/runtime/*").AsConfig)) | sha256sum }}
+        yeodam.io/configuration-revision: {{ $.Values.configurationRevision | quote }}
+    spec:
+      serviceAccountName: {{ $w.name }}
+      automountServiceAccountToken: false
+      imagePullSecrets: [{name: ghcr-pull}]
+      nodeSelector: {yeodam.io/role: {{ $w.nodeRole }}, yeodam.io/stage: v3}
+      tolerations: [{key: yeodam.io/role, operator: Equal, value: {{ $w.nodeRole }}, effect: NoSchedule}]
+      terminationGracePeriodSeconds: {{ $w.grace }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: prepare-trust
+          image: {{ $.Values.image }}
+          command: [python, /runtime/prepare-trust.py]
+          resources: {requests: {cpu: 25m, memory: 32Mi}, limits: {memory: 64Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: scripts, mountPath: /runtime, readOnly: true}
+            - {name: public-ca, mountPath: /etc/yeodam/ca, readOnly: true}
+            - {name: trust, mountPath: /etc/yeodam/trust}
+      containers:
+        - name: ai
+          image: {{ $.Values.image }}
+          command: {{ $w.command | toJson }}
+          envFrom: [{configMapRef: {name: {{ $w.name }}-runtime}}]
+          env:
+          {{- $keys := $c.secretKeys }}
+          {{- if eq $role "runner" }}{{ $keys = concat $keys $c.runnerExtraSecrets }}{{ end }}
+          {{- range $key := $keys }}
+            - name: {{ $key }}
+              valueFrom: {secretKeyRef: {name: ai-runtime, key: {{ $key }}}}
+          {{- end }}
+          resources:
+{{ $w.resources | toYaml | indent 12 }}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          {{- if eq $role "api" }}
+          ports: [{name: http, containerPort: 8000}]
+          startupProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5, timeoutSeconds: 5, failureThreshold: 60}
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 3}
+          livenessProbe: {exec: {command: [python, /runtime/health.py, api-live]}, periodSeconds: 20, timeoutSeconds: 5, failureThreshold: 3}
+          {{- else }}
+          startupProbe: {exec: {command: [python, /runtime/health.py, runner-ready]}, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 180}
+          readinessProbe: {exec: {command: [python, /runtime/health.py, runner-ready]}, periodSeconds: 15, timeoutSeconds: 5, failureThreshold: 3}
+          {{- end }}
+          volumeMounts:
+            - {name: scripts, mountPath: /runtime, readOnly: true}
+            - {name: public-ca, mountPath: /etc/yeodam/ca, readOnly: true}
+            - {name: trust, mountPath: /etc/yeodam/trust, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+            {{- if eq $role "runner" }}
+            - {name: reference, mountPath: /data/ai-reference}
+            {{- end }}
+      volumes:
+        - {name: scripts, configMap: {name: ai-runtime-scripts, defaultMode: 0444}}
+        - {name: public-ca, configMap: {name: ai-trust}}
+        - {name: trust, emptyDir: {sizeLimit: 1Mi}}
+        - {name: tmp, emptyDir: {sizeLimit: 256Mi}}
+        {{- if eq $role "runner" }}
+        - {name: reference, emptyDir: {sizeLimit: 3Gi}}
+        {{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.workloads.api }}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: ai-api, namespace: ai}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/instance: ai-api, yeodam.io/stage: v3}
+  ports: [{name: http, port: 8000, targetPort: http}]
+{{- end }}
+{{- range $p := .Files.Get "files/policies.json" | fromJsonArray }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: {{ $p.name }}, namespace: {{ $p.namespace }}}
+spec:
+{{ $p.spec | toYaml | indent 2 }}
+{{- end }}
+{{- if .Values.privateModelPeers }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-ai-reviewed-private-models, namespace: ai}
+spec:
+  podSelector:
+    matchLabels: {yeodam.io/ai-runtime: "true", yeodam.io/stage: v3}
+  policyTypes: [Egress]
+  egress:
+  {{- range $peer := .Values.privateModelPeers }}
+    - to: [{ipBlock: {cidr: {{ $peer.cidr | quote }}}}]
+      ports: [{protocol: TCP, port: {{ $peer.port }}}]
+  {{- end }}
+{{- end }}
+{{- end }}

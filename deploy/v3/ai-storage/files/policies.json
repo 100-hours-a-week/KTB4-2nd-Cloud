@@ -1,0 +1,256 @@
+[
+  {
+    "name": "default-deny",
+    "namespace": "ai-redis",
+    "spec": {
+      "podSelector": {},
+      "policyTypes": [
+        "Ingress",
+        "Egress"
+      ]
+    }
+  },
+  {
+    "name": "allow-dns",
+    "namespace": "ai-redis",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/instance": "ai-redis",
+          "yeodam.io/stage": "v3"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "kube-system"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "k8s-app": "kube-dns"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "UDP",
+              "port": 53
+            },
+            {
+              "protocol": "TCP",
+              "port": 53
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "allow-ai-clients",
+    "namespace": "ai-redis",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/instance": "ai-redis",
+          "yeodam.io/stage": "v3"
+        }
+      },
+      "policyTypes": [
+        "Ingress"
+      ],
+      "ingress": [
+        {
+          "from": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "ai"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/part-of": "yeodam",
+                  "app.kubernetes.io/name": "ai",
+                  "yeodam.io/stage": "v3"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 6379
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "default-deny",
+    "namespace": "qdrant",
+    "spec": {
+      "podSelector": {},
+      "policyTypes": [
+        "Ingress",
+        "Egress"
+      ]
+    }
+  },
+  {
+    "name": "allow-dns",
+    "namespace": "qdrant",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/instance": "qdrant",
+          "yeodam.io/stage": "v3"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "kube-system"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "k8s-app": "kube-dns"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "UDP",
+              "port": 53
+            },
+            {
+              "protocol": "TCP",
+              "port": 53
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "allow-ai-clients",
+    "namespace": "qdrant",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/instance": "qdrant",
+          "yeodam.io/stage": "v3"
+        }
+      },
+      "policyTypes": [
+        "Ingress"
+      ],
+      "ingress": [
+        {
+          "from": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "ai"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/part-of": "yeodam",
+                  "app.kubernetes.io/name": "ai",
+                  "yeodam.io/stage": "v3"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 6333
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "allow-ai-storage",
+    "namespace": "ai",
+    "spec": {
+      "podSelector": {
+        "matchLabels": {
+          "app.kubernetes.io/part-of": "yeodam",
+          "app.kubernetes.io/name": "ai",
+          "yeodam.io/stage": "v3"
+        }
+      },
+      "policyTypes": [
+        "Egress"
+      ],
+      "egress": [
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "ai-redis"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/instance": "ai-redis",
+                  "yeodam.io/stage": "v3"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 6379
+            }
+          ]
+        },
+        {
+          "to": [
+            {
+              "namespaceSelector": {
+                "matchLabels": {
+                  "kubernetes.io/metadata.name": "qdrant"
+                }
+              },
+              "podSelector": {
+                "matchLabels": {
+                  "app.kubernetes.io/instance": "qdrant",
+                  "yeodam.io/stage": "v3"
+                }
+              }
+            }
+          ],
+          "ports": [
+            {
+              "protocol": "TCP",
+              "port": 6333
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

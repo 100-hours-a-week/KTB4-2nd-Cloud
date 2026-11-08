@@ -1,0 +1,38 @@
+{{- if .Values.enabled }}
+{{- $contract := .Files.Get "files/business-contract.json" | fromJson }}
+{{- range $role, $access := $contract.users }}
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: v3-{{ $role }}
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: {{ $.Values.clusterName }}
+    app.kubernetes.io/part-of: yeodam
+    app.kubernetes.io/instance: kafka-business
+    yeodam.io/stage: v3
+    yeodam.io/kafka-role: {{ $role }}
+  annotations: {helm.sh/resource-policy: keep}
+spec:
+  authentication: {type: scram-sha-512}
+  authorization:
+    type: simple
+    acls:
+      {{- range $topic := concat $access.readTopics $access.writeTopics $access.describeTopics | uniq | sortAlpha }}
+      - resource: {type: topic, name: {{ $topic }}, patternType: literal}
+        operations: [Describe{{ if has $topic $access.readTopics }}, Read{{ end }}{{ if has $topic $access.writeTopics }}, Write{{ end }}{{ range $operation := (index ($access.extraTopicOperations | default dict) $topic) }}, {{ $operation }}{{ end }}]
+        host: '*'
+      {{- end }}
+      {{- range $group := $access.groups }}
+      - resource: {type: group, name: {{ $group }}, patternType: literal}
+        operations: [Read]
+        host: '*'
+      {{- end }}
+      {{- if $access.clusterOperations }}
+      - resource: {type: cluster}
+        operations: {{ $access.clusterOperations | toJson }}
+        host: '*'
+      {{- end }}
+{{- end }}
+{{- end }}

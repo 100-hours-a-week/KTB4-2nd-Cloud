@@ -1,0 +1,10 @@
+# Reviewed existing V3 inputs; these are resource identities, not Secret payloads.
+# Keep disabled until the optional node-credit IAM policy is applied and verified.
+enabled: false
+creditBootstrapReady: false
+nodeClass:
+  amiId: ami-0ff26945ed10b79c1
+  subnetIds:
+    ap-northeast-2a: subnet-004123b9d7699a169
+    ap-northeast-2c: subnet-0bcb94a26fa69b298
+  securityGroupId: sg-068c6d24435af33fb

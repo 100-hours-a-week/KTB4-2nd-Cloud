@@ -1,0 +1,114 @@
+# Reviewed installation input only; no workflow installs this Chart.
+fullnameOverride: argocd
+createClusterRoles: false
+crds:
+  install: true
+  keep: true
+global:
+  image:
+    repository: quay.io/argoproj/argocd
+    tag: v3.6.1@sha256:296e3d74f449b2ce45265613fcb68c18ed7366488360c8ea32f5f2a93d2e5c54
+  nodeSelector:
+    kubernetes.io/os: linux
+    yeodam.io/role: system
+  tolerations: []
+  networkPolicy:
+    create: true
+    defaultDenyIngress: true
+  logging:
+    format: json
+dex:
+  enabled: false
+notifications:
+  enabled: false
+applicationSet:
+  replicas: 0
+  resources:
+    requests:
+      cpu: 5m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+redis-ha:
+  enabled: false
+controller:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  extraArgs:
+  - --status-processors=2
+  - --operation-processors=1
+repoServer:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+  automountServiceAccountToken: false
+server:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+  metrics:
+    enabled: false
+  autoscaling:
+    enabled: false
+redis:
+  enabled: true
+  image:
+    repository: docker.io/library/redis
+    tag: 8.6.4-alpine@sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  automountServiceAccountToken: false
+redisSecretInit:
+  enabled: true
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+configs:
+  cm:
+    admin.enabled: 'true'
+    exec.enabled: 'false'
+    users.anonymous.enabled: 'false'
+    timeout.reconciliation: 180s
+    application.resourceTrackingMethod: annotation
+    url: https://localhost:8080
+  params:
+    controller.repo.server.strict.tls: true
+    server.repo.server.strict.tls: true
+  rbac:
+    policy.default: role:no-access
+    policy.csv: 'p, role:frontend-viewer, applications, get, yeodam-v3-frontend/*,
+      allow
+
+      '
+  clusterCredentials:
+    v3-frontend:
+      server: https://kubernetes.default.svc
+      namespaces: frontend
+      clusterResources: 'false'
+      config:
+        tlsClientConfig:
+          insecure: false

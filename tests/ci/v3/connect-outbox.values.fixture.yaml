@@ -1,0 +1,5 @@
+# Schema-only synthetic digest. Never deploy this fixture.
+enabled: true
+image: ghcr.io/100-hours-a-week/yeodam-v3-connect@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+outbox:
+  enabled: true

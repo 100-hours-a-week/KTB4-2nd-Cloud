@@ -1,0 +1,70 @@
+{
+  "backendSourceCommit": "3f4fd318466f52a317e770e33e2d33e9800ed525",
+  "config": {
+    "SERVER_PORT": "8081",
+    "REDIS_HOST": "redis-members.redis.svc.cluster.local",
+    "REDIS_PORT": "6379",
+    "REDIS_USERNAME": "app",
+    "REDIS_SSL_ENABLED": "true",
+    "BACKEND_INTERNAL_BASE_URL": "http://trip-api.trip.svc.cluster.local:8080",
+    "WEBSOCKET_EVENTS_CHANNEL": "yeodam:v3:foundation:websocket:events:v1",
+    "WEBSOCKET_MAX_CONNECTIONS": "100",
+    "SERVER_SHUTDOWN": "graceful",
+    "SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE": "30s",
+    "JAVA_TOOL_OPTIONS": "-XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts -Djavax.net.ssl.trustStorePassword=public-ca-only"
+  },
+  "spring": {
+    "spring": {
+      "data": {
+        "redis": {
+          "username": "app",
+          "ssl": {
+            "enabled": true
+          },
+          "sentinel": {
+            "master": "yeodam-v3-app-redis",
+            "nodes": [
+              "sentinel-0.redis-sentinel.redis.svc.cluster.local:26379",
+              "sentinel-1.redis-sentinel.redis.svc.cluster.local:26379",
+              "sentinel-2.redis-sentinel.redis.svc.cluster.local:26379"
+            ],
+            "username": "sentinel-client",
+            "password": "${REDIS_SENTINEL_PASSWORD}"
+          }
+        }
+      }
+    }
+  },
+  "secrets": {
+    "REDIS_PASSWORD": {
+      "name": "websocket-credentials",
+      "key": "REDIS_PASSWORD"
+    },
+    "REDIS_SENTINEL_PASSWORD": {
+      "name": "websocket-credentials",
+      "key": "REDIS_SENTINEL_PASSWORD"
+    },
+    "WEBSOCKET_INTERNAL_SERVICE_TOKEN": {
+      "name": "websocket-credentials",
+      "key": "WEBSOCKET_INTERNAL_SERVICE_TOKEN"
+    }
+  },
+  "resources": {
+    "requests": {
+      "cpu": "100m",
+      "memory": "256Mi",
+      "ephemeral-storage": "32Mi"
+    },
+    "limits": {
+      "memory": "512Mi",
+      "ephemeral-storage": "128Mi"
+    }
+  },
+  "secretVolumes": [
+    {
+      "name": "trust-input",
+      "secretName": "websocket-trust",
+      "mountPath": "/etc/yeodam/ca"
+    }
+  ]
+}

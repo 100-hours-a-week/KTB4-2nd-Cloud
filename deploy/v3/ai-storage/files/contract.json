@@ -1,0 +1,34 @@
+{
+  "ai-redis": {
+    "port": 6379,
+    "uid": 999,
+    "resources": {
+      "requests": {
+        "cpu": "25m",
+        "memory": "64Mi"
+      },
+      "limits": {
+        "memory": "256Mi"
+      }
+    },
+    "storage": "1Gi",
+    "imageKey": "redis",
+    "secret": "ai-redis-bootstrap"
+  },
+  "qdrant": {
+    "port": 6333,
+    "uid": 1000,
+    "resources": {
+      "requests": {
+        "cpu": "50m",
+        "memory": "128Mi"
+      },
+      "limits": {
+        "memory": "512Mi"
+      }
+    },
+    "storage": "5Gi",
+    "imageKey": "qdrant",
+    "secret": "qdrant-bootstrap"
+  }
+}

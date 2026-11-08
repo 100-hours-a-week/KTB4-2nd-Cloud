@@ -16,9 +16,10 @@ else
 fi
 # Hash app/admin ACL passwords; replication auth must be writable in the retained config.
 {
- printf 'user default off\n'
+ # Redis 7 AOF EXEC checks the internal default user; keep network login disabled.
+ printf 'user default reset off ~* &* +@all\n'
  printf 'user admin on #%s ~* &* +@all\n' "$(hash_password admin)"
- printf 'user app on #%s ~* &* +@connection +@read +@write +@transaction +@scripting +@pubsub -@admin -@dangerous +wait\n' "$(hash_password app)"
+ printf 'user app on #%s ~* &* +@connection +@read +@write +@transaction +@scripting +@pubsub -@admin -@dangerous +wait +info\n' "$(hash_password app)"
  printf 'user replication on #%s +ping +psync +replconf\n' "$(hash_password replication)"
  printf 'user monitor on #%s ~* &__sentinel__:hello +multi +slaveof +replicaof +ping +exec +subscribe +publish +info +role +config|rewrite +client|setname +client|kill +script|kill\n' "$(hash_password monitor)"
  printf 'user health on #%s +ping +info +role\n' "$(hash_password health)"

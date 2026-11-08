@@ -1,6 +1,6 @@
 {{- range $instance, $workload := .Values.workloads }}
 {{- $c := include "yeodam-v3-apps.resolveConfig" (dict "root" $ "instance" $instance "workload" $workload) | fromYaml }}
-{{- if $c.enabled }}
+{{- if and $c.enabled (not (and $.Values.frontendContract $.Values.frontendServiceOnly)) }}
 {{- $ctx := dict "root" $ "instance" $instance "config" $c }}
 {{- include "yeodam-v3-apps.check" $ctx }}
 ---
@@ -34,6 +34,10 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ $c.serviceAccountName }}
+      nodeSelector:
+        {{- toYaml $c.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml $c.tolerations | nindent 8 }}
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: {{ $c.terminationGracePeriodSeconds }}
       securityContext:
@@ -47,8 +51,47 @@ spec:
         {{- range $c.imagePullSecrets }}
         - name: {{ . }}
         {{- end }}
+      {{- if $.Values.websocketContract }}
+      initContainers:
+        - name: prepare-trust
+          image: {{ index $.Values.images $c.imageRef | quote }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+{{ $.Files.Get "files/prepare-websocket-trust.sh" | indent 14 }}
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: trust-input, mountPath: /etc/yeodam/ca, readOnly: true}
+            - {name: truststore, mountPath: /etc/yeodam/trust}
+            - {name: scratch, mountPath: /tmp}
+      {{- end }}
       {{- if eq $c.name "backend" }}
       initContainers:
+        {{- if $.Values.backendConnectionContract }}
+        - name: prepare-trust
+          image: {{ index $.Values.images $c.imageRef | quote }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+{{ $.Files.Get "files/prepare-trust.sh" | indent 14 }}
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: trust-input, mountPath: /etc/yeodam/ca, readOnly: true}
+            - {name: truststore, mountPath: /etc/yeodam/trust}
+            - {name: scratch, mountPath: /tmp}
+        {{- end }}
         - name: seed-catalog
           image: {{ index $.Values.images $c.imageRef | quote }}
           command: ["cp", "-R", "/app/data/.", "/catalog/"]
@@ -134,6 +177,12 @@ spec:
           volumeMounts:
             - name: scratch
               mountPath: /tmp
+            {{- if $.Values.frontendContract }}
+            - {name: next-cache, mountPath: /app/.next/cache}
+            {{- end }}
+            {{- if or $.Values.backendConnectionContract $.Values.websocketContract }}
+            - {name: truststore, mountPath: /etc/yeodam/trust, readOnly: true}
+            {{- end }}
             {{- if eq $c.name "backend" }}
             - name: catalog
               mountPath: /app/data
@@ -144,6 +193,13 @@ spec:
               readOnly: true
             {{- end }}
       volumes:
+        {{- if $.Values.frontendContract }}
+        - name: next-cache
+          emptyDir: {sizeLimit: 128Mi}
+        {{- end }}        {{- if or $.Values.backendConnectionContract $.Values.websocketContract }}
+        - name: truststore
+          emptyDir: {sizeLimit: 4Mi}
+        {{- end }}
         - name: scratch
           emptyDir:
             sizeLimit: {{ $c.scratchSizeLimit | quote }}

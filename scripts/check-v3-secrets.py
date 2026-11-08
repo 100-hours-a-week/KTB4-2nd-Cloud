@@ -92,8 +92,8 @@ def validate_operator(documents):
 
 
 def validate_access(documents, stores):
-    require(platform.NAMESPACES <= set(stores) <= platform.NAMESPACES | {'mysql', 'redis', 'mongodb'},
-            'Five application slots and optional MySQL/Redis/MongoDB slots only')
+    require(platform.NAMESPACES <= set(stores) <= platform.NAMESPACES | {'mysql', 'redis', 'mongodb', 'kafka', 'ai-redis', 'qdrant'},
+            'Five application slots and optional data/Kafka slots only')
     actual = {}
     for doc in documents:
         identity = (doc['kind'], doc['metadata'].get('namespace', ''), doc['metadata']['name'])
@@ -134,6 +134,8 @@ def validate_access(documents, stores):
         require(actual[key]['spec'] == {'provider': {'aws': {'service': 'SecretsManager',
                 'region': 'ap-northeast-2', 'role': role}}}, 'Static credentials or unexpected provider settings')
         expected.add(key)
+        if namespace == 'kafka':
+            require(store['secrets']==[{'name':'mysql-cdc','data':[{'secretKey':'username','remoteKey':'yeodam/v3/foundation/mysql/cdc','property':'username'},{'secretKey':'password','remoteKey':'yeodam/v3/foundation/mysql/cdc','property':'password'}]}], 'Kafka reader may only expose the dedicated CDC username/password')
         for binding in store['secrets']:
             key = ('ExternalSecret', namespace, binding['name'])
             require(key not in expected and key in actual, 'Missing or duplicate ExternalSecret')
@@ -144,7 +146,10 @@ def validate_access(documents, stores):
             for mapping in binding['data']:
                 require(mapping['secretKey'] not in seen, 'Duplicate target Secret key')
                 seen.add(mapping['secretKey'])
-                require(mapping['remoteKey'].startswith(f'yeodam/v3/foundation/{namespace}/'), 'Cross-namespace source')
+                if namespace == 'kafka':
+                    require(binding['name']=='mysql-cdc' and mapping['remoteKey']=='yeodam/v3/foundation/mysql/cdc' and mapping.get('property') in ('username','password') and mapping['secretKey']==mapping['property'], 'Kafka may only project the dedicated V3 CDC credential')
+                else:
+                    require(mapping['remoteKey'].startswith(f'yeodam/v3/foundation/{namespace}/'), 'Cross-namespace source')
                 ref = {'key': mapping['remoteKey'], 'version': 'AWSCURRENT', 'decodingStrategy': 'None'}
                 if mapping.get('property'):
                     ref['property'] = mapping['property']

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: yeodam-v3-connect
+description: Minimal one-worker Connect runtime with no business Connector
+type: application
+version: 0.1.0

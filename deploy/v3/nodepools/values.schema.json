@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "creditBootstrapReady": {
+      "type": "boolean"
+    },
+    "nodeClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "const": "yeodam-v3-app"
+        },
+        "amiId": {
+          "type": "string",
+          "pattern": "^$|^ami-[a-f0-9]{17}$"
+        },
+        "subnetIds": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ap-northeast-2a": {
+              "type": "string",
+              "pattern": "^$|^subnet-[a-f0-9]{17}$"
+            },
+            "ap-northeast-2c": {
+              "type": "string",
+              "pattern": "^$|^subnet-[a-f0-9]{17}$"
+            }
+          },
+          "required": [
+            "ap-northeast-2a",
+            "ap-northeast-2c"
+          ]
+        },
+        "securityGroupId": {
+          "type": "string",
+          "pattern": "^$|^sg-[a-f0-9]{17}$"
+        },
+        "instanceProfile": {
+          "const": "yeodam-v3-foundation-karpenter-node"
+        }
+      },
+      "required": [
+        "name",
+        "amiId",
+        "subnetIds",
+        "securityGroupId",
+        "instanceProfile"
+      ]
+    },
+    "pools": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "api": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "instanceType": {
+              "const": "t3a.medium"
+            },
+            "cpuLimit": {
+              "const": "4"
+            },
+            "memoryLimit": {
+              "const": "8Gi"
+            }
+          },
+          "required": [
+            "instanceType",
+            "cpuLimit",
+            "memoryLimit"
+          ]
+        },
+        "worker": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "instanceType": {
+              "const": "t3a.medium"
+            },
+            "cpuLimit": {
+              "const": "4"
+            },
+            "memoryLimit": {
+              "const": "8Gi"
+            }
+          },
+          "required": [
+            "instanceType",
+            "cpuLimit",
+            "memoryLimit"
+          ]
+        }
+      },
+      "required": [
+        "api",
+        "worker"
+      ]
+    }
+  },
+  "required": [
+    "enabled",
+    "creditBootstrapReady",
+    "nodeClass",
+    "pools"
+  ]
+}

@@ -1,0 +1,3 @@
+# Explicit digest and mysql/ghcr-pull prerequisite required before any DB write.
+enabled: false
+image: ''

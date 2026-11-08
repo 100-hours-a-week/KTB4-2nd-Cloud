@@ -1,0 +1,273 @@
+{
+  "clusterName": "yeodam-v3-kafka",
+  "namespace": "kafka",
+  "backendSourceCommit": "fba61303f90afecddf703de108e19fd821213601",
+  "aiSourceCommit": "21ae667fba060fcec08089f81824723e6f866ec2",
+  "topics": [
+    {
+      "name": "prod.yeodam.trip-create.request",
+      "kind": "ai-request",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.trip-create.request-dlt",
+      "kind": "ai-dlt",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.trip-create.result",
+      "kind": "ai-result",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.trip-create.result-dlt",
+      "kind": "ai-dlt",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.trip-update.request",
+      "kind": "ai-request",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.trip-update.request-dlt",
+      "kind": "ai-dlt",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.trip-update.result",
+      "kind": "ai-result",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.trip-update.result-dlt",
+      "kind": "ai-dlt",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.story-create.request",
+      "kind": "ai-request",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.story-create.request-dlt",
+      "kind": "ai-dlt",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.story-create.result",
+      "kind": "ai-result",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.story-create.result-dlt",
+      "kind": "ai-dlt",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.image.initial-light",
+      "kind": "image-request",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.image.initial-heic",
+      "kind": "image-request",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.image.additional-light",
+      "kind": "image-request",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.image.additional-heic",
+      "kind": "image-request",
+      "partitions": 1
+    },
+    {
+      "name": "prod.yeodam.image.conversion-dlt",
+      "kind": "image-dlt",
+      "partitions": 2
+    }
+  ],
+  "backendEnvironment": {
+    "KAFKA_TRIP_CREATE_REQUEST_TOPIC": "prod.yeodam.trip-create.request",
+    "KAFKA_TRIP_CREATE_RESULT_TOPIC": "prod.yeodam.trip-create.result",
+    "KAFKA_TRIP_UPDATE_REQUEST_TOPIC": "prod.yeodam.trip-update.request",
+    "KAFKA_TRIP_UPDATE_RESULT_TOPIC": "prod.yeodam.trip-update.result",
+    "KAFKA_STORY_CREATE_REQUEST_TOPIC": "prod.yeodam.story-create.request",
+    "KAFKA_STORY_CREATE_RESULT_TOPIC": "prod.yeodam.story-create.result",
+    "ATTACHMENT_CONVERSION_INITIAL_LIGHT_TOPIC": "prod.yeodam.image.initial-light",
+    "ATTACHMENT_CONVERSION_INITIAL_HEIC_TOPIC": "prod.yeodam.image.initial-heic",
+    "ATTACHMENT_CONVERSION_ADDITIONAL_LIGHT_TOPIC": "prod.yeodam.image.additional-light",
+    "ATTACHMENT_CONVERSION_ADDITIONAL_HEIC_TOPIC": "prod.yeodam.image.additional-heic",
+    "ATTACHMENT_CONVERSION_DLT_TOPIC": "prod.yeodam.image.conversion-dlt",
+    "ATTACHMENT_CONVERSION_GROUP_PREFIX": "prod.yeodam.image-conversion",
+    "KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP": "yeodam-trip-update-results"
+  },
+  "backendSpringGroups": {
+    "trip": "prod.yeodam-trip-results",
+    "story": "prod.yeodam-story-results",
+    "outbox": "prod.yeodam-outbox-receipts"
+  },
+  "aiEnvironment": {
+    "KAFKA_TRIP_CREATE_REQUEST_TOPIC": "prod.yeodam.trip-create.request",
+    "KAFKA_TRIP_CREATE_RESULT_TOPIC": "prod.yeodam.trip-create.result",
+    "KAFKA_TRIP_UPDATE_REQUEST_TOPIC": "prod.yeodam.trip-update.request",
+    "KAFKA_TRIP_UPDATE_RESULT_TOPIC": "prod.yeodam.trip-update.result",
+    "KAFKA_STORY_CREATE_REQUEST_TOPIC": "prod.yeodam.story-create.request",
+    "KAFKA_STORY_CREATE_RESULT_TOPIC": "prod.yeodam.story-create.result"
+  },
+  "users": {
+    "auth-api": {
+      "readTopics": [],
+      "writeTopics": [],
+      "describeTopics": [
+        "prod.yeodam.trip-create.request",
+        "prod.yeodam.trip-update.request",
+        "prod.yeodam.story-create.request",
+        "prod.yeodam.image.initial-light",
+        "prod.yeodam.image.initial-heic",
+        "prod.yeodam.image.additional-light",
+        "prod.yeodam.image.additional-heic"
+      ],
+      "groups": []
+    },
+    "trip-api": {
+      "readTopics": [],
+      "writeTopics": [],
+      "describeTopics": [
+        "prod.yeodam.trip-create.request",
+        "prod.yeodam.trip-update.request",
+        "prod.yeodam.story-create.request",
+        "prod.yeodam.image.initial-light",
+        "prod.yeodam.image.initial-heic",
+        "prod.yeodam.image.additional-light",
+        "prod.yeodam.image.additional-heic"
+      ],
+      "groups": []
+    },
+    "photo-api": {
+      "readTopics": [],
+      "writeTopics": [],
+      "describeTopics": [
+        "prod.yeodam.trip-create.request",
+        "prod.yeodam.trip-update.request",
+        "prod.yeodam.story-create.request",
+        "prod.yeodam.image.initial-light",
+        "prod.yeodam.image.initial-heic",
+        "prod.yeodam.image.additional-light",
+        "prod.yeodam.image.additional-heic"
+      ],
+      "groups": []
+    },
+    "photo-converter": {
+      "readTopics": [
+        "prod.yeodam.image.initial-light",
+        "prod.yeodam.image.initial-heic",
+        "prod.yeodam.image.additional-light",
+        "prod.yeodam.image.additional-heic"
+      ],
+      "writeTopics": [
+        "prod.yeodam.image.conversion-dlt"
+      ],
+      "describeTopics": [],
+      "groups": [
+        "prod.yeodam.image-conversion-initial-light",
+        "prod.yeodam.image-conversion-initial-heic",
+        "prod.yeodam.image-conversion-additional-light",
+        "prod.yeodam.image-conversion-additional-heic",
+        "prod.yeodam.image-conversion-receipts"
+      ]
+    },
+    "trip-result-worker": {
+      "readTopics": [
+        "prod.yeodam.trip-create.request",
+        "prod.yeodam.trip-update.request",
+        "prod.yeodam.story-create.request",
+        "prod.yeodam.trip-create.result",
+        "prod.yeodam.trip-update.result",
+        "prod.yeodam.story-create.result"
+      ],
+      "writeTopics": [
+        "prod.yeodam.trip-create.result-dlt",
+        "prod.yeodam.trip-update.result-dlt",
+        "prod.yeodam.story-create.result-dlt"
+      ],
+      "describeTopics": [],
+      "groups": [
+        "prod.yeodam-trip-results",
+        "yeodam-trip-update-results",
+        "prod.yeodam-story-results",
+        "prod.yeodam-outbox-receipts"
+      ]
+    },
+    "ai": {
+      "readTopics": [
+        "prod.yeodam.trip-create.request",
+        "prod.yeodam.trip-update.request",
+        "prod.yeodam.story-create.request"
+      ],
+      "writeTopics": [
+        "prod.yeodam.trip-create.result",
+        "prod.yeodam.trip-update.result",
+        "prod.yeodam.story-create.result",
+        "prod.yeodam.trip-create.request-dlt",
+        "prod.yeodam.trip-update.request-dlt",
+        "prod.yeodam.story-create.request-dlt"
+      ],
+      "describeTopics": [],
+      "groups": [
+        "yeodam-ai-trip-create",
+        "yeodam-ai-trip-update",
+        "yeodam-ai-story-create"
+      ]
+    },
+    "connect-outbox": {
+      "readTopics": [
+        "prod.connect-configs",
+        "prod.connect-offsets",
+        "prod.connect-status",
+        "prod.yeodam.schema-history"
+      ],
+      "writeTopics": [
+        "prod.yeodam.trip-create.request",
+        "prod.yeodam.trip-update.request",
+        "prod.yeodam.story-create.request",
+        "prod.yeodam.image.initial-light",
+        "prod.yeodam.image.initial-heic",
+        "prod.yeodam.image.additional-light",
+        "prod.yeodam.image.additional-heic",
+        "prod.connect-configs",
+        "prod.connect-offsets",
+        "prod.connect-status",
+        "prod.yeodam.schema-history"
+      ],
+      "describeTopics": [],
+      "groups": [
+        "connect-v3",
+        "v3.yeodam.outbox-schemahistory"
+      ],
+      "extraTopicOperations": {
+        "prod.connect-configs": [
+          "Create",
+          "DescribeConfigs"
+        ],
+        "prod.connect-offsets": [
+          "Create",
+          "DescribeConfigs"
+        ],
+        "prod.connect-status": [
+          "Create",
+          "DescribeConfigs"
+        ],
+        "prod.yeodam.schema-history": [
+          "DescribeConfigs"
+        ]
+      },
+      "clusterOperations": [
+        "Describe"
+      ]
+    }
+  }
+}

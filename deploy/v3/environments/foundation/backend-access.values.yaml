@@ -1,0 +1,2 @@
+enabled: false
+certificates: {mysql: "", redis: "", mongodb: "", kafka: ""}

@@ -1,3 +1,4 @@
+albReadinessGates: false
 # Deployment purposes identify copies of the full backend, not startup modes.
 # No workloads, AWS permissions, runtime secrets or resource reservations here.
 namespaces:

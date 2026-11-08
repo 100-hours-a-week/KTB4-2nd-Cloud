@@ -1,0 +1,69 @@
+name: V3 MySQL schema image publication
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/v3/mysql-schema-image/**'
+      - 'deploy/v3/mysql-schema/**'
+      - 'deploy/v3/mysql/**'
+      - 'scripts/prepare-v3-mysql-schema-image.py'
+      - 'scripts/manage-v3-mysql-cdc.py'
+      - 'scripts/create-v3-mysql-bootstrap-secret.py'
+      - 'scripts/validate-v3-mysql-schema-image.sh'
+      - 'tests/ci/smoke-v3-mysql-schema.py'
+      - '.github/workflows/v3-mysql-schema-check.yml'
+      - '.github/workflows/v3-mysql-schema-image.yml'
+permissions:
+  contents: read
+concurrency:
+  group: v3-mysql-schema-image-main
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.repository == '100-hours-a-week/KTB4-2nd-Cloud'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    env:
+      V3_SCHEMA_IMAGE: ghcr.io/100-hours-a-week/yeodam-v3-mysql-schema:sha-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false}
+      - name: Build and test the exact image before publication
+        run: bash scripts/validate-v3-mysql-schema-image.sh
+      - name: Publish private image and record immutable input
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          export DOCKER_CONFIG="$(mktemp -d)"
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          package=/orgs/100-hours-a-week/packages/container/yeodam-v3-mysql-schema
+          if gh api "$package" > "$RUNNER_TEMP/schema-package.json" 2> "$RUNNER_TEMP/schema-package-error.txt"; then
+            python3 -c 'import json,os; assert json.load(open(os.environ["RUNNER_TEMP"]+"/schema-package.json"))["visibility"]=="private"'
+          else
+            grep -q 'HTTP 404' "$RUNNER_TEMP/schema-package-error.txt" || exit 1
+          fi
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$V3_SCHEMA_IMAGE"
+          metadata_ready=false
+          for attempt in {1..8}; do
+            if gh api "$package" > "$RUNNER_TEMP/schema-package.json" 2>/dev/null; then metadata_ready=true;break;fi
+            sleep 3
+          done
+          [[ "$metadata_ready" == true ]]
+          python3 -c 'import json,os; assert json.load(open(os.environ["RUNNER_TEMP"]+"/schema-package.json"))["visibility"]=="private"'
+          docker image inspect "$V3_SCHEMA_IMAGE" --format '{{index .RepoDigests 0}}' > "$RUNNER_TEMP/schema-image-ref.txt"
+          cat "$RUNNER_TEMP/schema-image-ref.txt" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve image input and synthetic results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: v3-mysql-schema-image-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/schema-image-ref.txt
+            ${{ runner.temp }}/yeodam-v3-mysql-schema-results
+          retention-days: 7
+          if-no-files-found: warn
