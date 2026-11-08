@@ -15,7 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def download(entry):
-    request = urllib.request.Request(entry['url'], headers={'User-Agent': 'yeodam-v3-validation'})
+    headers = {'User-Agent': 'yeodam-v3-validation'}
+    if 'accept' in entry:
+        headers['Accept'] = entry['accept']
+    request = urllib.request.Request(entry['url'], headers=headers)
     for attempt in range(3):
         try:
             with urllib.request.urlopen(request, timeout=120) as response:

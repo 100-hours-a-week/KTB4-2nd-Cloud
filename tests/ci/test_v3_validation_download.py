@@ -10,6 +10,13 @@ class Download(unittest.TestCase):
   error=urllib.error.HTTPError(self.entry()['url'],504,'Gateway timeout',{},None)
   with patch.object(m.urllib.request,'urlopen',side_effect=[error,io.BytesIO(b'verified')]) as request,patch.object(m.time,'sleep'):
    self.assertEqual(m.download(self.entry()),b'verified');self.assertEqual(request.call_count,2)
+ def test_release_asset_accept_keeps_checksum_verification(self):
+  entry={**self.entry(),'accept':'application/octet-stream'}
+  with patch.object(m.urllib.request,'urlopen',return_value=io.BytesIO(b'verified')) as request:
+   self.assertEqual(m.download(entry),b'verified')
+   self.assertEqual(request.call_args.args[0].get_header('Accept'),'application/octet-stream')
+  with patch.object(m.urllib.request,'urlopen',return_value=io.BytesIO(b'tampered')):
+   with self.assertRaisesRegex(ValueError,'checksum'):m.download(entry)
  def test_forbidden_is_not_retried(self):
   error=urllib.error.HTTPError(self.entry()['url'],403,'Forbidden',{},None)
   with patch.object(m.urllib.request,'urlopen',side_effect=error) as request,patch.object(m.time,'sleep'):

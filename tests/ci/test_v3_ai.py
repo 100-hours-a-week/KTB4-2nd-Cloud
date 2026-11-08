@@ -99,4 +99,145 @@ class AITests(unittest.TestCase):
             chart=Path(d)/'chart';shutil.copytree(ai.CHART,chart,ignore=shutil.ignore_patterns('__pycache__','*.pyc'));p=chart/'files/contract.json';v=json.loads(p.read_text());v['commonEnvironment']['STORY_MAX_TOKENS']='1024';p.write_text(json.dumps(v))
             source=subprocess.check_output([os.environ['V3_HELM'],'template','check',str(chart),'-n','ai','--kube-version','1.36.0','-f','-'],input=yaml.safe_dump(self.values),text=True);new=ai.platform.load_documents(source)
             self.assertNotEqual(self.deployment(self.docs)['spec']['template']['metadata']['annotations']['checksum/runtime'],self.deployment(new)['spec']['template']['metadata']['annotations']['checksum/runtime'])
+class KafkaOptionSourceTests(unittest.TestCase):
+    def result(self, body):
+        files = compatible_files()
+        files['app/jobs/kafka.py'] = body
+        return source.inspect(files, 'b' * 40)
+
+    def function(self, statements):
+        import textwrap
+        return 'def connection_options(cfg):\n' + textwrap.indent(statements, '    ')
+
+    def keyword_update(self, name='options'):
+        return name + '.update(ssl_context=cfg.context, sasl_mechanism=cfg.mechanism, sasl_plain_username=cfg.username, sasl_plain_password=cfg.password)\n'
+
+    def assert_blocked(self, body):
+        report = self.result(body)
+        self.assertEqual(report['status'], 'blocked')
+        self.assertIn('kafkaClientOptions', report['missing'])
+        self.assertFalse(report['runtimeVerified'])
+
+    def test_actual_ai_main_keyword_fixture_is_compatible(self):
+        body = (ROOT / 'tests/ci/v3/ai-connection-options-keyword.fixture.py').read_text()
+        report = self.result(body)
+        self.assertEqual(report['status'], 'compatible')
+        self.assertEqual(report['missing'], [])
+        self.assertFalse(report['runtimeVerified'])
+        self.assertEqual(set(report), {'kind','source','status','checks','missing','files','runtimeVerified'})
+        self.assertEqual(report['source'], 'b' * 40)
+        import hashlib
+        self.assertEqual(report['files']['app/jobs/kafka.py'], hashlib.sha256(body.encode()).hexdigest())
+
+    def test_literal_update_and_local_aliases_remain_supported(self):
+        expressions = [
+            'options = {}\n' + self.keyword_update() + 'return options\n',
+            'options = {}\noptions.update({"ssl_context":cfg.context,"sasl_mechanism":cfg.mechanism,"sasl_plain_username":cfg.username,"sasl_plain_password":cfg.password})\nreturn options\n',
+            'options: dict = {}\nalias = options\n' + self.keyword_update('alias') + 'return options\n',
+            'options = {}\n' + self.keyword_update() + 'options: dict\nreturn options\n',
+        ]
+        for body in expressions:
+            with self.subTest(body=body):
+                self.assertEqual(self.result(self.function(body))['status'], 'compatible')
+
+    def test_sasl_branch_accepts_plaintext_early_return(self):
+        body = 'options = {}\nif cfg.KAFKA_SECURITY_PROTOCOL == "PLAINTEXT":\n    return options\n' + self.keyword_update() + 'return options\n'
+        self.assertEqual(self.result(self.function(body))['status'], 'compatible')
+        body = 'options = {}\nif "SASL_SSL" == cfg.KAFKA_SECURITY_PROTOCOL:\n    ' + self.keyword_update() + 'return options\n'
+        self.assertEqual(self.result(self.function(body))['status'], 'compatible')
+
+    def test_every_security_keyword_is_required(self):
+        body = (ROOT / 'tests/ci/v3/ai-connection-options-keyword.fixture.py').read_text()
+        for key in source.SECURITY_OPTIONS:
+            modified = '\n'.join(line for line in body.splitlines() if not line.lstrip().startswith(key + '=')) + '\n'
+            with self.subTest(key=key):self.assert_blocked(modified)
+
+    def test_comments_strings_and_unused_dict_do_not_pass(self):
+        for unused in [
+            repr(' '.join(sorted(source.SECURITY_OPTIONS))) + '\n',
+            '{"ssl_context":1,"sasl_mechanism":1,"sasl_plain_username":1,"sasl_plain_password":1}\n',
+            'unused = {}\n' + self.keyword_update('unused')]:
+            with self.subTest(unused=unused):self.assert_blocked(self.function(unused + 'return {}\n'))
+
+    def test_other_dictionary_or_update_result_is_not_the_return_value(self):
+        for body in [
+            'options = {}\nother = {}\n' + self.keyword_update('other') + 'return options\n',
+            'options = {}\nreturn ' + self.keyword_update(),
+            'options = {}\nalias = options\noptions = {}\n' + self.keyword_update('alias') + 'return options\n',
+            'options = {}\n' + self.keyword_update() + 'options = {}\nreturn options\n']:
+            with self.subTest(body=body):self.assert_blocked(self.function(body))
+
+    def test_none_overwrite_removes_required_option(self):
+        for key in source.SECURITY_OPTIONS:
+            for update in [f'options.update({key}=None)\n', f'options.update({{"{key}":None}})\n']:
+                body = 'options = {}\n' + self.keyword_update() + update + 'return options\n'
+                with self.subTest(key=key, update=update):self.assert_blocked(self.function(body))
+        self.assert_blocked(self.function('return {"ssl_context":cfg.context,"sasl_mechanism":cfg.mechanism,"sasl_plain_username":cfg.username,"sasl_plain_password":cfg.password,"ssl_context":None}\n'))
+
+    def test_unreachable_or_plaintext_only_updates_do_not_pass(self):
+        for condition in ['False', 'cfg.KAFKA_SECURITY_PROTOCOL == "PLAINTEXT"']:
+            body = 'options = {}\nif ' + condition + ':\n    ' + self.keyword_update() + 'return options\n'
+            with self.subTest(condition=condition):self.assert_blocked(self.function(body))
+
+    def test_unknown_condition_must_have_security_on_both_return_paths(self):
+        body = 'options = {}\nif cfg.unknown:\n    ' + self.keyword_update() + 'return options\n'
+        self.assert_blocked(self.function(body))
+        body = 'options = {}\nif cfg.unknown:\n    ' + self.keyword_update() + 'else:\n    ' + self.keyword_update() + 'return options\n'
+        self.assertEqual(self.result(self.function(body))['status'], 'compatible')
+
+    def test_early_missing_return_and_implicit_none_are_rejected(self):
+        for ending in ['if cfg.unknown:\n    return {}\nreturn options\n', 'if cfg.unknown:\n    return options\n']:
+            self.assert_blocked(self.function('options = {}\n' + self.keyword_update() + ending))
+
+    def test_dynamic_unpacking_and_key_mutations_are_blocked(self):
+        for mutation in ['options.update(**cfg.extra)\n', 'options[cfg.key] = None\n', 'options.clear()\n', 'del options["ssl_context"]\n', 'options.update(cfg.extra)\n']:
+            with self.subTest(mutation=mutation):self.assert_blocked(self.function('options = {}\n' + self.keyword_update() + mutation + 'return options\n'))
+
+    def test_mutable_mapping_escape_cannot_retain_stale_keys(self):
+        for mutation in ['mutate(options)\n', 'result = mutate(options) or None\n', 'assert mutate(options)\n', 'if mutate(options):\n    pass\n', 'options.update(ssl_context=mutate(options))\n', 'options.update({"ssl_context":mutate(options)})\n']:
+            with self.subTest(mutation=mutation):self.assert_blocked(self.function('options = {}\n' + self.keyword_update() + mutation + 'return options\n'))
+
+    def test_protocol_input_reassignment_is_not_assumed_sasl(self):
+        self.assert_blocked(self.function('cfg = other_config()\noptions = {}\nif cfg.KAFKA_SECURITY_PROTOCOL == "SASL_SSL":\n    ' + self.keyword_update() + 'return options\n'))
+
+    def test_nested_function_and_other_scope_do_not_count(self):
+        self.assert_blocked('def outer():\n    def connection_options(cfg):\n        return {"ssl_context":1,"sasl_mechanism":1,"sasl_plain_username":1,"sasl_plain_password":1}\n')
+
+    def test_unsupported_flow_is_bounded_and_never_executed(self):
+        self.assert_blocked(self.function('raise RuntimeError("must not execute inspected source")\n'))
+        self.assert_blocked(self.function('options = {}\n' + self.keyword_update() + 'for item in cfg.values:\n    options.clear()\nreturn options\n'))
+        self.assert_blocked(self.function('options = {}\n' + self.keyword_update() + ('if cfg.unknown:\n    pass\n' * 7) + 'return options\n'))
+
+    def test_keyword_support_does_not_bypass_other_checks(self):
+        files = compatible_files()
+        files['app/jobs/kafka.py'] = (ROOT / 'tests/ci/v3/ai-connection-options-keyword.fixture.py').read_text()
+        files['app/infra/qdrant.py'] = 'a=QdrantClient(url=location,api_key=key)\nb=AsyncQdrantClient(url=location)\n'
+        report = source.inspect(files, 'b' * 40)
+        self.assertTrue(report['checks']['kafkaClientOptions'])
+        self.assertEqual(report['status'], 'blocked')
+        self.assertIn('qdrantClients', report['missing'])
+
+
+    def test_keyword_screen_preserves_image_and_shared_model_review_gates(self):
+        values = ai.fixture()
+        files = compatible_files()
+        files['app/jobs/kafka.py'] = (ROOT / 'tests/ci/v3/ai-connection-options-keyword.fixture.py').read_text()
+        screen = source.inspect(files, values['source'])
+        image = {'image':values['image'],'source':values['source'],'runAsUser':10001,'registryDigestVerified':True,'readOnlyRootSupported':True,'minimumMemoryReviewed':True,'healthDependenciesAvailable':True}
+        models = {'sharedCapacityApproved':True,'routeAndSecurityGroupVerified':True,'privatePeers':[]}
+        result = prepare.prepare(values['image'],values['source'],screen,image,models,values['trust'],'1'*32)
+        self.assertTrue(result['full.values.json']['review']['sourceCompatible'])
+        self.assertFalse(screen['runtimeVerified'])
+        with self.assertRaises(ValueError):
+            prepare.prepare(values['image'],values['source'],screen,image|{'registryDigestVerified':False},models,values['trust'],'1'*32)
+        with self.assertRaises(ValueError):
+            prepare.prepare(values['image'],values['source'],screen,image,models|{'sharedCapacityApproved':False},values['trust'],'1'*32)
+
+    def test_opaque_or_redefined_connection_function_is_not_assumed_dict(self):
+        valid = self.function('options = {}\n' + self.keyword_update() + 'return options\n')
+        self.assert_blocked('@wrapper\n' + valid)
+        self.assert_blocked(valid + '\ndef connection_options(cfg):\n    return {}\n')
+        self.assert_blocked(self.function('options = {}\n' + self.keyword_update() + 'yield options\nreturn options\n'))
+        self.assert_blocked(self.function('options = {}\nif (cfg := other()):\n    pass\n' + self.keyword_update() + 'return options\n'))
+
 if __name__=='__main__':unittest.main()
