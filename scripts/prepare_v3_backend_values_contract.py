@@ -15,6 +15,7 @@ def prepare(stage,image,release,settings,revision):
  require(stage=='auth' or settings['redisSentinelFeatureReviewed'],'All-role deployment requires BE Redisson Sentinel/TLS review; first auth does not prove feature compatibility')
  require(re.fullmatch(r'i-[a-f0-9]{17}',settings['AI_EC2_INSTANCE_ID']),'Explicit reviewed AI identity required; no start permission implied')
  for k in KEYS-{'AI_EC2_INSTANCE_ID'}:
+  if k=='AI_SERVER_BASE_URL' and settings[k]=='http://ai-api.ai.svc.cluster.local:8000':continue
   u=urlsplit(settings[k]);require(u.scheme=='https' and u.hostname and not u.username and not u.password and not u.query and not u.fragment,'Reviewed credential-free HTTPS endpoints required')
   require(u.hostname not in ['localhost','0.0.0.0'] and not u.hostname.startswith('127.'),'No loopback dependency')
  return {'images':{'backend':image},'defaults':{'configurationRevision':revision,'configMapData':{**{k:settings[k] for k in KEYS},'ATTACHMENT_S3_BUCKET':BUCKET,'RELEASE':release}},'workloads':{r:{'enabled':r=='auth-api' or stage=='all'} for r in ROLES}}

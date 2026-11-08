@@ -1,0 +1,11 @@
+# Preparation only; keep workloads disabled until the separate activation review.
+accessEnabled: false
+workloads:
+  api: false
+  runner: false
+image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:202d77f657a28f9451d6271ba2c2241f396c1a53061c8304a72324a7bdec1741
+source: a72b18ccc45a6385fb6e55ef161131de72e140a9
+review:
+  sourceCompatible: false
+  imageReviewed: false
+  connectionsReviewed: false

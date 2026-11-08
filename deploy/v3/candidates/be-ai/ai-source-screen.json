@@ -1,0 +1,24 @@
+{
+  "kind": "v3-ai-source-screen-v1",
+  "source": "a72b18ccc45a6385fb6e55ef161131de72e140a9",
+  "status": "compatible",
+  "checks": {
+    "kafkaProtocol": true,
+    "kafkaSettings": true,
+    "kafkaClientOptions": true,
+    "qdrantSetting": true,
+    "qdrantClients": true,
+    "placeIndexSettings": true,
+    "runnerIndexPreparation": true
+  },
+  "missing": [],
+  "files": {
+    "app/jobs/config.py": "195b3074edec0178506b9a76720e55dcf6b255580e41b1811a09ff3568d1711c",
+    "app/core/config.py": "83dcbd23cc7197722ef2deb0d876adc8d4ea421f7cedd4a0c01e26b0e9563bae",
+    "app/jobs/kafka.py": "d697ffc0cc551c056331fa3501f1a27a2c2bdb66d7abc7b7a25e6725fc2a419d",
+    "app/infra/qdrant.py": "851eb277259f29ba0c42ccd5729d8d7d5a3cb2a70f029852e7c086b247477308",
+    "app/infra/place_index.py": "e942cfd6f36dba0ff146e18809b90397d46baa15c9cb86854b0b112010078cc2",
+    "app/jobs/runner.py": "57dea8e37f62efeda90e98caced5330db4ae1801d9e99fc00a80bc9becd01d23"
+  },
+  "runtimeVerified": false
+}
