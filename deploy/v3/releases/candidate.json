@@ -5,10 +5,10 @@
   "components": {
     "frontend": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-FE",
-      "sourceSha": "5322c01311f9b3194805bce05c5b2d6418aa4765",
-      "buildRunId": 41786116483,
-      "buildSourceSha": "5322c01311f9b3194805bce05c5b2d6418aa4765",
-      "image": "ghcr.io/100-hours-a-week/yeodam-frontend@sha256:ce819e0e145795b7aafb171bf2a995c4c7b1d3c38fb79f89a211a693ae450cb2"
+      "sourceSha": "91b0dc1daedfb006fd42b35285c88332da64fefe",
+      "image": "ghcr.io/100-hours-a-week/yeodam-frontend@sha256:d528e496a566120e3f93affb9ef2fdb16bd16de123dfb954f9549d12e3c0f4f4",
+      "buildRunId": 42626478218,
+      "buildSourceSha": "91b0dc1daedfb006fd42b35285c88332da64fefe"
     },
     "backend": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
@@ -35,7 +35,7 @@
   "values": {
     "frontend": {
       "images": {
-        "frontend": "ghcr.io/100-hours-a-week/yeodam-frontend@sha256:ce819e0e145795b7aafb171bf2a995c4c7b1d3c38fb79f89a211a693ae450cb2"
+        "frontend": "ghcr.io/100-hours-a-week/yeodam-frontend@sha256:d528e496a566120e3f93affb9ef2fdb16bd16de123dfb954f9549d12e3c0f4f4"
       },
       "backendContract": false,
       "backendConnectionContract": false,
@@ -67,7 +67,7 @@
           "NEXT_TELEMETRY_DISABLED": "1",
           "NODE_OPTIONS": "--max-old-space-size=256",
           "SERVER_API_BASE_URL": "https://v3.yeodam-2gether.com/api",
-          "RELEASE": "5322c01311f9b3194805bce05c5b2d6418aa4765"
+          "RELEASE": "91b0dc1daedfb006fd42b35285c88332da64fefe"
         },
         "springProperties": {},
         "secretRefs": {},
