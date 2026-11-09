@@ -70,6 +70,11 @@ def exercise(image, vulnerable):
                     + ('--user ' + user + ' ' if auth else '') + '--raw -e ' + command]
             return docker(*argv, check=check)
 
+        def check_oauth_clock():
+            clock = cli('TIME').stdout.splitlines()
+            if len(clock) != 2 or not all(value.isdigit() for value in clock):
+                raise RuntimeError('App OAuth TIME access failed')
+
         def ready():
             for _ in range(80):
                 if cli('PING', check=False).stdout.strip() == 'PONG':
@@ -96,6 +101,14 @@ def exercise(image, vulnerable):
                 raise RuntimeError('Default user login accepted')
             if cli('CONFIG GET maxmemory', check=False).returncode == 0:
                 raise RuntimeError('App CONFIG access accepted')
+            check_oauth_clock()
+            # Reproduce the login blocker with fixture-only credentials/data.
+            cli('ACL SETUSER app -time', user='admin')
+            denied_time = cli('TIME', check=False)
+            if denied_time.returncode == 0 or 'NOPERM' not in denied_time.stdout + denied_time.stderr:
+                raise RuntimeError('Old app ACL TIME denial was not reproduced')
+            cli('ACL SETUSER app +time', user='admin')
+            check_oauth_clock()
             cli('SET v3-aof:control plain')
             transaction = 'MULTI\nHSET v3-aof:state status queued\nZADD v3-aof:queue 1 item1\nEXEC\n'
             result = subprocess.run(['docker', 'exec', '-i', name, '/bin/bash', '-ec',
@@ -121,6 +134,7 @@ def exercise(image, vulnerable):
                     raise RuntimeError('Fixed AOF data restoration failed')
                 if cli('CONFIG GET maxmemory', check=False).returncode == 0:
                     raise RuntimeError('Post-restart app admin access accepted')
+                check_oauth_clock()
                 cli('DEL v3-aof:control v3-aof:state v3-aof:queue')
                 if cli('EXISTS v3-aof:control v3-aof:state v3-aof:queue').stdout.strip() != '0':
                     raise RuntimeError('Fixture cleanup failed')
@@ -128,7 +142,8 @@ def exercise(image, vulnerable):
             if oom != 'false':
                 raise RuntimeError('Redis fixture exceeded memory limit')
             return {'mode': 'old-acl' if vulnerable else 'fixed-acl', 'aofReplayDenied': replay_denied,
-                    'transactionRestored': bool(restored), 'oomKilled': False}
+                    'transactionRestored': bool(restored), 'oldAclTimeDenied': True,
+                    'oauthTimeAfterRestart': True if not vulnerable else None, 'oomKilled': False}
         finally:
             docker('rm', '-f', name)
             # UID999 owns the bind-mounted AOF dirs; make only this scratch tree

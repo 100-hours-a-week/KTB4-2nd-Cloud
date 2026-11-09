@@ -62,6 +62,8 @@ def validate(documents, enabled=False, smoke=False, bootstrap=False):
             'empty selected primary requires data recovery' in configs['start-redis.sh'], 'Redis restart must not blindly restore ordinal primary')
     require("printf 'user default reset off ~* &* +@all\\n'" in configs['start-redis.sh'],
             'AOF transaction replay requires default permissions with login disabled')
+    require('+@pubsub -@admin -@dangerous +wait +info +time\\n' in configs['start-redis.sh'],
+            'OAuth TIME access required without widening app admin permissions')
     services = {d['metadata']['name']: d['spec'] for d in documents if d['kind'] == 'Service'}
     require(set(services) == {'redis-members', 'redis-sentinel'}, 'No random two-member writer Service')
     for name, svc in services.items():
