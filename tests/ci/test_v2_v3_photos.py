@@ -39,7 +39,7 @@ class PhotoTest(unittest.TestCase):
   sql=p.SQL_PATH.read_bytes();self.assertEqual(hashlib.sha256(sql).hexdigest(),p.SQL_SHA256)
   self.assertTrue(sql.startswith(b'WITH '))
   for token in ['UPDATE ','DELETE ','INSERT ','DROP ','ALTER ','CREATE ']:self.assertNotIn(token,sql.decode().upper())
-  for field in ['analyze_storage_key','preview_storage_key','display_storage_key','thumbnail_key','profile_image_url','story_blocks','initial_attachment_upload_items','additional_attachment_upload_items']:
+  for field in ['analyze_storage_key','preview_storage_key','display_storage_key','thumbnail_key','profile_image_url','initial_attachment_upload_items','additional_attachment_upload_items']:
    self.assertIn(field,sql.decode())
  def test_reference_dedup_and_required_wins(self):
   value=refs([{'key':KEY,'origin':'file.original','category':'required'},
@@ -53,9 +53,19 @@ class PhotoTest(unittest.TestCase):
  def test_external_profile_not_requested(self):
   value=refs([{'key':'https://k.kakaocdn.net/fixture.jpg','origin':'user.profile','category':'required'}])
   self.assertEqual(value['objects'],[]);self.assertEqual(value['excludedReferences']['external-profile'],1)
+ def test_http_kakao_profile_is_external_without_fetch(self):
+  value=refs([{'key':'http://k.kakaocdn.net/fixture.jpg?fixture=1','origin':'user.profile','category':'required'}])
+  self.assertEqual(value['objects'],[]);self.assertEqual(value['excludedReferences'],{'external-profile':1});self.assertFalse(value['blockedReferences'])
+ def test_unknown_http_and_malformed_profile_still_block(self):
+  for url in ['http://example.invalid/image.jpg','https:///missing-host.jpg']:
+   self.assertTrue(refs([{'key':url,'origin':'user.profile','category':'required'}])['blockedReferences'])
+ def test_deleted_story_attachment_not_reactivated(self):
+  sql=p.SQL_PATH.read_text();live=sql.split('), refs AS')[0]
+  self.assertIn('AND a.deleted_at IS NULL',live);self.assertNotIn('OR EXISTS',live)
  def test_absolute_source_profile_blocks(self):
   for url in ['https://'+p.SOURCE+'.s3-ap-northeast-2.amazonaws.com/'+KEY,
-              'https://s3.ap-northeast-2.amazonaws.com/'+p.SOURCE+'/'+KEY]:
+              'https://s3.ap-northeast-2.amazonaws.com/'+p.SOURCE+'/'+KEY,
+              'https://s3-ap-northeast-2.amazonaws.com/'+p.SOURCE+'/'+KEY]:
    value=refs([{'key':url,'origin':'user.profile','category':'required'}]);self.assertTrue(value['blockedReferences'])
  def test_unknown_shared_and_path_keys_block(self):
   for key in ['ai-reference/places/index.sqlite','trip-downloads/file.zip','trip-uploads/../escape','trip-uploads/a/%2e%2e','trip-uploads/a//x','trip-uploads/a/line\nfeed']:

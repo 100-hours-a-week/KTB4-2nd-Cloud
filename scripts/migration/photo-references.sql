@@ -3,12 +3,7 @@ WITH live AS (
  FROM yeodam.trip_attachments a
  JOIN yeodam.trips t ON t.trip_id=a.trip_id
  JOIN yeodam.users u ON u.user_id=t.user_id
- WHERE t.deleted_at IS NULL AND u.deleted_at IS NULL AND (
-   a.deleted_at IS NULL OR EXISTS (
-    SELECT 1 FROM yeodam.story_blocks b JOIN yeodam.stories s ON s.story_id=b.story_id
-    WHERE b.trip_attachment_id=a.trip_attachment_id AND b.deleted_at IS NULL AND s.deleted_at IS NULL
-   )
- )
+ WHERE t.deleted_at IS NULL AND u.deleted_at IS NULL AND a.deleted_at IS NULL
 ), refs AS (
  SELECT f.object_key AS object_key,'file.original' AS origin,
    CASE WHEN f.deleted_at IS NOT NULL OR u.deleted_at IS NOT NULL THEN 'deleted'

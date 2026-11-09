@@ -15,7 +15,7 @@ ACCOUNT='483175530259'
 SOURCE='yeodam-v1-app-data-483175530259-ap-northeast-2'
 TARGET='yeodam-v3-foundation-app-data-483175530259-ap-northeast-2'
 SQL_PATH=ROOT/'scripts/migration/photo-references.sql'
-SQL_SHA256='f0fb8bf84056d9ec62d3f5f25e6b708615f40e6c47125085b8b16ce19c1bbd10'
+SQL_SHA256='9f6c118d84a06a2b77b675dbb5c2c5024ef9023eb4a5289335b420b3cd774502'
 PREFIXES=('trip-uploads/','trip-additions/')
 EXCLUDED={'deleted','unfinished-upload','historical-upload'}
 CATEGORIES=EXCLUDED|{'required','blocked-file-state'}
@@ -51,8 +51,9 @@ def reference_manifest(rows,backup_sha,sensitivity):
         if category in EXCLUDED:excluded[category]+=1;continue
         if key.startswith(('https://','http://')):
             parsed=urlsplit(key)
-            source_url=bool(parsed.hostname and (parsed.hostname.startswith(SOURCE+'.') or (parsed.hostname.startswith('s3.') and parsed.path.startswith('/'+SOURCE+'/'))))
-            if row['origin']=='user.profile' and parsed.scheme=='https' and parsed.hostname not in ['localhost','127.0.0.1','::1'] and not source_url:
+            source_url=bool((parsed.hostname or '').startswith(SOURCE+'.') or parsed.path.startswith('/'+SOURCE+'/'))
+            external_profile=bool(parsed.hostname and parsed.hostname not in ['localhost','127.0.0.1','::1'] and not source_url and (parsed.scheme=='https' or (parsed.scheme=='http' and parsed.hostname.endswith('.kakaocdn.net'))))
+            if row['origin']=='user.profile' and external_profile:
                 excluded['external-profile']+=1;continue
             blocked['absolute-url-requires-review']+=1;continue
         if category=='blocked-file-state':blocked[category]+=1;continue
