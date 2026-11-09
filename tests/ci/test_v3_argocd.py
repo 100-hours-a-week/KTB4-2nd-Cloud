@@ -56,13 +56,14 @@ class ArgoContracts(unittest.TestCase):
             with self.subTest(mode=mode),self.assertRaises(ValueError):m.validate_access(docs,True)
 
     def test_no_cost_or_permissions_widening(self):
-        for mode in ['replicas','memory','image','public','scope']:
+        for mode in ['replicas','memory','image','public','scope','health-persist']:
             docs=copy.deepcopy(self.controller)
             obj=next(x for x in docs if x['kind']=='Deployment' and x['metadata']['name']=='argocd-server')
             if mode=='replicas':obj['spec']['replicas']=2
             elif mode=='memory':obj['spec']['template']['spec']['containers'][0]['resources']['limits']['memory']='2Gi'
             elif mode=='image':obj['spec']['template']['spec']['containers'][0]['image']='argocd:latest'
             elif mode=='public':next(x for x in docs if x['kind']=='Service')['spec']['type']='LoadBalancer'
+            elif mode=='health-persist':next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='argocd-cmd-params-cm')['data']['controller.resource.health.persist']='false'
             else:next(x for x in docs if x['kind']=='Secret' and x['metadata']['name']=='argocd-cluster-v3-apps')['stringData']['namespaces']='frontend,mysql'
             with self.subTest(mode=mode),self.assertRaises(ValueError):m.validate_controller(docs)
 

@@ -27,7 +27,7 @@ resource "aws_iam_role" "status" {
   count = var.enabled ? 1 : 0
   name  = "yeodam-v3-foundation-delivery-status"
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Federated = data.aws_iam_openid_connect_provider.github[0].arn }, Action = "sts:AssumeRoleWithWebIdentity", Condition = {
-    StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com", "token.actions.githubusercontent.com:sub" = "repo:100-hours-a-week/KTB4-2nd-Cloud:environment:v3-production" }
+    StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com", "token.actions.githubusercontent.com:sub" = "repo:100-hours-a-week@167328634/KTB4-2nd-Cloud@1344655631:environment:v3-production" }
     StringLike   = { "sts:RoleSessionName" = "v3-cd-*" }
   } }] })
   lifecycle {

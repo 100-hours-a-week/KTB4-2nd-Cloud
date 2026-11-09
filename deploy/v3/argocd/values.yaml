@@ -108,6 +108,7 @@ configs:
       return hs
     url: https://localhost:8080
   params:
+    controller.resource.health.persist: true
     controller.repo.server.strict.tls: true
     server.repo.server.strict.tls: true
   rbac:

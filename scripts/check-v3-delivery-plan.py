@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Accept only four new observer resources; no nodes, credentials or production changes."""
+"""Accept observer bootstrap or its exact immutable-subject repair; no workload changes."""
 import argparse,json,re
 from pathlib import Path
+from v3_delivery_contract import OIDC_SUBJECT
 
 
 def require(ok,message):
  if not ok:raise ValueError(message)
+
+
+def trust(subject):
+ return {'Version':'2012-10-17','Statement':[{'Effect':'Allow','Principal':{'Federated':'arn:aws:iam::483175530259:oidc-provider/token.actions.githubusercontent.com'},'Action':'sts:AssumeRoleWithWebIdentity','Condition':{'StringEquals':{'token.actions.githubusercontent.com:aud':'sts.amazonaws.com','token.actions.githubusercontent.com:sub':subject},'StringLike':{'sts:RoleSessionName':'v3-cd-*'}}}]}
 
 
 def validate(plan,review=None):
@@ -15,6 +20,14 @@ def validate(plan,review=None):
  ids=review['systemInstanceIds'];endpoint=review['eksEndpoint']
  require(1<=len(ids)<=2 and len(set(ids))==len(ids)and all(re.fullmatch('i-[a-f0-9]{17}',i)for i in ids),'Exact existing system instance IDs')
  require(re.fullmatch(r'https://[A-Fa-f0-9]{32}\.[a-z0-9-]+\.ap-northeast-2\.eks\.amazonaws\.com',endpoint),'Exact EKS TLS hostname')
+ if len(changes)==1 and changes[0]['address']=='aws_iam_role.status[0]':
+  change=changes[0]['change'];require(change['actions']==['update'],'Only in-place observer trust repair')
+  before=dict(change['before']);after=dict(change['after'])
+  require(before.get('name')==after.get('name')=='yeodam-v3-foundation-delivery-status','Exact observer role')
+  require(json.loads(before.pop('assume_role_policy'))==trust('repo:100-hours-a-week/KTB4-2nd-Cloud:environment:v3-production'),'Only the known legacy subject may be repaired')
+  require(json.loads(after.pop('assume_role_policy'))==trust(OIDC_SUBJECT),'Exact repository IDs and approved Environment required')
+  require(before==after,'No role property or permission changes beyond subject')
+  return {'creates':0,'updates':1,'deletes':0,'newNodes':0,'scope':'immutable OIDC subject only'}
  expected={'aws_iam_role.status[0]','aws_iam_role_policy.status[0]','aws_ssm_document.status[0]','aws_eks_access_entry.status[0]'}
  require(len(changes)==4 and {r['address']for r in changes}==expected,'Only four observer resources may be created')
  data={}
@@ -23,8 +36,7 @@ def validate(plan,review=None):
   data[r['address']]=r['change']['after']
  role='yeodam-v3-foundation-delivery-status';arn='arn:aws:iam::483175530259:role/'+role
  r=data['aws_iam_role.status[0]'];require(r['name']==role,'Exact observer role')
- trust={'Version':'2012-10-17','Statement':[{'Effect':'Allow','Principal':{'Federated':'arn:aws:iam::483175530259:oidc-provider/token.actions.githubusercontent.com'},'Action':'sts:AssumeRoleWithWebIdentity','Condition':{'StringEquals':{'token.actions.githubusercontent.com:aud':'sts.amazonaws.com','token.actions.githubusercontent.com:sub':'repo:100-hours-a-week/KTB4-2nd-Cloud:environment:v3-production'},'StringLike':{'sts:RoleSessionName':'v3-cd-*'}}}]}
- require(json.loads(r['assume_role_policy'])==trust,'Exact approved-environment OIDC trust')
+ require(json.loads(r['assume_role_policy'])==trust(OIDC_SUBJECT),'Exact approved-environment immutable OIDC trust')
  doc=data['aws_ssm_document.status[0]'];require(doc['name']=='Yeodam-V3-Delivery-Status'and doc['document_type']=='Session'and doc['document_format']=='JSON','Port tunnel only')
  require(json.loads(doc['content'])=={'schemaVersion':'1.0','description':'Read-only Argo status TLS tunnel','sessionType':'Port','inputs':{'idleSessionTimeout':'5','maxSessionDuration':'20'},'properties':{'host':endpoint.removeprefix('https://'),'portNumber':'443','localPortNumber':'18573','type':'LocalPortForwarding'}},'No shell or arbitrary host/port parameters')
  policy={'Version':'2012-10-17','Statement':[

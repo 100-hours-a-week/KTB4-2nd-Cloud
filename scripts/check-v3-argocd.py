@@ -85,6 +85,8 @@ def validate_controller(docs):
         require(x['metadata'].get('namespace','argocd')=='argocd', 'Upstream resources must stay in argocd')
         if x['kind']=='Service':require(x['spec'].get('type','ClusterIP')=='ClusterIP' and not x['spec'].get('externalIPs'), 'No public service')
     cm = next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='argocd-cm')['data']
+    params = next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='argocd-cmd-params-cm')['data']
+    require(params.get('controller.resource.health.persist')=='true', 'Persist individual app health for the read-only delivery observer')
     require(cm['exec.enabled']=='false' and cm['users.anonymous.enabled']=='false' and cm['application.resourceTrackingMethod']=='annotation', 'No exec/anonymous access or Helm label tracking collision')
     require(cm.get('resource.respectRBAC')=='strict' and 'c.status == \"True\"' in cm.get('resource.customizations.health.external-secrets.io_ExternalSecret',''),'Scoped cache and ExternalSecret readiness required')
     secrets={x['metadata']['name']:x for x in docs if x['kind']=='Secret'}
