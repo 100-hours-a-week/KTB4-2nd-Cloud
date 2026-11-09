@@ -27,6 +27,7 @@ class Outbox:
    if r.returncode==0:break
    time.sleep(2)
   else:raise RuntimeError('Synthetic MySQL startup timeout')
+  assert self.sql('SELECT @@global.binlog_expire_logs_seconds;')=='604800','Seven-day retention not effective'
   self.sql('SET GLOBAL rpl_semi_sync_source_enabled=OFF; SET GLOBAL super_read_only=OFF; SET GLOBAL read_only=OFF;')
   for table in TABLES:
    idtype='VARCHAR(36)' if table in ['trip_creation_outbox','attachment_conversion_outbox'] else 'BIGINT'
@@ -64,11 +65,11 @@ class Outbox:
    with urllib.request.urlopen(req,timeout=(90 if method != 'GET' else 10)) as r:return json.load(r) if r.status!=204 else None
   except urllib.error.HTTPError as e:
    (self.ctx['output']/'outbox-rest-error.json').write_text(json.dumps({'path':path,'code':e.code,'message':e.read().decode()[:12000]}));raise
- def running(self):
+ def running(self,wait_failed=False):
   for _ in range(120):
    try:
     status=self.request('/connectors/'+NAME+'/status')
-    if status.get('connector',{}).get('state')=='FAILED' or any(t['state']=='FAILED' for t in status.get('tasks',[])):
+    if not wait_failed and (status.get('connector',{}).get('state')=='FAILED' or any(t['state']=='FAILED' for t in status.get('tasks',[]))):
      (self.ctx['output']/'outbox-failed-status.json').write_text(json.dumps(status,indent=2));raise RuntimeError('Source connector/task failed; see synthetic worker diagnostics')
     if status.get('tasks') and all(t['state']=='RUNNING' for t in status['tasks']):return
    except urllib.error.HTTPError as e:
@@ -76,8 +77,8 @@ class Outbox:
    except (urllib.error.URLError,TimeoutError,ConnectionError,http.client.HTTPException):pass
    time.sleep(2)
   raise RuntimeError('Source task readiness timeout')
- def records(self):
-  ctx=self.ctx;r=ctx['docker']('run','--rm','--platform','linux/amd64','--network',ctx['net'],'--memory','256m','--cpus','.5','--read-only','--tmpfs','/tmp:rw,size=32m','-v',f"{ctx['directory']}:/check:ro",'--entrypoint','java',ctx['image'],'-Xmx96m','-cp','/opt/kafka/libs/*:/check/classes','OutboxWire','/check/admin.properties',*OUTPUTS,timeout=60)
+ def records(self,topics=OUTPUTS):
+  ctx=self.ctx;r=ctx['docker']('run','--rm','--platform','linux/amd64','--network',ctx['net'],'--memory','256m','--cpus','.5','--read-only','--tmpfs','/tmp:rw,size=32m','-v',f"{ctx['directory']}:/check:ro",'--entrypoint','java',ctx['image'],'-Xmx96m','-cp','/opt/kafka/libs/*:/check/classes','OutboxWire','/check/admin.properties',*topics,timeout=60)
   return [json.loads(line.split('OUTBOX_RECORD ',1)[1]) for line in r.stdout.splitlines() if line.startswith('OUTBOX_RECORD ')]
  def check_wire(self,records,minimum):
   found=collections.Counter()
@@ -108,8 +109,44 @@ class Outbox:
   ctx['docker']('stop','--time','90',ctx['worker'],timeout=110);self.stage_rows(7);ctx['docker']('start',ctx['worker'])
   state=json.loads(ctx['docker']('inspect',ctx['worker']).stdout)[0];self.port=state['NetworkSettings']['Ports']['8083/tcp'][0]['HostPort'];self.running()
   found=self.receive(21);time.sleep(3);found=self.check_wire(self.records(),21);assert found and all(v==1 for v in found.values()),'Controlled restart unexpectedly replayed acknowledged events'
+  # Reproduce expired history in this disposable fixture only. No source offset reset.
+  time.sleep(65)
+  ctx['docker']('stop','--time','90',ctx['worker'],timeout=110)
+  for table in TABLES:self.sql('DELETE FROM yeodam.'+table+';')
+  assert all(self.sql('SELECT COUNT(*) FROM yeodam.'+table+';')=='0' for table in TABLES),'Recovery requires empty Outbox'
+  self.sql('FLUSH BINARY LOGS;')
+  current=self.sql('SHOW BINARY LOGS;').splitlines()[-1].split()[0]
+  assert __import__('re').fullmatch(r'mysql-bin\.[0-9]+',current)
+  self.sql("PURGE BINARY LOGS TO '"+current+"';")
+  ctx['docker']('start',ctx['worker'])
+  self.port=json.loads(ctx['docker']('inspect',ctx['worker']).stdout)[0]['NetworkSettings']['Ports']['8083/tcp'][0]['HostPort']
+  for _ in range(90):
+   try:
+    status=self.request('/connectors/'+NAME+'/status');tasks=status.get('tasks',[])
+    if tasks and tasks[0]['state']=='FAILED' and 'no longer available' in tasks[0].get('trace',''):break
+   except (urllib.error.URLError,TimeoutError,ConnectionError,http.client.HTTPException):pass
+   time.sleep(2)
+  else:raise RuntimeError('Missing-binlog fail-closed condition not reproduced')
+  print('PASS: missing binlog rejected without resetting source offsets',flush=True)
+  recovery=dict(config,**{'snapshot.mode':'when_needed'})
+  self.request('/connectors/'+NAME+'/config','PUT',recovery);self.running(wait_failed=True)
+  # Heartbeat must commit the empty snapshot without fabricating business rows.
+  time.sleep(65)
+  empty_offset=self.request('/connectors/'+NAME+'/offsets')['offsets'][0]['offset']
+  assert empty_offset['file']==current and empty_offset.get('snapshot') in (None,False,'false'),'Empty snapshot offset was not committed'
+  assert self.records(['__debezium-heartbeat.v3.yeodam.outbox']),'Heartbeat Topic remained empty'
+  # Empty re-snapshot must not replay acknowledged work; new stream events still flow.
+  self.stage_rows(9);found=self.receive(28)
+  assert found and all(v==1 for v in found.values()),'Recovery replayed old events'
+  time.sleep(65)
+  recovered=self.request('/connectors/'+NAME+'/offsets');offset=recovered['offsets'][0]['offset']
+  assert offset['file']==current and offset.get('snapshot') in (None,False,'false'),'New non-snapshot source offset not committed'
+  self.request('/connectors/'+NAME+'/config','PUT',config);time.sleep(3);self.running(wait_failed=True)
+  assert self.request('/connectors/'+NAME+'/config')['snapshot.mode']=='initial'
+  found=self.check_wire(self.records(),28);assert found and all(v==1 for v in found.values()),'Normal-mode restore replayed work'
+  print('PASS: empty-Outbox recovery, new stream7, committed offsets and normal mode restored',flush=True)
   state=json.loads(ctx['docker']('inspect',ctx['worker']).stdout)[0];assert state['State']['Running'] and not state['State']['OOMKilled']
-  (ctx['output']/'outbox-result.json').write_text(json.dumps({'sourceTables':4,'businessTopics':7,'initialPendingRecords':7,'streamRecords':7,'offlineRecoveryRecords':7,'unexpectedEvents':0,'controlledRestartDuplicates':0,'committedOffsetBeforeRestart':True,'configProviderReferencesRetained':True,'dbTlsVerifyIdentity':True,'kafkaTlsScram':True,'schemaHistoryRf':3,'schemaHistoryMinIsr':2,'connectMemoryMi':768,'heapMi':256,'cpuLimit':0.5,'businessTasks':1},indent=2))
+  (ctx['output']/'outbox-result.json').write_text(json.dumps({'sourceTables':4,'businessTopics':7,'initialPendingRecords':7,'streamRecords':7,'offlineRecoveryRecords':7,'unexpectedEvents':0,'controlledRestartDuplicates':0,'expiredBinlogRejected':True,'emptySnapshotOffsetCommitted':True,'heartbeatBusinessLeak':False,'emptyOutboxRecovery':True,'normalSnapshotModeRestored':True,'postRecoveryStreamRecords':7,'committedOffsetBeforeRestart':True,'configProviderReferencesRetained':True,'dbTlsVerifyIdentity':True,'kafkaTlsScram':True,'schemaHistoryRf':3,'schemaHistoryMinIsr':2,'connectMemoryMi':768,'heapMi':256,'cpuLimit':0.5,'businessTasks':1},indent=2))
   print('PASS: Outbox4 -> topics7 exact wire; snapshot/stream/offline recovery21, filters+rollback, committed offsets and768Mi worker',flush=True)
  def cleanup(self,ctx):
   data=ctx['directory']/'mysql-data'

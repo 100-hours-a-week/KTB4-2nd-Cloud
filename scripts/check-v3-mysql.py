@@ -77,7 +77,7 @@ def validate(documents, enabled=False, jobs=False):
     require(all(config[p.name] == p.read_text() for p in (CHART / 'files').iterdir()), 'Runtime scripts changed during render')
     cnf = config['my.cnf']
     for setting in ['read-only=ON', 'super-read-only=ON', 'gtid-mode=ON', 'enforce-gtid-consistency=ON',
-                    'binlog-format=ROW', 'binlog-row-image=FULL', 'sync-binlog=1', 'innodb-flush-log-at-trx-commit=1',
+                    'binlog-expire-logs-seconds=604800', 'binlog-format=ROW', 'binlog-row-image=FULL', 'sync-binlog=1', 'innodb-flush-log-at-trx-commit=1',
                     'rpl-semi-sync-source-wait-point=AFTER_SYNC', 'rpl-semi-sync-source-wait-for-replica-count=1',
                     'rpl-semi-sync-source-timeout=5000', 'require-secure-transport=ON', 'innodb-buffer-pool-size=256M',
                     'max-connections=60', 'rpl-semi-sync-source-enabled=OFF']:

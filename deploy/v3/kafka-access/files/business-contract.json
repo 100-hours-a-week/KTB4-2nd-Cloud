@@ -241,7 +241,8 @@
         "prod.connect-configs",
         "prod.connect-offsets",
         "prod.connect-status",
-        "prod.yeodam.schema-history"
+        "prod.yeodam.schema-history",
+        "__debezium-heartbeat.v3.yeodam.outbox"
       ],
       "describeTopics": [],
       "groups": [

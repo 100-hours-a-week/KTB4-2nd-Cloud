@@ -62,5 +62,16 @@
   "schema.history.internal.consumer.ssl.truststore.certificates": "${env:V3_KAFKA_CA_PEM}",
   "schema.history.internal.consumer.ssl.endpoint.identification.algorithm": "HTTPS",
   "schema.history.internal.producer.acks": "all",
-  "schema.history.internal.producer.enable.idempotence": "true"
+  "schema.history.internal.producer.enable.idempotence": "true",
+  "heartbeat.interval.ms": "30000",
+  "topic.heartbeat.prefix": "__debezium-heartbeat",
+  "predicates": "heartbeat",
+  "predicates.heartbeat.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
+  "predicates.heartbeat.pattern": "^__debezium-heartbeat\\.v3\\.yeodam\\.outbox$",
+  "transforms.owned.predicate": "heartbeat",
+  "transforms.owned.negate": "true",
+  "transforms.outbox.predicate": "heartbeat",
+  "transforms.outbox.negate": "true",
+  "transforms.key.predicate": "heartbeat",
+  "transforms.key.negate": "true"
 }

@@ -184,3 +184,7 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 # Complete approved app snapshots and observer boundaries; fixture data only.
 "${validation_dir}/venv/bin/python" scripts/prepare-v3-release-candidate.py
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p test_v3_delivery.py
+
+# Actual CDC task and full-route evidence must gate QA independently of app health.
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p test_v3_cdc_recovery.py
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p test_v3_qa_readiness.py

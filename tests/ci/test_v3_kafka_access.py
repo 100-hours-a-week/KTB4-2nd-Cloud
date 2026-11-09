@@ -71,7 +71,7 @@ class KafkaAccess(unittest.TestCase):
         self.assertEqual(len(a.CONTRACT['users']['trip-result-worker']['groups']),4)
         self.assertFalse(any('receipt' in t['name'] for t in a.CONTRACT['topics']))
         self.assertEqual(a.CONTRACT['users']['connect-outbox']['readTopics'],['prod.connect-configs','prod.connect-offsets','prod.connect-status','prod.yeodam.schema-history'])
-        self.assertEqual(len(a.CONTRACT['users']['connect-outbox']['writeTopics']),11)
+        self.assertEqual(len(a.CONTRACT['users']['connect-outbox']['writeTopics']),12)
         self.assertEqual(a.CONTRACT['users']['connect-outbox']['groups'],['connect-v3','v3.yeodam.outbox-schemahistory'])
 
     def test_disposable_verification_cannot_gain_permissions_or_reserve_app_node(self):
