@@ -2743,7 +2743,7 @@ data:
   PYTHONDONTWRITEBYTECODE: '1'
   PYTHONUNBUFFERED: '1'
   QDRANT_URL: https://qdrant.qdrant.svc.cluster.local:6333
-  RELEASE: a72b18ccc45a6385fb6e55ef161131de72e140a9
+  RELEASE: 4d7d6f1889bbc38628fb12b5a10af5624d4c1f57
   REQUESTS_CA_BUNDLE: /etc/yeodam/trust/ca-bundle.pem
   S3_BUCKET: yeodam-v3-foundation-app-data-483175530259-ap-northeast-2
   SEARCH_ENABLED: 'true'
@@ -2798,7 +2798,7 @@ data:
   PYTHONPATH: /app
   PYTHONUNBUFFERED: '1'
   QDRANT_URL: https://qdrant.qdrant.svc.cluster.local:6333
-  RELEASE: a72b18ccc45a6385fb6e55ef161131de72e140a9
+  RELEASE: 4d7d6f1889bbc38628fb12b5a10af5624d4c1f57
   REQUESTS_CA_BUNDLE: /etc/yeodam/trust/ca-bundle.pem
   S3_BUCKET: yeodam-v3-foundation-app-data-483175530259-ap-northeast-2
   SEARCH_ENABLED: 'true'
@@ -2914,7 +2914,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ai-api-runtime
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:202d77f657a28f9451d6271ba2c2241f396c1a53061c8304a72324a7bdec1741
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:0e3b6d6c6d8f2b9152f7bc754815a012df4a5c2af23ba9dbfa483cf3b0bce0d6
         livenessProbe:
           exec:
             command:
@@ -2974,7 +2974,7 @@ spec:
       - command:
         - python
         - /runtime/prepare-trust.py
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:202d77f657a28f9451d6271ba2c2241f396c1a53061c8304a72324a7bdec1741
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:0e3b6d6c6d8f2b9152f7bc754815a012df4a5c2af23ba9dbfa483cf3b0bce0d6
         name: prepare-trust
         resources:
           limits:
@@ -3112,7 +3112,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ai-runner-runtime
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:202d77f657a28f9451d6271ba2c2241f396c1a53061c8304a72324a7bdec1741
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:0e3b6d6c6d8f2b9152f7bc754815a012df4a5c2af23ba9dbfa483cf3b0bce0d6
         name: ai
         readinessProbe:
           exec:
@@ -3166,7 +3166,7 @@ spec:
       - command:
         - python
         - /runtime/prepare-trust.py
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:202d77f657a28f9451d6271ba2c2241f396c1a53061c8304a72324a7bdec1741
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:0e3b6d6c6d8f2b9152f7bc754815a012df4a5c2af23ba9dbfa483cf3b0bce0d6
         name: prepare-trust
         resources:
           limits:
