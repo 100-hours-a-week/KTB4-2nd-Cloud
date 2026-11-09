@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Synthetic V32/9.7.2 -> logical restore -> V35/8.4.13. No AWS access."""
-import argparse, importlib.util, json, shutil, subprocess, tempfile, time, uuid
+import argparse, importlib.util, json, shutil, subprocess, tempfile, time, uuid, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(ROOT/'scripts'))
 def module(name,path):
  s=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
 logical=module('logical',ROOT/'scripts/v2_v3_mysql_logical.py')
 bootstrap=module('bootstrap',ROOT/'scripts/create-v3-mysql-bootstrap-secret.py')
+live=module('live_restore',ROOT/'scripts/restore-v2-mysql-backup.py')
 def smoke(image,output):
  output.mkdir(parents=True,exist_ok=True);prefix='v2-v3-restore-'+uuid.uuid4().hex[:10]
  directory=Path(tempfile.mkdtemp(prefix=prefix));directory.chmod(0o755);containers=[];networks=[]
@@ -67,6 +69,9 @@ SET GLOBAL read_only=ON; SET GLOBAL super_read_only=ON;""")
   assert logical.capture(prefix+'-source')==manifest['tables']
   assert sql('source','SELECT @@global.read_only AND @@global.super_read_only;')=='1'
   (output/'result.json').write_text(json.dumps({**restored,'sourceEngine':'9.7.2','sourceSchema':32,'targetEngine':'8.4.13','targetSchema':35,'tamperRejectedBeforeImport':True,'nonemptyTargetRejected':True,'foreignKeyViolations':0,'newTablesEmpty':True,'v35RerunNoop':True,'sourceUnchangedAndFrozen':True,'syntheticOnly':True},indent=2))
+  live_result=live.restore_package(package,image,directory/'live-runtime')
+  assert live_result['legacyRowsAndHistoryMatch'] and not (directory/'live-runtime').exists()
+  (output/'live-path-result.json').write_text(json.dumps({**live_result,'runtimeCleaned':True},indent=2))
   print('PASS: synthetic V32 logical restore to V35, row/history hashes, FK, tamper and overwrite refusal',flush=True)
  finally:
   for name in reversed(containers):

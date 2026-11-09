@@ -4,6 +4,10 @@ on:
   push:
     branches-ignore: [main]
     paths:
+      - 'scripts/export-v2-mysql-backup.py'
+      - 'scripts/restore-v2-mysql-backup.py'
+      - 'scripts/run-v2-mysql-backup.py'
+      - 'tests/ci/test_v2_mysql_backup.py'
       - 'scripts/v2_v3_mysql_logical.py'
       - 'tests/ci/test_v2_v3_mysql_logical.py'
       - 'tests/ci/smoke-v2-v3-mysql-logical.py'
