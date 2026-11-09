@@ -67,7 +67,7 @@ resource "aws_iam_role_policy" "s3" {
   name     = "v3-app-data"
   policy = jsonencode({ Version = "2012-10-17", Statement = [
     { Effect = "Allow", Action = ["s3:ListBucket", "s3:GetBucketLocation", "s3:ListBucketMultipartUploads"], Resource = ["arn:aws:s3:::${local.bucket}"] },
-    { Effect = "Allow", Action = concat(["s3:GetObject", "s3:GetObjectVersion"], contains(local.writers, each.key) ? ["s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"] : []), Resource = ["arn:aws:s3:::${local.bucket}/*"] }
+    { Effect = "Allow", Action = concat(["s3:GetObject", "s3:GetObjectVersion"], contains(local.writers, each.key) ? ["s3:PutObject", "s3:PutObjectTagging", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"] : []), Resource = ["arn:aws:s3:::${local.bucket}/*"] }
   ] })
 }
 output "bucket_name" { value = var.enabled ? local.bucket : null }

@@ -26,6 +26,13 @@ run "minimum_identity_and_storage" {
     error_message = "Result role cannot mutate objects."
   }
   assert {
+    condition = alltrue([for role in ["trip-api", "photo-api", "photo-converter"] :
+      toset(jsondecode(aws_iam_role_policy.s3[role].policy).Statement[1].Action) == toset(["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:PutObjectTagging", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]) &&
+      jsondecode(aws_iam_role_policy.s3[role].policy).Statement[1].Resource == ["arn:aws:s3:::yeodam-v3-foundation-app-data-483175530259-ap-northeast-2/*"]
+    ])
+    error_message = "Tagged image writes require PutObjectTagging only within the existing V3 bucket."
+  }
+  assert {
     condition     = alltrue([for k, r in aws_iam_role.app : jsondecode(r.assume_role_policy).Statement[0].Condition.StringEquals["aws:RequestTag/kubernetes-service-account"] == k && jsondecode(r.assume_role_policy).Statement[0].Condition.StringEquals["aws:SourceAccount"] == "483175530259"])
     error_message = "Pod Identity trust must select exact namespace/service account/account/cluster."
   }
