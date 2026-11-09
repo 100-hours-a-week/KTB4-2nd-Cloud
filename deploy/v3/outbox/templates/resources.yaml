@@ -28,6 +28,25 @@ spec:
     retention.bytes: -1
     segment.bytes: 1048576
 ---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: v3-outbox-heartbeat
+  namespace: kafka
+  labels: {strimzi.io/cluster: yeodam-v3-kafka, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+  annotations: {helm.sh/resource-policy: keep}
+spec:
+  topicName: __debezium-heartbeat.v3.yeodam.outbox
+  partitions: 1
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    cleanup.policy: compact,delete
+    retention.ms: 86400000
+    retention.bytes: 1048576
+    segment.bytes: 1048576
+    segment.ms: 3600000
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -69,7 +88,7 @@ spec:
   class: io.debezium.connector.mysql.MySqlConnector
   tasksMax: 1
   state: running
-  autoRestart: {enabled: false}
+  autoRestart: {enabled: true, maxRestarts: 3}
   config:
     {{- omit (.Files.Get "files/connector.json" | fromJson) "connector.class" "tasks.max" | toYaml | nindent 4 }}
 {{- end }}

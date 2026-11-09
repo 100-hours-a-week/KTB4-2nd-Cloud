@@ -21,6 +21,18 @@ class Outbox(unittest.TestCase):
    with self.subTest(key=key):
     config=copy.deepcopy(c.CONFIG);config[key]=value
     with self.assertRaises(ValueError):c.config_contract(config)
+ def test_retry_budget_and_fail_closed_snapshot(self):
+  for retry in [{'enabled':False},{'enabled':True},{'enabled':True,'maxRestarts':4}]:
+   docs=copy.deepcopy(self.docs);next(d for d in docs if d['kind']=='KafkaConnector')['spec']['autoRestart']=retry
+   with self.assertRaises(ValueError):c.validate(docs,True,True)
+  config=copy.deepcopy(c.CONFIG);config['snapshot.mode']='when_needed'
+  with self.assertRaises(ValueError):c.config_contract(config)
+ def test_heartbeat_cannot_enter_business_transforms_or_expand_storage(self):
+  for key,value in [('heartbeat.interval.ms','0'),('transforms.owned.negate','false'),('predicates.heartbeat.pattern','.*')]:
+   config=copy.deepcopy(c.CONFIG);config[key]=value
+   with self.assertRaises(ValueError):c.config_contract(config)
+  docs=copy.deepcopy(self.docs);next(d for d in docs if d['metadata']['name']=='v3-outbox-heartbeat')['spec']['config']['retention.bytes']=67108864
+  with self.assertRaises(ValueError):c.validate(docs,True,True)
  def test_initial_pending_filter_required_for_each_table(self):
   for t in c.TABLES:
    config=copy.deepcopy(c.CONFIG);config['snapshot.select.statement.overrides.yeodam.'+t]='SELECT * FROM yeodam.'+t

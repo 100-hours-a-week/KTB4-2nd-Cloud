@@ -14,11 +14,11 @@ public class OutboxWire {
   static String b(byte[] v) { return Base64.getEncoder().encodeToString(v==null ? new byte[0] : v); }
   static void setup(String properties) throws Exception {
     Properties p=new Properties();try(var r=Files.newInputStream(Path.of(properties))){p.load(r);}p.put("bootstrap.servers","broker1:9093");
-    String[] topics={"prod.yeodam.trip-create.request","prod.yeodam.trip-update.request","prod.yeodam.story-create.request","prod.yeodam.image.initial-light","prod.yeodam.image.initial-heic","prod.yeodam.image.additional-light","prod.yeodam.image.additional-heic","prod.yeodam.schema-history"};
+    String[] topics={"prod.yeodam.trip-create.request","prod.yeodam.trip-update.request","prod.yeodam.story-create.request","prod.yeodam.image.initial-light","prod.yeodam.image.initial-heic","prod.yeodam.image.additional-light","prod.yeodam.image.additional-heic","prod.yeodam.schema-history","__debezium-heartbeat.v3.yeodam.outbox"};
     var created=new ArrayList<NewTopic>();var acls=new ArrayList<AclBinding>();
     for(String t:topics) {
-      boolean history=t.endsWith("schema-history");
-      created.add(new NewTopic(t,1,(short)3).configs(history ? Map.of("min.insync.replicas","2","cleanup.policy","delete","retention.ms","-1","retention.bytes","-1","segment.bytes","1048576") : Map.of("min.insync.replicas","2","message.timestamp.type","LogAppendTime","max.message.bytes","262144")));
+      boolean history=t.endsWith("schema-history"), heartbeat=t.startsWith("__debezium-heartbeat.");
+      created.add(new NewTopic(t,1,(short)3).configs(heartbeat ? Map.of("min.insync.replicas","2","cleanup.policy","compact,delete","retention.ms","86400000","retention.bytes","1048576","segment.bytes","1048576","segment.ms","3600000") : history ? Map.of("min.insync.replicas","2","cleanup.policy","delete","retention.ms","-1","retention.bytes","-1","segment.bytes","1048576") : Map.of("min.insync.replicas","2","message.timestamp.type","LogAppendTime","max.message.bytes","262144")));
       var operations=history ? List.of(AclOperation.READ,AclOperation.WRITE,AclOperation.DESCRIBE,AclOperation.DESCRIBE_CONFIGS) : List.of(AclOperation.WRITE,AclOperation.DESCRIBE);
       for(var op:operations)acls.add(new AclBinding(new ResourcePattern(ResourceType.TOPIC,t,PatternType.LITERAL),new AccessControlEntry("User:v3-connect-outbox","*",op,AclPermissionType.ALLOW)));
     }
