@@ -13,7 +13,7 @@ mkdir -p /data/files
   # Redis7 AOF EXEC replay uses the disabled default user; keep replay rights.
   printf 'user default reset off ~* &* +@all\n'
   printf 'user admin on #%s ~* &* +@all\n' "$(hash_password admin)"
-  printf 'user app on #%s ~* &* +@connection +@read +@write +@transaction +@scripting +@pubsub -@admin -@dangerous +info\n' "$(hash_password app)"
+  printf 'user app on #%s ~* &* +@connection +@read +@write +@transaction +@scripting +@pubsub -@admin -@dangerous +info +time\n' "$(hash_password app)"
   printf 'user health on #%s +ping +info\n' "$(hash_password health)"
 } > /tmp/users.acl
 exec redis-server /runtime/redis.conf
