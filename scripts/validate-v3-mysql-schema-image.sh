@@ -9,3 +9,6 @@ python3 scripts/prepare-v3-mysql-schema-image.py --directory "$context"
 docker build --platform linux/amd64 --provenance=false \
   --label "org.opencontainers.image.revision=${GITHUB_SHA:-local-validation}" -t "$image" "$context"
 python3 tests/ci/smoke-v3-mysql-schema.py --image "$image" --output "$result"
+
+python3 -m unittest discover -s tests/ci -p "test_v2_v3_mysql_logical.py"
+python3 tests/ci/smoke-v2-v3-mysql-logical.py --image "$image" --output "$result/logical-restore"
