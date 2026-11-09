@@ -52,6 +52,12 @@ on:
       - 'terraform/v3/backend/**'
       - 'scripts/check-v3-backend-access.py'
       - 'scripts/check-v3-backend-plan.py'
+      - 'scripts/qdrant_migration.py'
+      - 'scripts/backup-v2-qdrant.py'
+      - 'scripts/restore-v2-qdrant.py'
+      - 'scripts/validate-v2-qdrant-backup.sh'
+      - 'tests/ci/test_v2_qdrant_migration.py'
+      - 'tests/ci/smoke-v2-qdrant.py'
       - 'scripts/check-v2-v3-migration.py'
       - 'scripts/v2_v3_migration_contract.py'
       - 'scripts/migration/**'
@@ -154,6 +160,18 @@ jobs:
 
       - name: Check offline V2 to V3 migration evidence without credentials
         run: python3 -m unittest discover -s tests/ci -p 'test_v2_v3_migration.py'
+
+      - name: Verify synthetic Qdrant snapshot and isolated restore without AWS
+        run: bash scripts/validate-v2-qdrant-backup.sh
+
+      - name: Preserve synthetic Qdrant results only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qdrant-synthetic-${{ github.sha }}
+          path: ${{ runner.temp }}/yeodam-v2-qdrant-results
+          retention-days: 3
+          if-no-files-found: ignore
 
       - name: Verify Redis transaction replay with isolated fixture data
         run: |
