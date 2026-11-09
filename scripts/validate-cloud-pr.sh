@@ -6,6 +6,8 @@ python3 -m unittest discover -s tests/ci -p 'test_legacy_manifest_manual.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_release_prepare.py'
 python3 -m unittest discover -s tests/ci -p 'test_production_websocket.py'
 
+python3 -m unittest discover -s tests/ci -p 'test_v2_v3_migration.py'
+
 python3 -m unittest discover -s tests/ci -p 'test_v3_foundation.py'
 python3 -m unittest discover -s tests/ci -p 'test_v3_node_sizing_plan.py'
 
