@@ -31,16 +31,19 @@ def docker(*args, source=None):
 
 
 def isolated(container, side):
-    require(side in ['source','target'] and re.fullmatch(r'v2-v3-restore-[a-f0-9]{10}-'+side,container), 'Only isolated rehearsal names allowed')
+    fixture = side in ['source','target'] and re.fullmatch(r'v2-v3-restore-[a-f0-9]{10}-'+side,container)
+    live_target = side == 'target' and re.fullmatch(r'v2-v3-live-restore-[a-f0-9]{10}-target',container)
+    require(fixture or live_target, 'Only isolated rehearsal names allowed')
+    issue = '593' if live_target else '591'
     d=json.loads(docker('inspect',container))[0]
     image=SOURCE_IMAGE if side=='source' else TARGET_IMAGE
     require(d['State']['Running'] and d['Config']['Image']==image
-            and d['Config']['Labels'].get('yeodam.issue')=='591'
+            and d['Config']['Labels'].get('yeodam.issue')==issue
             and not d['HostConfig'].get('PortBindings') and not d['HostConfig'].get('Privileged'), 'Container identity/exposure mismatch')
     networks=d['NetworkSettings']['Networks'];require(len(networks)==1,'One internal fixture network required')
     net=next(iter(networks));require(net==container+'-net','Wrong fixture network')
     n=json.loads(docker('network','inspect',net))[0]
-    require(n['Internal'] and n['Labels'].get('yeodam.issue')=='591','External network forbidden')
+    require(n['Internal'] and n['Labels'].get('yeodam.issue')==issue,'External network forbidden')
 
 
 def sql(container, query):
@@ -57,19 +60,20 @@ def catalog(container):
     return [name for name in names if identifier(name)]
 
 
-def capture(container, shape=None):
+def capture(container, shape=None, query_fn=None):
     """Hash canonical hex values without printing business rows or storing row payloads."""
+    execute = query_fn or (lambda query: sql(container, query))
     out={}
-    for table in sorted(shape if shape is not None else catalog(container)):
+    for table in sorted(shape if shape is not None else execute("SELECT table_name FROM information_schema.tables WHERE table_schema='yeodam' AND table_type='BASE TABLE' ORDER BY table_name;").splitlines()):
         name=identifier(table)
-        columns=shape[table]['columns'] if shape is not None else sql(container,"SELECT column_name FROM information_schema.columns WHERE table_schema='yeodam' AND table_name='"+table+"' ORDER BY ordinal_position;").splitlines()
-        keys=shape[table]['primaryKey'] if shape is not None else sql(container,"SELECT column_name FROM information_schema.key_column_usage WHERE table_schema='yeodam' AND table_name='"+table+"' AND constraint_name='PRIMARY' ORDER BY ordinal_position;").splitlines()
+        columns=shape[table]['columns'] if shape is not None else execute("SELECT column_name FROM information_schema.columns WHERE table_schema='yeodam' AND table_name='"+table+"' ORDER BY ordinal_position;").splitlines()
+        keys=shape[table]['primaryKey'] if shape is not None else execute("SELECT column_name FROM information_schema.key_column_usage WHERE table_schema='yeodam' AND table_name='"+table+"' AND constraint_name='PRIMARY' ORDER BY ordinal_position;").splitlines()
         require(columns and keys,'Every source table must have a primary key')
         projections=["IFNULL(CONCAT('V',HEX(CAST("+identifier(col)+" AS BINARY))),'N')" for col in columns]
         where=' WHERE CAST(version AS UNSIGNED)<=32' if table=='flyway_schema_history' else ''
         query='SELECT '+','.join(projections)+' FROM yeodam.'+name+where+' ORDER BY '+','.join(identifier(k) for k in keys)+';'
-        raw=sql(container,query)
-        count=int(sql(container,'SELECT COUNT(*) FROM yeodam.'+name+where+';'))
+        raw=execute(query)
+        count=int(execute('SELECT COUNT(*) FROM yeodam.'+name+where+';'))
         out[table]={'columns':columns,'primaryKey':keys,'rows':count,'sha256':hashlib.sha256(raw.encode()).hexdigest()}
     return out
 
