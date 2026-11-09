@@ -58,6 +58,9 @@ class BackupTest(unittest.TestCase):
   self.assertIn(export.BUCKET,command);self.assertIn('--freeze-export-upload',command)
   self.assertNotIn('start-instances',command);self.assertNotIn('secretsmanager',command)
   self.assertIn('sha256sum -c -',command)
+  self.assertTrue(command.startswith("/bin/bash <<'YEODAM_MIGRATION'"))
+  self.assertTrue(command.endswith('YEODAM_MIGRATION'))
+  subprocess.run(['bash','-n'],input=command,text=True,check=True)
  def test_schema_image_tamper_refused(self):
   with patch.object(restore.logical,'docker',side_effect=[json.dumps([{'Id':'sha256:'+'a'*64}]),'wrong hashes']):
    with self.assertRaises(ValueError):restore.schema_image_id('fixture')

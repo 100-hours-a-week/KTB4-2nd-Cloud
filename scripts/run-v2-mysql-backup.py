@@ -42,13 +42,15 @@ def source_command(run_id,bundle_sha):
     # The bundle is made above from an exact allowlist; it contains no credentials or DB rows.
     base='/var/lib/yeodam/migration-tools/'+run_id
     key='migration/v2-v3/'+run_id+'/tools.tar.gz'
-    return '\n'.join(['set -Eeuo pipefail','umask 077',
+    return '\n'.join(["/bin/bash <<'YEODAM_MIGRATION'",'set -Eeuo pipefail','umask 077',
         'test "$(id -u)" = 0',f'install -d -m 700 /var/lib/yeodam/migration-tools',
         f'mkdir -m 700 {base}',f'cd {base}',
         f'aws s3api get-object --region {REGION} --bucket {BUCKET} --key {key} tools.tar.gz >/dev/null',
         f"printf '%s  tools.tar.gz\\n' '{bundle_sha}' | sha256sum -c - >/dev/null",
         'tar --no-same-owner --no-same-permissions -xzf tools.tar.gz',
-        f'PYTHONDONTWRITEBYTECODE=1 python3 scripts/export-v2-mysql-backup.py --freeze-export-upload --run-id {run_id} --sql-directory sql'])
+        "for attempt in $(seq 1 90); do [ \"$(docker inspect --format '{{.State.Running}}' yeodam-v2-mysql 2>/dev/null || true)\" != true ] || break; sleep 2; done",
+        f'PYTHONDONTWRITEBYTECODE=1 python3 scripts/export-v2-mysql-backup.py --freeze-export-upload --run-id {run_id} --sql-directory sql',
+        'YEODAM_MIGRATION'])
 
 
 def execute(run_id,sql_directory,profile,evidence):
