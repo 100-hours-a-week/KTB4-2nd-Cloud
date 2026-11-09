@@ -67,6 +67,25 @@ class StorageTests(unittest.TestCase):
         with self.assertRaises(ValueError):guard.validate(p)
     def test_aof_replay_disabled_default(self):
         script=(storage.CHART/'files/redis/start.sh').read_text();self.assertIn('user default reset off ~* &* +@all',script)
+    def test_ai_app_time_contract_and_reader_isolation(self):
+        script=(storage.CHART/'files/redis/start.sh').read_text()
+        app=next(line for line in script.splitlines() if "printf 'user app " in line)
+        self.assertIn('+info +time',app);self.assertNotIn('+@all',app)
+        health=next(line for line in script.splitlines() if "printf 'user health " in line)
+        self.assertNotIn('+time',health)
+    def test_real_time_probe_checks_reply_and_denial(self):
+        class Clock:
+            def __init__(self,value):self.value=value
+            def command(self,*args):
+                assert args==('TIME',)
+                if isinstance(self.value,Exception):raise self.value
+                return self.value
+        probe.check_redis_clock(Clock(['1800000000','123456']))
+        for value in [None,[],['1'],['1','1000000'],['0','1'],['-1','1'],['1','bad']]:
+            with self.subTest(value=value),self.assertRaises(ValueError):probe.check_redis_clock(Clock(value))
+        with self.assertRaises(probe.RedisError):probe.check_redis_clock(Clock(probe.RedisError('denied')))
+    def test_ai_clock_cannot_be_removed_from_rendered_acl(self):
+        self.reject(lambda ds: next(d for d in ds if d['kind']=='ConfigMap' and d['metadata']['namespace']=='ai-redis')['data'].update({'start.sh':(storage.CHART/'files/redis/start.sh').read_text().replace(' +time','')}))
     def test_qdrant_plaintext_auth_error(self):
         from unittest.mock import patch
         class Response:

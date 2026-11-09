@@ -46,6 +46,8 @@ def validate(docs,enabled=False):
             else:require(p['exec']=={'command':['/bin/sh','/runtime/health.sh']},'Redis authenticated health')
         if n=='qdrant':require(container['env']==[{'name':'QDRANT__SERVICE__API_KEY','valueFrom':{'secretKeyRef':{'name':'qdrant-bootstrap','key':'api-key'}}}],'Qdrant API key required')
     redis=(CHART/'files/redis/redis.conf').read_text();require(all(x in redis.splitlines() for x in ['port 0','tls-port 6379','appendonly yes','appendfsync everysec','maxmemory 64mb','maxmemory-policy noeviction']),'TLS-only durable non-evicting queue')
+    start=(CHART/'files/redis/start.sh').read_text()
+    require("user app on #%s ~* &* +@connection +@read +@write +@transaction +@scripting +@pubsub -@admin -@dangerous +info +time\\n" in start,'AI queue requires TIME while administrative commands remain denied')
     q=yaml.safe_load((CHART/'files/qdrant/qdrant.yaml').read_text());require(q['service']['enable_tls'] and q['service']['grpc_port'] is None and q['cluster']=={'enabled':False} and q['telemetry_disabled'],'TLS REST only standalone')
     require(q['storage']['storage_path']=='/data/storage' and q['storage']['snapshots_path']=='/data/snapshots','Keep vectors and snapshots on PVC')
 def main():

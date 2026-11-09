@@ -40,6 +40,11 @@ class Client:
     def command(self,*args):
         values=[str(x).encode() for x in args];self.sock.sendall(b'*'+str(len(values)).encode()+b'\r\n'+b''.join(b'$'+str(len(x)).encode()+b'\r\n'+x+b'\r\n' for x in values));return self.read()
     def close(self):self.file.close();self.sock.close()
+def check_redis_clock(client):
+    clock=client.command('TIME')
+    if not isinstance(clock,list) or len(clock)!=2 or not all(isinstance(x,str) and x.isdigit() for x in clock) or not (int(clock[0])>0 and 0<=int(clock[1])<1000000):
+        raise ValueError('AI job Redis clock unavailable')
+
 def exercise(client,phase,run_id):
     if not re.fullmatch(r'v3-smoke-554-[a-f0-9]{8}',run_id):raise ValueError('Only isolated #554 test names accepted')
     if client.store=='ai-redis':
@@ -52,6 +57,8 @@ def exercise(client,phase,run_id):
         finally:client.close()
         client.redis_open()
         try:
+            # RedisJobStore.now()/recover()/claim() use the server clock.
+            check_redis_clock(client)
             try:client.command('CONFIG','GET','maxmemory');raise AssertionError('App admin command allowed')
             except RedisError:pass
             if phase=='write':
