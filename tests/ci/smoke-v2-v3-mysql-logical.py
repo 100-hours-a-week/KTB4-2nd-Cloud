@@ -9,6 +9,7 @@ def module(name,path):
 logical=module('logical',ROOT/'scripts/v2_v3_mysql_logical.py')
 bootstrap=module('bootstrap',ROOT/'scripts/create-v3-mysql-bootstrap-secret.py')
 live=module('live_restore',ROOT/'scripts/restore-v2-mysql-backup.py')
+photos=module('photos',ROOT/'scripts/v2_v3_photo_migration.py')
 def smoke(image,output):
  output.mkdir(parents=True,exist_ok=True);prefix='v2-v3-restore-'+uuid.uuid4().hex[:10]
  directory=Path(tempfile.mkdtemp(prefix=prefix));directory.chmod(0o755);containers=[];networks=[]
@@ -46,6 +47,10 @@ def smoke(image,output):
 INSERT INTO yeodam.users(user_id,email,nickname) VALUES(91001,'restore@example.invalid','여행 복원');
 INSERT INTO yeodam.trips(trip_id,user_id,trip_name,start_date,end_date) VALUES(92001,91001,'제주 ''사진'' 여행','2026-01-01','2026-01-02');
 INSERT INTO yeodam.story_generation_jobs(generation_id,execution_id,trip_id,user_id,mood,status,progress,created_at,updated_at) VALUES(93001,'logical-restore-fixture',92001,91001,'CALM','QUEUED',0,'2026-01-01 00:00:00','2026-01-01 00:00:00');
+INSERT INTO yeodam.files(file_id,user_id,original_file_name,object_key,mime_type,upload_status) VALUES(94001,91001,'synthetic.jpg','trip-uploads/fixture/original/photo.jpg','image/jpeg','READY'),(94002,91001,'unfinished.jpg','trip-uploads/fixture/original/unfinished.jpg','image/jpeg','FAILED');
+INSERT INTO yeodam.trip_attachments(trip_attachment_id,trip_id,file_id,region_origin,issue,analyze_storage_key,preview_storage_key,display_storage_key) VALUES(95001,92001,94001,'GPS','NONE','trip-uploads/fixture/derived/analyze.jpg','trip-uploads/fixture/derived/preview.jpg','trip-uploads/fixture/derived/display.jpg');
+UPDATE yeodam.trips SET thumbnail_key='trip-uploads/fixture/derived/preview.jpg' WHERE trip_id=92001;
+UPDATE yeodam.users SET profile_image_url='https://k.kakaocdn.net/synthetic.jpg' WHERE user_id=91001;
 SET GLOBAL read_only=ON; SET GLOBAL super_read_only=ON;""")
   package=directory/'package';manifest=logical.backup(prefix+'-source',package);assert len(manifest['tables'])==32
   bad=directory/'bad';shutil.copytree(package,bad)
@@ -69,7 +74,12 @@ SET GLOBAL read_only=ON; SET GLOBAL super_read_only=ON;""")
   assert logical.capture(prefix+'-source')==manifest['tables']
   assert sql('source','SELECT @@global.read_only AND @@global.super_read_only;')=='1'
   (output/'result.json').write_text(json.dumps({**restored,'sourceEngine':'9.7.2','sourceSchema':32,'targetEngine':'8.4.13','targetSchema':35,'tamperRejectedBeforeImport':True,'nonemptyTargetRejected':True,'foreignKeyViolations':0,'newTablesEmpty':True,'v35RerunNoop':True,'sourceUnchangedAndFrozen':True,'syntheticOnly':True},indent=2))
-  live_result=live.restore_package(package,image,directory/'live-runtime')
+  photo_refs={}
+  def inspect_photos(container,manifest):photo_refs.update(photos.extract(container,manifest))
+  live_result=live.restore_package(package,image,directory/'live-runtime',after_verify=inspect_photos)
+  assert len(photo_refs['objects'])==4 and not photo_refs['blockedReferences']
+  assert photo_refs['excludedReferences']=={'unfinished-upload':1,'external-profile':1}
+  (output/'photo-reference-result.json').write_text(json.dumps({'requiredKeys':4,'excludedReferences':photo_refs['excludedReferences'],'readOnlyAppInspection':True,'syntheticOnly':True},indent=2))
   assert live_result['legacyRowsAndHistoryMatch'] and not (directory/'live-runtime').exists()
   (output/'live-path-result.json').write_text(json.dumps({**live_result,'runtimeCleaned':True},indent=2))
   print('PASS: synthetic V32 logical restore to V35, row/history hashes, FK, tamper and overwrite refusal',flush=True)

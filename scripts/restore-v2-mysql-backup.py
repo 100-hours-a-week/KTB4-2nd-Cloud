@@ -75,7 +75,7 @@ def schema_image_id(image):
     return image_id
 
 
-def restore_package(package,image,directory):
+def restore_package(package,image,directory,after_verify=None):
     manifest=logical.verify_package(package)
     image_id=schema_image_id(image)
     logical.require(not directory.exists() and not directory.is_symlink(),'Fresh runtime directory required')
@@ -126,6 +126,10 @@ def restore_package(package,image,directory):
         migrate()
         logical.require(sql('SELECT * FROM yeodam.flyway_schema_history ORDER BY installed_rank;')==history
             and logical.capture(name,manifest['tables'])==manifest['tables'],'V35 rerun changed data')
+        if after_verify is not None:
+            sql('SET GLOBAL read_only=ON; SET GLOBAL super_read_only=ON;')
+            after_verify(name,manifest)
+            logical.require(logical.capture(name,manifest['tables'])==manifest['tables'],'Read-only inspection changed legacy data')
         return {'restored':True,'sensitivity':manifest['sensitivity'],'legacyTablesCompared':len(manifest['tables']),
             'legacyRowsAndHistoryMatch':True,'foreignKeyViolations':0,'targetEngine':'8.4.13','targetSchema':35,
             'rerunNoop':True,'sourceDumpSha256':manifest['sha256'],'qaDatabaseAccessed':False,
