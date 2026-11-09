@@ -4,6 +4,9 @@ on:
   push:
     branches-ignore: [main]
     paths:
+      - 'scripts/v2_v3_mysql_logical.py'
+      - 'tests/ci/test_v2_v3_mysql_logical.py'
+      - 'tests/ci/smoke-v2-v3-mysql-logical.py'
       - 'scripts/check-v3-mysql-schema.py'
       - 'tests/ci/test_v3_mysql_schema.py'
       - 'tests/ci/v3/mysql-schema.values.fixture.yaml'
