@@ -51,6 +51,12 @@ INSERT INTO yeodam.files(file_id,user_id,original_file_name,object_key,mime_type
 INSERT INTO yeodam.trip_attachments(trip_attachment_id,trip_id,file_id,region_origin,issue,analyze_storage_key,preview_storage_key,display_storage_key) VALUES(95001,92001,94001,'GPS','NONE','trip-uploads/fixture/derived/analyze.jpg','trip-uploads/fixture/derived/preview.jpg','trip-uploads/fixture/derived/display.jpg');
 UPDATE yeodam.trips SET thumbnail_key='trip-uploads/fixture/derived/preview.jpg' WHERE trip_id=92001;
 UPDATE yeodam.users SET profile_image_url='https://k.kakaocdn.net/synthetic.jpg' WHERE user_id=91001;
+INSERT INTO yeodam.users(user_id,email,nickname,profile_image_url) VALUES(91002,'http-profile@example.invalid','httpcase','http://k.kakaocdn.net/synthetic.jpg?fixture=1');
+INSERT INTO yeodam.files(file_id,user_id,original_file_name,object_key,mime_type,upload_status,deleted_at) VALUES(94003,91001,'deleted.jpg','trip-uploads/fixture/original/deleted.jpg','image/jpeg','READY','2026-01-01 00:00:00');
+INSERT INTO yeodam.trip_attachments(trip_attachment_id,trip_id,file_id,region_origin,issue,analyze_storage_key,preview_storage_key,display_storage_key,deleted_at) VALUES(95003,92001,94003,'GPS','NONE','trip-uploads/fixture/derived/deleted-analyze.jpg','trip-uploads/fixture/derived/deleted-preview.jpg','trip-uploads/fixture/derived/deleted-display.jpg','2026-01-01 00:00:00');
+INSERT INTO yeodam.trip_detail_places(trip_place_id,trip_id,place_name,latitude,longitude,started_at,ended_at,order_number) VALUES(98001,92001,'fixture',37.12340000,127.12340000,'2026-01-01 00:00:00','2026-01-01 01:00:00',0);
+INSERT INTO yeodam.stories(story_id,trip_id,mood,story_summary,processing_status) VALUES(93002,92001,'CALM','fixture','COMPLETED');
+INSERT INTO yeodam.story_blocks(story_block_id,story_id,trip_attachment_id,order_number,day_label,detail_summary,source_trip_place_id,source_date) VALUES(99001,93002,95003,0,'day1','fixture',98001,'2026-01-01');
 SET GLOBAL read_only=ON; SET GLOBAL super_read_only=ON;""")
   package=directory/'package';manifest=logical.backup(prefix+'-source',package);assert len(manifest['tables'])==32
   bad=directory/'bad';shutil.copytree(package,bad)
@@ -78,8 +84,8 @@ SET GLOBAL read_only=ON; SET GLOBAL super_read_only=ON;""")
   def inspect_photos(container,manifest):photo_refs.update(photos.extract(container,manifest))
   live_result=live.restore_package(package,image,directory/'live-runtime',after_verify=inspect_photos)
   assert len(photo_refs['objects'])==4 and not photo_refs['blockedReferences']
-  assert photo_refs['excludedReferences']=={'unfinished-upload':1,'external-profile':1}
-  (output/'photo-reference-result.json').write_text(json.dumps({'requiredKeys':4,'excludedReferences':photo_refs['excludedReferences'],'readOnlyAppInspection':True,'syntheticOnly':True},indent=2))
+  assert photo_refs['excludedReferences']=={'unfinished-upload':1,'deleted':4,'external-profile':2}
+  (output/'photo-reference-result.json').write_text(json.dumps({'requiredKeys':4,'excludedReferences':photo_refs['excludedReferences'],'readOnlyAppInspection':True,'deletedStoryPhotoExcluded':True,'httpKakaoProfileExcluded':True,'syntheticOnly':True},indent=2))
   assert live_result['legacyRowsAndHistoryMatch'] and not (directory/'live-runtime').exists()
   (output/'live-path-result.json').write_text(json.dumps({**live_result,'runtimeCleaned':True},indent=2))
   print('PASS: synthetic V32 logical restore to V35, row/history hashes, FK, tamper and overwrite refusal',flush=True)
