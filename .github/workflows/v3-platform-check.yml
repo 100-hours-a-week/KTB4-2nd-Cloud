@@ -52,6 +52,10 @@ on:
       - 'terraform/v3/backend/**'
       - 'scripts/check-v3-backend-access.py'
       - 'scripts/check-v3-backend-plan.py'
+      - 'scripts/check-v2-v3-migration.py'
+      - 'scripts/v2_v3_migration_contract.py'
+      - 'scripts/migration/**'
+      - 'tests/ci/test_v2_v3_migration.py'
       - 'scripts/prepare-v3-backend-supply.py'
       - 'scripts/prepare-v3-backend-values.py'
       - 'scripts/prepare-v3-backend-rollout.py'
@@ -147,6 +151,9 @@ jobs:
           V3_RENDERED_DIR: ${{ runner.temp }}/v3-rendered
           GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/validate-v3-platform.sh
+
+      - name: Check offline V2 to V3 migration evidence without credentials
+        run: python3 -m unittest discover -s tests/ci -p 'test_v2_v3_migration.py'
 
       - name: Verify Redis transaction replay with isolated fixture data
         run: |
