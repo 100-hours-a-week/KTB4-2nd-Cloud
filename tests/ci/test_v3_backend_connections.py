@@ -103,6 +103,35 @@ class Connections(unittest.TestCase):
   with self.assertRaises(ValueError):guard.validate(plan)
   after['cors_rule'][0]['allowed_origins']=['*']
   with self.assertRaises(ValueError):guard.validate(plan,True)
+ def tagging_plan(self):
+  guard=module('tagging_plan','scripts/check-v3-backend-plan.py')
+  rows=[]
+  for role in sorted(guard.WRITERS):
+   before={'name':'v3-app-data','role':'yeodam-v3-foundation-be-'+role,'policy':json.dumps(guard.s3_policy(role,False))}
+   after={**before,'policy':json.dumps(guard.s3_policy(role))}
+   rows.append({'mode':'managed','address':f'aws_iam_role_policy.s3["{role}"]','change':{'actions':['update'],'before':before,'after':after,'after_unknown':{}}})
+  return guard,{'complete':True,'resource_changes':rows}
+ def test_tagging_only_accepts_exact_three_writer_updates_and_no_change(self):
+  guard,plan=self.tagging_plan()
+  self.assertEqual(guard.validate(plan,tagging_only=True)['updates'],3)
+  self.assertEqual(guard.validate({'complete':True,'resource_changes':[]},tagging_only=True)['updates'],0)
+  with self.assertRaises(ValueError):guard.validate(plan)
+ def test_tagging_only_rejects_role_resource_action_and_metadata_widening(self):
+  guard,plan=self.tagging_plan()
+  for mutation in ['reader','wildcard','extra-action','metadata','delete','partial','unknown','unrelated']:
+   candidate=deepcopy(plan);row=candidate['resource_changes'][0];change=row['change']
+   if mutation=='reader':row['address']='aws_iam_role_policy.s3["trip-result-worker"]'
+   if mutation in ['wildcard','extra-action']:
+    policy=json.loads(change['after']['policy'])
+    if mutation=='wildcard':policy['Statement'][1]['Resource']=['*']
+    else:policy['Statement'][1]['Action'].append('s3:GetObjectTagging')
+    change['after']['policy']=json.dumps(policy)
+   if mutation=='metadata':change['after']['name']='other-policy'
+   if mutation=='delete':change['actions']=['delete']
+   if mutation=='partial':candidate['resource_changes'].pop()
+   if mutation=='unknown':change['after_unknown']={'role':True}
+   if mutation=='unrelated':row['address']='aws_instance.gpu'
+   with self.subTest(mutation=mutation),self.assertRaises(ValueError):guard.validate(candidate,tagging_only=True)
  def settings(self):return {**{k:'https://example.invalid' for k in values.KEYS},'AI_EC2_INSTANCE_ID':'i-'+'1'*17,'redisSentinelFeatureReviewed':False}
  def test_stage_requires_compatibility_review_and_immutable_image(self):
   s=self.settings();i='ghcr.io/100-hours-a-week/backend@sha256:'+'a'*64
