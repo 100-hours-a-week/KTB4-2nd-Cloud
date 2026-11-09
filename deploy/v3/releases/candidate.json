@@ -12,10 +12,10 @@
     },
     "backend": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
-      "sourceSha": "15abb61d867c31f41697f6765a39e83ebf76a91f",
-      "image": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:5a50b8c53f50fba6fb775a85e3b1b6c27ef369c2442b631c30f488ababd74e89",
-      "buildRunId": 42655037085,
-      "buildSourceSha": "15abb61d867c31f41697f6765a39e83ebf76a91f"
+      "sourceSha": "43123433fb614177fa46829a2c37c957db757d2f",
+      "image": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:0d5b4fe81bbcf822aedd11af67f9fe7c4d06221bef269919579a2ef1bfe51b22",
+      "buildRunId": 42661002263,
+      "buildSourceSha": "43123433fb614177fa46829a2c37c957db757d2f"
     },
     "ai-app": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-AI",
@@ -207,7 +207,7 @@
           "REDIS_PORT": "6379",
           "REDIS_SSL_ENABLED": "true",
           "REDIS_USERNAME": "app",
-          "RELEASE": "15abb61d867c31f41697f6765a39e83ebf76a91f",
+          "RELEASE": "43123433fb614177fa46829a2c37c957db757d2f",
           "SERVER_SHUTDOWN": "graceful",
           "SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE": "60s",
           "SPRING_PROFILES_ACTIVE": "prod,internal-metrics",
@@ -418,7 +418,7 @@
       "frontendContract": false,
       "frontendServiceOnly": false,
       "images": {
-        "backend": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:5a50b8c53f50fba6fb775a85e3b1b6c27ef369c2442b631c30f488ababd74e89"
+        "backend": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:0d5b4fe81bbcf822aedd11af67f9fe7c4d06221bef269919579a2ef1bfe51b22"
       },
       "websocketContract": false,
       "workloads": {
@@ -433,7 +433,7 @@
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
             "TRIP_STATUS_POLLING_ENABLED": "false",
-            "RELEASE": "15abb61d867c31f41697f6765a39e83ebf76a91f"
+            "RELEASE": "43123433fb614177fa46829a2c37c957db757d2f"
           },
           "enabled": true,
           "imageRef": "backend",
@@ -485,7 +485,7 @@
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
             "TRIP_STATUS_POLLING_ENABLED": "false",
-            "RELEASE": "15abb61d867c31f41697f6765a39e83ebf76a91f"
+            "RELEASE": "43123433fb614177fa46829a2c37c957db757d2f"
           },
           "enabled": true,
           "imageRef": "backend",
@@ -537,7 +537,7 @@
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
             "TRIP_STATUS_POLLING_ENABLED": "false",
-            "RELEASE": "15abb61d867c31f41697f6765a39e83ebf76a91f"
+            "RELEASE": "43123433fb614177fa46829a2c37c957db757d2f"
           },
           "enabled": true,
           "imageRef": "backend",
@@ -589,7 +589,7 @@
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
             "TRIP_STATUS_POLLING_ENABLED": "false",
-            "RELEASE": "15abb61d867c31f41697f6765a39e83ebf76a91f"
+            "RELEASE": "43123433fb614177fa46829a2c37c957db757d2f"
           },
           "enabled": true,
           "imageRef": "backend",
@@ -641,7 +641,7 @@
             "STORY_STATUS_POLLING_ENABLED": "true",
             "TRIP_RESULT_WORKER_ENABLED": "true",
             "TRIP_STATUS_POLLING_ENABLED": "true",
-            "RELEASE": "15abb61d867c31f41697f6765a39e83ebf76a91f"
+            "RELEASE": "43123433fb614177fa46829a2c37c957db757d2f"
           },
           "enabled": true,
           "imageRef": "backend",
