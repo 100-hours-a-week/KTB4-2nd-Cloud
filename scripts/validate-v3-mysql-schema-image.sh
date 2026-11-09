@@ -13,3 +13,8 @@ python3 tests/ci/smoke-v3-mysql-schema.py --image "$image" --output "$result"
 python3 -m unittest discover -s tests/ci -p "test_v2_v3_mysql_logical.py"
 python3 -m unittest discover -s tests/ci -p "test_v2_mysql_backup.py"
 python3 tests/ci/smoke-v2-v3-mysql-logical.py --image "$image" --output "$result/logical-restore"
+
+photo_env="${RUNNER_TEMP:-/tmp}/yeodam-v2-photo-sdk"
+python3 -m venv "$photo_env"
+"$photo_env/bin/pip" install --disable-pip-version-check -r scripts/migration/photo-sdk-requirements.txt
+PYTHONDONTWRITEBYTECODE=1 "$photo_env/bin/python" -m unittest discover -s tests/ci -p 'test_v2_v3_photos.py'

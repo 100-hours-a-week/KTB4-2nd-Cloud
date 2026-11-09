@@ -4,6 +4,11 @@ on:
   push:
     branches-ignore: [main]
     paths:
+      - 'scripts/v2_v3_photo_migration.py'
+      - 'scripts/migrate-v2-photos.py'
+      - 'scripts/migration/photo-references.sql'
+      - 'scripts/migration/photo-sdk-requirements.txt'
+      - 'tests/ci/test_v2_v3_photos.py'
       - 'scripts/export-v2-mysql-backup.py'
       - 'scripts/restore-v2-mysql-backup.py'
       - 'scripts/run-v2-mysql-backup.py'
