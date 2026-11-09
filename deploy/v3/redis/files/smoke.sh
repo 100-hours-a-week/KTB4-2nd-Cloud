@@ -3,6 +3,9 @@ source /runtime/common.sh
 primary=$(wait_primary)
 # Spring Actuator uses INFO; it must work without allowing admin commands.
 cli "$primary" 6379 app app INFO server >/dev/null
+# BE OAuth ticket expiry uses the Redis clock, not the Pod's clock.
+clock=$(cli "$primary" 6379 app app TIME)
+[[ $clock =~ ^[0-9]+$'\n'[0-9]+$ ]] || fail 'OAuth server-time read failed'
 replica=redis-1.redis-members.redis.svc.cluster.local
 [[ $primary == "$replica" ]] && replica=redis-0.redis-members.redis.svc.cluster.local
 for index in 0 1 2; do
