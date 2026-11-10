@@ -66,10 +66,11 @@ def validate_snapshot(docs,v,files):
     # contract. Never trust arbitrary embedded contracts or weaken new releases.
     locks=json.loads((CHART/'rollback-compatibility.json').read_text())
     checksums={p:hashlib.sha256(content).hexdigest() for p,content in files.items()}
-    if any(checksums==record['files'] for record in locks):
+    record=next((record for record in locks if checksums==record['files']),None)
+    if record is not None:
         contract=json.loads(files['files/contract.json'])
         scripts={p[len('files/runtime/'):]:content.decode() for p,content in files.items() if p.startswith('files/runtime/')}
-        return _validate(docs,v,contract,scripts,json.loads(files['files/policies.json']),legacy=True)
+        return _validate(docs,v,contract,scripts,json.loads(files['files/policies.json']),legacy=record.get('legacy',True))
     return validate(docs,v)
 
 def main():

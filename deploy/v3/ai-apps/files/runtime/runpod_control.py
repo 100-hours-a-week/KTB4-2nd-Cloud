@@ -150,7 +150,8 @@ def cli():
         url = os.environ['VLM_BASE_URL']
         assert hashlib.sha256(url.encode()).hexdigest() == sys.argv[2]
         assert re.fullmatch(r'https://[a-z0-9]+-8000\.proxy\.runpod\.net/v1', url)
-        request = urllib.request.Request(url + '/models', headers={'Authorization': 'Bearer ' + os.environ['VLM_API_KEY']})
+        # Match the deployed AI client identification; the default urllib agent is rejected upstream.
+        request = urllib.request.Request(url + '/models', headers={'Authorization': 'Bearer ' + os.environ['VLM_API_KEY'], 'User-Agent': 'python-httpx/0.28.1'})
         # No redirects: never send the authorization to a different endpoint.
         class NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self, *args, **kwargs): return None
