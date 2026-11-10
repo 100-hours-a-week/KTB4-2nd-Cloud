@@ -17,7 +17,7 @@ def validate(docs,enabled=False):
  require(all(x['metadata'].get('namespace')=='mysql' and x['metadata']['labels'].get('yeodam.io/stage')=='v3' for x in docs),'V3 mysql namespace only')
  require(len({(x['kind'],x['metadata']['name']) for x in docs})==3,'Unique resource identities required')
  job=next(x for x in docs if x['kind']=='Job');require(job['metadata']['name']=='v3-mysql-schema','Reviewed Job identity only')
- spec=job['spec'];require(set(spec)=={'backoffLimit','activeDeadlineSeconds','template'} and spec['backoffLimit']==0 and spec['activeDeadlineSeconds']==600,'No automatic migration retries')
+ spec=job['spec'];require(set(spec)=={'suspend','backoffLimit','activeDeadlineSeconds','template'} and spec['suspend'] is True and spec['backoffLimit']==0 and spec['activeDeadlineSeconds']==600,'No automatic migration retries')
  t=spec['template'];require(t['metadata']['labels']=={'app.kubernetes.io/instance':'mysql-schema','app.kubernetes.io/part-of':'yeodam','yeodam.io/stage':'v3'},'Dedicated migration label only')
  p=t['spec'];require(set(p)=={'restartPolicy','automountServiceAccountToken','enableServiceLinks','nodeSelector','imagePullSecrets','securityContext','containers','volumes'},'No alternate scheduling/host/service account settings')
  require(p['restartPolicy']=='Never' and p['automountServiceAccountToken'] is False and p['enableServiceLinks'] is False,'No Kubernetes API credentials or restart loop')
@@ -37,15 +37,22 @@ def validate_source():
  require(LOCK['cdcTables']==['trip_creation_outbox','additional_attachment_upload_outbox','story_generation_outbox','attachment_conversion_outbox'],'Only the four reviewed Outbox tables may be granted SELECT')
  require(LOCK['sourceRepository']=='100-hours-a-week/KTB4-2nd-BE' and re.fullmatch('[a-f0-9]{40}',LOCK['sourceCommit']),'Pinned BE source required')
  require(LOCK['jdbcArtifact']['url']=='https://repo.maven.apache.org/maven2/com/mysql/mysql-connector-j/9.7.0/mysql-connector-j-9.7.0.jar' and re.fullmatch('[a-f0-9]{64}',LOCK['jdbcArtifact']['sha256']),'Pinned official MySQL JDBC required')
- require(LOCK['flywayVersion']=='12.4.0' and LOCK['schemaVersion']==35 and [int(x['name'].split('__')[0][1:]) for x in LOCK['migrations']]==list(range(1,36)),'BE Flyway version and complete migrations required')
- baseline=json.loads((ROOT/'deploy/v3/mysql-schema-image/v34-baseline.lock.json').read_text())
- candidate=json.loads((ROOT/'deploy/v3/candidates/be-ai/manifest.json').read_text())
- require(baseline['schemaVersion']==34 and LOCK['migrations'][:-1]==baseline['migrations'],'Preserve every V1-V34 migration hash')
- require(LOCK['sourceCommit']==candidate['components']['backend']['sourceSha'] and LOCK['migrations'][-1]==candidate['migration']['additionalMigration'],'V35 must match the selected BE candidate')
+ require(LOCK['flywayVersion']=='12.4.0' and LOCK['schemaVersion']==40 and [int(x['name'].split('__')[0][1:]) for x in LOCK['migrations']]==list(range(1,41)),'BE Flyway version and complete migrations required')
+ baseline=json.loads((ROOT/'deploy/v3/mysql-schema-image/v35-baseline.lock.json').read_text())
+ candidate=json.loads((ROOT/'deploy/v3/mysql-schema-image/upgrade.lock.json').read_text())
+ original=json.loads((ROOT/'deploy/v3/mysql-schema-image/v34-baseline.lock.json').read_text())
+ v35=json.loads((ROOT/'deploy/v3/candidates/be-ai/manifest.json').read_text())
+ require(baseline['migrations'][:34]==original['migrations'] and baseline['migrations'][34]==v35['migration']['additionalMigration'],'Frozen V35 baseline differs from the historical V34/V35 contracts')
+ require(baseline['schemaVersion']==35 and LOCK['migrations'][:35]==baseline['migrations'],'Preserve every V1-V35 migration hash')
+ require(LOCK['sourceCommit']==candidate['sourceCommit'] and LOCK['migrations'][35:]==candidate['additionalMigrations'],'V40 must match the selected BE schema candidate')
+ for migration in LOCK['migrations'][35:]:
+  path=ROOT/'deploy/v3/mysql-schema-image/upgrades'/migration['name']
+  import hashlib
+  require(path.stat().st_size==migration['bytes'] and hashlib.sha256(path.read_bytes()).hexdigest()==migration['sha256'],'Reviewed upgrade SQL differs from pinned source')
  require(all(LOCK[k]==baseline[k] for k in ['baseImage','flywayVersion','jdbcArtifact','cdcTables']),'Keep existing base/JDBC/CDC scope')
  require(all(re.fullmatch('[a-f0-9]{64}',x['sha256']) and re.fullmatch(r'V\d+__[a-z0-9_]+\.sql',x['name']) for x in LOCK['migrations']),'Fixed named SQL hashes required')
  script=(ROOT/'deploy/v3/mysql-schema-image/migrate.sh').read_text()
- for required in ['[[ $# == 0 ]] || exit 1','flyway.target=35','flyway.driver=com.mysql.cj.jdbc.Driver','sslMode=VERIFY_IDENTITY','fallbackToSystemTrustStore=false','flyway.cleanDisabled=true','flyway.baselineOnMigrate=false','flyway.outOfOrder=false','flyway.validateOnMigrate=true','flyway.ignoreMigrationPatterns=','sha256sum -c','env -i','-Xmx128m']:
+ for required in ['[[ $# == 0 ]] || exit 1','flyway.target=40','flyway.driver=com.mysql.cj.jdbc.Driver','sslMode=VERIFY_IDENTITY','fallbackToSystemTrustStore=false','flyway.cleanDisabled=true','flyway.baselineOnMigrate=false','flyway.outOfOrder=false','flyway.validateOnMigrate=true','flyway.ignoreMigrationPatterns=','sha256sum -c','env -i','-Xmx128m']:
   require(required in script,'Missing migration safety contract: '+required)
  for forbidden in ['flyway clean','flyway repair','baselineOnMigrate=true','sslMode=REQUIRED']:
   require(forbidden not in script,'Unsafe migration behavior')

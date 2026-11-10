@@ -1,0 +1,39 @@
+{
+  "sourceCommit": "6347e029a2f9950564a0e22123db7ae92980243a",
+  "schemaVersion": 40,
+  "baselineVersion": 35,
+  "additionalMigrations": [
+    {
+      "name": "V36__add_unstarted_trip_timeout_index.sql",
+      "sha256": "f9eb61894d32d25964dadd55c5f236ef37e405098dd1455e6e6a97673bc56bf8",
+      "bytes": 108
+    },
+    {
+      "name": "V37__separate_trip_analysis_executions.sql",
+      "sha256": "ef985fe048f6761008bcb90d49264bb62fe23c18cd61396f49b6c6be564b58ee",
+      "bytes": 6032
+    },
+    {
+      "name": "V38__record_legacy_analysis_remote_termination.sql",
+      "sha256": "113d3ea69dd09a7e821cdf1d39a3d4a32759d06f67641e970d8f2567573df32f",
+      "bytes": 199
+    },
+    {
+      "name": "V39__retain_processing_notification_thumbnail.sql",
+      "sha256": "3f58bf9e72ddd30c708fba848d880a31ad4ddd23ab0445480f6e1a352c96b8a1",
+      "bytes": 86
+    },
+    {
+      "name": "V40__protect_canceled_initial_analysis_input.sql",
+      "sha256": "f071c71cfb88107b81c305b95f7c0582de77eb5d5dc4583885ce6790df7baab1",
+      "bytes": 406
+    }
+  ],
+  "newTables": [
+    "attachment_conversion_outbox",
+    "attachment_conversion_tasks",
+    "trip_analysis_executions",
+    "trip_analysis_execution_uploads",
+    "trip_photo_deletion_reservations"
+  ]
+}

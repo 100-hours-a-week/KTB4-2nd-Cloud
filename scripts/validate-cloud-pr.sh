@@ -282,3 +282,5 @@ python3 -m unittest discover -s tests/ci -p 'test_v2_production_release.py'
 
 python3 -m unittest discover -s tests/ci -p 'test_javamysql467.py'
 python3 -m unittest discover -s tests/ci -p 'test_batch_commit472.py'
+
+python3 -m unittest discover -s tests/ci -p "test_v3_schema_upgrade.py"

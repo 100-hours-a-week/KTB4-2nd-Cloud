@@ -12,7 +12,7 @@ class Contracts(unittest.TestCase):
  def test_default_and_contract(self):
   c.validate(c.platform.load_documents(c.render()),False);c.validate(self.docs,True);c.validate_source()
  def test_sizing_scheduling_secret_and_command_mutations_rejected(self):
-  for change in ['budget','placement','root','command','token','image','extra']:
+  for change in ['budget','placement','root','command','token','image','extra','resume']:
    with self.subTest(change=change):
     docs=copy.deepcopy(self.docs);spec=next(x for x in docs if x['kind']=='Job')['spec']['template']['spec'];container=spec['containers'][0]
     if change=='budget':container['resources']['limits']['memory']='1Gi'
@@ -21,6 +21,7 @@ class Contracts(unittest.TestCase):
     if change=='command':container['command']=['bash','-c','echo bypass']
     if change=='token':spec['automountServiceAccountToken']=True
     if change=='image':container['image']='redgate/flyway:latest'
+    if change=='resume':next(x for x in docs if x['kind']=='Job')['spec']['suspend']=False
     if change=='extra':docs.append({'kind':'Secret','metadata':{'name':'bad'}})
     with self.assertRaises(ValueError):c.validate(docs,True)
  def test_network_widening_rejected(self):
@@ -29,20 +30,20 @@ class Contracts(unittest.TestCase):
  def test_v34_sql_hashes_cannot_change(self):
   migrations=copy.deepcopy(c.LOCK['migrations']);migrations[0]['sha256']='f'*64
   with patch.dict(c.LOCK,{'migrations':migrations}):
-   with self.assertRaisesRegex(ValueError,'V1-V34'):c.validate_source()
- def test_only_candidate_v35_source_is_accepted(self):
+   with self.assertRaisesRegex(ValueError,'V1-V35'):c.validate_source()
+ def test_only_candidate_v40_source_is_accepted(self):
   with patch.dict(c.LOCK,{'sourceCommit':'f'*40}):
    with self.assertRaisesRegex(ValueError,'candidate'):c.validate_source()
- def test_v35_cannot_be_omitted(self):
+ def test_v40_cannot_be_omitted(self):
   with patch.dict(c.LOCK,{'schemaVersion':34,'migrations':c.LOCK['migrations'][:-1]}):
    with self.assertRaisesRegex(ValueError,'complete migrations'):c.validate_source()
  def test_production_target_cannot_stay_v34(self):
   original=Path.read_text
   def modified(path,*args,**kwargs):
    text=original(path,*args,**kwargs)
-   return text.replace('flyway.target=35','flyway.target=34') if path.name=='migrate.sh' else text
+   return text.replace('flyway.target=40','flyway.target=34') if path.name=='migrate.sh' else text
   with patch.object(Path,'read_text',modified):
-   with self.assertRaisesRegex(ValueError,'flyway.target=35'):c.validate_source()
+   with self.assertRaisesRegex(ValueError,'flyway.target=40'):c.validate_source()
  def test_fixture_does_not_enable_production_target_override(self):
   script=(ROOT/'deploy/v3/mysql-schema-image/migrate.sh').read_text()
   self.assertIn('[[ $# == 0 ]] || exit 1',script)
@@ -61,7 +62,7 @@ class Contracts(unittest.TestCase):
  def test_image_preparation_rejects_changed_baseline_before_download(self):
   migrations=copy.deepcopy(p.LOCK['migrations']);migrations[0]['sha256']='f'*64
   with tempfile.TemporaryDirectory() as d,patch.dict(p.LOCK,{'migrations':migrations}),patch.object(p.urllib.request,'urlopen') as download:
-   with self.assertRaisesRegex(ValueError,'V1-V34'):p.prepare(Path(d))
+   with self.assertRaisesRegex(ValueError,'V1-V35'):p.prepare(Path(d))
    download.assert_not_called()
  def test_cached_archive_tamper_rejected_before_extraction(self):
   with tempfile.TemporaryDirectory() as d:

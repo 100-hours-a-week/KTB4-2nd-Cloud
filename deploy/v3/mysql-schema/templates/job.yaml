@@ -7,6 +7,7 @@ metadata:
   namespace: mysql
   labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
 spec:
+  suspend: true
   backoffLimit: 0
   activeDeadlineSeconds: 600
   template:

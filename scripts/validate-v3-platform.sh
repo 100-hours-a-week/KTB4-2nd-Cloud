@@ -190,3 +190,5 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p test_v3_qa_readiness.py
 
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v2_v3_cutover_render.py'
+
+python3 -m unittest discover -s tests/ci -p "test_v3_schema_upgrade.py"

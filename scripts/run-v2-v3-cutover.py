@@ -118,11 +118,11 @@ def restore_capacity(k,baseline):
   c.require(current['metadata']['uid']==original['metadata']['uid'] and current['spec']['disruption']['budgets']==[{'nodes':'0'}],'NodePool maintenance hold changed')
   k.patch('default','nodepool',name,current,[{'op':'replace','path':'/spec/disruption/budgets','value':original['spec']['disruption']['budgets']}])
 
-def pause(k,directory):
+def pause(k,directory,plan):
  application=k.get('argocd','application','yeodam-v3-apps')
  c.require(application.get('status',{}).get('operationState',{}).get('phase')!='Running','Wait for the current Argo operation')
  schema=k.get('mysql','job','v3-mysql-schema')
- spec=schema['spec']['template']['spec'];c.require(len(spec['containers'])==1 and spec['automountServiceAccountToken'] is False and spec['nodeSelector']=={'yeodam.io/role':'system'} and spec['containers'][0]['image']==c.POLICY['schemaImage'],'Review fixed schema Job before maintenance')
+ spec=schema['spec']['template']['spec'];c.require(len(spec['containers'])==1 and spec['automountServiceAccountToken'] is False and spec['nodeSelector']=={'yeodam.io/role':'system'} and spec['containers'][0]['image']==plan['schemaImage'] and schema['spec'].get('suspend') is True,'Review fixed schema Job before maintenance')
  k.get('qdrant','persistentvolumeclaim','data-qdrant-0')
  k.get('mongodb','pod','mongodb-0')
  baseline={'capacity':capacity_snapshot(k),'schemaJob':schema,'application':application,'deployments':{},'connector':k.get('kafka','kafkaconnector','yeodam-v3-outbox')}
@@ -193,15 +193,17 @@ def mysql_restore(k,directory,plan):
  c.require(len(raw)<=c.mysql.MAX_SQL,'Oversized source dump')
  k.execute('mysql',k.primary(),'mysql',['/bin/bash','-ec',MYSQL_SHELL+' yeodam'],raw)
  c.require(capture(k,manifest['tables'])==manifest['tables'],'V2 legacy row hashes differ after import')
- # Run the existing pinned V35 Job using its already-reviewed image/spec.
+ baseline=c.mysql.upgrade_baseline(k.sql,manifest['tables']);c.write(directory/'mysql-upgrade-baseline.json',baseline)
+ # Run the approved pinned V40 Job using its already-reviewed image/spec.
  job=c.load(directory/'before-pause.json')['schemaJob'];meta={'name':'v3-cutover-schema-602','namespace':'mysql','labels':{'yeodam.io/stage':'v3','yeodam.io/issue':'602'}}
  spec=job['spec'];template=spec['template'];template['metadata']={'labels':{'app.kubernetes.io/instance':'mysql-schema','app.kubernetes.io/part-of':'yeodam','yeodam.io/stage':'v3','yeodam.io/issue':'602'}}
  new={'apiVersion':'batch/v1','kind':'Job','metadata':meta,'spec':{'backoffLimit':0,'activeDeadlineSeconds':600,'template':template}}
  k.apply(new)
  try:k.call('-n','mysql','wait','--for=condition=complete','job/v3-cutover-schema-602','--timeout=600s')
  finally:k.call('-n','mysql','delete','job','v3-cutover-schema-602','--wait=true')
- c.require(k.sql('SELECT CONCAT(COUNT(*),\':\',SUM(success),\':\',MAX(CAST(version AS UNSIGNED))) FROM yeodam.flyway_schema_history;')=='35:35:35','V35 migration failed')
- c.require(capture(k,manifest['tables'])==manifest['tables'],'V35 changed source data')
+ c.require(k.sql('SELECT CONCAT(COUNT(*),\':\',SUM(success),\':\',MAX(CAST(version AS UNSIGNED))) FROM yeodam.flyway_schema_history;')=='40:40:40','V40 migration failed')
+ c.mysql.verify_upgrade(k.sql,baseline)
+ c.write(directory/'mysql-restored-tables.json',capture(k))
  # Same fixed FK verifier, executed through the existing primary connection.
  failures=0
  relations=k.sql("SELECT table_name,column_name,referenced_table_name,referenced_column_name FROM information_schema.key_column_usage WHERE table_schema='yeodam' AND referenced_table_name IS NOT NULL;").splitlines()
@@ -214,7 +216,7 @@ def mysql_restore(k,directory,plan):
  gtid=k.sql('SELECT @@GLOBAL.gtid_executed;').replace('\n','');c.require(__import__('re').fullmatch('[a-f0-9:,-]+',gtid),'Invalid target GTID format')
  result=k.execute('mysql',replica,'mysql',['/bin/bash','-ec',MYSQL_SHELL],("SELECT WAIT_FOR_EXECUTED_GTID_SET('"+gtid+"',30);").encode()).decode().strip()
  c.require(result=='0','Replica did not apply the restored operating data')
- return {'verified':True,'replicaCaughtUp':True,'legacyTablesCompared':len(manifest['tables']),'foreignKeyViolations':0,'schemaVersion':35}
+ return {'verified':True,'replicaCaughtUp':True,'legacyTablesCompared':len(manifest['tables']),'foreignKeyViolations':0,'schemaVersion':40,'reviewedDataChangesVerified':True}
 
 def qdrant_restore(k,directory,plan):
  qa_proof(directory);c.require(k.apps_stopped(),'Do not restore Qdrant while writers run')
@@ -257,7 +259,7 @@ def ephemeral_reset(k,directory):
 
 def verify(k,directory,plan):
  c.require(k.apps_stopped(),'Apps must remain stopped until storage verification')
- manifest=c.mysql.verify_package(Path(plan['mysqlPackage']));c.require(capture(k,manifest['tables'])==manifest['tables'],'Legacy DB rows changed before resume')
+ c.mysql.verify_package(Path(plan['mysqlPackage']));c.mysql.verify_upgrade(k.sql,c.load(directory/'mysql-upgrade-baseline.json'));c.require(capture(k)==c.load(directory/'mysql-restored-tables.json'),'Restored DB changed before resume')
  c.validate_reconciliation(plan['reconciliation'])
  with qdrant(k) as client:c.require(q.fingerprint(client)==q.verify_package(Path(plan['qdrantPackage']))['fingerprint'],'Qdrant changed before resume')
  return {'verified':True,'storageReady':True,'appsRemainStopped':True,'dnsUnchanged':True}
@@ -346,7 +348,7 @@ def rollback_qa(k,directory):
  for ns in ['redis','ai-redis']:c.require(redis_action(k,ns,'clear').strip()==b'CLEARED','Fresh QA cache reset failed')
  return {'verified':True,'mysqlRestored':True,'mongoRestored':True,'qdrantRestored':True,'redisRequiresFreshLogin':True,'appsRemainStopped':True,'automaticResume':False}
 
-ACTIONS={'pause':lambda k,d,p:pause(k,d),'qa-backup':lambda k,d,p:qa_backup(k,d),'mysql-restore':mysql_restore,'qdrant-restore':qdrant_restore,'ephemeral-reset':lambda k,d,p:ephemeral_reset(k,d),'verify':verify,'resume':lambda k,d,p:resume(k,d),'operating-config':lambda k,d,p:operating_config(k,d)}
+ACTIONS={'pause':pause,'qa-backup':lambda k,d,p:qa_backup(k,d),'mysql-restore':mysql_restore,'qdrant-restore':qdrant_restore,'ephemeral-reset':lambda k,d,p:ephemeral_reset(k,d),'verify':verify,'resume':lambda k,d,p:resume(k,d),'operating-config':lambda k,d,p:operating_config(k,d)}
 def main():
  parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--execute',action='store_true',required=True)
  for n in ['plan','directory','kubeconfig']:parser.add_argument('--'+n,type=Path,required=True)

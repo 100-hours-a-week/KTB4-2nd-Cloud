@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """Isolated synthetic MySQL pair only. Never uses AWS, kubeconfig or real credentials."""
+import sys
+sys.path.insert(0,str(__import__('pathlib').Path(__file__).resolve().parents[2]/'scripts'))
+import v2_v3_mysql_logical as logical
 import argparse,hashlib,importlib.util,json,os,secrets,shutil,subprocess,tempfile,time,uuid
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
@@ -17,7 +20,7 @@ def smoke(image,output):
   if check and r.returncode:raise RuntimeError('Synthetic schema check failed; diagnostic command '+str(counter))
   return r
  def docker(*args,**kw):return command(['docker',*args],**kw)
- def sql(member,query,check=True):return docker('exec','-i',prefix+'-'+member,'/bin/bash','-ec',cdc.ROOT_SHELL,source=query,check=check).stdout.strip()
+ def sql(member,query,check=True):return docker('exec','-i',prefix+'-'+member,'/bin/bash','-ec',logical.ROOT_SHELL,source=query,check=check).stdout.strip()
  def wait(member,query,expected):
   for _ in range(90):
    state=json.loads(docker('inspect',prefix+'-'+member).stdout)[0]['State']
@@ -46,32 +49,35 @@ def smoke(image,output):
    if tampered:args+=['-v',f'{tampered}:/schema/sql/V35__add_story_prepared_content_metadata.sql:ro']
    if baseline:args+=['--entrypoint','/bin/bash']
    args+=[image]
-   # Fixture setup only: production entrypoint remains argument-free with target35.
-   if baseline:args+=['-ec',"test $(grep -c '^flyway.target=35$' /schema/migrate.sh) -eq 1; sed 's/^flyway.target=35$/flyway.target=34/;s/through V35/through V34 fixture/' /schema/migrate.sh > /tmp/v34-fixture.sh; /bin/bash /tmp/v34-fixture.sh"]
+   # Fixture setup only: production entrypoint remains argument-free with target40.
+   if baseline:args+=['-ec',"test $(grep -c '^flyway.target=40$' /schema/migrate.sh) -eq 1; sed 's/^flyway.target=40$/flyway.target=35/;s/through V40/through V35 fixture/' /schema/migrate.sh > /tmp/v35-fixture.sh; /bin/bash /tmp/v35-fixture.sh"]
    return docker(*args,check=check,timeout=240)
   history="SELECT CONCAT(COUNT(*),':',SUM(success),':',COUNT(DISTINCT version),':',MAX(CAST(version AS UNSIGNED))) FROM yeodam.flyway_schema_history;"
   column="SELECT CONCAT(DATA_TYPE,':',IS_NULLABLE) FROM information_schema.columns WHERE table_schema='yeodam' AND table_name='story_generation_jobs' AND column_name='prepared_content_metadata';"
   migrate(baseline=True)
-  assert sql('mysql-0',history)=='34:34:34:34';wait('mysql-1',history,'34:34:34:34')
-  assert sql('mysql-0',column)==''
+  assert sql('mysql-0',history)=='35:35:35:35';wait('mysql-1',history,'35:35:35:35')
+  assert sql('mysql-0',column)=='json:YES'
   seed="""INSERT INTO yeodam.users(user_id,email,nickname) VALUES(91001,'schema-upgrade@example.invalid','v35fixture');
 INSERT INTO yeodam.trips(trip_id,user_id,trip_name,start_date,end_date) VALUES(92001,91001,'v35-check','2026-01-01','2026-01-02');
 INSERT INTO yeodam.story_generation_jobs(generation_id,execution_id,trip_id,user_id,mood,status,progress,created_at,updated_at) VALUES(93001,'v35-upgrade-fixture',92001,91001,'CALM','QUEUED',0,'2026-01-01 00:00:00','2026-01-01 00:00:00');"""
-  sql('mysql-0',seed)
+  sql('mysql-0',seed+(ROOT/'tests/ci/v3/mysql-upgrade-seed.sql').read_text())
   snapshots={}
   for table,key,value in [('users','user_id',91001),('trips','trip_id',92001),('story_generation_jobs','generation_id',93001)]:
    columns=sql('mysql-0',f"SELECT GROUP_CONCAT(CONCAT('`',column_name,'`') ORDER BY ordinal_position SEPARATOR ',') FROM information_schema.columns WHERE table_schema='yeodam' AND table_name='{table}';")
    query=f'SELECT {columns} FROM yeodam.{table} WHERE {key}={value};'
    snapshots[query]=sql('mysql-0',query)
-  old_history="SELECT installed_rank,version,description,type,script,checksum,installed_by,installed_on,execution_time,success FROM yeodam.flyway_schema_history WHERE CAST(version AS UNSIGNED)<=34 ORDER BY installed_rank;"
+  old_history="SELECT installed_rank,version,description,type,script,checksum,installed_by,installed_on,execution_time,success FROM yeodam.flyway_schema_history WHERE CAST(version AS UNSIGNED)<=35 ORDER BY installed_rank;"
   previous_history=sql('mysql-0',old_history)
   tampered=d/'tampered-v35.sql';tampered.write_bytes((ROOT/'deploy/v3/candidates/be-ai/V35__add_story_prepared_content_metadata.sql').read_bytes()+b'\n-- disposable tamper fixture\n');tampered.chmod(0o444)
   assert migrate(False,tampered=tampered).returncode!=0,'Modified SQL accepted'
-  assert sql('mysql-0',history)=='34:34:34:34' and sql('mysql-0',column)==''
-  migrate();assert sql('mysql-0',history)=='35:35:35:35';wait('mysql-1',history,'35:35:35:35')
+  assert sql('mysql-0',history)=='35:35:35:35' and sql('mysql-0',column)=='json:YES'
+  upgrade=logical.upgrade_baseline(lambda query:sql('mysql-0',query))
+  migrate();logical.verify_upgrade(lambda query:sql('mysql-0',query),upgrade);assert sql('mysql-0',history)=='40:40:40:40';wait('mysql-1',history,'40:40:40:40')
   for member in ['mysql-0','mysql-1']:
+   wait(member,"SELECT CONCAT(accepted_actor_id,':',processing_mode) FROM yeodam.additional_attachment_executions WHERE execution_id='v37-existing-actor';",'91001:LEGACY')
+   wait(member,"SELECT GROUP_CONCAT(requires_remote_termination_confirmation ORDER BY trip_id) FROM yeodam.trip_creation_executions;",'1,0,0')
    wait(member,column,'json:YES')
-   assert sql(member,old_history)==previous_history,'V1-V34 Flyway history changed'
+   assert sql(member,old_history)==previous_history,'V1-V35 Flyway history changed'
    for query,expected in snapshots.items():wait(member,query,expected)
    assert sql(member,'SELECT prepared_content_metadata IS NULL FROM yeodam.story_generation_jobs WHERE generation_id=93001;')=='1'
   metadata="UPDATE yeodam.story_generation_jobs SET prepared_content_metadata=JSON_OBJECT('fixture','v35','places',JSON_ARRAY(1,2)) WHERE generation_id=93001;"
@@ -79,19 +85,19 @@ INSERT INTO yeodam.story_generation_jobs(generation_id,execution_id,trip_id,user
   metadata_query="SELECT JSON_UNQUOTE(JSON_EXTRACT(prepared_content_metadata,'$.fixture')) FROM yeodam.story_generation_jobs WHERE generation_id=93001;"
   wait('mysql-1',metadata_query,'v35')
   current_history=sql('mysql-0','SELECT * FROM yeodam.flyway_schema_history ORDER BY installed_rank;')
-  migrate();assert sql('mysql-0',history)=='35:35:35:35'
+  migrate();assert sql('mysql-0',history)=='40:40:40:40'
   assert sql('mysql-0','SELECT * FROM yeodam.flyway_schema_history ORDER BY installed_rank;')==current_history
   assert sql('mysql-0',metadata_query)=='v35'
   checksum=sql('mysql-0',"SELECT checksum FROM yeodam.flyway_schema_history WHERE version='1';")
   sql('mysql-0',"UPDATE yeodam.flyway_schema_history SET checksum=checksum+1 WHERE version='1';")
   assert migrate(False).returncode!=0,'Checksum mismatch was accepted'
-  assert sql('mysql-0',history)=='35:35:35:35'
+  assert sql('mysql-0',history)=='40:40:40:40'
   sql('mysql-0',f"UPDATE yeodam.flyway_schema_history SET checksum={int(checksum)} WHERE version='1';")
   wrong=d/'wrong-ca';wrong.mkdir();wrong.chmod(0o755)
   command(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-subj','/CN=untrusted-fixture-ca','-keyout',str(d/'wrong.key'),'-out',str(wrong/'ca.crt')])
   (wrong/'ca.crt').chmod(0o444)
   assert migrate(False,wrong).returncode!=0,'Wrong CA was accepted'
-  assert sql('mysql-0',history)=='35:35:35:35'
+  assert sql('mysql-0',history)=='40:40:40:40'
   password=secrets.token_hex(24);sql('mysql-0',cdc.create_sql(password));wait('mysql-1',f"SELECT COUNT(*) FROM mysql.user WHERE user='{cdc.USER}';",'1')
   for member in ['mysql-0','mysql-1']:
    assert cdc.grants_match(sql(member,f"SHOW GRANTS FOR '{cdc.USER}'@'%';"))
@@ -113,8 +119,8 @@ echo 'PASS: exact Outbox SELECT and denial of unrelated reads, writes, DDL and n
 """
   docker('exec','-i',prefix+'-mysql-0','/bin/bash','-ec',auth,source=password+'\n')
   assert sql('mysql-0',"SELECT @@global.read_only;")=='0' and sql('mysql-1',"SELECT @@global.super_read_only;")=='1'
-  (output/'result.json').write_text(json.dumps({'migrations':35,'upgradeFrom':34,'legacyRowsPreserved':True,'legacyHistoryPreserved':True,'nullableJsonOnExistingRow':True,'jsonRoundTripAndReplication':True,'sqlTamperRejectedBeforeDdl':True,'v34HistorySha256':hashlib.sha256(previous_history.encode()).hexdigest(),'flywayVersion':'12.4.0','rerunNoop':True,'checksumMismatchRejected':True,'tlsIdentityVerified':True,'wrongCaRejected':True,'externalNetworkUnavailable':True,'replicaHistoryMatches':True,'cdcExactGrantsAndTls':True,'cdcDeniedOtherReadWriteDdlPlaintext':True,'flywayMemoryLimitMi':512,'flywayCpuLimit':0.5},indent=2))
-  print('PASS: BE V34 -> V35, preserved rows/history, nullable JSON and replication, no-op retry, checksum rejection, replica history, CDC least privileges and TLS negatives',flush=True)
+  (output/'result.json').write_text(json.dumps({'migrations':40,'upgradeFrom':35,'legacyRowsPreserved':True,'legacyHistoryPreserved':True,'nullableJsonOnExistingRow':True,'v37ActorBackfillAndTimestampVerified':True,'v40ProtectionTrueAndFalseCases':True,'jsonRoundTripAndReplication':True,'sqlTamperRejectedBeforeDdl':True,'v35HistorySha256':hashlib.sha256(previous_history.encode()).hexdigest(),'flywayVersion':'12.4.0','rerunNoop':True,'checksumMismatchRejected':True,'tlsIdentityVerified':True,'wrongCaRejected':True,'externalNetworkUnavailable':True,'replicaHistoryMatches':True,'cdcExactGrantsAndTls':True,'cdcDeniedOtherReadWriteDdlPlaintext':True,'flywayMemoryLimitMi':512,'flywayCpuLimit':0.5},indent=2))
+  print('PASS: BE V35 -> V40, preserved rows/history, nullable JSON and replication, no-op retry, checksum rejection, replica history, CDC least privileges and TLS negatives',flush=True)
  finally:
   for name in reversed(containers):
    try:

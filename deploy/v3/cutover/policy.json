@@ -69,9 +69,10 @@
       "prod.yeodam.story-create.request"
     ]
   },
-  "schemaImage": "ghcr.io/100-hours-a-week/yeodam-v3-mysql-schema@sha256:9b76d5bce548ea26c5703037be18c9ece600e295410f404397ec33f0d36df61b",
   "heldNodePools": [
     "api",
     "worker"
-  ]
+  ],
+  "retiredSchemaImage": "ghcr.io/100-hours-a-week/yeodam-v3-mysql-schema@sha256:9b76d5bce548ea26c5703037be18c9ece600e295410f404397ec33f0d36df61b",
+  "schemaVersion": 40
 }
