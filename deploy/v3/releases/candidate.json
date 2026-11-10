@@ -889,7 +889,7 @@
     },
     "ai": {
       "accessEnabled": true,
-      "configurationRevision": "f84dfeb7bf03fe1ed92276b7ced7d49d5c4c3eaa97ff5e8acbde92835985152f",
+      "configurationRevision": "3571c5c96b1433acdf7220eebb07b6f731cf366715dec3bda1e33c87bf37120f",
       "image": "ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:cbeca1d96e2caed88affb586ff39a939cdd6ddd9560020d502212561dbe89e98",
       "privateModelPeers": [
         {
