@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Offline minimum AI runtime/connection contracts. No cluster, image pull or model call."""
-import argparse,copy,importlib.util,json,os,re,subprocess,tempfile
+import argparse,copy,hashlib,importlib.util,json,os,re,subprocess,tempfile
 from collections import Counter
 from pathlib import Path
 import yaml
@@ -65,7 +65,7 @@ def validate_snapshot(docs,v,files):
     # Only the exact registered previous approved Chart may use its old runtime
     # contract. Never trust arbitrary embedded contracts or weaken new releases.
     locks=json.loads((CHART/'rollback-compatibility.json').read_text())
-    checksums={p:__import__('hashlib').sha256(content).hexdigest() for p,content in files.items()}
+    checksums={p:hashlib.sha256(content).hexdigest() for p,content in files.items()}
     if any(checksums==record['files'] for record in locks):
         contract=json.loads(files['files/contract.json'])
         scripts={p[len('files/runtime/'):]:content.decode() for p,content in files.items() if p.startswith('files/runtime/')}
