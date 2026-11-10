@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "cluster": "arn:aws:eks:ap-northeast-2:483175530259:cluster/yeodam-v3-foundation",
+  "domain": "yeodam-2gether.com",
+  "zoneId": "Z09268031LIP9TICUQ911",
+  "oldDns": "dualstack.yeodam-v2-production-alb-491165947.ap-northeast-2.elb.amazonaws.com.",
+  "newDns": "yeodam-v3-validation-416234802.ap-northeast-2.elb.amazonaws.com.",
+  "certificateArn": "arn:aws:acm:ap-northeast-2:483175530259:certificate/16cafce8-9c2f-48bf-a168-e07e981530a3",
+  "freshLogins": true,
+  "sourceQueues": "leave-in-v2-only-if-all-business-jobs-terminal",
+  "qaQueues": "keep-records-and-committed-offsets-require-zero-lag",
+  "sourceGpuPreserved": "i-05e1ad9dd96dba4ae",
+  "sourceMysql": "i-02b2db8886a13dc25",
+  "cdcPrefix": "v3.yeodam.operating.outbox",
+  "cdcHistory": "prod.yeodam.schema-history-operating",
+  "phases": [
+    "pause",
+    "qa-backup",
+    "mysql-restore",
+    "qdrant-restore",
+    "ephemeral-reset",
+    "verify",
+    "operating-cors",
+    "operating-config",
+    "resume",
+    "dns",
+    "accept"
+  ],
+  "consumerTopics": {
+    "prod.yeodam.image-conversion-initial-light": [
+      "prod.yeodam.image.initial-light"
+    ],
+    "prod.yeodam.image-conversion-initial-heic": [
+      "prod.yeodam.image.initial-heic"
+    ],
+    "prod.yeodam.image-conversion-additional-light": [
+      "prod.yeodam.image.additional-light"
+    ],
+    "prod.yeodam.image-conversion-additional-heic": [
+      "prod.yeodam.image.additional-heic"
+    ],
+    "prod.yeodam.image-conversion-receipts": [
+      "prod.yeodam.image.initial-light",
+      "prod.yeodam.image.initial-heic",
+      "prod.yeodam.image.additional-light",
+      "prod.yeodam.image.additional-heic"
+    ],
+    "yeodam-ai-trip-create": [
+      "prod.yeodam.trip-create.request"
+    ],
+    "yeodam-ai-trip-update": [
+      "prod.yeodam.trip-update.request"
+    ],
+    "yeodam-ai-story-create": [
+      "prod.yeodam.story-create.request"
+    ],
+    "prod.yeodam-trip-results": [
+      "prod.yeodam.trip-create.result"
+    ],
+    "yeodam-trip-update-results": [
+      "prod.yeodam.trip-update.result"
+    ],
+    "prod.yeodam-story-results": [
+      "prod.yeodam.story-create.result"
+    ],
+    "prod.yeodam-outbox-receipts": [
+      "prod.yeodam.trip-create.request",
+      "prod.yeodam.trip-update.request",
+      "prod.yeodam.story-create.request"
+    ]
+  },
+  "schemaImage": "ghcr.io/100-hours-a-week/yeodam-v3-mysql-schema@sha256:9b76d5bce548ea26c5703037be18c9ece600e295410f404397ec33f0d36df61b"
+}

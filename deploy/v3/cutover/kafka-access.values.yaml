@@ -1,0 +1,2 @@
+# Adds only the fixed operating history/heartbeat and schema-history group permissions.
+operating: true

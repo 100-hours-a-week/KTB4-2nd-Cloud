@@ -1,3 +1,6 @@
 enabled: false
 connectorEnabled: false
 mysqlTruststore: ''
+
+operating: false
+connectorState: running

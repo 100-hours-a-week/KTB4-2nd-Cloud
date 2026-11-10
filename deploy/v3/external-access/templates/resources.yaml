@@ -40,7 +40,7 @@ metadata:
 spec:
   ingressClassName: yeodam-v3-alb
   rules:
-    - host: {{ $contract.host }}
+    - host: {{ $.Values.host }}
       http:
         paths:
           {{- range $path := $route.paths }}

@@ -66,7 +66,7 @@
           "PORT": "3000",
           "NEXT_TELEMETRY_DISABLED": "1",
           "NODE_OPTIONS": "--max-old-space-size=256",
-          "SERVER_API_BASE_URL": "https://v3.yeodam-2gether.com/api",
+          "SERVER_API_BASE_URL": "https://yeodam-2gether.com/api",
           "RELEASE": "5322c01311f9b3194805bce05c5b2d6418aa4765"
         },
         "springProperties": {},
@@ -188,8 +188,8 @@
           "AUTH_SESSION_KEY_PREFIX": "yeodam:v3:foundation:auth:",
           "AWS_EC2_METADATA_DISABLED": "true",
           "AWS_REGION": "ap-northeast-2",
-          "FRONTEND_OAUTH_CALLBACK_URI": "https://v3.yeodam-2gether.com/auth/callback",
-          "FRONTEND_ORIGIN": "https://v3.yeodam-2gether.com",
+          "FRONTEND_OAUTH_CALLBACK_URI": "https://yeodam-2gether.com/auth/callback",
+          "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
           "JAVA_TOOL_OPTIONS": "-XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts -Djavax.net.ssl.trustStorePassword=public-ca-only",
           "JWT_ISSUER": "https://yeodam-2gether.com",
           "KAFKA_BOOTSTRAP_SERVERS": "yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093",
@@ -200,7 +200,7 @@
           "KAFKA_TRIP_UPDATE_REQUEST_TOPIC": "prod.yeodam.trip-update.request",
           "KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP": "yeodam-trip-update-results",
           "KAFKA_TRIP_UPDATE_RESULT_TOPIC": "prod.yeodam.trip-update.result",
-          "KAKAO_REDIRECT_URI": "https://v3.yeodam-2gether.com/api/auth/kakao/callback",
+          "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback",
           "MANAGEMENT_SERVER_ADDRESS": "0.0.0.0",
           "MYSQL_URL": "jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true",
           "REDIS_HOST": "redis-members.redis.svc.cluster.local",
@@ -433,7 +433,10 @@
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
             "TRIP_STATUS_POLLING_ENABLED": "false",
-            "RELEASE": "34e4d80be73f860a105364dfab79fc0864638d66"
+            "RELEASE": "34e4d80be73f860a105364dfab79fc0864638d66",
+            "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
+            "FRONTEND_OAUTH_CALLBACK_URI": "https://yeodam-2gether.com/auth/callback",
+            "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback"
           },
           "enabled": true,
           "imageRef": "backend",
@@ -485,7 +488,10 @@
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
             "TRIP_STATUS_POLLING_ENABLED": "false",
-            "RELEASE": "34e4d80be73f860a105364dfab79fc0864638d66"
+            "RELEASE": "34e4d80be73f860a105364dfab79fc0864638d66",
+            "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
+            "FRONTEND_OAUTH_CALLBACK_URI": "https://yeodam-2gether.com/auth/callback",
+            "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback"
           },
           "enabled": true,
           "imageRef": "backend",
@@ -537,7 +543,10 @@
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
             "TRIP_STATUS_POLLING_ENABLED": "false",
-            "RELEASE": "34e4d80be73f860a105364dfab79fc0864638d66"
+            "RELEASE": "34e4d80be73f860a105364dfab79fc0864638d66",
+            "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
+            "FRONTEND_OAUTH_CALLBACK_URI": "https://yeodam-2gether.com/auth/callback",
+            "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback"
           },
           "enabled": true,
           "imageRef": "backend",
@@ -589,7 +598,10 @@
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
             "TRIP_STATUS_POLLING_ENABLED": "false",
-            "RELEASE": "34e4d80be73f860a105364dfab79fc0864638d66"
+            "RELEASE": "34e4d80be73f860a105364dfab79fc0864638d66",
+            "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
+            "FRONTEND_OAUTH_CALLBACK_URI": "https://yeodam-2gether.com/auth/callback",
+            "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback"
           },
           "enabled": true,
           "imageRef": "backend",
@@ -641,7 +653,10 @@
             "STORY_STATUS_POLLING_ENABLED": "true",
             "TRIP_RESULT_WORKER_ENABLED": "true",
             "TRIP_STATUS_POLLING_ENABLED": "true",
-            "RELEASE": "34e4d80be73f860a105364dfab79fc0864638d66"
+            "RELEASE": "34e4d80be73f860a105364dfab79fc0864638d66",
+            "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
+            "FRONTEND_OAUTH_CALLBACK_URI": "https://yeodam-2gether.com/auth/callback",
+            "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback"
           },
           "enabled": true,
           "imageRef": "backend",
@@ -732,7 +747,7 @@
           "SERVER_PORT": "8081",
           "SERVER_SHUTDOWN": "graceful",
           "SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE": "30s",
-          "WEBSOCKET_ALLOWED_ORIGINS": "https://v3.yeodam-2gether.com",
+          "WEBSOCKET_ALLOWED_ORIGINS": "https://yeodam-2gether.com",
           "WEBSOCKET_EVENTS_CHANNEL": "yeodam:v3:foundation:websocket:events:v1",
           "WEBSOCKET_MAX_CONNECTIONS": "100"
         },
@@ -864,7 +879,10 @@
               "value": "api",
               "effect": "NoSchedule"
             }
-          ]
+          ],
+          "configMapData": {
+            "WEBSOCKET_ALLOWED_ORIGINS": "https://yeodam-2gether.com"
+          }
         }
       }
     },

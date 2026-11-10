@@ -29,6 +29,17 @@ spec:
         operations: [Read]
         host: '*'
       {{- end }}
+      {{- if and $.Values.operating (eq $role "connect-outbox") }}
+      - resource: {type: topic, name: prod.yeodam.schema-history-operating, patternType: literal}
+        operations: [Describe, Read, Write, DescribeConfigs]
+        host: '*'
+      - resource: {type: topic, name: __debezium-heartbeat.v3.yeodam.operating.outbox, patternType: literal}
+        operations: [Describe, Write]
+        host: '*'
+      - resource: {type: group, name: v3.yeodam.operating.outbox-schemahistory, patternType: literal}
+        operations: [Read]
+        host: '*'
+      {{- end }}
       {{- if $access.clusterOperations }}
       - resource: {type: cluster}
         operations: {{ $access.clusterOperations | toJson }}

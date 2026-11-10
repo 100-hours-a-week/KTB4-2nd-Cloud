@@ -4,3 +4,4 @@ ingressEnabled: false
 certificateArn: ''
 albSecurityGroupId: ''
 backendRoutesEnabled: false
+host: v3.yeodam-2gether.com
