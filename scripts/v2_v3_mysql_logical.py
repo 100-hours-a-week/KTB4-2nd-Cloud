@@ -184,14 +184,17 @@ def upgrade_baseline(execute, shape=None):
     if 'additional_attachment_executions' in shape:
         shape['additional_attachment_executions']['columns'].remove('updated_at')
     tables = capture('',shape,query_fn=execute)
-    history = execute('SELECT * FROM yeodam.flyway_schema_history WHERE CAST(version AS UNSIGNED)<=35 ORDER BY installed_rank;')
+    version=execute('SELECT MAX(CAST(version AS UNSIGNED)) FROM yeodam.flyway_schema_history;')
+    require(version.isdigit() and 1<=int(version)<=35,'Upgrade baseline must be an existing schema no newer than V35')
+    history = execute('SELECT * FROM yeodam.flyway_schema_history WHERE CAST(version AS UNSIGNED)<='+version+' ORDER BY installed_rank;')
     started = execute('SELECT NOW(6);')
     require(re.fullmatch(r'\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{6}',started),'Invalid database migration clock')
-    return {'tables':tables,'historySha256':hashlib.sha256(history.encode()).hexdigest(),'startedAt':started}
+    return {'tables':tables,'historyVersion':int(version),'historySha256':hashlib.sha256(history.encode()).hexdigest(),'startedAt':started}
 
 def verify_upgrade(execute, baseline):
     require(capture('',baseline['tables'],query_fn=execute)==baseline['tables'],'Legacy data outside reviewed V37 timestamp changed')
-    history=execute('SELECT * FROM yeodam.flyway_schema_history WHERE CAST(version AS UNSIGNED)<=35 ORDER BY installed_rank;')
+    version=baseline['historyVersion'];require(type(version) is int and 1<=version<=35,'Invalid original history prefix')
+    history=execute('SELECT * FROM yeodam.flyway_schema_history WHERE CAST(version AS UNSIGNED)<='+str(version)+' ORDER BY installed_rank;')
     require(hashlib.sha256(history.encode()).hexdigest()==baseline['historySha256'],'Existing Flyway history changed')
     require(execute("SELECT CONCAT(COUNT(*),':',SUM(success),':',COUNT(DISTINCT version),':',MAX(CAST(version AS UNSIGNED))) FROM yeodam.flyway_schema_history;")==f'{SCHEMA_VERSION}:{SCHEMA_VERSION}:{SCHEMA_VERSION}:{SCHEMA_VERSION}','Target schema migrations incomplete')
     ended=execute('SELECT NOW(6);')

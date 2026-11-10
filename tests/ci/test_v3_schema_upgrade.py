@@ -9,7 +9,7 @@ import v2_v3_cutover as cutover
 class Upgrade(unittest.TestCase):
  def fixture(self):
   tables={'additional_attachment_executions':{'columns':['id','user_id'],'primaryKey':['id'],'rows':1,'sha256':'fixed'}}
-  baseline={'tables':tables,'startedAt':'2026-11-10 00:00:00.000000','historySha256':hashlib.sha256(b'history').hexdigest()}
+  baseline={'tables':tables,'historyVersion':35,'startedAt':'2026-11-10 00:00:00.000000','historySha256':hashlib.sha256(b'history').hexdigest()}
   def execute(query):
    if query=='SELECT NOW(6);':return '2026-11-10 00:01:00.000000'
    if 'SELECT * FROM yeodam.flyway_schema_history' in query:return 'history'
@@ -34,10 +34,17 @@ class Upgrade(unittest.TestCase):
    with patch.object(logical,'capture',return_value=baseline['tables']),self.assertRaises(ValueError):logical.verify_upgrade(lambda q:'wrong' if key in q else execute(q),baseline)
  def test_only_reviewed_timestamp_removed(self):
   shape={'additional_attachment_executions':{'columns':['id','updated_at'],'primaryKey':['id']},'users':{'columns':['id','updated_at'],'primaryKey':['id']}}
-  def execute(q):return '2026-11-10 00:00:00.000000' if q=='SELECT NOW(6);' else 'history'
+  def execute(q):return '2026-11-10 00:00:00.000000' if q=='SELECT NOW(6);' else ('35' if 'SELECT MAX' in q else 'history')
   with patch.object(logical,'capture',return_value={}) as capture:logical.upgrade_baseline(execute,shape)
   passed=capture.call_args.args[1]
   self.assertEqual(passed['additional_attachment_executions']['columns'],['id']);self.assertEqual(passed['users']['columns'],['id','updated_at']);self.assertIn('updated_at',shape['additional_attachment_executions']['columns'])
+ def test_v32_history_compares_only_the_original_prefix(self):
+  baseline,execute=self.fixture();baseline['historyVersion']=32
+  def original(q):
+   if q.startswith('SELECT * FROM'):
+    self.assertIn('<=32',q)
+   return execute(q)
+  with patch.object(logical,'capture',return_value=baseline['tables']):logical.verify_upgrade(original,baseline)
  def test_retired_v35_and_tags_refused(self):
   for ref in [cutover.POLICY['retiredSchemaImage'],'ghcr.io/100-hours-a-week/yeodam-v3-mysql-schema:latest']:
    with self.assertRaises(ValueError):cutover.require_schema_image(ref)
