@@ -110,14 +110,15 @@ class Contracts(unittest.TestCase):
    with self.assertRaises(ValueError):c.verify_photos(plan,results,store,'a'*64)
  def test_mongo_actions_skip_implicit_plaintext_connection(self):
   class TlsOnlyShell:
-   def execute(self,ns,pod,container,argv):
+   def execute(self,ns,pod,container,argv,source=None):
     if '--nodb' not in argv:raise RuntimeError('Implicit plaintext startup connection rejected')
-    self.argv=argv
+    self.argv=argv;self.source=source
     return b'[]'
   k=TlsOnlyShell()
   for action in ['backup','clear','verify-stories','restore']:
    with self.subTest(action=action):
-    self.assertEqual(run.mongo_action(k,action),b'[]')
+    self.assertEqual(run.mongo_action(k,action,source=b'fixture'),b'[]')
+    self.assertEqual(k.source,b'fixture')
     self.assertIn('CUTOVER_ACTION='+action,k.argv)
     self.assertIn("load('/runtime/common.js')",k.argv[-1])
     self.assertNotIn('--tlsAllowInvalidCertificates',k.argv)
