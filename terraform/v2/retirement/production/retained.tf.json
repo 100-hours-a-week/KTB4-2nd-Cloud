@@ -1,0 +1,453 @@
+{
+  "resource": {
+    "aws_cloudwatch_log_group": {
+      "ai_api": {
+        "log_group_class": "STANDARD",
+        "name": "/yeodam/v2/production/ai-api",
+        "retention_in_days": 30,
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "Terraform",
+          "Project": "yeodam",
+          "Version": "v2"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "ai_runner": {
+        "log_group_class": "STANDARD",
+        "name": "/yeodam/v2/production/ai-runner",
+        "retention_in_days": 30,
+        "tags": {
+          "Role": "ai-runner-logs"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "websocket": {
+        "log_group_class": "STANDARD",
+        "name": "/yeodam/v2/production/websocket",
+        "retention_in_days": 7,
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "Terraform",
+          "Project": "yeodam",
+          "Version": "v2"
+        },
+        "count": 1,
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_iam_role": {
+      "production_runpod_update": {
+        "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRoleWithWebIdentity\",\"Condition\":{\"StringEquals\":{\"token.actions.githubusercontent.com:aud\":\"sts.amazonaws.com\",\"token.actions.githubusercontent.com:sub\":\"repo:100-hours-a-week@167328634/KTB4-2nd-Cloud@1344655631:environment:production\"}},\"Effect\":\"Allow\",\"Principal\":{\"Federated\":\"arn:aws:iam::483175530259:oidc-provider/token.actions.githubusercontent.com\"}}],\"Version\":\"2012-10-17\"}",
+        "description": "Update only the production RunPod URL and roll the production AI API",
+        "max_session_duration": 3600,
+        "name": "yeodam-v2-production-runpod-update",
+        "path": "/",
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "Terraform",
+          "Project": "yeodam",
+          "Version": "v2"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_iam_role_policy": {
+      "ai_reference_data_read": {
+        "name": "ai-reference-data-read",
+        "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":\"s3:GetBucketLocation\",\"Effect\":\"Allow\",\"Resource\":\"arn:aws:s3:::yeodam-v1-app-data-483175530259-ap-northeast-2\",\"Sid\":\"AIPlaceReferenceBucketLocation\"},{\"Action\":\"s3:ListBucket\",\"Condition\":{\"StringLike\":{\"s3:prefix\":\"ai-reference/places/*\"}},\"Effect\":\"Allow\",\"Resource\":\"arn:aws:s3:::yeodam-v1-app-data-483175530259-ap-northeast-2\",\"Sid\":\"AIPlaceReferenceList\"},{\"Action\":[\"s3:GetObject\",\"s3:GetObjectVersion\"],\"Effect\":\"Allow\",\"Resource\":\"arn:aws:s3:::yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/places/*\",\"Sid\":\"AIPlaceReferenceRead\"}]}",
+        "role": "yeodam-v2-staging-ai-gpu",
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "ai_runner_logs": {
+        "name": "production-ai-runner-cloudwatch",
+        "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\",\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"arn:aws:logs:ap-northeast-2:483175530259:log-group:/yeodam/v2/production/ai-runner:*\"}]}",
+        "role": "yeodam-v2-staging-ai-gpu",
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "production_runner_runtime": {
+        "name": "production-ai-runner-runtime",
+        "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"ssm:GetParameter\",\"ssm:PutParameter\"],\"Effect\":\"Allow\",\"Resource\":\"arn:aws:ssm:ap-northeast-2:483175530259:parameter/yeodam/v2/production/ai/API_KEY\"},{\"Action\":[\"ssm:GetParameter\"],\"Effect\":\"Allow\",\"Resource\":[\"arn:aws:ssm:ap-northeast-2:483175530259:parameter/yeodam/v2/production/ai/REDIS_URL\",\"arn:aws:ssm:ap-northeast-2:483175530259:parameter/yeodam/v2/staging/ai/EMBEDDING_API_KEY\",\"arn:aws:ssm:ap-northeast-2:483175530259:parameter/yeodam/v2/production/ai/VLM_BASE_URL\",\"arn:aws:ssm:ap-northeast-2:483175530259:parameter/yeodam/v2/production/ai/VLM_API_KEY\",\"arn:aws:ssm:ap-northeast-2:483175530259:parameter/yeodam/v2/production/app/KAKAO_CLIENT_ID\"]},{\"Action\":[\"secretsmanager:GetSecretValue\"],\"Effect\":\"Allow\",\"Resource\":\"arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v2/production/ghcr-credentials-o2KwUt\"},{\"Action\":[\"s3:GetObject\"],\"Effect\":\"Allow\",\"Resource\":[\"arn:aws:s3:::yeodam-v1-app-data-483175530259-ap-northeast-2/trip-uploads/*/derived/*\",\"arn:aws:s3:::yeodam-v1-app-data-483175530259-ap-northeast-2/trip-additions/*/derived/*\"]}]}",
+        "role": "yeodam-v2-staging-ai-gpu",
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "production_runpod_update": {
+        "name": "production-runpod-update-only",
+        "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"ssm:SendCommand\"],\"Effect\":\"Allow\",\"Resource\":[\"arn:aws:ssm:ap-northeast-2:483175530259:document/yeodam-v2-production-ai-runner-deploy\",\"arn:aws:ec2:ap-northeast-2:483175530259:instance/i-05e1ad9dd96dba4ae\"]},{\"Action\":[\"ssm:GetCommandInvocation\"],\"Condition\":{\"StringEquals\":{\"aws:RequestedRegion\":\"ap-northeast-2\"}},\"Effect\":\"Allow\",\"Resource\":\"*\"},{\"Action\":[\"ssm:GetParameter\"],\"Effect\":\"Allow\",\"Resource\":[\"arn:aws:ssm:ap-northeast-2:483175530259:parameter/yeodam/v2/production/ai/VLM_BASE_URL\",\"arn:aws:ssm:ap-northeast-2:483175530259:parameter/yeodam/v2/production/ai/VLM_API_KEY\",\"arn:aws:ssm:ap-northeast-2:483175530259:parameter/yeodam/v2/staging/ai/VLM_BASE_URL\"]},{\"Action\":[\"ssm:PutParameter\"],\"Effect\":\"Allow\",\"Resource\":\"arn:aws:ssm:ap-northeast-2:483175530259:parameter/yeodam/v2/production/ai/VLM_BASE_URL\"},{\"Action\":[\"ecs:DescribeServices\",\"ecs:UpdateService\"],\"Effect\":\"Allow\",\"Resource\":\"arn:aws:ecs:ap-northeast-2:483175530259:service/yeodam-v2-production-app/yeodam-v2-production-ai-api\"},{\"Action\":[\"ecs:ListTasks\"],\"Condition\":{\"ArnEquals\":{\"ecs:cluster\":\"arn:aws:ecs:ap-northeast-2:483175530259:cluster/yeodam-v2-production-app\"}},\"Effect\":\"Allow\",\"Resource\":\"*\"},{\"Action\":[\"ecs:DescribeTasks\"],\"Effect\":\"Allow\",\"Resource\":\"arn:aws:ecs:ap-northeast-2:483175530259:task/yeodam-v2-production-app/*\"},{\"Action\":[\"ecs:DescribeTaskDefinition\",\"ecs:RegisterTaskDefinition\",\"elasticloadbalancing:DescribeTargetHealth\"],\"Condition\":{\"StringEquals\":{\"aws:RequestedRegion\":\"ap-northeast-2\"}},\"Effect\":\"Allow\",\"Resource\":\"*\"},{\"Action\":[\"iam:PassRole\"],\"Condition\":{\"StringEquals\":{\"iam:PassedToService\":\"ecs-tasks.amazonaws.com\"}},\"Effect\":\"Allow\",\"Resource\":[\"arn:aws:iam::483175530259:role/yeodam-v2-production-ai-api-execution\",\"arn:aws:iam::483175530259:role/yeodam-v2-production-ai-api-task\"]}]}",
+        "role": "yeodam-v2-production-runpod-update",
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "shared_gpu_no_auto_stop": {
+        "name": "shared-gpu-production-no-auto-stop",
+        "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"ec2:StopInstances\"],\"Effect\":\"Deny\",\"Resource\":\"arn:aws:ec2:ap-northeast-2:483175530259:instance/i-05e1ad9dd96dba4ae\"}]}",
+        "role": "yeodam-v2-staging-release-deploy",
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_route53_record": {
+      "shared_gpu_production": {
+        "name": "ai-gpu.production.yeodam.internal",
+        "records": [
+          "10.30.10.162"
+        ],
+        "ttl": 30,
+        "type": "A",
+        "zone_id": "Z0848608U1XFD63QO507",
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_route53_zone": {
+      "production_private": {
+        "comment": "Managed by Terraform",
+        "name": "production.yeodam.internal",
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "Terraform",
+          "Project": "yeodam",
+          "Version": "v2"
+        },
+        "lifecycle": {
+          "prevent_destroy": true,
+          "ignore_changes": [
+            "vpc"
+          ]
+        },
+        "vpc": [
+          {
+            "vpc_id": "vpc-0d84786e134e32933",
+            "vpc_region": "ap-northeast-2"
+          }
+        ]
+      }
+    },
+    "aws_s3_bucket": {
+      "alb_logs": {
+        "bucket": "yeodam-v2-production-alb-logs-483175530259-ap-northeast-2",
+        "tags": {
+          "Name": "yeodam-v2-production-alb-logs",
+          "Role": "access-logs"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "mysql_backup": {
+        "bucket": "yeodam-v2-production-mysql-backup-483175530259-ap-northeast-2",
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "Terraform",
+          "Name": "yeodam-v2-production-mysql-backup",
+          "Project": "yeodam",
+          "Role": "mysql-backup",
+          "Version": "v2"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_lifecycle_configuration": {
+      "alb_logs": {
+        "bucket": "yeodam-v2-production-alb-logs-483175530259-ap-northeast-2",
+        "transition_default_minimum_object_size": "all_storage_classes_128K",
+        "rule": [
+          {
+            "id": "expire-access-logs-after-thirty-days",
+            "status": "Enabled",
+            "abort_incomplete_multipart_upload": [
+              {
+                "days_after_initiation": 1
+              }
+            ],
+            "expiration": [
+              {
+                "days": 30
+              }
+            ],
+            "filter": [
+              {
+                "prefix": "alb-access-logs/"
+              }
+            ]
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "mysql_backup": {
+        "bucket": "yeodam-v2-production-mysql-backup-483175530259-ap-northeast-2",
+        "transition_default_minimum_object_size": "all_storage_classes_128K",
+        "rule": [
+          {
+            "id": "expire-backup-objects-after-14-days",
+            "status": "Enabled",
+            "expiration": [
+              {
+                "days": 14
+              }
+            ],
+            "filter": [
+              {}
+            ],
+            "noncurrent_version_expiration": [
+              {
+                "noncurrent_days": 1
+              }
+            ]
+          },
+          {
+            "id": "remove-expired-backup-delete-markers",
+            "status": "Enabled",
+            "expiration": [
+              {
+                "expired_object_delete_marker": true
+              }
+            ],
+            "filter": [
+              {}
+            ]
+          },
+          {
+            "id": "abort-incomplete-backup-uploads",
+            "status": "Enabled",
+            "abort_incomplete_multipart_upload": [
+              {
+                "days_after_initiation": 1
+              }
+            ],
+            "filter": [
+              {}
+            ]
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_ownership_controls": {
+      "alb_logs": {
+        "bucket": "yeodam-v2-production-alb-logs-483175530259-ap-northeast-2",
+        "rule": [
+          {
+            "object_ownership": "BucketOwnerEnforced"
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "mysql_backup": {
+        "bucket": "yeodam-v2-production-mysql-backup-483175530259-ap-northeast-2",
+        "rule": [
+          {
+            "object_ownership": "BucketOwnerEnforced"
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_policy": {
+      "alb_logs": {
+        "bucket": "yeodam-v2-production-alb-logs-483175530259-ap-northeast-2",
+        "policy": "{\"Statement\":[{\"Action\":\"s3:PutObject\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"logdelivery.elasticloadbalancing.amazonaws.com\"},\"Resource\":\"arn:aws:s3:::yeodam-v2-production-alb-logs-483175530259-ap-northeast-2/alb-access-logs/AWSLogs/483175530259/*\",\"Sid\":\"AllowProductionAlbAccessLogs\"},{\"Action\":\"s3:*\",\"Condition\":{\"Bool\":{\"aws:SecureTransport\":\"false\"}},\"Effect\":\"Deny\",\"Principal\":\"*\",\"Resource\":[\"arn:aws:s3:::yeodam-v2-production-alb-logs-483175530259-ap-northeast-2/*\",\"arn:aws:s3:::yeodam-v2-production-alb-logs-483175530259-ap-northeast-2\"],\"Sid\":\"DenyInsecureTransport\"}],\"Version\":\"2012-10-17\"}",
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "mysql_backup": {
+        "bucket": "yeodam-v2-production-mysql-backup-483175530259-ap-northeast-2",
+        "policy": "{\"Statement\":[{\"Action\":\"s3:*\",\"Condition\":{\"Bool\":{\"aws:SecureTransport\":\"false\"}},\"Effect\":\"Deny\",\"Principal\":\"*\",\"Resource\":[\"arn:aws:s3:::yeodam-v2-production-mysql-backup-483175530259-ap-northeast-2/*\",\"arn:aws:s3:::yeodam-v2-production-mysql-backup-483175530259-ap-northeast-2\"],\"Sid\":\"DenyInsecureTransport\"}],\"Version\":\"2012-10-17\"}",
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_public_access_block": {
+      "alb_logs": {
+        "block_public_acls": true,
+        "block_public_policy": true,
+        "bucket": "yeodam-v2-production-alb-logs-483175530259-ap-northeast-2",
+        "ignore_public_acls": true,
+        "restrict_public_buckets": true,
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "mysql_backup": {
+        "block_public_acls": true,
+        "block_public_policy": true,
+        "bucket": "yeodam-v2-production-mysql-backup-483175530259-ap-northeast-2",
+        "ignore_public_acls": true,
+        "restrict_public_buckets": true,
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_server_side_encryption_configuration": {
+      "alb_logs": {
+        "bucket": "yeodam-v2-production-alb-logs-483175530259-ap-northeast-2",
+        "rule": [
+          {
+            "blocked_encryption_types": [
+              "SSE-C"
+            ],
+            "apply_server_side_encryption_by_default": [
+              {
+                "sse_algorithm": "AES256"
+              }
+            ]
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "mysql_backup": {
+        "bucket": "yeodam-v2-production-mysql-backup-483175530259-ap-northeast-2",
+        "rule": [
+          {
+            "blocked_encryption_types": [
+              "SSE-C"
+            ],
+            "apply_server_side_encryption_by_default": [
+              {
+                "sse_algorithm": "AES256"
+              }
+            ]
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_versioning": {
+      "mysql_backup": {
+        "bucket": "yeodam-v2-production-mysql-backup-483175530259-ap-northeast-2",
+        "versioning_configuration": [
+          {
+            "mfa_delete": "Disabled",
+            "status": "Enabled"
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_ssm_document": {
+      "ai_runner_log_level": {
+        "document_format": "JSON",
+        "document_type": "Command",
+        "name": "yeodam-v2-shared-ai-runner-log-level",
+        "lifecycle": {
+          "prevent_destroy": true
+        },
+        "content": "${data.aws_ssm_document.retained_ai_runner_log_level.content}"
+      },
+      "ai_runner_logs": {
+        "document_format": "JSON",
+        "document_type": "Command",
+        "name": "yeodam-v2-shared-ai-runner-logs-install",
+        "lifecycle": {
+          "prevent_destroy": true
+        },
+        "content": "${data.aws_ssm_document.retained_ai_runner_logs.content}"
+      },
+      "production_qdrant_runtime": {
+        "document_format": "JSON",
+        "document_type": "Command",
+        "name": "yeodam-v2-production-qdrant-runtime",
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "Terraform",
+          "Project": "yeodam",
+          "Version": "v2"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        },
+        "content": "${data.aws_ssm_document.retained_production_qdrant_runtime.content}"
+      },
+      "production_runner_deploy": {
+        "document_format": "JSON",
+        "document_type": "Command",
+        "name": "yeodam-v2-production-ai-runner-deploy",
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "Terraform",
+          "Project": "yeodam",
+          "Version": "v2"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        },
+        "content": "${data.aws_ssm_document.retained_production_runner_deploy.content}"
+      },
+      "production_runner_runtime": {
+        "document_format": "JSON",
+        "document_type": "Command",
+        "name": "yeodam-v2-production-ai-runner-runtime",
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "Terraform",
+          "Project": "yeodam",
+          "Version": "v2"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        },
+        "content": "${data.aws_ssm_document.retained_production_runner_runtime.content}"
+      }
+    }
+  },
+  "data": {
+    "aws_ssm_document": {
+      "retained_ai_runner_log_level": {
+        "name": "yeodam-v2-shared-ai-runner-log-level",
+        "document_version": "$LATEST"
+      },
+      "retained_ai_runner_logs": {
+        "name": "yeodam-v2-shared-ai-runner-logs-install",
+        "document_version": "$LATEST"
+      },
+      "retained_production_qdrant_runtime": {
+        "name": "yeodam-v2-production-qdrant-runtime",
+        "document_version": "$LATEST"
+      },
+      "retained_production_runner_deploy": {
+        "name": "yeodam-v2-production-ai-runner-deploy",
+        "document_version": "$LATEST"
+      },
+      "retained_production_runner_runtime": {
+        "name": "yeodam-v2-production-ai-runner-runtime",
+        "document_version": "$LATEST"
+      }
+    }
+  }
+}
