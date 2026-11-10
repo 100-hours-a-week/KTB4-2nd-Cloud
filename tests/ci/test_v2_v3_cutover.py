@@ -113,6 +113,20 @@ class Contracts(unittest.TestCase):
    p=Path(tmp);(p/'qa').mkdir();proof={'files':{}}
    c.write(p/'qa/backup.json',proof);c.write(p/'qa-backup.json',{'result':{'backupManifestSha256':c.digest(proof)}})
    with self.assertRaises(ValueError):run.qa_proof(p)
+ def test_capacity_hold_does_not_change_specs_or_create_nodes(self):
+  class K:
+   def __init__(self):self.patches=[]
+   def patch(self,*args):self.patches.append(args)
+  k=K();baseline={'pools':{name:{'metadata':{'uid':name},'spec':{'disruption':{'budgets':[{'nodes':'1','reasons':['Empty']}]}}} for name in ['api','worker']}}
+  run.hold_capacity(k,baseline)
+  self.assertEqual(len(k.patches),2)
+  for ns,kind,name,original,ops in k.patches:
+   self.assertEqual(kind,'nodepool');self.assertEqual(ops,[{'op':'replace','path':'/spec/disruption/budgets','value':[{'nodes':'0'}]}])
+ def test_changed_node_claims_block_capacity_restore(self):
+  class K:
+   def get(self,*args):return {'items':[{'metadata':{'uid':'new','labels':{'karpenter.sh/nodepool':'api'}}}]}
+   def patch(self,*args):raise AssertionError('Do not restore a changed pool')
+  with self.assertRaises(ValueError):run.restore_capacity(K(),{'claimUids':['old'],'pools':{}})
  def test_operating_cors_rejects_unrelated_changes(self):
   rule={'allowed_origins':['https://v3.yeodam-2gether.com'],'allowed_methods':['GET','HEAD','PUT','POST'],'allowed_headers':['*'],'max_age_seconds':600}
   before={'bucket':'yeodam-v3-foundation-app-data-483175530259-ap-northeast-2','cors_rule':[rule]};after=copy.deepcopy(before);after['cors_rule'][0]['allowed_origins'].append('https://yeodam-2gether.com')

@@ -93,6 +93,31 @@ def mongo_action(k,action):
  script=(ROOT/'scripts/cutover/mongo.js').read_text()
  return k.execute('mongodb','mongodb-0','mongodb',['env','CUTOVER_ACTION='+action,'mongosh','--quiet','--norc','--eval',script])
 
+def capacity_snapshot(k):
+ pools={name:k.get('default','nodepool',name) for name in c.POLICY['heldNodePools']}
+ for name,pool in pools.items():
+  c.require(pool['spec']['template']['spec']['expireAfter']=='Never','Review expiring NodeClaims before maintenance')
+ claims={x['metadata']['uid']:x for x in k.get('default','nodeclaims')['items'] if x['metadata'].get('labels',{}).get('karpenter.sh/nodepool') in pools}
+ c.require({x['metadata']['labels']['karpenter.sh/nodepool'] for x in claims.values()}==set(pools),'Both existing app pools must have capacity before pause')
+ for claim in claims.values():
+  c.require(not claim['metadata'].get('deletionTimestamp'),'Wait for an active Node deletion before migration')
+  name=claim.get('status',{}).get('nodeName');c.require(name,'NodeClaim is not initialized')
+  node=k.get('default','node',name)
+  c.require(not node['metadata'].get('deletionTimestamp') and not any(t['key']=='karpenter.sh/disrupted' for t in node['spec'].get('taints',[])),'Node is already being disrupted')
+ return {'pools':pools,'claimUids':sorted(claims)}
+
+def hold_capacity(k,baseline):
+ for name,pool in baseline['pools'].items():
+  k.patch('default','nodepool',name,pool,[{'op':'replace','path':'/spec/disruption/budgets','value':[{'nodes':'0'}]}])
+
+def restore_capacity(k,baseline):
+ claims=sorted(x['metadata']['uid'] for x in k.get('default','nodeclaims')['items'] if x['metadata'].get('labels',{}).get('karpenter.sh/nodepool') in c.POLICY['heldNodePools'])
+ c.require(claims==baseline['claimUids'],'App capacity changed during migration; review before restoring disruption')
+ for name,original in baseline['pools'].items():
+  current=k.get('default','nodepool',name)
+  c.require(current['metadata']['uid']==original['metadata']['uid'] and current['spec']['disruption']['budgets']==[{'nodes':'0'}],'NodePool maintenance hold changed')
+  k.patch('default','nodepool',name,current,[{'op':'replace','path':'/spec/disruption/budgets','value':original['spec']['disruption']['budgets']}])
+
 def pause(k,directory):
  application=k.get('argocd','application','yeodam-v3-apps')
  c.require(application.get('status',{}).get('operationState',{}).get('phase')!='Running','Wait for the current Argo operation')
@@ -100,10 +125,11 @@ def pause(k,directory):
  spec=schema['spec']['template']['spec'];c.require(len(spec['containers'])==1 and spec['automountServiceAccountToken'] is False and spec['nodeSelector']=={'yeodam.io/role':'system'} and spec['containers'][0]['image']==c.POLICY['schemaImage'],'Review fixed schema Job before maintenance')
  k.get('qdrant','persistentvolumeclaim','data-qdrant-0')
  k.get('mongodb','pod','mongodb-0')
- baseline={'schemaJob':schema,'application':application,'deployments':{},'connector':k.get('kafka','kafkaconnector','yeodam-v3-outbox')}
+ baseline={'capacity':capacity_snapshot(k),'schemaJob':schema,'application':application,'deployments':{},'connector':k.get('kafka','kafkaconnector','yeodam-v3-outbox')}
  for name,u in c.UNITS.items():
   d=k.get(u['namespace'],'deployment',name);c.require(d['spec'].get('replicas')==1,'Unexpected app replica count');baseline['deployments'][name]=d
  c.write(directory/'before-pause.json',baseline)
+ hold_capacity(k,baseline['capacity'])
  if 'automated' in application.get('spec',{}).get('syncPolicy',{}):
   k.patch('argocd','application','yeodam-v3-apps',application,[{'op':'remove','path':'/spec/syncPolicy/automated'}])
  connector=baseline['connector'];k.patch('kafka','kafkaconnector','yeodam-v3-outbox',connector,[{'op':'add','path':'/spec/state','value':'stopped'}])
@@ -247,7 +273,14 @@ def resume(k,directory):
  app=k.get('argocd','application','yeodam-v3-apps')
  old=before['application']['spec'].get('syncPolicy',{}).get('automated')
  if old is not None:k.patch('argocd','application','yeodam-v3-apps',app,[{'op':'add','path':'/spec/syncPolicy/automated','value':old}])
- return {'verified':True,'minimumReplicasRestored':True,'approvedCdStillRequired':True}
+ def ready():
+  for name,u in c.UNITS.items():
+   d=k.get(u['namespace'],'deployment',name)
+   if d.get('status',{}).get('readyReplicas')!=1 or d['status'].get('observedGeneration')!=d['metadata']['generation']:return False
+  return True
+ k.wait(ready,'Minimum app replicas did not become Ready; retain the NodePool maintenance hold',attempts=300)
+ restore_capacity(k,before['capacity'])
+ return {'verified':True,'minimumReplicasRestored':True,'existingNodeClaimsPreserved':True,'nodePoolBudgetsRestored':True,'approvedCdStillRequired':True}
 
 def upgrade(k,release,chart,extra):
  # Existing release public values only: these charts contain public truststores/Secret names, never passwords.
