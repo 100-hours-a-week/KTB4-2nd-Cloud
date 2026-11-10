@@ -9,7 +9,7 @@ jobs:
   verify:
     name: V3 candidate evidence
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -32,3 +32,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: '"$RUNNER_TEMP/v3-venv/bin/python" scripts/prepare-v3-release-candidate.py --verify-images'
+      - name: Verify drain adapter against the exact candidate AI image without network
+        run: |
+          IMAGE=$(python3 -c 'import json; print(json.load(open("deploy/v3/releases/candidate.json"))["components"]["ai-app"]["image"])')
+          docker pull "$IMAGE"
+          docker run --rm --network none --read-only --memory 512m --cpus 1 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=32m \
+            -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/runtime:/app \
+            -v "$PWD/deploy/v3/ai-apps/files/runtime:/runtime:ro" \
+            -v "$PWD/tests/ci/smoke-v3-runpod-adapter.py:/smoke.py:ro" \
+            --entrypoint python "$IMAGE" /smoke.py

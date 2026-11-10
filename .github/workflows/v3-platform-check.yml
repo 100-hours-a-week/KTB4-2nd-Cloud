@@ -19,6 +19,10 @@ on:
       - 'tests/ci/test_v2_v3_cutover*'
       - 'tests/ci/smoke-v2-v3-mysql-logical.py'
       - 'terraform/v3/delivery/**'
+      - 'terraform/v3/runpod/**'
+      - 'scripts/*v3*runpod*'
+      - 'tests/ci/*v3*runpod*'
+      - '.github/workflows/v3-runpod-update.yml'
       - 'scripts/*v3*release*'
       - 'scripts/*v3*delivery*'
       - 'scripts/*v3*candidate*'
@@ -208,6 +212,13 @@ jobs:
         with:
           terraform_version: 1.16.2
           terraform_wrapper: false
+
+      - name: Validate V3 RunPod permissions with mock AWS only
+        run: |
+          terraform -chdir=terraform/v3/runpod fmt -check -recursive
+          terraform -chdir=terraform/v3/runpod init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=terraform/v3/runpod validate -no-color
+          terraform -chdir=terraform/v3/runpod test -no-color
 
       - name: Verify deletion-only V2 retirement and retained resources without AWS
         run: |
