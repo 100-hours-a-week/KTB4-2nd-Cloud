@@ -42,3 +42,15 @@ run "minimum_identity_and_storage" {
   }
 
 }
+
+run "operating_browser_origin" {
+  command = plan
+  variables {
+    enabled          = true
+    operating_origin = true
+  }
+  assert {
+    condition     = toset(one(aws_s3_bucket_cors_configuration.qa[0].cors_rule).allowed_origins) == toset(["https://v3.yeodam-2gether.com", "https://yeodam-2gether.com"])
+    error_message = "Only the exact QA and operating browser origins are allowed."
+  }
+}

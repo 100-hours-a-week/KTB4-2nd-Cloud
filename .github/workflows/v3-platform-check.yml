@@ -5,6 +5,11 @@ on:
   push:
     paths:
       - 'deploy/v3/**'
+      - 'terraform/v3/cutover/**'
+      - 'scripts/*v2*v3*cutover*'
+      - 'scripts/cutover/**'
+      - 'tests/ci/test_v2_v3_cutover*'
+      - 'tests/ci/smoke-v2-v3-mysql-logical.py'
       - 'terraform/v3/delivery/**'
       - 'scripts/*v3*release*'
       - 'scripts/*v3*delivery*'
@@ -193,6 +198,15 @@ jobs:
         with:
           terraform_version: 1.16.2
           terraform_wrapper: false
+
+      - name: Verify final cutover ordering and disabled operating DNS with mock AWS only
+        run: |
+          python3 -m unittest discover -s tests/ci -p 'test_v2_v3_cutover.py'
+          bash -n scripts/cutover/redis.sh scripts/cutover/kafka-audit.sh
+          terraform -chdir=terraform/v3/cutover fmt -check -recursive
+          terraform -chdir=terraform/v3/cutover init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=terraform/v3/cutover validate -no-color
+          terraform -chdir=terraform/v3/cutover test -no-color
 
       - name: Verify minimum-cost data Plan protection
         run: python3 -m unittest discover -s tests/ci -p 'test_v3_data_plan.py'

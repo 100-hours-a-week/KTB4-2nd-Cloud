@@ -30,3 +30,5 @@ topicPolicies:
     timestampType: CreateTime
 verification:
   enabled: false
+
+operating: false

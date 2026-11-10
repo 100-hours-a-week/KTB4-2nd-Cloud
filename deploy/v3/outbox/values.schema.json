@@ -18,6 +18,16 @@
       "type": "string",
       "pattern": "^[A-Za-z0-9+/=]*$",
       "maxLength": 16384
+    },
+    "operating": {
+      "type": "boolean"
+    },
+    "connectorState": {
+      "type": "string",
+      "enum": [
+        "running",
+        "stopped"
+      ]
     }
   }
 }

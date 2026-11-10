@@ -1,0 +1,3 @@
+# Initial schema snapshot reads only owned PENDING rows; old QA offsets/history are retained.
+operating: true
+connectorState: stopped
