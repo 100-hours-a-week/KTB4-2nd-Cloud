@@ -12,10 +12,10 @@
     },
     "backend": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
-      "sourceSha": "6347e029a2f9950564a0e22123db7ae92980243a",
-      "image": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:7dd2b4de5eb2aa611a56dcd5f1567dcbb594f4ebc063cb7b2ad901cdef231a73",
-      "buildRunId": 42758495445,
-      "buildSourceSha": "6347e029a2f9950564a0e22123db7ae92980243a"
+      "sourceSha": "eaa2b81502461a344e05456b53e40bb07ed855c1",
+      "image": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:a2d648841519c922d05665c155d732adaa73492f32270f939fb6dbe7cbfd78da",
+      "buildRunId": 42774581196,
+      "buildSourceSha": "eaa2b81502461a344e05456b53e40bb07ed855c1"
     },
     "ai-app": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-AI",
@@ -207,7 +207,7 @@
           "REDIS_PORT": "6379",
           "REDIS_SSL_ENABLED": "true",
           "REDIS_USERNAME": "app",
-          "RELEASE": "6347e029a2f9950564a0e22123db7ae92980243a",
+          "RELEASE": "eaa2b81502461a344e05456b53e40bb07ed855c1",
           "SERVER_SHUTDOWN": "graceful",
           "SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE": "60s",
           "SPRING_PROFILES_ACTIVE": "prod,internal-metrics",
@@ -418,7 +418,7 @@
       "frontendContract": false,
       "frontendServiceOnly": false,
       "images": {
-        "backend": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:7dd2b4de5eb2aa611a56dcd5f1567dcbb594f4ebc063cb7b2ad901cdef231a73"
+        "backend": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:a2d648841519c922d05665c155d732adaa73492f32270f939fb6dbe7cbfd78da"
       },
       "websocketContract": false,
       "workloads": {
@@ -433,7 +433,7 @@
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
             "TRIP_STATUS_POLLING_ENABLED": "false",
-            "RELEASE": "6347e029a2f9950564a0e22123db7ae92980243a",
+            "RELEASE": "eaa2b81502461a344e05456b53e40bb07ed855c1",
             "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
             "FRONTEND_OAUTH_CALLBACK_URI": "https://yeodam-2gether.com/auth/callback",
             "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback"
@@ -488,7 +488,7 @@
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
             "TRIP_STATUS_POLLING_ENABLED": "false",
-            "RELEASE": "6347e029a2f9950564a0e22123db7ae92980243a",
+            "RELEASE": "eaa2b81502461a344e05456b53e40bb07ed855c1",
             "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
             "FRONTEND_OAUTH_CALLBACK_URI": "https://yeodam-2gether.com/auth/callback",
             "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback"
@@ -543,7 +543,7 @@
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
             "TRIP_STATUS_POLLING_ENABLED": "false",
-            "RELEASE": "6347e029a2f9950564a0e22123db7ae92980243a",
+            "RELEASE": "eaa2b81502461a344e05456b53e40bb07ed855c1",
             "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
             "FRONTEND_OAUTH_CALLBACK_URI": "https://yeodam-2gether.com/auth/callback",
             "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback"
@@ -598,7 +598,7 @@
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
             "TRIP_STATUS_POLLING_ENABLED": "false",
-            "RELEASE": "6347e029a2f9950564a0e22123db7ae92980243a",
+            "RELEASE": "eaa2b81502461a344e05456b53e40bb07ed855c1",
             "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
             "FRONTEND_OAUTH_CALLBACK_URI": "https://yeodam-2gether.com/auth/callback",
             "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback"
@@ -653,7 +653,7 @@
             "STORY_STATUS_POLLING_ENABLED": "true",
             "TRIP_RESULT_WORKER_ENABLED": "true",
             "TRIP_STATUS_POLLING_ENABLED": "true",
-            "RELEASE": "6347e029a2f9950564a0e22123db7ae92980243a",
+            "RELEASE": "eaa2b81502461a344e05456b53e40bb07ed855c1",
             "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
             "FRONTEND_OAUTH_CALLBACK_URI": "https://yeodam-2gether.com/auth/callback",
             "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback"
