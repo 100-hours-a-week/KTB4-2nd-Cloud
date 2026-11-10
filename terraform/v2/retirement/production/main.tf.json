@@ -1,0 +1,35 @@
+{
+  "terraform": {
+    "required_version": "~> 1.16.0",
+    "required_providers": {
+      "aws": {
+        "source": "hashicorp/aws",
+        "version": "~> 6.0"
+      }
+    },
+    "backend": {
+      "s3": {
+        "key": "yeodam/v2/production/terraform.tfstate",
+        "region": "ap-northeast-2",
+        "encrypt": true,
+        "use_lockfile": true
+      }
+    }
+  },
+  "provider": {
+    "aws": {
+      "region": "ap-northeast-2",
+      "allowed_account_ids": [
+        "483175530259"
+      ],
+      "default_tags": {
+        "tags": {
+          "Project": "yeodam",
+          "Version": "v2",
+          "Environment": "production",
+          "ManagedBy": "Terraform"
+        }
+      }
+    }
+  }
+}

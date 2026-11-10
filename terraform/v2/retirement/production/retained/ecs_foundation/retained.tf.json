@@ -1,0 +1,50 @@
+{
+  "resource": {
+    "aws_cloudwatch_log_group": {
+      "backend": {
+        "log_group_class": "STANDARD",
+        "name": "/yeodam/v2/production/backend",
+        "retention_in_days": 30,
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "Terraform",
+          "Project": "yeodam",
+          "Version": "v2"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "frontend": {
+        "log_group_class": "STANDARD",
+        "name": "/yeodam/v2/production/frontend",
+        "retention_in_days": 30,
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "Terraform",
+          "Project": "yeodam",
+          "Version": "v2"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_secretsmanager_secret": {
+      "ghcr_credentials": {
+        "description": "GHCR repository credentials for V2 production ECS task image pulls",
+        "name": "yeodam/v2/production/ghcr-credentials",
+        "recovery_window_in_days": 30,
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "Terraform",
+          "Project": "yeodam",
+          "Version": "v2"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    }
+  }
+}
