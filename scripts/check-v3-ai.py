@@ -14,8 +14,8 @@ def fixture():
 def render(values=None):
     args=[os.environ['V3_HELM'],'template','yeodam-v3-ai-apps',str(CHART),'-n','ai','--kube-version','1.36.0']
     return subprocess.check_output(args+(['-f','-'] if values else []),input=yaml.safe_dump(values) if values else None,text=True,stderr=subprocess.PIPE)
-def validate(docs,v):
-    require(CONTRACT['workloads']['runner'].get('environment',{}).get('PYTHONPATH')=='/app','File-based runner must resolve the /app package')
+def _validate(docs,v,contract,runtime_scripts,policy_sources,legacy=False):
+    require(contract['workloads']['runner'].get('environment',{}).get('PYTHONPATH')=='/app','File-based runner must resolve the /app package')
     enabled=v['accessEnabled'];roles=[r for r,x in v['workloads'].items() if x];expected={}
     if enabled:
         expected={'ConfigMap':4,'ServiceAccount':2,'ExternalSecret':1,'NetworkPolicy':7+bool(v['privateModelPeers'])}
@@ -25,7 +25,7 @@ def validate(docs,v):
     if not enabled:return
     require(not roles or all(v['review'].values()),'All source/image/model reviews required')
     identities=[(d['kind'],d['metadata']['namespace'],d['metadata']['name']) for d in docs];require(len(identities)==len(set(identities)),'Duplicate resources')
-    expectedPolicies={(p['namespace'],p['name']):p['spec'] for p in POLICIES}
+    expectedPolicies={(p['namespace'],p['name']):p['spec'] for p in policy_sources}
     if v['privateModelPeers']:expectedPolicies[('ai','allow-ai-reviewed-private-models')]={'podSelector':{'matchLabels':{'yeodam.io/ai-runtime':'true','yeodam.io/stage':'v3'}},'policyTypes':['Egress'],'egress':[{'to':[{'ipBlock':{'cidr':p['cidr']}}],'ports':[{'protocol':'TCP','port':p['port']}]} for p in v['privateModelPeers']]}
     for d in docs:
         n=d['metadata']['namespace'];name=d['metadata']['name'];kind=d['kind']
@@ -33,16 +33,16 @@ def validate(docs,v):
         require(n=='ai','Only policies may cross the AI namespace')
         if kind=='ConfigMap':
             if name=='ai-trust':require(d['data']=={k+'.crt':v['trust'][k] for k in ['redis','qdrant','kafka']},'Public CA references only')
-            elif name=='ai-runtime-scripts':require(d['data']=={p.name:p.read_text() for p in (CHART/'files/runtime').iterdir() if p.is_file()},'Runtime scripts pinned')
+            elif name=='ai-runtime-scripts':require(d['data']==runtime_scripts,'Runtime scripts pinned')
             else:
-                role='api' if name=='ai-api-runtime' else 'runner';require(d['data']==dict(CONTRACT['commonEnvironment'],RELEASE=v['source'],**CONTRACT['workloads'][role].get('environment',{})),'Exact shared limits/topics and role settings')
+                role='api' if name=='ai-api-runtime' else 'runner';require(d['data']==dict(contract['commonEnvironment'],RELEASE=v['source'],**contract['workloads'][role].get('environment',{})),'Exact shared limits/topics and role settings')
         elif kind=='ServiceAccount':require(name in ['ai-api','ai-runner'] and d['automountServiceAccountToken'] is False,'Dedicated tokenless SA')
         elif kind=='ExternalSecret':
-            require(name=='ai-runtime','Exact credentials target');s=d['spec'];data=[{'secretKey':k,'remoteRef':{'key':'yeodam/v3/foundation/ai/runtime','property':k,'version':'AWSCURRENT','decodingStrategy':'None'}} for k in CONTRACT['secretKeys']+CONTRACT['runnerExtraSecrets']]
+            require(name=='ai-runtime','Exact credentials target');s=d['spec'];data=[{'secretKey':k,'remoteRef':{'key':'yeodam/v3/foundation/ai/runtime','property':k,'version':'AWSCURRENT','decodingStrategy':'None'}} for k in contract['secretKeys']+contract['runnerExtraSecrets']]
             require(s=={'refreshPolicy':'Periodic','refreshInterval':'1h','secretStoreRef':{'kind':'SecretStore','name':'aws-secretsmanager'},'target':{'name':'ai-runtime','creationPolicy':'Orphan','deletionPolicy':'Retain','template':{'type':'Opaque'}},'data':data},'No production/cross-namespace source')
         elif kind=='Service':require(name=='ai-api' and d['spec']=={'type':'ClusterIP','selector':{'app.kubernetes.io/instance':'ai-api','yeodam.io/stage':'v3'},'ports':[{'name':'http','port':8000,'targetPort':'http'}]},'Private API service only')
         elif kind=='Deployment':
-            role=next(k for k,w in CONTRACT['workloads'].items() if w['name']==name);w=CONTRACT['workloads'][role];s=d['spec'];pod=s['template']['spec'];c=pod['containers'][0]
+            role=next(k for k,w in contract['workloads'].items() if w['name']==name);w=contract['workloads'][role];s=d['spec'];pod=s['template']['spec'];c=pod['containers'][0]
             annotations=s['template']['metadata']['annotations'];require(annotations.get('yeodam.io/configuration-revision')==v['configurationRevision'] and re.fullmatch('[a-f0-9]{64}',annotations.get('checksum/runtime','')),'Secret-version and Chart configuration must trigger Pod replacement')
             require(role in roles and s['replicas']==1 and s['strategy']=={'type':'Recreate'},'One process copy per role; no surge')
             require(pod['serviceAccountName']==name and not pod['automountServiceAccountToken'] and pod['imagePullSecrets']==[{'name':'ghcr-pull'}],'Exact identity and registry references')
@@ -52,11 +52,26 @@ def validate(docs,v):
             require(pod['terminationGracePeriodSeconds']==w['grace'],'Explicit current application shutdown contract')
             for container in pod['initContainers']+[c]:require(container['securityContext']=={'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}},'Restricted containers')
             require(len(pod['initContainers'])==1 and pod['initContainers'][0]['command']==['python','/runtime/prepare-trust.py'] and pod['initContainers'][0]['image']==v['image'],'Public trust bundle first')
-            keys=CONTRACT['secretKeys']+(CONTRACT['runnerExtraSecrets'] if role=='runner' else []);require(c['env']==[{'name':k,'valueFrom':{'secretKeyRef':{'name':'ai-runtime','key':k}}} for k in keys],'Reference-only role secrets')
+            keys=contract['secretKeys']+(contract['runnerExtraSecrets'] if role=='runner' else []);require(c['env']==[{'name':k,'valueFrom':{'secretKeyRef':{'name':'ai-runtime','key':k}}} for k in keys],'Reference-only role secrets')
             volumes={x['name']:x for x in pod['volumes']};require(not any('hostPath' in x or 'persistentVolumeClaim' in x for x in pod['volumes']),'No host mount or added PVC')
-            require(volumes.get('model-url')=={'name':'model-url','secret':{'secretName':'ai-runtime','items':[{'key':'VLM_BASE_URL','path':'base-url'}]}} and {'name':'model-url','mountPath':'/var/run/yeodam-vlm','readOnly':True} in c['volumeMounts'],'Only the VLM URL is projected for ESO confirmation')
+            if legacy:require('model-url' not in volumes,'Preserve the exact previously approved runtime')
+            else:require(volumes.get('model-url')=={'name':'model-url','secret':{'secretName':'ai-runtime','items':[{'key':'VLM_BASE_URL','path':'base-url'}]}} and {'name':'model-url','mountPath':'/var/run/yeodam-vlm','readOnly':True} in c['volumeMounts'],'Only the VLM URL is projected for ESO confirmation')
             if role=='api':require(c['readinessProbe']['httpGet']=={'path':'/health','port':'http'} and c['livenessProbe']['exec']['command']==['python','/runtime/health.py','api-live'] and 'reference' not in volumes,'Dependency readiness separate from liveness')
             else:require('livenessProbe' not in c and not c.get('ports') and volumes['reference']=={'name':'reference','emptyDir':{'sizeLimit':'3Gi'}} and c['readinessProbe']['exec']['command']==['python','/runtime/health.py','runner-ready'],'Runner has no invented HTTP endpoint; bounded index cache')
+def validate(docs,v):
+    return _validate(docs,v,CONTRACT,{p.name:p.read_text() for p in (CHART/'files/runtime').iterdir() if p.is_file()},POLICIES)
+
+def validate_snapshot(docs,v,files):
+    # Only the exact registered previous approved Chart may use its old runtime
+    # contract. Never trust arbitrary embedded contracts or weaken new releases.
+    locks=json.loads((CHART/'rollback-compatibility.json').read_text())
+    checksums={p:__import__('hashlib').sha256(content).hexdigest() for p,content in files.items()}
+    if any(checksums==record['files'] for record in locks):
+        contract=json.loads(files['files/contract.json'])
+        scripts={p[len('files/runtime/'):]:content.decode() for p,content in files.items() if p.startswith('files/runtime/')}
+        return _validate(docs,v,contract,scripts,json.loads(files['files/policies.json']),legacy=True)
+    return validate(docs,v)
+
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--output',type=Path);a=p.parse_args();full=fixture();cases={'disabled':yaml.safe_load((CHART/'values.yaml').read_text()),'access':dict(full,workloads={'api':False,'runner':False}),'api':dict(full,workloads={'api':True,'runner':False}),'full':full}
     for name,v in cases.items():
