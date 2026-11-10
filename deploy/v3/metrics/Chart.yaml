@@ -1,0 +1,5 @@
+apiVersion: v2
+name: yeodam-v3-metrics
+version: 0.1.0
+type: application
+description: Bounded single-replica metrics on existing system nodes

@@ -21,6 +21,10 @@ on:
       - 'terraform/v3/delivery/**'
       - 'terraform/v3/runpod/**'
       - 'terraform/v3/ai-logs/**'
+      - 'scripts/check-v3-metrics.py'
+      - 'tests/ci/test_v3_metrics.py'
+      - 'tests/ci/smoke-v3-metrics.py'
+      - 'tests/ci/v3/metrics-alerts.test.yaml'
       - 'scripts/check-v3-ai-logs.py'
       - 'tests/ci/test_v3_ai_logs.py'
       - 'tests/ci/smoke-v3-ai-logs.py'
@@ -229,6 +233,12 @@ jobs:
           image=$(python3 -c 'import json; print(json.load(open("deploy/v3/ai-logs/image.lock.json"))["image"])')
           docker pull "$image"
           "$RUNNER_TEMP/yeodam-v3-validation/venv/bin/python" tests/ci/smoke-v3-ai-logs.py
+
+      - name: Verify minimal metrics and dashboards without AWS
+        env:
+          V3_HELM: ${{ runner.temp }}/yeodam-v3-validation/helm
+        run: |
+          "$RUNNER_TEMP/yeodam-v3-validation/venv/bin/python" tests/ci/smoke-v3-metrics.py
 
       - name: Validate AI log authority with mock AWS only
         run: |

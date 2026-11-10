@@ -1,0 +1,3 @@
+# No resources until explicitly enabled after merge and runtime prerequisites.
+enabled: false
+aiMetricsEnabled: true
