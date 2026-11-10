@@ -1,0 +1,84 @@
+name: V3 Production RunPod URL Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: '새 RunPod URL (https://<pod-id>-8000.proxy.runpod.net/v1)'
+        required: true
+        type: string
+      reason:
+        description: '변경 사유'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+# Serialize with the approved app CD, including its approval waiting period.
+concurrency:
+  group: yeodam-v3-approved-release
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/main'
+    environment: v3-production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require reviewed adapter and access activation
+        env:
+          ENABLED: ${{ vars.V3_RUNPOD_UPDATE_ENABLED }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          [[ "$ATTEMPT" == '1' ]] || { echo '::error::Start a fresh dispatch for a fresh environment approval.'; exit 1; }
+          [[ "$ENABLED" == 'true' ]] || { echo '::error::Deploy the approved AI adapter and access resources before activating this workflow.'; exit 1; }
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          role-to-assume: arn:aws:iam::483175530259:role/yeodam-v3-foundation-runpod-update
+          role-session-name: v3-runpod-${{ github.run_id }}
+          role-duration-seconds: 3600
+          aws-region: ap-northeast-2
+      - name: Install pinned management tools
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib,json,subprocess,urllib.request
+          from pathlib import Path
+          d=json.loads(Path('deploy/v3/releases/tools.lock.json').read_text())['sessionManagerPlugin']
+          body=urllib.request.urlopen(d['url'],timeout=30).read()
+          assert hashlib.sha256(body).hexdigest()==d['sha256']
+          Path('/tmp/session-manager-plugin.deb').write_bytes(body)
+          subprocess.run(['sudo','dpkg','-i','/tmp/session-manager-plugin.deb'],check=True)
+          url='https://dl.k8s.io/release/v1.36.0/bin/linux/amd64/kubectl'
+          body=urllib.request.urlopen(url,timeout=60).read()
+          expected=urllib.request.urlopen(url+'.sha256',timeout=30).read().decode().strip()
+          assert hashlib.sha256(body).hexdigest()==expected
+          path=Path('/tmp/kubectl');path.write_bytes(body);path.chmod(0o755)
+          subprocess.run(['sudo','install','-m','0755',str(path),'/usr/local/bin/kubectl'],check=True)
+          PYTHON
+      - name: Drain, synchronize V3 Secret and replace only the two AI Pods
+        env:
+          RUNPOD_URL: ${{ inputs.url }}
+        run: |
+          INSTANCE=$(python3 -c 'import json; print(json.load(open("deploy/v3/releases/policy.json"))["observerInstanceId"])')
+          python3 scripts/update-v3-runpod.py --url "$RUNPOD_URL" --instance "$INSTANCE" --report "$RUNNER_TEMP/v3-runpod-result.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: v3-runpod-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/v3-runpod-result.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Write public update receipt
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/v3-runpod-result.json" ]]; then
+            cat "$RUNNER_TEMP/v3-runpod-result.json" >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -54,6 +54,7 @@ def validate(docs,v):
             require(len(pod['initContainers'])==1 and pod['initContainers'][0]['command']==['python','/runtime/prepare-trust.py'] and pod['initContainers'][0]['image']==v['image'],'Public trust bundle first')
             keys=CONTRACT['secretKeys']+(CONTRACT['runnerExtraSecrets'] if role=='runner' else []);require(c['env']==[{'name':k,'valueFrom':{'secretKeyRef':{'name':'ai-runtime','key':k}}} for k in keys],'Reference-only role secrets')
             volumes={x['name']:x for x in pod['volumes']};require(not any('hostPath' in x or 'persistentVolumeClaim' in x for x in pod['volumes']),'No host mount or added PVC')
+            require(volumes.get('model-url')=={'name':'model-url','secret':{'secretName':'ai-runtime','items':[{'key':'VLM_BASE_URL','path':'base-url'}]}} and {'name':'model-url','mountPath':'/var/run/yeodam-vlm','readOnly':True} in c['volumeMounts'],'Only the VLM URL is projected for ESO confirmation')
             if role=='api':require(c['readinessProbe']['httpGet']=={'path':'/health','port':'http'} and c['livenessProbe']['exec']['command']==['python','/runtime/health.py','api-live'] and 'reference' not in volumes,'Dependency readiness separate from liveness')
             else:require('livenessProbe' not in c and not c.get('ports') and volumes['reference']=={'name':'reference','emptyDir':{'sizeLimit':'3Gi'}} and c['readinessProbe']['exec']['command']==['python','/runtime/health.py','runner-ready'],'Runner has no invented HTTP endpoint; bounded index cache')
 def main():
