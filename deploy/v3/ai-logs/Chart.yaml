@@ -1,0 +1,4 @@
+apiVersion: v2
+name: yeodam-v3-ai-logs
+version: 0.1.0
+description: AI-only stdout collection, with no application or GPU changes

@@ -1,0 +1,108 @@
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  annotations: {helm.sh/resource-policy: keep}
+  labels:
+    app.kubernetes.io/part-of: yeodam
+    yeodam.io/stage: v3
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-log-collector
+  namespace: observability
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-log-collector
+  namespace: observability
+data:
+{{- range $name := list "fluent-bit.conf" "parsers.conf" "sanitize.lua" }}
+  {{ $name }}: |
+{{ $.Files.Get (printf "files/%s" $name) | indent 4 }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ai-log-collector
+  namespace: observability
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/name: ai-log-collector, yeodam.io/stage: v3}
+  updateStrategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 1}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: ai-log-collector, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
+      annotations:
+        checksum/config: {{ printf "%s%s%s" (.Files.Get "files/fluent-bit.conf") (.Files.Get "files/parsers.conf") (.Files.Get "files/sanitize.lua") | sha256sum }}
+    spec:
+      serviceAccountName: ai-log-collector
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      nodeSelector: {kubernetes.io/os: linux, kubernetes.io/arch: amd64}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {key: karpenter.sh/nodepool, operator: In, values: [api, worker]}
+      tolerations:
+        - {key: yeodam.io/role, operator: Equal, value: api, effect: NoSchedule}
+        - {key: yeodam.io/role, operator: Equal, value: worker, effect: NoSchedule}
+      securityContext: {seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: fluent-bit
+          image: {{ (fromJson (.Files.Get "image.lock.json")).image }}
+          command: [/bin/sh, -ec]
+          args: ["umask 077; chmod 700 /buffers; exec /fluent-bit/bin/fluent-bit -c /fluent-bit/etc/fluent-bit.conf"]
+          env:
+            - {name: AWS_REGION, value: ap-northeast-2}
+            - {name: AWS_DEFAULT_REGION, value: ap-northeast-2}
+            - {name: AWS_EC2_METADATA_DISABLED, value: 'true'}
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi, ephemeral-storage: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi, ephemeral-storage: 256Mi}
+          securityContext: {runAsUser: 0, runAsGroup: 0, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          ports: [{name: metrics, containerPort: 2020}]
+          readinessProbe: {httpGet: {path: /api/v1/health, port: metrics}, initialDelaySeconds: 5, periodSeconds: 10}
+          livenessProbe: {tcpSocket: {port: metrics}, initialDelaySeconds: 15, periodSeconds: 20}
+          volumeMounts:
+            - {name: config, mountPath: /fluent-bit/etc, readOnly: true}
+            - {name: logs, mountPath: /var/log, readOnly: true}
+            - {name: buffer, mountPath: /buffers}
+      volumes:
+        - name: config
+          configMap: {name: ai-log-collector}
+        - name: logs
+          hostPath: {path: /var/log, type: Directory}
+        - name: buffer
+          hostPath: {path: /var/lib/yeodam/ai-log-collector, type: DirectoryOrCreate}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-log-collector-egress
+  namespace: observability
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: ai-log-collector}}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to: [{ipBlock: {cidr: 169.254.170.23/32}}]
+      ports: [{protocol: TCP, port: 80}]
+    - to:
+        - ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]}
+      ports: [{protocol: TCP, port: 443}]
+{{- end }}

@@ -1,0 +1,5 @@
+{
+  "version": "3.5.7",
+  "image": "public.ecr.aws/aws-observability/aws-for-fluent-bit@sha256:32b5c430f986c4ebf0d0c5f8ceba9dbdda2a3547eec0279b801f35b64d8cdce8",
+  "source": "https://github.com/aws/aws-for-fluent-bit/releases/tag/v3.5.7"
+}
