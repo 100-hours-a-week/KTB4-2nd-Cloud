@@ -262,3 +262,75 @@ class Access(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+class ModelProbeRegression(unittest.TestCase):
+    """A local gateway rejects urllib's default agent and detects credential redirects."""
+    def setUp(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        import urllib.request
+        self.mode = 'good'; self.leaks = 0; self.requests = []
+        case = self
+        class Gateway(BaseHTTPRequestHandler):
+            def log_message(self, *_): pass
+            def do_GET(self):
+                if self.path == '/leak': case.leaks += 1
+                case.requests.append((self.path, self.headers.get('User-Agent'), self.headers.get('Authorization')))
+                if case.mode == 'redirect':
+                    self.send_response(302); self.send_header('Location', '/leak'); self.end_headers(); return
+                if self.headers.get('User-Agent') != 'python-httpx/0.28.1' or case.mode == 'denied':
+                    self.send_response(403); self.end_headers(); self.wfile.write(b'error code: 1010'); return
+                self.send_response(200); self.end_headers()
+                self.wfile.write(json.dumps({'data':[{'id':'other' if case.mode == 'wrong-model' else 'gemma-4'}]}).encode())
+        self.server = ThreadingHTTPServer(('127.0.0.1', 0), Gateway)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True); self.thread.start()
+        self.original_builder = urllib.request.build_opener
+        self.transport = module('probe_transport', ROOT / 'scripts/update-v3-runpod.py')
+        self.adapter = module('probe_adapter', ROOT / 'deploy/v3/ai-apps/files/runtime/runpod_control.py')
+    def tearDown(self):
+        self.server.shutdown(); self.server.server_close(); self.thread.join(timeout=2)
+    def build_gateway(self, *handlers):
+        import urllib.request
+        opener = self.original_builder(*handlers)
+        case = self
+        class LocalGateway:
+            def open(self, request, timeout):
+                case.assertEqual(request.full_url, 'https://fixture-8000.proxy.runpod.net/v1/models')
+                case.assertGreater(timeout, 0); case.assertLessEqual(timeout, 25)
+                routed = urllib.request.Request('http://127.0.0.1:' + str(case.server.server_port) + '/v1/models', headers=dict(request.header_items()))
+                return opener.open(routed, timeout=timeout)
+        return LocalGateway()
+    def invoke(self, target):
+        import contextlib, hashlib, io, urllib.request
+        from unittest.mock import patch
+        url = 'https://fixture-8000.proxy.runpod.net/v1'
+        with patch.object(urllib.request, 'build_opener', side_effect=self.build_gateway):
+            if target == 'transport': return self.transport.probe(url, 'fixture-key', 'gemma-4')
+            with patch.dict(os.environ, {'VLM_BASE_URL':url,'VLM_API_KEY':'fixture-key','VLM_MODEL':'gemma-4'}), patch.object(sys,'argv',['control','verify',hashlib.sha256(url.encode()).hexdigest()]), contextlib.redirect_stdout(io.StringIO()) as output:
+                self.adapter.cli()
+            return json.loads(output.getvalue())
+    def test_both_probes_pass_gateway_that_rejects_default_urllib(self):
+        import urllib.request, urllib.error
+        with self.assertRaises(urllib.error.HTTPError):
+            self.original_builder().open('http://127.0.0.1:' + str(self.server.server_port) + '/v1/models')
+        for target in ['transport', 'adapter']:
+            with self.subTest(target=target):
+                result=self.invoke(target)
+                if target=='adapter': self.assertEqual(result, {'environmentMatches':True,'modelReady':True})
+        self.assertEqual(self.requests[-2:], [('/v1/models','python-httpx/0.28.1','Bearer fixture-key')]*2)
+    def test_real_denials_remain_failures(self):
+        import urllib.error
+        self.mode = 'denied'
+        for target in ['transport', 'adapter']:
+            with self.subTest(target=target), self.assertRaises(urllib.error.HTTPError): self.invoke(target)
+    def test_redirect_never_forwards_credentials(self):
+        import urllib.error
+        self.mode = 'redirect'
+        for target in ['transport', 'adapter']:
+            with self.subTest(target=target), self.assertRaises(urllib.error.HTTPError): self.invoke(target)
+        self.assertEqual(self.leaks, 0)
+    def test_unexpected_model_is_not_accepted(self):
+        self.mode = 'wrong-model'
+        with self.assertRaises(ValueError): self.invoke('transport')
+        # Adapter reports false rather than claiming the replacement model is healthy.
+        self.assertEqual(self.invoke('adapter'), {'environmentMatches':True,'modelReady':False})

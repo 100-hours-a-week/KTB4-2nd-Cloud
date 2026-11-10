@@ -55,7 +55,8 @@ def probe(url, key, model):
     require(isinstance(key, str) and key and '\n' not in key and '\r' not in key, 'Invalid V3 VLM credential')
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs): return None
-    request = urllib.request.Request(url + '/models', headers={'Authorization': 'Bearer ' + key})
+    # Match the deployed AI client identification; the default urllib agent is rejected upstream.
+    request = urllib.request.Request(url + '/models', headers={'Authorization': 'Bearer ' + key, 'User-Agent': 'python-httpx/0.28.1'})
     with urllib.request.build_opener(NoRedirect()).open(request, timeout=25) as response:
         require(response.status == 200, 'New model endpoint unavailable')
         body = json.loads(response.read(1024 * 1024))
