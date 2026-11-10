@@ -108,6 +108,19 @@ class Contracts(unittest.TestCase):
    self.assertEqual(c.verify_photos(plan,results,store,'a'*64),1)
    store.version='changed'
    with self.assertRaises(ValueError):c.verify_photos(plan,results,store,'a'*64)
+ def test_mongo_actions_skip_implicit_plaintext_connection(self):
+  class TlsOnlyShell:
+   def execute(self,ns,pod,container,argv):
+    if '--nodb' not in argv:raise RuntimeError('Implicit plaintext startup connection rejected')
+    self.argv=argv
+    return b'[]'
+  k=TlsOnlyShell()
+  for action in ['backup','clear','verify-stories','restore']:
+   with self.subTest(action=action):
+    self.assertEqual(run.mongo_action(k,action),b'[]')
+    self.assertIn('CUTOVER_ACTION='+action,k.argv)
+    self.assertIn("load('/runtime/common.js')",k.argv[-1])
+    self.assertNotIn('--tlsAllowInvalidCertificates',k.argv)
  def test_qa_backup_receipt_cannot_omit_an_archive(self):
   with tempfile.TemporaryDirectory() as tmp:
    p=Path(tmp);(p/'qa').mkdir();proof={'files':{}}
