@@ -204,3 +204,8 @@ python3 -m unittest discover -s tests/ci -p "test_v3_schema_upgrade.py"
 "${V3_HELM}" lint --strict deploy/v3/metrics
 "${validation_dir}/venv/bin/python" scripts/check-v3-metrics.py
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_metrics.py'
+
+# Private, opt-in APM; no app rollout, AWS or credentials.
+"${V3_HELM}" lint --strict deploy/v3/apm
+"${validation_dir}/venv/bin/python" scripts/check-v3-apm.py
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_apm.py'

@@ -40,4 +40,13 @@ class APM(unittest.TestCase):
   bad=copy.deepcopy(docs);target=next(x for x in bad if x['kind']=='Deployment' and x['metadata']['name']=='auth-api')
   next(x for x in target['spec']['template']['spec']['containers'][0]['env'] if x['name']=='JAVA_TOOL_OPTIONS')['value']+=' -Xmx3G'
   with self.assertRaises(ValueError):be.validate(bad,v)
+ def test_existing_grafana_tempo_datasource_and_self_metrics_opt_in(self):
+  import subprocess
+  text=subprocess.check_output([os.environ['V3_HELM'],'template','metrics',str(ROOT/'deploy/v3/metrics'),'--set','enabled=true','--set','apmEnabled=true'],text=True)
+  docs=list(yaml.safe_load_all(text));data=next(x for x in docs if x and x['kind']=='ConfigMap' and x['metadata']['name']=='v3-metrics-config')['data']
+  grafana=next(x for x in docs if x and x['kind']=='ConfigMap' and x['metadata']['name']=='v3-grafana-config')['data']
+  source=yaml.safe_load(grafana['datasource.yaml']);tempo=next(x for x in source['datasources'] if x['uid']=='v3-tempo')
+  self.assertEqual(tempo['type'],'tempo');self.assertEqual(tempo['url'],'http://v3-tempo:3200')
+  jobs=yaml.safe_load(data['prometheus.yaml'])['scrape_configs']
+  self.assertTrue({'apm-alloy','apm-tempo'}.issubset({x['job_name'] for x in jobs}))
 if __name__=='__main__':unittest.main()

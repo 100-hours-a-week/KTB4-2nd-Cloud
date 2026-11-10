@@ -20,10 +20,11 @@ public class ApmFixture {
   static class Handler implements HttpHandler {
     public void handle(HttpExchange exchange) throws java.io.IOException {
       try {
+        System.out.println("fixture_request_received");
         var context = Span.current().getSpanContext();
         if (!context.isValid()) throw new IllegalStateException("Missing application Span context");
-        String downstream = HttpClient.newHttpClient().send(
-            HttpRequest.newBuilder(URI.create("http://apm-ai:8000/fixture")).GET().build(),
+        String downstream = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(2)).build().send(
+            HttpRequest.newBuilder(URI.create("http://apm-ai:8000/fixture")).timeout(java.time.Duration.ofSeconds(3)).GET().build(),
             HttpResponse.BodyHandlers.ofString()).body();
         String body = "{\"javaTrace\":\"" + context.getTraceId() + "\",\"ai\":" + downstream + "}";
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
@@ -31,7 +32,7 @@ public class ApmFixture {
         exchange.sendResponseHeaders(200, bytes.length);
         exchange.getResponseBody().write(bytes);
         System.out.println("{\"event\":\"apm_fixture\",\"trace_id\":\"" + context.getTraceId() + "\",\"span_id\":\"" + context.getSpanId() + "\"}");
-      } catch (Exception error) {
+      } catch (Throwable error) {
         error.printStackTrace();
         exchange.sendResponseHeaders(500, -1);
       } finally {
