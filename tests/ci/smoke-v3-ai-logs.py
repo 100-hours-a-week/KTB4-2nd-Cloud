@@ -6,12 +6,12 @@ ROOT=Path(__file__).resolve().parents[2];CHART=ROOT/'deploy/v3/ai-logs'
 IMAGE=json.loads((CHART/'image.lock.json').read_text())['image']
 def command(*args,timeout=40):return subprocess.run(list(args),capture_output=True,text=True,check=True,timeout=timeout).stdout
 name='v3-ai-logs-'+uuid.uuid4().hex[:12]
+volume=name+'-buffer'
 def line(data,flag='F'):
     return '2026-11-11T00:00:00.000000000Z stdout '+flag+' '+(json.dumps(data) if isinstance(data,dict) else data)+'\n'
 with tempfile.TemporaryDirectory(prefix='v3-ai-log-fixture-') as tmp:
-    root=Path(tmp);logs=root/'logs';conf=root/'conf';buffer=root/'buffer'
-    for p in [logs,conf,buffer]:p.mkdir()
-    buffer.chmod(0o700)
+    root=Path(tmp);logs=root/'logs';conf=root/'conf'
+    for p in [logs,conf]:p.mkdir()
     for p in (CHART/'files').iterdir():(conf/p.name).write_bytes(p.read_bytes())
     cfg=(conf/'fluent-bit.conf').read_text().replace('Read_From_Head Off','Read_From_Head On')
     cfg=cfg.split('[OUTPUT]')[0]+'[OUTPUT]\n    Name stdout\n    Match ai.*\n    Format json_lines\n'
@@ -24,7 +24,8 @@ with tempfile.TemporaryDirectory(prefix='v3-ai-log-fixture-') as tmp:
         f.write(line('{"event":"fixture_fragment",','P'));f.write(line('"count":2}','F'))
     (logs/('backend-fixture_trip_ai-'+'c'*64+'.log')).write_text(line({'event':'must_not_collect'}))
     try:
-        command('docker','run','-d','--name',name,'--platform','linux/amd64','--network','none','--read-only','--user','0:0','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','128m','--cpus','0.5','-e','NODE_NAME=fixture-node','-v',str(logs)+':/var/log/containers:ro','-v',str(conf)+':/fluent-bit/etc:ro','-v',str(buffer)+':/buffers','--entrypoint','/fluent-bit/bin/fluent-bit',IMAGE,'-c','/fluent-bit/etc/fluent-bit.conf',timeout=60)
+        command('docker','volume','create',volume)
+        command('docker','run','-d','--name',name,'--platform','linux/amd64','--network','none','--read-only','--user','0:0','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','128m','--cpus','0.5','-e','NODE_NAME=fixture-node','-v',str(logs)+':/var/log/containers:ro','-v',str(conf)+':/fluent-bit/etc:ro','-v',volume+':/buffers','--entrypoint','/bin/sh',IMAGE,'-ec','umask 077; chmod 700 /buffers; exec /fluent-bit/bin/fluent-bit -c /fluent-bit/etc/fluent-bit.conf',timeout=60)
         def events():
             raw=command('docker','logs',name);items=[]
             for text in raw.splitlines():
@@ -56,3 +57,4 @@ with tempfile.TemporaryDirectory(prefix='v3-ai-log-fixture-') as tmp:
         print(json.dumps({'passed':True,'checks':['both AI roles','JSON identifiers/null/number preservation','nested credentials and free-text masking','unparsed omission','CRI fragment reconstruction','non-AI exclusion','restart offset retention'],'events':len(items),'awsAccess':False}))
     finally:
         subprocess.run(['docker','rm','-f',name],capture_output=True,timeout=15)
+        subprocess.run(['docker','volume','rm',volume],capture_output=True,timeout=15)
