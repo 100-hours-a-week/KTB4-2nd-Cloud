@@ -46,7 +46,7 @@ class Render(unittest.TestCase):
   bad=copy.deepcopy(values);bad['host']='other.example.com'
   with self.assertRaises(ValueError):external.validate_access(docs,bad)
  def test_all_nine_operating_apps_render_with_identical_qa_images(self):
-  data=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text());c.operating_candidate(data);bundle.prepared(data)
+  data=c.operating_candidate(json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text()));bundle.prepared(data)
   files={}
   for chart in ['apps','ai-apps','service-access']:
    for path in (ROOT/'deploy/v3'/chart).rglob('*'):
@@ -56,7 +56,7 @@ class Render(unittest.TestCase):
   for d in docs:
    if d['kind']=='Deployment':self.assertEqual(d['spec']['replicas'],1)
  def test_mixed_operating_and_qa_callback_is_rejected(self):
-  data=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text());data['values']['frontend']['defaults']['configMapData']['SERVER_API_BASE_URL']='https://v3.yeodam-2gether.com/api'
+  data=c.operating_candidate(json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text()));data['values']['frontend']['defaults']['configMapData']['SERVER_API_BASE_URL']='https://v3.yeodam-2gether.com/api'
   with self.assertRaises(ValueError):bundle.prepared(data)
 
 if __name__=='__main__':unittest.main()
