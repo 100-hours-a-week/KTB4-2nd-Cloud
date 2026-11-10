@@ -136,7 +136,7 @@ def prepare(pr, rollback, expected_previous):
 def verify_approval(context):
     require(context.get('GITHUB_ACTIONS') == 'true' and context.get('GITHUB_REPOSITORY') == CLOUD
             and context.get('GITHUB_EVENT_NAME') == 'workflow_dispatch' and context.get('GITHUB_REF') == 'refs/heads/main'
-            and context.get('GITHUB_RUN_ATTEMPT') == '1', 'Only first-attempt main manual dispatch may publish; reruns need fresh approval')
+            and context.get('GITHUB_RUN_ATTEMPT') == '1' and context.get('GITHUB_JOB') == 'publish', 'Only first-attempt main manual dispatch may publish; reruns need fresh approval')
     runid = context.get('GITHUB_RUN_ID', '')
     require(bool(re.fullmatch('[1-9][0-9]*', runid)) and bool(SHA.fullmatch(context.get('GITHUB_SHA', ''))), 'Workflow identity missing')
     main = legacy.checks.api(f'repos/{CLOUD}/commits/main')['sha']
@@ -145,8 +145,16 @@ def verify_approval(context):
     require(run.get('event') == 'workflow_dispatch' and run.get('head_branch') == 'main'
             and run.get('head_sha') == context['GITHUB_SHA'] and run.get('run_attempt') == 1
             and run.get('path') == '.github/workflows/v3-approved-release.yml'
-            and run.get('status') == 'in_progress'
+            and run.get('status') in {'in_progress', 'waiting'}
             and (run.get('head_repository') or {}).get('full_name') == CLOUD, 'Approval must belong to this active release workflow')
+    # The aggregate Run can remain waiting after its protected Job starts.
+    # Bind publication to the actual active Job in this exact first attempt.
+    jobs = legacy.checks.api(f'repos/{CLOUD}/actions/runs/{runid}/attempts/1/jobs?per_page=100')
+    publishers = [job for job in jobs.get('jobs', []) if job.get('name') == 'publish']
+    require(len(publishers) == 1 and publishers[0].get('status') == 'in_progress'
+            and publishers[0].get('run_id') == int(runid)
+            and publishers[0].get('head_sha') == context['GITHUB_SHA'],
+            'Publication requires this attempt active publish Job')
     environment = legacy.checks.api(f'repos/{CLOUD}/environments/{ENVIRONMENT}')
     require(any(r['type'] == 'required_reviewers' and r.get('reviewers') for r in environment.get('protection_rules', [])), 'Environment needs actual required reviewers')
     require(environment.get('deployment_branch_policy') == {'protected_branches': False, 'custom_branch_policies': True}, 'Environment must restrict deployment to main')
