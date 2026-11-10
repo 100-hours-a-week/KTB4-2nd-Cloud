@@ -194,3 +194,8 @@ backend_fixture=tests/ci/v3/backend-values.fixture.yaml
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v2_v3_cutover_render.py'
 
 python3 -m unittest discover -s tests/ci -p "test_v3_schema_upgrade.py"
+
+# AI stdout scope, masking and dedicated authority; no application changes.
+"${V3_HELM}" lint --strict deploy/v3/ai-logs
+"${validation_dir}/venv/bin/python" scripts/check-v3-ai-logs.py
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_ai_logs.py'

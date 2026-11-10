@@ -20,6 +20,10 @@ on:
       - 'tests/ci/smoke-v2-v3-mysql-logical.py'
       - 'terraform/v3/delivery/**'
       - 'terraform/v3/runpod/**'
+      - 'terraform/v3/ai-logs/**'
+      - 'scripts/check-v3-ai-logs.py'
+      - 'tests/ci/test_v3_ai_logs.py'
+      - 'tests/ci/smoke-v3-ai-logs.py'
       - 'scripts/*v3*runpod*'
       - 'tests/ci/*v3*runpod*'
       - '.github/workflows/v3-runpod-update.yml'
@@ -219,6 +223,19 @@ jobs:
           terraform -chdir=terraform/v3/runpod init -backend=false -input=false -lockfile=readonly
           terraform -chdir=terraform/v3/runpod validate -no-color
           terraform -chdir=terraform/v3/runpod test -no-color
+
+      - name: Verify AI collector JSON preservation and masking without AWS
+        run: |
+          image=$(python3 -c 'import json; print(json.load(open("deploy/v3/ai-logs/image.lock.json"))["image"])')
+          docker pull "$image"
+          "$RUNNER_TEMP/yeodam-v3-validation/venv/bin/python" tests/ci/smoke-v3-ai-logs.py
+
+      - name: Validate AI log authority with mock AWS only
+        run: |
+          terraform -chdir=terraform/v3/ai-logs fmt -check -recursive
+          terraform -chdir=terraform/v3/ai-logs init -backend=false -input=false -lockfile=readonly -plugin-dir="$GITHUB_WORKSPACE/terraform/v3/runpod/.terraform/providers"
+          terraform -chdir=terraform/v3/ai-logs validate -no-color
+          terraform -chdir=terraform/v3/ai-logs test -no-color
 
       - name: Verify deletion-only V2 retirement and retained resources without AWS
         run: |
