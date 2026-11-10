@@ -6,7 +6,7 @@ data:
   NODE_OPTIONS: --max-old-space-size=256
   PORT: '3000'
   RELEASE: c67296ce207caf35b310aaa99e1ea7ed2e902a77
-  SERVER_API_BASE_URL: https://v3.yeodam-2gether.com/api
+  SERVER_API_BASE_URL: https://yeodam-2gether.com/api
 kind: ConfigMap
 metadata:
   annotations:
@@ -75,7 +75,7 @@ spec:
   template:
     metadata:
       annotations:
-        yeodam.io/configuration-checksum: 2e61e1e3287f27e73f6188123ad23ac69ee26f7b6f7685860870b7eb9bacf6e3
+        yeodam.io/configuration-checksum: 0ed2a364eb3c4c79a13067ca3dc79707a7bfd6c25e3ab5a0ab3ac9dee1e6fa12
         yeodam.io/configuration-revision: 7adab0b8223c337d17c83dd488e68c68cdf1f6ab5603c42336f39f3ee07fca4b
         yeodam.io/image: ghcr.io/100-hours-a-week/yeodam-frontend@sha256:e21366567f0a9f1973a621de284849b1e421f3c484d32de0753d299a59d40ff9
       labels:
@@ -201,8 +201,8 @@ data:
   AUTH_SESSION_KEY_PREFIX: 'yeodam:v3:foundation:auth:'
   AWS_EC2_METADATA_DISABLED: 'true'
   AWS_REGION: ap-northeast-2
-  FRONTEND_OAUTH_CALLBACK_URI: https://v3.yeodam-2gether.com/auth/callback
-  FRONTEND_ORIGIN: https://v3.yeodam-2gether.com
+  FRONTEND_OAUTH_CALLBACK_URI: https://yeodam-2gether.com/auth/callback
+  FRONTEND_ORIGIN: https://yeodam-2gether.com
   JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts
     -Djavax.net.ssl.trustStorePassword=public-ca-only
   JWT_ISSUER: https://yeodam-2gether.com
@@ -215,7 +215,7 @@ data:
   KAFKA_TRIP_UPDATE_REQUEST_TOPIC: prod.yeodam.trip-update.request
   KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP: yeodam-trip-update-results
   KAFKA_TRIP_UPDATE_RESULT_TOPIC: prod.yeodam.trip-update.result
-  KAKAO_REDIRECT_URI: https://v3.yeodam-2gether.com/api/auth/kakao/callback
+  KAKAO_REDIRECT_URI: https://yeodam-2gether.com/api/auth/kakao/callback
   MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
   MYSQL_URL: jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true
   REDIS_HOST: redis-members.redis.svc.cluster.local
@@ -274,8 +274,8 @@ data:
   AUTH_SESSION_KEY_PREFIX: 'yeodam:v3:foundation:auth:'
   AWS_EC2_METADATA_DISABLED: 'true'
   AWS_REGION: ap-northeast-2
-  FRONTEND_OAUTH_CALLBACK_URI: https://v3.yeodam-2gether.com/auth/callback
-  FRONTEND_ORIGIN: https://v3.yeodam-2gether.com
+  FRONTEND_OAUTH_CALLBACK_URI: https://yeodam-2gether.com/auth/callback
+  FRONTEND_ORIGIN: https://yeodam-2gether.com
   JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts
     -Djavax.net.ssl.trustStorePassword=public-ca-only
   JWT_ISSUER: https://yeodam-2gether.com
@@ -288,7 +288,7 @@ data:
   KAFKA_TRIP_UPDATE_REQUEST_TOPIC: prod.yeodam.trip-update.request
   KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP: yeodam-trip-update-results
   KAFKA_TRIP_UPDATE_RESULT_TOPIC: prod.yeodam.trip-update.result
-  KAKAO_REDIRECT_URI: https://v3.yeodam-2gether.com/api/auth/kakao/callback
+  KAKAO_REDIRECT_URI: https://yeodam-2gether.com/api/auth/kakao/callback
   MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
   MYSQL_URL: jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true
   REDIS_HOST: redis-members.redis.svc.cluster.local
@@ -347,8 +347,8 @@ data:
   AUTH_SESSION_KEY_PREFIX: 'yeodam:v3:foundation:auth:'
   AWS_EC2_METADATA_DISABLED: 'true'
   AWS_REGION: ap-northeast-2
-  FRONTEND_OAUTH_CALLBACK_URI: https://v3.yeodam-2gether.com/auth/callback
-  FRONTEND_ORIGIN: https://v3.yeodam-2gether.com
+  FRONTEND_OAUTH_CALLBACK_URI: https://yeodam-2gether.com/auth/callback
+  FRONTEND_ORIGIN: https://yeodam-2gether.com
   JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts
     -Djavax.net.ssl.trustStorePassword=public-ca-only
   JWT_ISSUER: https://yeodam-2gether.com
@@ -361,7 +361,7 @@ data:
   KAFKA_TRIP_UPDATE_REQUEST_TOPIC: prod.yeodam.trip-update.request
   KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP: yeodam-trip-update-results
   KAFKA_TRIP_UPDATE_RESULT_TOPIC: prod.yeodam.trip-update.result
-  KAKAO_REDIRECT_URI: https://v3.yeodam-2gether.com/api/auth/kakao/callback
+  KAKAO_REDIRECT_URI: https://yeodam-2gether.com/api/auth/kakao/callback
   MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
   MYSQL_URL: jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true
   REDIS_HOST: redis-members.redis.svc.cluster.local
@@ -420,8 +420,8 @@ data:
   AUTH_SESSION_KEY_PREFIX: 'yeodam:v3:foundation:auth:'
   AWS_EC2_METADATA_DISABLED: 'true'
   AWS_REGION: ap-northeast-2
-  FRONTEND_OAUTH_CALLBACK_URI: https://v3.yeodam-2gether.com/auth/callback
-  FRONTEND_ORIGIN: https://v3.yeodam-2gether.com
+  FRONTEND_OAUTH_CALLBACK_URI: https://yeodam-2gether.com/auth/callback
+  FRONTEND_ORIGIN: https://yeodam-2gether.com
   JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts
     -Djavax.net.ssl.trustStorePassword=public-ca-only
   JWT_ISSUER: https://yeodam-2gether.com
@@ -434,7 +434,7 @@ data:
   KAFKA_TRIP_UPDATE_REQUEST_TOPIC: prod.yeodam.trip-update.request
   KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP: yeodam-trip-update-results
   KAFKA_TRIP_UPDATE_RESULT_TOPIC: prod.yeodam.trip-update.result
-  KAKAO_REDIRECT_URI: https://v3.yeodam-2gether.com/api/auth/kakao/callback
+  KAKAO_REDIRECT_URI: https://yeodam-2gether.com/api/auth/kakao/callback
   MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
   MYSQL_URL: jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true
   REDIS_HOST: redis-members.redis.svc.cluster.local
@@ -493,8 +493,8 @@ data:
   AUTH_SESSION_KEY_PREFIX: 'yeodam:v3:foundation:auth:'
   AWS_EC2_METADATA_DISABLED: 'true'
   AWS_REGION: ap-northeast-2
-  FRONTEND_OAUTH_CALLBACK_URI: https://v3.yeodam-2gether.com/auth/callback
-  FRONTEND_ORIGIN: https://v3.yeodam-2gether.com
+  FRONTEND_OAUTH_CALLBACK_URI: https://yeodam-2gether.com/auth/callback
+  FRONTEND_ORIGIN: https://yeodam-2gether.com
   JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts
     -Djavax.net.ssl.trustStorePassword=public-ca-only
   JWT_ISSUER: https://yeodam-2gether.com
@@ -507,7 +507,7 @@ data:
   KAFKA_TRIP_UPDATE_REQUEST_TOPIC: prod.yeodam.trip-update.request
   KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP: yeodam-trip-update-results
   KAFKA_TRIP_UPDATE_RESULT_TOPIC: prod.yeodam.trip-update.result
-  KAKAO_REDIRECT_URI: https://v3.yeodam-2gether.com/api/auth/kakao/callback
+  KAKAO_REDIRECT_URI: https://yeodam-2gether.com/api/auth/kakao/callback
   MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
   MYSQL_URL: jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true
   REDIS_HOST: redis-members.redis.svc.cluster.local
@@ -644,7 +644,7 @@ spec:
   template:
     metadata:
       annotations:
-        yeodam.io/configuration-checksum: dc5ea14b773b35f0d6baa11ad49efcfbda90bc2de8b586f7356fd3729b3b1bab
+        yeodam.io/configuration-checksum: 980a6ef7a43ab71abbb3729d6ed06f251a49ff995685c49c0ef1b1829f052840
         yeodam.io/configuration-revision: 42c0a06903d141bdfaca85b4c2d8ee32b13e18359f9712f94a7f05abc4abe26c
         yeodam.io/image: ghcr.io/100-hours-a-week/yeodam-backend@sha256:7dd2b4de5eb2aa611a56dcd5f1567dcbb594f4ebc063cb7b2ad901cdef231a73
       labels:
@@ -917,7 +917,7 @@ spec:
   template:
     metadata:
       annotations:
-        yeodam.io/configuration-checksum: 25f134b5a9ae83a3805da6288f64bc0d828716a42330475774dc58d8d107367a
+        yeodam.io/configuration-checksum: 333a377f77457e1cddb7055c9a5632fad9df9df4d58fc015b2f56c27f3413d52
         yeodam.io/configuration-revision: 42c0a06903d141bdfaca85b4c2d8ee32b13e18359f9712f94a7f05abc4abe26c
         yeodam.io/image: ghcr.io/100-hours-a-week/yeodam-backend@sha256:7dd2b4de5eb2aa611a56dcd5f1567dcbb594f4ebc063cb7b2ad901cdef231a73
       labels:
@@ -1190,7 +1190,7 @@ spec:
   template:
     metadata:
       annotations:
-        yeodam.io/configuration-checksum: dc03bb55041997b2a555925bc18e13feadfa8814f27668a6d896deed3d118233
+        yeodam.io/configuration-checksum: 01e9bb788cf2ae2d045a2322023a6823dee5973eddeff1d165b6358cac018c7b
         yeodam.io/configuration-revision: 42c0a06903d141bdfaca85b4c2d8ee32b13e18359f9712f94a7f05abc4abe26c
         yeodam.io/image: ghcr.io/100-hours-a-week/yeodam-backend@sha256:7dd2b4de5eb2aa611a56dcd5f1567dcbb594f4ebc063cb7b2ad901cdef231a73
       labels:
@@ -1463,7 +1463,7 @@ spec:
   template:
     metadata:
       annotations:
-        yeodam.io/configuration-checksum: bbfade9310c1b785dbd109c27d655d95c63195086810780978e55de1bf3a4b90
+        yeodam.io/configuration-checksum: a3150cda80f3d53fb218726d719d2fb16c7428dd45462ebc84f451b0e8f23309
         yeodam.io/configuration-revision: 42c0a06903d141bdfaca85b4c2d8ee32b13e18359f9712f94a7f05abc4abe26c
         yeodam.io/image: ghcr.io/100-hours-a-week/yeodam-backend@sha256:7dd2b4de5eb2aa611a56dcd5f1567dcbb594f4ebc063cb7b2ad901cdef231a73
       labels:
@@ -1736,7 +1736,7 @@ spec:
   template:
     metadata:
       annotations:
-        yeodam.io/configuration-checksum: 471572a98f886b0ec6b1bb0d9f572b0e89c96c86b013bbb741040ef1a473516d
+        yeodam.io/configuration-checksum: 42dafcbf110c36c1e74b70ac006b81f874bab81779400390622a631b52ce9f91
         yeodam.io/configuration-revision: 42c0a06903d141bdfaca85b4c2d8ee32b13e18359f9712f94a7f05abc4abe26c
         yeodam.io/image: ghcr.io/100-hours-a-week/yeodam-backend@sha256:7dd2b4de5eb2aa611a56dcd5f1567dcbb594f4ebc063cb7b2ad901cdef231a73
       labels:
@@ -1994,7 +1994,7 @@ data:
   SERVER_SHUTDOWN: graceful
   SPRING_APPLICATION_JSON: '{"spring":{"data":{"redis":{"sentinel":{"master":"yeodam-v3-app-redis","nodes":["sentinel-0.redis-sentinel.redis.svc.cluster.local:26379","sentinel-1.redis-sentinel.redis.svc.cluster.local:26379","sentinel-2.redis-sentinel.redis.svc.cluster.local:26379"],"password":"${REDIS_SENTINEL_PASSWORD}","username":"sentinel-client"},"ssl":{"enabled":true},"username":"app"}}}}'
   SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: 30s
-  WEBSOCKET_ALLOWED_ORIGINS: https://v3.yeodam-2gether.com
+  WEBSOCKET_ALLOWED_ORIGINS: https://yeodam-2gether.com
   WEBSOCKET_EVENTS_CHANNEL: yeodam:v3:foundation:websocket:events:v1
   WEBSOCKET_MAX_CONNECTIONS: '100'
 kind: ConfigMap
@@ -2065,7 +2065,7 @@ spec:
   template:
     metadata:
       annotations:
-        yeodam.io/configuration-checksum: 3c8981c10edc0eb6954f338e87e1835da34b67a1bdf53460180bf12ca41dc217
+        yeodam.io/configuration-checksum: 46d95fc2b8987f58b6c3db678588e3ff6a98c580c85eac33006de4f8715def4f
         yeodam.io/configuration-revision: 7adab0b8223c337d17c83dd488e68c68cdf1f6ab5603c42336f39f3ee07fca4b
         yeodam.io/image: ghcr.io/100-hours-a-week/yeodam-websocket@sha256:cfef5c0c9b9a6a2fe0852f4af45d43748acc2a703fb24aa5dd69a0af05d99f83
       labels:
