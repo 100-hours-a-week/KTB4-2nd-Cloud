@@ -98,7 +98,7 @@ def point_id(value):
     return 'u:'+str(uuid.UUID(value))
 
 
-def fingerprint(client):
+def fingerprint(client,allow_empty=False):
     require(client.request('GET','/').get('version')==VERSION,'Qdrant version differs from fixed snapshot engine')
     require(client.request('GET','/cluster').get('status')=='disabled','Single-node source/target required')
     info=client.request('GET',BASE);config=info['config']
@@ -111,7 +111,7 @@ def fingerprint(client):
             and re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',alias['alias_name']) and alias['alias_name']!=COLLECTION,'Invalid alias binding')
     aliases=sorted(aliases,key=lambda a:a['alias_name'])
     count=client.request('POST',BASE+'/points/count',{'exact':True})['count']
-    require(type(count) is int and 0<count<=MAX_POINTS,'Unexpected point count')
+    require(type(count) is int and (0 if allow_empty else 1)<=count<=MAX_POINTS,'Unexpected point count')
     rows={};offset=None;seen=set()
     for _ in range((MAX_POINTS//64)+2):
         args={'limit':64,'with_payload':True,'with_vector':True}

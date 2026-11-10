@@ -1,0 +1,7 @@
+# Explicit migration use only. This file is never auto-applied on main merge.
+controllerPolicyEnabled: true
+ingressEnabled: true
+backendRoutesEnabled: true
+host: yeodam-2gether.com
+certificateArn: arn:aws:acm:ap-northeast-2:483175530259:certificate/16cafce8-9c2f-48bf-a168-e07e981530a3
+albSecurityGroupId: '' # Filled from the reviewed existing V3 ingress release; never create a new ALB.

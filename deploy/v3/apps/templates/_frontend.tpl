@@ -4,7 +4,11 @@
 {{- if not (regexMatch "^ghcr.io/100-hours-a-week/yeodam-frontend@sha256:[a-f0-9]{64}$" .root.Values.images.frontend) }}{{ fail "Use reviewed immutable FE image" }}{{ end }}
 {{- if or $c.environment $c.configMapRefs $c.secretRefs $c.secretVolumes $c.springProperties }}{{ fail "FE uses public runtime config and registry reference only" }}{{ end }}
 {{- if ne (len $c.configMapData) (int (add (len $contract.config) 1)) }}{{ fail "Unreviewed FE environment key" }}{{ end }}
-{{- range $key, $v := $contract.config }}{{- if ne (index $c.configMapData $key) $v }}{{ fail (printf "Invalid FE runtime setting %s" $key) }}{{ end }}{{ end }}
+{{- range $key, $v := $contract.config }}
+{{- if eq $key "SERVER_API_BASE_URL" }}
+{{- if not (has (index $c.configMapData $key) (list "https://v3.yeodam-2gether.com/api" "https://yeodam-2gether.com/api")) }}{{ fail "Only reviewed QA or operating FE API origin allowed" }}{{ end }}
+{{- else }}{{- if ne (index $c.configMapData $key) $v }}{{ fail (printf "Invalid FE runtime setting %s" $key) }}{{ end }}{{ end }}
+{{- end }}
 {{- if or (not (regexMatch "^[a-f0-9]{40}$" $c.configMapData.RELEASE)) (not (regexMatch "^[a-f0-9]{64}$" $c.configurationRevision)) }}{{ fail "FE source and configuration revision required" }}{{ end }}
 {{- $res := deepCopy $contract.resources }}{{- $_ := set $res.limits "cpu" "" }}
 {{- if ne (toJson $c.resources) (toJson $res) }}{{ fail "Keep minimum FE resource budget" }}{{ end }}

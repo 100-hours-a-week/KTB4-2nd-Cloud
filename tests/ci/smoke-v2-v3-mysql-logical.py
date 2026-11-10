@@ -9,6 +9,7 @@ def module(name,path):
 logical=module('logical',ROOT/'scripts/v2_v3_mysql_logical.py')
 bootstrap=module('bootstrap',ROOT/'scripts/create-v3-mysql-bootstrap-secret.py')
 live=module('live_restore',ROOT/'scripts/restore-v2-mysql-backup.py')
+cutover=module('cutover',ROOT/'scripts/v2_v3_cutover.py')
 photos=module('photos',ROOT/'scripts/v2_v3_photo_migration.py')
 def smoke(image,output):
  output.mkdir(parents=True,exist_ok=True);prefix='v2-v3-restore-'+uuid.uuid4().hex[:10]
@@ -81,7 +82,11 @@ SET GLOBAL read_only=ON; SET GLOBAL super_read_only=ON;""")
   assert sql('source','SELECT @@global.read_only AND @@global.super_read_only;')=='1'
   (output/'result.json').write_text(json.dumps({**restored,'sourceEngine':'9.7.2','sourceSchema':32,'targetEngine':'8.4.13','targetSchema':35,'tamperRejectedBeforeImport':True,'nonemptyTargetRejected':True,'foreignKeyViolations':0,'newTablesEmpty':True,'v35RerunNoop':True,'sourceUnchangedAndFrozen':True,'syntheticOnly':True},indent=2))
   photo_refs={}
-  def inspect_photos(container,manifest):photo_refs.update(photos.extract(container,manifest))
+  def inspect_photos(container,manifest):
+   photo_refs.update(photos.extract(container,manifest))
+   audit=cutover.audit_jobs(lambda query:logical.sql(container,query))
+   assert {'trip_creation_executions','story_generation_jobs','trip_creation_outbox'}<=set(audit)
+   (output/'cutover-job-audit.json').write_text(json.dumps({'aggregateOnly':True,'syntheticOnly':True,'tables':audit},indent=2))
   live_result=live.restore_package(package,image,directory/'live-runtime',after_verify=inspect_photos)
   assert len(photo_refs['objects'])==4 and not photo_refs['blockedReferences']
   assert photo_refs['excludedReferences']=={'unfinished-upload':1,'deleted':4,'external-profile':2}

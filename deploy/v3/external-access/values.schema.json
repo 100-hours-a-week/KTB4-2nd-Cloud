@@ -19,6 +19,13 @@
     },
     "backendRoutesEnabled": {
       "type": "boolean"
+    },
+    "host": {
+      "type": "string",
+      "enum": [
+        "v3.yeodam-2gether.com",
+        "yeodam-2gether.com"
+      ]
     }
   },
   "required": [

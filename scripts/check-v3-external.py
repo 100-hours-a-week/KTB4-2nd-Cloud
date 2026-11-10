@@ -77,6 +77,8 @@ def render_access(files=()):
 
 
 def validate_access(documents, values):
+    host=values.get('host',ROUTES['host'])
+    require(host in ['v3.yeodam-2gether.com','yeodam-2gether.com'],'Unreviewed public host')
     expected_policies = ([POLICIES['controller']] if values['controllerPolicyEnabled'] else []) + (POLICIES['applications'] if values['ingressEnabled'] else [])
     require(not values['backendRoutesEnabled'] or values['ingressEnabled'], 'Full routes require ingress enabled')
     expected_routes = [route for route in ROUTES['routes'] if values['backendRoutesEnabled'] or route['name'] not in ['trip','photo']] if values['ingressEnabled'] else []
@@ -107,7 +109,7 @@ def validate_access(documents, values):
                 'alb.ingress.kubernetes.io/target-group-attributes':'deregistration_delay.timeout_seconds=60'})
             service = {'name':route['service'],'port':{'number':route['port']}}
         require(annotations == expected_annotations, 'Unreviewed ALB annotation or target scope')
-        require(d['spec'] == {'ingressClassName':'yeodam-v3-alb','rules':[{'host':ROUTES['host'],'http':{'paths':[{'path':p,'pathType':t,'backend':{'service':service}} for p,t in route['paths']]}}]}, 'Ingress host, path or namespace target changed')
+        require(d['spec'] == {'ingressClassName':'yeodam-v3-alb','rules':[{'host':host,'http':{'paths':[{'path':p,'pathType':t,'backend':{'service':service}} for p,t in route['paths']]}}]}, 'Ingress host, path or namespace target changed')
 
 
 def main():

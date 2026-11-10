@@ -13,12 +13,12 @@ binaryData:
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
-  name: prod.yeodam.schema-history
+  name: {{ ternary "prod.yeodam.schema-history-operating" "prod.yeodam.schema-history" .Values.operating }}
   namespace: kafka
   labels: {strimzi.io/cluster: yeodam-v3-kafka, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
   annotations: {helm.sh/resource-policy: keep}
 spec:
-  topicName: prod.yeodam.schema-history
+  topicName: {{ ternary "prod.yeodam.schema-history-operating" "prod.yeodam.schema-history" .Values.operating }}
   partitions: 1
   replicas: 3
   config:
@@ -31,12 +31,12 @@ spec:
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
-  name: v3-outbox-heartbeat
+  name: {{ ternary "v3-operating-outbox-heartbeat" "v3-outbox-heartbeat" .Values.operating }}
   namespace: kafka
   labels: {strimzi.io/cluster: yeodam-v3-kafka, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
   annotations: {helm.sh/resource-policy: keep}
 spec:
-  topicName: __debezium-heartbeat.v3.yeodam.outbox
+  topicName: {{ ternary "__debezium-heartbeat.v3.yeodam.operating.outbox" "__debezium-heartbeat.v3.yeodam.outbox" .Values.operating }}
   partitions: 1
   replicas: 3
   config:
@@ -87,9 +87,15 @@ metadata:
 spec:
   class: io.debezium.connector.mysql.MySqlConnector
   tasksMax: 1
-  state: running
+  state: {{ .Values.connectorState }}
   autoRestart: {enabled: true, maxRestarts: 3}
   config:
-    {{- omit (.Files.Get "files/connector.json" | fromJson) "connector.class" "tasks.max" | toYaml | nindent 4 }}
+    {{- $config := omit (.Files.Get "files/connector.json" | fromJson) "connector.class" "tasks.max" }}
+    {{- if .Values.operating }}
+    {{- $_ := set $config "topic.prefix" "v3.yeodam.operating.outbox" }}
+    {{- $_ := set $config "schema.history.internal.kafka.topic" "prod.yeodam.schema-history-operating" }}
+    {{- $_ := set $config "predicates.heartbeat.pattern" "^__debezium-heartbeat\\.v3\\.yeodam\\.operating\\.outbox$" }}
+    {{- end }}
+    {{- $config | toYaml | nindent 4 }}
 {{- end }}
 {{- end }}
