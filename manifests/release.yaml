@@ -2751,9 +2751,11 @@ data:
     \        import urllib.request\n        url = os.environ['VLM_BASE_URL']\n   \
     \     assert hashlib.sha256(url.encode()).hexdigest() == sys.argv[2]\n       \
     \ assert re.fullmatch(r'https://[a-z0-9]+-8000\\.proxy\\.runpod\\.net/v1', url)\n\
-    \        request = urllib.request.Request(url + '/models', headers={'Authorization':\
-    \ 'Bearer ' + os.environ['VLM_API_KEY']})\n        # No redirects: never send\
-    \ the authorization to a different endpoint.\n        class NoRedirect(urllib.request.HTTPRedirectHandler):\n\
+    \        # Match the deployed AI client identification; the default urllib agent\
+    \ is rejected upstream.\n        request = urllib.request.Request(url + '/models',\
+    \ headers={'Authorization': 'Bearer ' + os.environ['VLM_API_KEY'], 'User-Agent':\
+    \ 'python-httpx/0.28.1'})\n        # No redirects: never send the authorization\
+    \ to a different endpoint.\n        class NoRedirect(urllib.request.HTTPRedirectHandler):\n\
     \            def redirect_request(self, *args, **kwargs): return None\n      \
     \  with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as\
     \ response:\n            data = json.loads(response.read(1024 * 1024))\n     \
@@ -2794,16 +2796,16 @@ data:
   EMBEDDING_SERVED_MODEL_NAME: qwen3-vl-embedding-2b
   EMBED_MODEL: qwen3-vl-embedding-2b
   FAKE_PIPELINE: 'false'
-  GPU_GENERATION_INFLIGHT: '1'
-  GPU_SEARCH_EMBEDDING_INFLIGHT: '1'
+  GPU_GENERATION_INFLIGHT: '8'
+  GPU_SEARCH_EMBEDDING_INFLIGHT: '4'
   IMAGE_SOURCE: s3
   JOBS_ENV: v3-foundation
   JOBS_FAKE_PIPELINE: 'false'
   JOBS_PROCESS_HANDLER: app.jobs.process_handler:run
   JOBS_PROCESS_STANDBY: '0'
-  JOBS_PROCESS_TIMEOUT_SEC: '3000'
+  JOBS_PROCESS_TIMEOUT_SEC: '3900'
   JOBS_SHUTDOWN_GRACE_SEC: '60'
-  JOBS_STORY_CONCURRENCY: '1'
+  JOBS_STORY_CONCURRENCY: '4'
   JOBS_STORY_HANDLER: app.story.handler:run
   KAFKA_BOOTSTRAP_SERVERS: yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093
   KAFKA_SASL_MECHANISM: SCRAM-SHA-512
@@ -2816,14 +2818,14 @@ data:
   KAFKA_TRIP_CREATE_RESULT_TOPIC: prod.yeodam.trip-create.result
   KAFKA_TRIP_UPDATE_REQUEST_TOPIC: prod.yeodam.trip-update.request
   KAFKA_TRIP_UPDATE_RESULT_TOPIC: prod.yeodam.trip-update.result
-  PROCESS_AGENT_BUDGET_SEC: '2700'
-  PROCESS_AGENT_CONCURRENCY: '1'
+  PROCESS_AGENT_BUDGET_SEC: '3600'
+  PROCESS_AGENT_CONCURRENCY: '4'
   PROCESS_AGENT_ENABLED: 'true'
   PYTHONDONTWRITEBYTECODE: '1'
   PYTHONPATH: /app
   PYTHONUNBUFFERED: '1'
   QDRANT_URL: https://qdrant.qdrant.svc.cluster.local:6333
-  RELEASE: a6b132a6bf06bc3957551e778320ed868bf221d5
+  RELEASE: b4b31ff7afd7cd15f8c8e8dc0e9e8f9f8bf93a08
   REQUESTS_CA_BUNDLE: /etc/yeodam/trust/ca-bundle.pem
   S3_BUCKET: yeodam-v3-foundation-app-data-483175530259-ap-northeast-2
   SEARCH_ENABLED: 'true'
@@ -2846,16 +2848,16 @@ data:
   EMBEDDING_SERVED_MODEL_NAME: qwen3-vl-embedding-2b
   EMBED_MODEL: qwen3-vl-embedding-2b
   FAKE_PIPELINE: 'false'
-  GPU_GENERATION_INFLIGHT: '1'
-  GPU_SEARCH_EMBEDDING_INFLIGHT: '1'
+  GPU_GENERATION_INFLIGHT: '8'
+  GPU_SEARCH_EMBEDDING_INFLIGHT: '4'
   IMAGE_SOURCE: s3
   JOBS_ENV: v3-foundation
   JOBS_FAKE_PIPELINE: 'false'
   JOBS_PROCESS_HANDLER: app.jobs.process_handler:run
   JOBS_PROCESS_STANDBY: '0'
-  JOBS_PROCESS_TIMEOUT_SEC: '3000'
+  JOBS_PROCESS_TIMEOUT_SEC: '3900'
   JOBS_SHUTDOWN_GRACE_SEC: '60'
-  JOBS_STORY_CONCURRENCY: '1'
+  JOBS_STORY_CONCURRENCY: '4'
   JOBS_STORY_HANDLER: app.story.handler:run
   KAFKA_BOOTSTRAP_SERVERS: yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093
   KAFKA_SASL_MECHANISM: SCRAM-SHA-512
@@ -2871,14 +2873,14 @@ data:
   PLACE_INDEX_PATH: /data/ai-reference/places-v2026-10-30.sqlite
   PLACE_INDEX_S3_URI: s3://yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/places/v2026-10-30/places.sqlite
   PLACE_INDEX_SHA256: 41f531891d9bdc5417e91c80a92e51f2e92e2661a641cb627cbdb16e5f0f3b1d
-  PROCESS_AGENT_BUDGET_SEC: '2700'
-  PROCESS_AGENT_CONCURRENCY: '1'
+  PROCESS_AGENT_BUDGET_SEC: '3600'
+  PROCESS_AGENT_CONCURRENCY: '4'
   PROCESS_AGENT_ENABLED: 'true'
   PYTHONDONTWRITEBYTECODE: '1'
   PYTHONPATH: /app
   PYTHONUNBUFFERED: '1'
   QDRANT_URL: https://qdrant.qdrant.svc.cluster.local:6333
-  RELEASE: a6b132a6bf06bc3957551e778320ed868bf221d5
+  RELEASE: b4b31ff7afd7cd15f8c8e8dc0e9e8f9f8bf93a08
   REQUESTS_CA_BUNDLE: /etc/yeodam/trust/ca-bundle.pem
   S3_BUCKET: yeodam-v3-foundation-app-data-483175530259-ap-northeast-2
   SEARCH_ENABLED: 'true'
@@ -2928,8 +2930,8 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/runtime: a32cdc93baee412186c5199fec5700819181c26d3ff3bc8b47288218cbda731c
-        yeodam.io/configuration-revision: f84dfeb7bf03fe1ed92276b7ced7d49d5c4c3eaa97ff5e8acbde92835985152f
+        checksum/runtime: ae84d3b00ffe0049ebc24f7198be64efe7e8b72786811ee72ba9d56cc6b8eacf
+        yeodam.io/configuration-revision: 3571c5c96b1433acdf7220eebb07b6f731cf366715dec3bda1e33c87bf37120f
       labels:
         app.kubernetes.io/component: api
         app.kubernetes.io/instance: ai-api
@@ -2987,7 +2989,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ai-api-runtime
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:41a57ce88cdb04e626480015faca2003ef27a56e321e9d4dc3a0370caf287894
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:cbeca1d96e2caed88affb586ff39a939cdd6ddd9560020d502212561dbe89e98
         livenessProbe:
           exec:
             command:
@@ -3050,7 +3052,7 @@ spec:
       - command:
         - python
         - /runtime/prepare-trust.py
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:41a57ce88cdb04e626480015faca2003ef27a56e321e9d4dc3a0370caf287894
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:cbeca1d96e2caed88affb586ff39a939cdd6ddd9560020d502212561dbe89e98
         name: prepare-trust
         resources:
           limits:
@@ -3130,8 +3132,8 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/runtime: a32cdc93baee412186c5199fec5700819181c26d3ff3bc8b47288218cbda731c
-        yeodam.io/configuration-revision: f84dfeb7bf03fe1ed92276b7ced7d49d5c4c3eaa97ff5e8acbde92835985152f
+        checksum/runtime: ae84d3b00ffe0049ebc24f7198be64efe7e8b72786811ee72ba9d56cc6b8eacf
+        yeodam.io/configuration-revision: 3571c5c96b1433acdf7220eebb07b6f731cf366715dec3bda1e33c87bf37120f
       labels:
         app.kubernetes.io/component: runner
         app.kubernetes.io/instance: ai-runner
@@ -3194,7 +3196,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ai-runner-runtime
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:41a57ce88cdb04e626480015faca2003ef27a56e321e9d4dc3a0370caf287894
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:cbeca1d96e2caed88affb586ff39a939cdd6ddd9560020d502212561dbe89e98
         name: ai
         readinessProbe:
           exec:
@@ -3251,7 +3253,7 @@ spec:
       - command:
         - python
         - /runtime/prepare-trust.py
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:41a57ce88cdb04e626480015faca2003ef27a56e321e9d4dc3a0370caf287894
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:cbeca1d96e2caed88affb586ff39a939cdd6ddd9560020d502212561dbe89e98
         name: prepare-trust
         resources:
           limits:
