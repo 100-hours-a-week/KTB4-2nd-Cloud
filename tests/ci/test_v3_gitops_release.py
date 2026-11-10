@@ -14,7 +14,7 @@ sys.path.insert(0,str(ROOT/'scripts'))
 import v3_gitops_release as m
 
 POLICY={'schemaVersion':2,'target':'yeodam-v3-foundation','deploymentEnabled':False,'branch':m.BRANCH,'environment':m.ENVIRONMENT,'deliveryUnits':m.UNITS,'adoptionReviewed':False,'observerInstanceId':''}
-CTX={'GITHUB_ACTIONS':'true','GITHUB_REPOSITORY':m.CLOUD,'GITHUB_EVENT_NAME':'workflow_dispatch','GITHUB_REF':'refs/heads/main','GITHUB_SHA':'a'*40,'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1'}
+CTX={'GITHUB_ACTIONS':'true','GITHUB_REPOSITORY':m.CLOUD,'GITHUB_EVENT_NAME':'workflow_dispatch','GITHUB_REF':'refs/heads/main','GITHUB_SHA':'a'*40,'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1','GITHUB_JOB':'publish'}
 
 
 class GitOpsReleaseTests(unittest.TestCase):
@@ -72,6 +72,7 @@ class GitOpsReleaseTests(unittest.TestCase):
         responses={
             f'repos/{m.CLOUD}/commits/main':{'sha':'a'*40},
             f'repos/{m.CLOUD}/actions/runs/123':{'event':'workflow_dispatch','head_branch':'main','head_sha':'a'*40,'run_attempt':1,'path':'.github/workflows/v3-approved-release.yml','status':'in_progress','head_repository':{'full_name':m.CLOUD}},
+            f'repos/{m.CLOUD}/actions/runs/123/attempts/1/jobs?per_page=100':{'jobs':[{'name':'publish','status':'in_progress','run_id':123,'head_sha':'a'*40}]},
             f'repos/{m.CLOUD}/environments/{m.ENVIRONMENT}':{'id':9,'protection_rules':[{'type':'required_reviewers','reviewers':[{'type':'User','reviewer':{'login':'operator'}}]}],'deployment_branch_policy':{'protected_branches':False,'custom_branch_policies':True}},
             f'repos/{m.CLOUD}/environments/{m.ENVIRONMENT}/deployment-branch-policies':{'branch_policies':[{'name':'main','type':'branch'}]},
             f'repos/{m.CLOUD}/rules/branches/deploy%2Fv3-approved':[{'type':x}for x in ['update','deletion','non_fast_forward']],
@@ -81,8 +82,22 @@ class GitOpsReleaseTests(unittest.TestCase):
 
     def test_manual_main_first_attempt_and_actual_approval_are_required(self):
         with patch.object(m.legacy.checks,'api',side_effect=self.api()):m.verify_approval(CTX)
-        for change in [{'GITHUB_REF':'refs/heads/work'},{'GITHUB_EVENT_NAME':'push'},{'GITHUB_RUN_ATTEMPT':'2'},{'GITHUB_REPOSITORY':'foreign/repo'},{'GITHUB_ACTIONS':'false'}]:
+        for change in [{'GITHUB_JOB':'preview'},{'GITHUB_REF':'refs/heads/work'},{'GITHUB_EVENT_NAME':'push'},{'GITHUB_RUN_ATTEMPT':'2'},{'GITHUB_REPOSITORY':'foreign/repo'},{'GITHUB_ACTIONS':'false'}]:
             with self.subTest(change=change),self.assertRaises(ValueError):m.verify_approval(CTX|change)
+
+    def test_waiting_run_requires_exact_active_publish_job(self):
+        runpath=f'repos/{m.CLOUD}/actions/runs/123'
+        jobpath=runpath+'/attempts/1/jobs?per_page=100'
+        run=self.api()(runpath)|{'status':'waiting'}
+        with patch.object(m.legacy.checks,'api',side_effect=self.api({runpath:run})):
+            m.verify_approval(CTX)
+        job=self.api()(jobpath)['jobs'][0]
+        cases=[[],[job,job]]+[[job|change] for change in [
+            {'name':'preview'},{'status':'waiting'},{'status':'completed'},
+            {'run_id':124},{'head_sha':'b'*40}]]
+        for jobs in cases:
+            with self.subTest(jobs=jobs),patch.object(m.legacy.checks,'api',side_effect=self.api({runpath:run,jobpath:{'jobs':jobs}})),self.assertRaises(ValueError):
+                m.verify_approval(CTX)
 
     def test_missing_reviewer_main_policy_rules_or_current_approval_rejected(self):
         envpath=f'repos/{m.CLOUD}/environments/{m.ENVIRONMENT}'
@@ -157,7 +172,7 @@ class GitOpsReleaseTests(unittest.TestCase):
 
     def test_completed_or_other_workflow_approval_cannot_be_reused(self):
         base=self.api()(f'repos/{m.CLOUD}/actions/runs/123')
-        for change in [{'status':'completed'},{'path':'.github/workflows/other.yml'},{'head_sha':'b'*40},{'run_attempt':2}]:
+        for change in [{'status':'completed'},{'status':'queued'},{'path':'.github/workflows/other.yml'},{'head_sha':'b'*40},{'run_attempt':2}]:
             with self.subTest(change=change),patch.object(m.legacy.checks,'api',side_effect=self.api({f'repos/{m.CLOUD}/actions/runs/123':base|change})),self.assertRaises(ValueError):m.verify_approval(CTX)
 
     def test_writer_token_required_and_kept_out_of_command_arguments(self):
