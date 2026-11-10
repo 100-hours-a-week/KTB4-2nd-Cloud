@@ -8,6 +8,7 @@ on:
       - 'terraform/v3/cutover/**'
       - 'scripts/*v2*v3*cutover*'
       - 'scripts/cutover/**'
+      - 'tests/ci/smoke-v3-cutover-redis.py'
       - 'tests/ci/test_v2_v3_cutover*'
       - 'tests/ci/smoke-v2-v3-mysql-logical.py'
       - 'terraform/v3/delivery/**'
