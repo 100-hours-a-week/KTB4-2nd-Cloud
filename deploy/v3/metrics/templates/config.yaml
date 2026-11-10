@@ -15,6 +15,18 @@ data:
         sample_limit: 3000
         label_limit: 30
 {{- end }}
+{{- if .Values.apmEnabled }}
+      - job_name: apm-alloy
+        static_configs: [{targets: ['v3-alloy:12345']}]
+        metric_relabel_configs:
+          - {source_labels: [__name__], regex: 'otelcol_.*spans(_total)?|process_resident_memory_bytes', action: keep}
+        sample_limit: 1000
+      - job_name: apm-tempo
+        static_configs: [{targets: ['v3-tempo:3200']}]
+        metric_relabel_configs:
+          - {source_labels: [__name__], regex: 'tempo_distributor_.*|tempo_live_store_.*|process_resident_memory_bytes', action: keep}
+        sample_limit: 1000
+{{- end }}
   alerts.yaml: |
 {{ .Files.Get "files/alerts.yaml" | indent 4 }}
   cdc-status.py: |
@@ -26,6 +38,14 @@ metadata: {name: v3-grafana-config, namespace: observability}
 data:
   datasource.yaml: |
 {{ .Files.Get "files/datasource.yaml" | indent 4 }}
+{{- if .Values.apmEnabled }}
+      - name: Tempo
+        uid: v3-tempo
+        type: tempo
+        access: proxy
+        url: http://v3-tempo:3200
+        editable: false
+{{- end }}
   dashboard-provider.yaml: |
 {{ .Files.Get "files/dashboard-provider.yaml" | indent 4 }}
   operations.json: |

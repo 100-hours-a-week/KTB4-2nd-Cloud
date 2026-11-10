@@ -21,6 +21,10 @@ kind: ConfigMap
 metadata: {name: ai-runtime-scripts, namespace: ai}
 data:
 {{ (.Files.Glob "files/runtime/*").AsConfig | indent 2 }}
+{{- if .Values.apmWorkloads }}
+  sitecustomize.py: |
+{{ .Files.Get "files/apm/sitecustomize.py" | indent 4 }}
+{{- end }}
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -53,6 +57,8 @@ data:
   {{- range $key, $value := $w.environment }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}
+{{- $apm := has $role $.Values.apmWorkloads }}
+{{- $apmConfig := fromJson ($.Files.Get "files/apm.json") }}
 {{- if index $.Values.workloads $role }}
 ---
 apiVersion: apps/v1
@@ -75,6 +81,9 @@ spec:
         yeodam.io/ai-runtime: "true"
       annotations:
         checksum/runtime: {{ (printf "%s%s" ($.Files.Get "files/contract.json") (($.Files.Glob "files/runtime/*").AsConfig)) | sha256sum }}
+        {{- if $apm }}
+        checksum/apm: {{ printf "%s%s" ($.Files.Get "files/apm.json") ($.Files.Get "files/apm/sitecustomize.py") | sha256sum }}
+        {{- end }}
         yeodam.io/configuration-revision: {{ $.Values.configurationRevision | quote }}
     spec:
       serviceAccountName: {{ $w.name }}
@@ -99,6 +108,14 @@ spec:
             - {name: scripts, mountPath: /runtime, readOnly: true}
             - {name: public-ca, mountPath: /etc/yeodam/ca, readOnly: true}
             - {name: trust, mountPath: /etc/yeodam/trust}
+        {{- if $apm }}
+        - name: prepare-apm
+          image: {{ $apmConfig.pythonImage }}
+          command: [cp, -R, /autoinstrumentation/., /otel/]
+          resources: {requests: {cpu: 25m, memory: 32Mi}, limits: {cpu: 100m, memory: 64Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts: [{name: apm, mountPath: /otel}]
+        {{- end }}
       containers:
         - name: ai
           image: {{ $.Values.image }}
@@ -110,6 +127,15 @@ spec:
           {{- range $key := $keys }}
             - name: {{ $key }}
               valueFrom: {secretKeyRef: {name: ai-runtime, key: {{ $key }}}}
+          {{- end }}
+          {{- if $apm }}
+            - {name: YEODAM_APM_ENABLED, value: 'true'}
+            - {name: PYTHONPATH, value: '/runtime:/otel:/app'}
+            - {name: OTEL_SERVICE_NAME, value: {{ $w.name | quote }}}
+            - {name: OTEL_SERVICE_VERSION, value: {{ $.Values.source | quote }}}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: {{ $apmConfig.endpoint | quote }}}
+            - {name: OTEL_METRICS_EXPORTER, value: none}
+            - {name: OTEL_LOGS_EXPORTER, value: none}
           {{- end }}
           resources:
 {{ $w.resources | toYaml | indent 12 }}
@@ -132,7 +158,13 @@ spec:
             {{- if eq $role "runner" }}
             - {name: reference, mountPath: /data/ai-reference}
             {{- end }}
+          {{- if $apm }}
+            - {name: apm, mountPath: /otel, readOnly: true}
+          {{- end }}
       volumes:
+        {{- if $apm }}
+        - {name: apm, emptyDir: {sizeLimit: 64Mi}}
+        {{- end }}
         - {name: scripts, configMap: {name: ai-runtime-scripts, defaultMode: 0444}}
         - {name: public-ca, configMap: {name: ai-trust}}
         - {name: trust, emptyDir: {sizeLimit: 1Mi}}

@@ -251,6 +251,7 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "apmWorkloads": {"type": "array","uniqueItems": true,"items": {"type": "string","enum": ["auth-api","trip-api","photo-api","photo-converter","trip-result-worker"]}},
     "backendContract": {"type": "boolean"},
     "backendConnectionContract": {"type": "boolean"},
     "websocketContract": {"type": "boolean"},

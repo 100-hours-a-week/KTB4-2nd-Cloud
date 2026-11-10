@@ -1,3 +1,6 @@
 # No resources until explicitly enabled after merge and runtime prerequisites.
 enabled: false
 aiMetricsEnabled: true
+
+# Activate after the APM backend is installed.
+apmEnabled: false

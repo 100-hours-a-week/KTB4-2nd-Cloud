@@ -1,0 +1,89 @@
+{{- if .Values.enabled }}
+{{- $images := fromJson (.Files.Get "images.lock.json") }}
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: v3-apm, namespace: observability}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: v3-apm-config, namespace: observability}
+data:
+  config.alloy: |
+{{ .Files.Get "files/config.alloy" | indent 4 }}
+  tempo.yaml: |
+{{ .Files.Get "files/tempo.yaml" | indent 4 }}
+{{- range $name := list "alloy" "tempo" }}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: v3-{{ $name }}, namespace: observability}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: v3-{{ $name }}}
+  ports:
+{{- if eq $name "alloy" }}
+    - {name: otlp-http, port: 4318, targetPort: otlp-http}
+    - {name: http, port: 12345, targetPort: http}
+{{- else }}
+    - {name: otlp-grpc, port: 4317, targetPort: otlp-grpc}
+    - {name: http, port: 3200, targetPort: http}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: v3-{{ $name }}, namespace: observability}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: v3-{{ $name }}}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: v3-{{ $name }}, app.kubernetes.io/part-of: yeodam-apm}
+      annotations: {checksum/config: {{ ($.Files.Glob "files/*").AsConfig | sha256sum }}}
+    spec:
+      serviceAccountName: v3-apm
+      automountServiceAccountToken: false
+      nodeSelector: {yeodam.io/role: system, kubernetes.io/os: linux, kubernetes.io/arch: amd64}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, fsGroupChangePolicy: OnRootMismatch, seccompProfile: {type: RuntimeDefault}}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: {{ $name }}
+          image: {{ index $images $name }}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources:
+            requests: {cpu: {{ if eq $name "alloy" }}25m{{ else }}50m{{ end }}, memory: {{ if eq $name "alloy" }}64Mi{{ else }}128Mi{{ end }}, ephemeral-storage: 32Mi}
+            limits: {cpu: {{ if eq $name "alloy" }}200m{{ else }}500m{{ end }}, memory: {{ if eq $name "alloy" }}128Mi{{ else }}384Mi{{ end }}, ephemeral-storage: 128Mi}
+          env:
+            - {name: GOMEMLIMIT, value: {{ if eq $name "alloy" }}80MiB{{ else }}256MiB{{ end }}}
+            - {name: GOGC, value: '50'}
+{{- if eq $name "alloy" }}
+          args: [run, --server.http.listen-addr=0.0.0.0:12345, --storage.path=/var/alloy, --disable-reporting, /etc/apm/config.alloy]
+          ports: [{name: http, containerPort: 12345}, {name: otlp-http, containerPort: 4318}]
+          readinessProbe: {httpGet: {path: /-/ready, port: http}, initialDelaySeconds: 5, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /-/healthy, port: http}, initialDelaySeconds: 20, periodSeconds: 20}
+          volumeMounts: [{name: config, mountPath: /etc/apm, readOnly: true}, {name: buffer, mountPath: /var/alloy}]
+{{- else }}
+          args: [-target=all, -config.file=/etc/apm/tempo.yaml]
+          ports: [{name: http, containerPort: 3200}, {name: otlp-grpc, containerPort: 4317}]
+          readinessProbe: {httpGet: {path: /ready, port: http}, initialDelaySeconds: 10, periodSeconds: 10}
+          livenessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 30, periodSeconds: 20}
+          volumeMounts: [{name: config, mountPath: /etc/apm, readOnly: true}, {name: storage, mountPath: /var/tempo}]
+{{- end }}
+      volumes:
+        - {name: config, configMap: {name: v3-apm-config}}
+{{- if eq $name "alloy" }}
+        - {name: buffer, emptyDir: {sizeLimit: 32Mi}}
+{{- else }}
+        - {name: storage, persistentVolumeClaim: {claimName: v3-tempo}}
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: v3-tempo, namespace: observability, annotations: {helm.sh/resource-policy: keep}}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: yeodam-v3-gp3-retain
+  resources: {requests: {storage: 3Gi}}
+{{- end }}
