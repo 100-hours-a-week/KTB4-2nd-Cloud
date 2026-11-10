@@ -27,7 +27,7 @@ def audit_jobs(execute):
  tables=execute("SELECT table_name FROM information_schema.tables WHERE table_schema='yeodam' AND table_type='BASE TABLE' ORDER BY table_name;").splitlines()
  result={}
  for table in tables:
-  if not (table.endswith(('_jobs','_executions','_outbox'))):continue
+  if not (table.endswith(('_jobs','_executions','_outbox','_reservations'))):continue
   mysql.identifier(table)
   columns=execute("SELECT column_name FROM information_schema.columns WHERE table_schema='yeodam' AND table_name='"+table+"';").splitlines()
   require('status' in columns,'Unreviewed job status column')
@@ -36,6 +36,7 @@ def audit_jobs(execute):
   for row in statuses:
    state,count=row.split('\t');require(re.fullmatch('[A-Z_]+',state) and count.isdigit(),'Invalid aggregate job evidence');counts[state]=int(count)
   terminal={'COMPLETED','SUCCEEDED','FAILED','CANCELED','CANCELLED','EXPIRED','PUBLISHED'}
+  if table=='trip_photo_deletion_reservations':terminal.add('APPLIED')
   result[table]={'statuses':counts,'unresolved':sum(n for state,n in counts.items() if state not in terminal)}
  require({'trip_creation_executions','story_generation_jobs','trip_creation_outbox'}<=set(result),'Incomplete source job inventory')
  return result
@@ -52,13 +53,17 @@ def validate_reconciliation(review):
  require(type(review['qaConsumerLag']) is dict and set(review['qaConsumerLag'])==GROUPS and all(type(n) is int and n==0 for n in review['qaConsumerLag'].values()),'All reviewed QA consumer groups must be at committed end offsets')
  for key in ['qaAiQueueItems','qaUploadsInFlight']:require(type(review[key]) is int and review[key]==0,'QA work still in flight')
 
-def plan(mysql_path,qdrant_path,photos_path,reconciliation):
+def require_schema_image(image):
+ require(isinstance(image,str) and re.fullmatch(r'ghcr.io/100-hours-a-week/yeodam-v3-mysql-schema@sha256:[a-f0-9]{64}',image) and image!=POLICY['retiredSchemaImage'],'Use a reviewed immutable V40 schema image, never the retired V35 image')
+
+def plan(mysql_path,qdrant_path,photos_path,reconciliation,schema_image):
+ require_schema_image(schema_image)
  m=mysql.verify_package(mysql_path);q=qdrant.verify_package(qdrant_path);photos=load(photos_path)
  require(m['sensitivity']==q['sensitivity']=='private-user-data' and m.get('sourceInstance')==POLICY['sourceMysql'],'Actual fixed-source backups required')
  require(photos.get('sourceBucket')=='yeodam-v1-app-data-483175530259-ap-northeast-2' and photos.get('targetBucket')=='yeodam-v3-foundation-app-data-483175530259-ap-northeast-2' and all(photos.get(k)==0 for k in ['failedObjects','missingSource','targetConflicts','existingObjectsOverwritten','objectsDeleted']) and photos.get('allCopiedVersionsVerified') is True,'Photo copy must be fully verified with no failures/conflicts')
  validate_reconciliation(reconciliation)
  require(reconciliation['photoObjectsVerified']==photos['copiedObjects'],'Copied-photo inventory differs from fresh verification')
- data={'version':1,'toolCommit':tool_commit(),'candidateSha256':digest(load(ROOT/'deploy/v3/releases/candidate.json')),'policySha256':digest(POLICY),'cluster':POLICY['cluster'],'domain':POLICY['domain'],
+ data={'version':1,'schemaImage':schema_image,'schemaSourceLockSha256':digest(mysql.SCHEMA_LOCK),'toolCommit':tool_commit(),'candidateSha256':digest(load(ROOT/'deploy/v3/releases/candidate.json')),'policySha256':digest(POLICY),'cluster':POLICY['cluster'],'domain':POLICY['domain'],
   'createdAt':now(),'mysqlPackage':str(mysql_path.resolve()),'mysqlSha256':m['sha256'],
   'qdrantPackage':str(qdrant_path.resolve()),'qdrantSha256':q['snapshotSha256'],
   'photosReceipt':str(photos_path.resolve()),'photosSha256':digest(photos),'reconciliation':reconciliation,
@@ -69,6 +74,8 @@ def verify_plan(p,approved):
  value=dict(p);sha=value.pop('planSha256',None)
  require(sha==approved==digest(value) and p['policySha256']==digest(POLICY),'Plan changed; obtain a new exact approval')
  require(p['toolCommit']==tool_commit() and p['candidateSha256']==digest(load(ROOT/'deploy/v3/releases/candidate.json')),'Cutover code/candidate changed; review a fresh plan')
+ require_schema_image(p['schemaImage'])
+ require(p['schemaSourceLockSha256']==digest(mysql.SCHEMA_LOCK) and mysql.SCHEMA_VERSION==POLICY['schemaVersion'],'Schema source changed; prepare a fresh approved plan')
  require(p['cluster']==POLICY['cluster'] and p['domain']==POLICY['domain'] and p['phases']==PHASES,'Wrong target')
  require(p['awsCreates']==p['gpuChanges']==0 and p['v2DeletionEnabled'] is False,'No creation or V2 deletion in cutover runtime')
  require(not os.environ.get('GITHUB_ACTIONS'),'Live cutover is forbidden in CI')

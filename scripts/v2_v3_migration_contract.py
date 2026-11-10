@@ -66,7 +66,7 @@ def flyway_crc(data):
 def sql_checksums(directory, lock=LOCK):
     require(not directory.is_symlink(), 'Symlink SQL directory rejected')
     expected = {x['name'] for x in lock['migrations']}
-    require({p.name for p in directory.iterdir()} == expected, 'SQL file set differs from pinned V35 source')
+    require({p.name for p in directory.iterdir()} == expected, 'SQL file set differs from pinned schema source')
     result = {}
     for item in lock['migrations']:
         path = directory / item['name']

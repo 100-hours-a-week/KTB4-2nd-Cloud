@@ -17,7 +17,7 @@ flyway.locations=filesystem:/schema/sql
 flyway.defaultSchema=yeodam
 flyway.schemas=yeodam
 flyway.createSchemas=false
-flyway.target=35
+flyway.target=40
 flyway.cleanDisabled=true
 flyway.baselineOnMigrate=false
 flyway.outOfOrder=false
@@ -32,4 +32,4 @@ if ! env -i PATH="$PATH" HOME=/tmp REDGATE_DISABLE_TELEMETRY=true JAVA_ARGS='-Xm
   echo 'FAIL: Flyway schema migration rejected; no baseline, clean or repair attempted' >&2
   exit 1
 fi
-echo 'PASS: pinned BE Flyway migrations applied/validated through V35 using TLS identity verification'
+echo 'PASS: pinned BE Flyway migrations applied/validated through V40 using TLS identity verification'

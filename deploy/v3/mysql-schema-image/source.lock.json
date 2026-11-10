@@ -1,12 +1,12 @@
 {
   "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
-  "sourceCommit": "34e4d80be73f860a105364dfab79fc0864638d66",
-  "archiveUrl": "https://codeload.github.com/100-hours-a-week/KTB4-2nd-BE/tar.gz/34e4d80be73f860a105364dfab79fc0864638d66",
-  "archiveSha256": "4543d8d07d988849993360b9b5ada51415dc3463d60b3e39b0773b262c626db8",
-  "archiveBytes": 2030946,
+  "sourceCommit": "6347e029a2f9950564a0e22123db7ae92980243a",
+  "archiveUrl": "https://codeload.github.com/100-hours-a-week/KTB4-2nd-BE/tar.gz/6347e029a2f9950564a0e22123db7ae92980243a",
+  "archiveSha256": "4972fb95beda5528b37f5bdbcc69c55412f6ffb646487df64f1529554b44dcbe",
+  "archiveBytes": 2125909,
   "flywayVersion": "12.4.0",
   "baseImage": "redgate/flyway@sha256:0472749995c526ef293a9d1651bc6af7e485def77fe7b9b23f223203af1cb5ac",
-  "schemaVersion": 35,
+  "schemaVersion": 40,
   "migrations": [
     {
       "name": "V1__create_user_tables.sql",
@@ -182,6 +182,31 @@
       "name": "V35__add_story_prepared_content_metadata.sql",
       "sha256": "dafcababd5852494937f4742fac6511e111826d63e2cd9cd27bb8e40219b4300",
       "bytes": 86
+    },
+    {
+      "name": "V36__add_unstarted_trip_timeout_index.sql",
+      "sha256": "f9eb61894d32d25964dadd55c5f236ef37e405098dd1455e6e6a97673bc56bf8",
+      "bytes": 108
+    },
+    {
+      "name": "V37__separate_trip_analysis_executions.sql",
+      "sha256": "ef985fe048f6761008bcb90d49264bb62fe23c18cd61396f49b6c6be564b58ee",
+      "bytes": 6032
+    },
+    {
+      "name": "V38__record_legacy_analysis_remote_termination.sql",
+      "sha256": "113d3ea69dd09a7e821cdf1d39a3d4a32759d06f67641e970d8f2567573df32f",
+      "bytes": 199
+    },
+    {
+      "name": "V39__retain_processing_notification_thumbnail.sql",
+      "sha256": "3f58bf9e72ddd30c708fba848d880a31ad4ddd23ab0445480f6e1a352c96b8a1",
+      "bytes": 86
+    },
+    {
+      "name": "V40__protect_canceled_initial_analysis_input.sql",
+      "sha256": "f071c71cfb88107b81c305b95f7c0582de77eb5d5dc4583885ce6790df7baab1",
+      "bytes": 406
     }
   ],
   "cdcTables": [
