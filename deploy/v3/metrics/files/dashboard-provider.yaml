@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: v3
+    orgId: 1
+    folder: Yeodam V3
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options: {path: /etc/grafana/dashboards}

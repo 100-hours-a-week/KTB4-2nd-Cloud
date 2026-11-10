@@ -127,6 +127,10 @@
       "sha256": "24d42e64c146bf0f1f2d8ca15fd7c837eaf42b1bf332f05d840bb2420e6c56a8",
       "license": "Apache-2.0",
       "upstreamCommit": "e0c72a1bc5f409d1685c0e1323460c8a98cd7459"
+    },
+    "persistentvolumeclaim": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/persistentvolumeclaim.json",
+      "sha256": "0e83188a756b9df1cc719f98c7fafa558bcc9bf1da83039c8e1c31cd398ef6e9"
     }
   }
 }

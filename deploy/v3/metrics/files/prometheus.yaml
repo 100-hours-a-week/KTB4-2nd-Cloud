@@ -1,0 +1,48 @@
+global:
+  scrape_interval: 30s
+  scrape_timeout: 5s
+  evaluation_interval: 15s
+  external_labels: {cluster: yeodam-v3-foundation, environment: production}
+rule_files: [/etc/prometheus/alerts.yaml]
+scrape_configs:
+  - job_name: prometheus
+    static_configs: [{targets: ['127.0.0.1:9090']}]
+    sample_limit: 1000
+  - job_name: kubernetes-state
+    static_configs: [{targets: ['v3-kube-state-metrics:8080']}]
+    sample_limit: 10000
+  - job_name: cdc-status
+    scrape_interval: 15s
+    static_configs: [{targets: ['v3-cdc-status:8080']}]
+    sample_limit: 100
+  - job_name: backend
+    metrics_path: /actuator/prometheus
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [auth, trip, photo]}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance], regex: 'auth-api|trip-api|photo-api|photo-converter|trip-result-worker', action: keep}
+      - {source_labels: [__meta_kubernetes_pod_container_port_name], regex: management, action: keep}
+      - {source_labels: [__meta_kubernetes_pod_phase], regex: Running, action: keep}
+      - {source_labels: [__meta_kubernetes_namespace], target_label: namespace}
+      - {source_labels: [__meta_kubernetes_pod_name], target_label: pod}
+      - {source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance], target_label: workload}
+    metric_relabel_configs:
+      - {source_labels: [__name__], regex: 'http_server_requests_seconds_(bucket|count|sum)|jvm_memory_(used|max)_bytes|jvm_gc_pause_seconds_(count|sum)|process_cpu_usage|hikaricp_connections_(active|max|pending)|yeodam_.*', action: keep}
+    sample_limit: 5000
+    label_limit: 30
+  - job_name: node-containers
+    scheme: https
+    metrics_path: /metrics/cadvisor
+    kubernetes_sd_configs: [{role: node}]
+    authorization: {credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token}
+    tls_config: {ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt}
+    relabel_configs:
+      - {source_labels: [__meta_kubernetes_node_name], target_label: __address__, replacement: '$1:10250'}
+      - {source_labels: [__meta_kubernetes_node_name], target_label: node}
+    metric_relabel_configs:
+      - {source_labels: [__name__], regex: 'container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_cpu_cfs_(throttled_)?periods_total', action: keep}
+      - {source_labels: [namespace], regex: 'frontend|auth|trip|photo|ai|kafka|mysql|redis|mongodb|ai-redis|qdrant|observability|argocd|karpenter|external-secrets|kube-system', action: keep}
+      - {source_labels: [container], regex: 'POD|', action: drop}
+      - {regex: 'id|image', action: labeldrop}
+    sample_limit: 15000

@@ -1,0 +1,18 @@
+groups:
+  - name: v3-observability
+    rules:
+      - alert: V3CdcTaskFailed
+        expr: yeodam_cdc_task_state{state="FAILED"} == 1
+        labels: {severity: warning}
+        annotations:
+          summary: CDC Task reports FAILED; Connector health alone is insufficient
+      - alert: V3CdcStatusUnavailable
+        expr: up{job="cdc-status"} == 0 or yeodam_cdc_probe_success == 0
+        labels: {severity: warning}
+        annotations:
+          summary: CDC status is unknown; do not infer healthy or recovered
+      - alert: V3CdcTaskMissing
+        expr: yeodam_cdc_expected_task_present == 0
+        labels: {severity: warning}
+        annotations:
+          summary: Expected CDC Task 0 is missing from an otherwise readable status

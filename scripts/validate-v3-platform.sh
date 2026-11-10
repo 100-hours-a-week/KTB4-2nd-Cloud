@@ -199,3 +199,8 @@ python3 -m unittest discover -s tests/ci -p "test_v3_schema_upgrade.py"
 "${V3_HELM}" lint --strict deploy/v3/ai-logs
 "${validation_dir}/venv/bin/python" scripts/check-v3-ai-logs.py
 "${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_ai_logs.py'
+
+# Minimal metrics on existing nodes; no secret read or live changes.
+"${V3_HELM}" lint --strict deploy/v3/metrics
+"${validation_dir}/venv/bin/python" scripts/check-v3-metrics.py
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p 'test_v3_metrics.py'

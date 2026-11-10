@@ -1,0 +1,135 @@
+{{- if .Values.enabled }}
+{{- $images := fromJson (.Files.Get "images.lock.json") }}
+{{- range $name := list "prometheus" "grafana" "kube-state-metrics" "cdc-status" }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: v3-{{ $name }}, namespace: observability}
+automountServiceAccountToken: {{ has $name (list "prometheus" "kube-state-metrics") }}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: v3-{{ $name }}, namespace: observability}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/name: v3-{{ $name }}}
+  ports:
+    - name: http
+      port: {{ if eq $name "prometheus" }}9090{{ else if eq $name "grafana" }}3000{{ else }}8080{{ end }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: v3-{{ $name }}, namespace: observability}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: v3-{{ $name }}}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: v3-{{ $name }}, app.kubernetes.io/part-of: yeodam-observability}
+      annotations:
+        checksum/config: {{ printf "%s%s" (($.Files.Glob "files/*").AsConfig) ($.Values.aiMetricsEnabled | toString) | sha256sum }}
+    spec:
+      serviceAccountName: v3-{{ $name }}
+      automountServiceAccountToken: {{ has $name (list "prometheus" "kube-state-metrics") }}
+      nodeSelector: {yeodam.io/role: system, kubernetes.io/os: linux, kubernetes.io/arch: amd64}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ if eq $name "grafana" }}472{{ else }}65534{{ end }}
+        runAsGroup: {{ if eq $name "grafana" }}472{{ else }}65534{{ end }}
+        fsGroup: {{ if eq $name "grafana" }}472{{ else }}65534{{ end }}
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: {{ $name }}
+          image: {{ index $images $name }}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          ports: [{name: http, containerPort: {{ if eq $name "prometheus" }}9090{{ else if eq $name "grafana" }}3000{{ else }}8080{{ end }}}]
+          resources:
+            requests:
+              cpu: {{ if eq $name "prometheus" }}100m{{ else if eq $name "grafana" }}50m{{ else }}10m{{ end }}
+              memory: {{ if eq $name "prometheus" }}256Mi{{ else if eq $name "grafana" }}128Mi{{ else if eq $name "kube-state-metrics" }}32Mi{{ else }}16Mi{{ end }}
+              ephemeral-storage: 32Mi
+            limits:
+              cpu: {{ if eq $name "prometheus" }}500m{{ else if eq $name "grafana" }}250m{{ else }}100m{{ end }}
+              memory: {{ if eq $name "prometheus" }}512Mi{{ else if eq $name "grafana" }}256Mi{{ else }}64Mi{{ end }}
+              ephemeral-storage: 256Mi
+{{- if eq $name "prometheus" }}
+          args: [--config.file=/etc/prometheus/prometheus.yaml, --storage.tsdb.path=/prometheus, --storage.tsdb.retention.time=3d, --storage.tsdb.retention.size=4GB]
+          readinessProbe: {httpGet: {path: /-/ready, port: http}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /-/healthy, port: http}, initialDelaySeconds: 30, periodSeconds: 20}
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus, readOnly: true}
+            - {name: storage, mountPath: /prometheus}
+{{- if $.Values.aiMetricsEnabled }}
+            - {name: ai-auth, mountPath: /etc/prometheus/ai-auth, readOnly: true}
+{{- end }}
+{{- else if eq $name "grafana" }}
+          env:
+            - {name: GOMEMLIMIT, value: 160MiB}
+            - {name: GOGC, value: '50'}
+            - {name: GF_AUTH_ANONYMOUS_ENABLED, value: 'true'}
+            - {name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer}
+            - {name: GF_AUTH_DISABLE_LOGIN_FORM, value: 'true'}
+            - {name: GF_AUTH_BASIC_ENABLED, value: 'false'}
+            - {name: GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION, value: 'true'}
+            - {name: GF_USERS_ALLOW_SIGN_UP, value: 'false'}
+            - {name: GF_ANALYTICS_REPORTING_ENABLED, value: 'false'}
+            - {name: GF_ANALYTICS_CHECK_FOR_UPDATES, value: 'false'}
+            - {name: GF_PLUGINS_PREINSTALL_DISABLED, value: 'true'}
+          readinessProbe: {httpGet: {path: /api/health, port: http}, initialDelaySeconds: 10, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /api/health, port: http}, initialDelaySeconds: 30, periodSeconds: 20}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/grafana}
+            - {name: tmp, mountPath: /tmp}
+            - {name: config, mountPath: /etc/grafana/provisioning/datasources/default.yaml, subPath: datasource.yaml, readOnly: true}
+            - {name: config, mountPath: /etc/grafana/provisioning/dashboards/default.yaml, subPath: dashboard-provider.yaml, readOnly: true}
+            - {name: config, mountPath: /etc/grafana/dashboards/operations.json, subPath: operations.json, readOnly: true}
+{{- else if eq $name "kube-state-metrics" }}
+          args:
+            - --resources=pods,nodes,deployments,statefulsets,daemonsets
+            - --namespaces=frontend,auth,trip,photo,ai,kafka,mysql,redis,mongodb,ai-redis,qdrant,karpenter,observability,argocd,external-secrets,kube-system
+            - --metric-allowlist=kube_pod_status_ready,kube_pod_container_status_restarts_total,kube_pod_container_status_last_terminated_reason,kube_pod_status_phase,kube_node_status_allocatable,kube_node_status_condition,kube_deployment_status_replicas_available,kube_deployment_spec_replicas,kube_statefulset_status_replicas_ready,kube_daemonset_status_number_ready
+          readinessProbe: {httpGet: {path: /readyz, port: 8081}, initialDelaySeconds: 5, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /livez, port: http}, initialDelaySeconds: 15, periodSeconds: 20}
+{{- else }}
+          command: [python, -B, /exporter/cdc-status.py]
+          env: [{name: PYTHONDONTWRITEBYTECODE, value: '1'}]
+          readinessProbe: {httpGet: {path: /healthz, port: http}, initialDelaySeconds: 5, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, initialDelaySeconds: 15, periodSeconds: 20}
+          volumeMounts: [{name: config, mountPath: /exporter, readOnly: true}]
+{{- end }}
+{{- if eq $name "prometheus" }}
+      volumes:
+        - {name: config, configMap: {name: v3-metrics-config}}
+        - {name: storage, persistentVolumeClaim: {claimName: v3-prometheus}}
+{{- if $.Values.aiMetricsEnabled }}
+        - name: ai-auth
+          secret:
+            secretName: v3-ai-metrics
+            defaultMode: 0440
+            items: [{key: API_KEY, path: API_KEY}]
+{{- end }}
+{{- else if eq $name "grafana" }}
+      volumes:
+        - {name: data, emptyDir: {sizeLimit: 128Mi}}
+        - {name: tmp, emptyDir: {sizeLimit: 16Mi}}
+        - {name: config, configMap: {name: v3-grafana-config}}
+{{- else if eq $name "cdc-status" }}
+      volumes: [{name: config, configMap: {name: v3-metrics-config}}]
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: v3-prometheus
+  namespace: observability
+  annotations: {helm.sh/resource-policy: keep}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: yeodam-v3-gp3-retain
+  resources: {requests: {storage: 5Gi}}
+{{- end }}

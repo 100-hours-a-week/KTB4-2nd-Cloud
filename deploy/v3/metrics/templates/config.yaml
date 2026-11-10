@@ -1,0 +1,33 @@
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: v3-metrics-config, namespace: observability}
+data:
+  prometheus.yaml: |
+{{ .Files.Get "files/prometheus.yaml" | indent 4 }}
+{{- if .Values.aiMetricsEnabled }}
+      - job_name: ai
+        metrics_path: /metrics
+        static_configs: [{targets: ['ai-api.ai.svc:8000']}]
+        authorization: {type: Bearer, credentials_file: /etc/prometheus/ai-auth/API_KEY}
+        metric_relabel_configs:
+          - {source_labels: [__name__], regex: 'yeodam_ai_operation_duration_seconds_(bucket|count|sum)|yeodam_ai_jobs|yeodam_ai_job_peak_memory_bytes|yeodam_ai_photos_total|yeodam_ai_story_blocks_total', action: keep}
+        sample_limit: 3000
+        label_limit: 30
+{{- end }}
+  alerts.yaml: |
+{{ .Files.Get "files/alerts.yaml" | indent 4 }}
+  cdc-status.py: |
+{{ .Files.Get "files/cdc-status.py" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: v3-grafana-config, namespace: observability}
+data:
+  datasource.yaml: |
+{{ .Files.Get "files/datasource.yaml" | indent 4 }}
+  dashboard-provider.yaml: |
+{{ .Files.Get "files/dashboard-provider.yaml" | indent 4 }}
+  operations.json: |
+{{ .Files.Get "files/operations.json" | indent 4 }}
+{{- end }}

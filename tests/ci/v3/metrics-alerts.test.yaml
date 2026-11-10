@@ -1,0 +1,39 @@
+rule_files: [/etc/prometheus/alerts.yaml]
+evaluation_interval: 15s
+tests:
+  - name: connector-running-task-failed
+    interval: 15s
+    input_series:
+      - series: 'yeodam_cdc_connector_state{connector="yeodam-v3-outbox",state="RUNNING"}'
+        values: '1'
+      - series: 'yeodam_cdc_task_state{connector="yeodam-v3-outbox",task="0",state="FAILED"}'
+        values: '1'
+      - series: yeodam_cdc_probe_success
+        values: '1'
+      - series: 'up{job="cdc-status"}'
+        values: '1'
+    alert_rule_test:
+      - eval_time: 0s
+        alertname: V3CdcTaskFailed
+        exp_alerts:
+          - exp_labels: {connector: yeodam-v3-outbox, task: '0', state: FAILED, severity: warning}
+            exp_annotations: {summary: 'CDC Task reports FAILED; Connector health alone is insufficient'}
+      - eval_time: 0s
+        alertname: V3CdcStatusUnavailable
+        exp_alerts: []
+  - name: observation-unavailable-not-business-recovered
+    interval: 15s
+    input_series:
+      - series: 'up{job="cdc-status"}'
+        values: '1'
+      - series: yeodam_cdc_probe_success
+        values: '0'
+    alert_rule_test:
+      - eval_time: 0s
+        alertname: V3CdcStatusUnavailable
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations: {summary: 'CDC status is unknown; do not infer healthy or recovered'}
+      - eval_time: 0s
+        alertname: V3CdcTaskFailed
+        exp_alerts: []

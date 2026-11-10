@@ -1,0 +1,54 @@
+{{- if .Values.enabled }}
+# Cluster scope is only nodes/metrics. Never nodes/proxy, Secrets or writes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: yeodam-v3-prometheus}
+rules:
+  - {apiGroups: [''], resources: [nodes], verbs: [get, list, watch]}
+  - {apiGroups: [''], resources: [nodes/metrics], verbs: [get]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: yeodam-v3-prometheus}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: yeodam-v3-prometheus}
+subjects: [{kind: ServiceAccount, name: v3-prometheus, namespace: observability}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: yeodam-v3-kube-state-metrics}
+rules: [{apiGroups: [''], resources: [nodes], verbs: [get, list, watch]}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: yeodam-v3-kube-state-metrics}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: yeodam-v3-kube-state-metrics}
+subjects: [{kind: ServiceAccount, name: v3-kube-state-metrics, namespace: observability}]
+{{- range $ns := list "frontend" "auth" "trip" "photo" "ai" "kafka" "mysql" "redis" "mongodb" "ai-redis" "qdrant" "karpenter" "observability" "argocd" "external-secrets" "kube-system" }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: v3-kube-state-metrics, namespace: {{ $ns }}}
+rules:
+  - {apiGroups: [''], resources: [pods], verbs: [get, list, watch]}
+  - {apiGroups: [apps], resources: [deployments, statefulsets, daemonsets], verbs: [get, list, watch]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: v3-kube-state-metrics, namespace: {{ $ns }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: v3-kube-state-metrics}
+subjects: [{kind: ServiceAccount, name: v3-kube-state-metrics, namespace: observability}]
+{{- end }}
+{{- range $ns := list "auth" "trip" "photo" }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: v3-prometheus-discovery, namespace: {{ $ns }}}
+rules: [{apiGroups: [''], resources: [pods], verbs: [get, list, watch]}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: v3-prometheus-discovery, namespace: {{ $ns }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: v3-prometheus-discovery}
+subjects: [{kind: ServiceAccount, name: v3-prometheus, namespace: observability}]
+{{- end }}
+{{- end }}

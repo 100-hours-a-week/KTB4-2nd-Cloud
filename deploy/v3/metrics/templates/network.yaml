@@ -1,0 +1,121 @@
+{{- if .Values.enabled }}
+# No ingress to Grafana/Prometheus; access only via RBAC-authorized port-forward.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-metrics-default-deny, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: yeodam-observability}}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-prometheus-egress, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: v3-prometheus}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to: [{ipBlock: {cidr: 10.40.0.0/16}}, {ipBlock: {cidr: 172.20.0.1/32}}]
+      ports: [{protocol: TCP, port: 443}, {protocol: TCP, port: 10250}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: v3-kube-state-metrics}}}, {podSelector: {matchLabels: {app.kubernetes.io/name: v3-cdc-status}}}]
+      ports: [{protocol: TCP, port: 8080}]
+    - to:
+        - namespaceSelector: {matchExpressions: [{key: kubernetes.io/metadata.name, operator: In, values: [auth, trip, photo]}]}
+          podSelector: {matchLabels: {app.kubernetes.io/name: backend}}
+      ports: [{protocol: TCP, port: 9091}]
+{{- if .Values.aiMetricsEnabled }}
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ai}}, podSelector: {matchLabels: {app.kubernetes.io/instance: ai-api}}}]
+      ports: [{protocol: TCP, port: 8000}]
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-exporters-ingress, namespace: observability}
+spec:
+  podSelector: {matchExpressions: [{key: app.kubernetes.io/name, operator: In, values: [v3-kube-state-metrics, v3-cdc-status]}]}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: v3-prometheus}}}]
+      ports: [{protocol: TCP, port: 8080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-kube-state-egress, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: v3-kube-state-metrics}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ipBlock: {cidr: 10.40.0.0/16}}, {ipBlock: {cidr: 172.20.0.1/32}}]
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-cdc-status-egress, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: v3-cdc-status}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kafka}}, podSelector: {matchLabels: {strimzi.io/cluster: yeodam-v3-connect, strimzi.io/kind: KafkaConnect}}}]
+      ports: [{protocol: TCP, port: 8083}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-grafana-egress, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: v3-grafana}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: v3-prometheus}}}]
+      ports: [{protocol: TCP, port: 9090}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-prometheus-from-grafana, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: v3-prometheus}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: v3-grafana}}}]
+      ports: [{protocol: TCP, port: 9090}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-connect-from-status, namespace: kafka}
+spec:
+  podSelector: {matchLabels: {strimzi.io/cluster: yeodam-v3-connect, strimzi.io/kind: KafkaConnect}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: observability}}, podSelector: {matchLabels: {app.kubernetes.io/name: v3-cdc-status}}}]
+      ports: [{protocol: TCP, port: 8083}]
+{{- range $ns := list "auth" "trip" "photo" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-backend-metrics-from-prometheus, namespace: {{ $ns }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: backend}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: observability}}, podSelector: {matchLabels: {app.kubernetes.io/name: v3-prometheus}}}]
+      ports: [{protocol: TCP, port: 9091}]
+{{- end }}
+{{- if .Values.aiMetricsEnabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-ai-metrics-from-prometheus, namespace: ai}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/instance: ai-api}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: observability}}, podSelector: {matchLabels: {app.kubernetes.io/name: v3-prometheus}}}]
+      ports: [{protocol: TCP, port: 8000}]
+{{- end }}
+{{- end }}
