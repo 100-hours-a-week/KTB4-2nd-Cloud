@@ -1,0 +1,17 @@
+[
+  {
+    "approvedRef": "8717c370447acc9b91d5fc2725ca1d88a5fdb2ba",
+    "files": {
+      ".helmignore": "60c9bdd905fcf45ac485c680d32e9773962cf061b6f041dcddd033911558a672",
+      "Chart.yaml": "0be4efe1025631aeb3be66961277d5ab91a3fe24ea3051b53d2319076d6ca6d4",
+      "files/contract.json": "8cae8002c90f16d86658c3c42c7edb8acb3667df7385ff6620bbfd980e36837b",
+      "files/policies.json": "753460ea6875411bfb69fb8fb373cded6bc2840003d1bba86b08e0bbe3237ca0",
+      "files/runtime/health.py": "79f1119392466f6573386dd8c3eceabbd0bfe761d3b3f1d8d24e45d9b640cbe5",
+      "files/runtime/prepare-trust.py": "e56b003be92cc41195c342ca41cc5c0834e5629231efb6082e6164bd50820d75",
+      "files/runtime/start-runner.py": "e567b90aaed0c77cb049c8ff0f89efd9e8fbbacf20617d0ae294cc4592a8e613",
+      "templates/resources.yaml": "514cfbbd0a0832c8e4d7e897a08f725baac58760301117580f78a222e2b7e797",
+      "values.schema.json": "746f0d159f3d5856b665448016b66edc877f7be9aa800c6c28c10d96e90f171c",
+      "values.yaml": "9a5caab297df2dfa355da4b7bfe237152b301d5eaaf9b8644444e9b115c77502"
+    }
+  }
+]
