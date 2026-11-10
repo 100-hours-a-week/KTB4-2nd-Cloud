@@ -11,6 +11,7 @@ def line(data,flag='F'):
 with tempfile.TemporaryDirectory(prefix='v3-ai-log-fixture-') as tmp:
     root=Path(tmp);logs=root/'logs';conf=root/'conf';buffer=root/'buffer'
     for p in [logs,conf,buffer]:p.mkdir()
+    buffer.chmod(0o700)
     for p in (CHART/'files').iterdir():(conf/p.name).write_bytes(p.read_bytes())
     cfg=(conf/'fluent-bit.conf').read_text().replace('Read_From_Head Off','Read_From_Head On')
     cfg=cfg.split('[OUTPUT]')[0]+'[OUTPUT]\n    Name stdout\n    Match ai.*\n    Format json_lines\n'
@@ -23,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='v3-ai-log-fixture-') as tmp:
         f.write(line('{"event":"fixture_fragment",','P'));f.write(line('"count":2}','F'))
     (logs/('backend-fixture_trip_ai-'+'c'*64+'.log')).write_text(line({'event':'must_not_collect'}))
     try:
-        command('docker','run','-d','--name',name,'--platform','linux/amd64','--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','128m','--cpus','0.5','-e','NODE_NAME=fixture-node','-v',str(logs)+':/var/log/containers:ro','-v',str(conf)+':/fluent-bit/etc:ro','-v',str(buffer)+':/buffers','--entrypoint','/fluent-bit/bin/fluent-bit',IMAGE,'-c','/fluent-bit/etc/fluent-bit.conf',timeout=60)
+        command('docker','run','-d','--name',name,'--platform','linux/amd64','--network','none','--read-only','--user','0:0','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','128m','--cpus','0.5','-e','NODE_NAME=fixture-node','-v',str(logs)+':/var/log/containers:ro','-v',str(conf)+':/fluent-bit/etc:ro','-v',str(buffer)+':/buffers','--entrypoint','/fluent-bit/bin/fluent-bit',IMAGE,'-c','/fluent-bit/etc/fluent-bit.conf',timeout=60)
         def events():
             raw=command('docker','logs',name);items=[]
             for text in raw.splitlines():
