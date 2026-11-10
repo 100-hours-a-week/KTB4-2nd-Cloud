@@ -1,0 +1,64 @@
+{
+  "resource": {
+    "aws_acm_certificate": {
+      "app": {
+        "domain_name": "yeodam-2gether.com",
+        "key_algorithm": "RSA_2048",
+        "subject_alternative_names": [
+          "yeodam-2gether.com"
+        ],
+        "tags": {
+          "Environment": "production",
+          "ManagedBy": "Terraform",
+          "Name": "yeodam-v2-production-certificate",
+          "Project": "yeodam",
+          "Version": "v2"
+        },
+        "validation_method": "DNS",
+        "options": [
+          {
+            "certificate_transparency_logging_preference": "ENABLED",
+            "export": "DISABLED"
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_acm_certificate_validation": {
+      "app": {
+        "certificate_arn": "arn:aws:acm:ap-northeast-2:483175530259:certificate/16cafce8-9c2f-48bf-a168-e07e981530a3",
+        "validation_record_fqdns": [
+          "_bdd74372c7ad012a0588195f29d8a23c.yeodam-2gether.com"
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_route53_record": {
+      "certificate_validation": {
+        "for_each": {
+          "yeodam-2gether.com": {
+            "name": "_bdd74372c7ad012a0588195f29d8a23c.yeodam-2gether.com",
+            "records": [
+              "_58aaffa43d09ee4285ba64854adf0a11.wzccmgtwzk.acm-validations.aws."
+            ],
+            "ttl": 60,
+            "type": "CNAME",
+            "zone_id": "Z09268031LIP9TICUQ911"
+          }
+        },
+        "name": "${each.value.name}",
+        "records": "${each.value.records}",
+        "ttl": "${each.value.ttl}",
+        "type": "${each.value.type}",
+        "zone_id": "${each.value.zone_id}",
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    }
+  }
+}

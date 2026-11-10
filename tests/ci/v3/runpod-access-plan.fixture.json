@@ -1,0 +1,93 @@
+{
+  "review": {
+    "systemInstanceIds": [
+      "i-11111111111111111"
+    ],
+    "eksEndpoint": "https://AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.gr7.ap-northeast-2.eks.amazonaws.com",
+    "runtimeSecretArn": "arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/ai/runtime-ABC123"
+  },
+  "plan": {
+    "configuration": {
+      "provider_config": {
+        "aws": {
+          "full_name": "registry.terraform.io/hashicorp/aws",
+          "expressions": {
+            "region": {
+              "constant_value": "ap-northeast-2"
+            },
+            "allowed_account_ids": {
+              "constant_value": [
+                "483175530259"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "resource_changes": [
+      {
+        "mode": "managed",
+        "address": "aws_eks_access_entry.status[0]",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "cluster_name": "yeodam-v3-foundation",
+            "principal_arn": "arn:aws:iam::483175530259:role/yeodam-v3-foundation-runpod-update",
+            "type": "STANDARD",
+            "kubernetes_groups": [
+              "yeodam-v3-runpod-updater"
+            ]
+          }
+        }
+      },
+      {
+        "mode": "managed",
+        "address": "aws_iam_role.status[0]",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "name": "yeodam-v3-foundation-runpod-update",
+            "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRoleWithWebIdentity\",\"Condition\":{\"StringEquals\":{\"token.actions.githubusercontent.com:aud\":\"sts.amazonaws.com\",\"token.actions.githubusercontent.com:sub\":\"repo:100-hours-a-week@167328634/KTB4-2nd-Cloud@1344655631:environment:v3-production\"},\"StringLike\":{\"sts:RoleSessionName\":\"v3-runpod-*\"}},\"Effect\":\"Allow\",\"Principal\":{\"Federated\":\"arn:aws:iam::483175530259:oidc-provider/token.actions.githubusercontent.com\"}}],\"Version\":\"2012-10-17\"}"
+          }
+        }
+      },
+      {
+        "mode": "managed",
+        "address": "aws_iam_role_policy.status[0]",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "name": "ai-url-update-only",
+            "role": "yeodam-v3-foundation-runpod-update",
+            "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"secretsmanager:GetSecretValue\",\"secretsmanager:DescribeSecret\",\"secretsmanager:PutSecretValue\",\"secretsmanager:UpdateSecretVersionStage\"],\"Effect\":\"Allow\",\"Resource\":\"arn:aws:secretsmanager:ap-northeast-2:483175530259:secret:yeodam/v3/foundation/ai/runtime-ABC123\"},{\"Action\":[\"eks:DescribeCluster\"],\"Effect\":\"Allow\",\"Resource\":\"arn:aws:eks:ap-northeast-2:483175530259:cluster/yeodam-v3-foundation\"},{\"Action\":[\"ssm:StartSession\"],\"Effect\":\"Allow\",\"Resource\":[\"arn:aws:ec2:ap-northeast-2:483175530259:instance/i-11111111111111111\",\"arn:aws:ssm:ap-northeast-2:483175530259:document/Yeodam-V3-RunPod-Update\"]},{\"Action\":[\"ssmmessages:OpenDataChannel\"],\"Effect\":\"Allow\",\"Resource\":\"arn:aws:ssm:ap-northeast-2:483175530259:session/v3-runpod-*\"},{\"Action\":[\"ssm:TerminateSession\"],\"Condition\":{\"StringEquals\":{\"ssm:resourceTag/aws:ssmmessages:session-id\":\"${aws:userid}\"}},\"Effect\":\"Allow\",\"Resource\":\"arn:aws:ssm:ap-northeast-2:483175530259:session/*\"}]}"
+          }
+        }
+      },
+      {
+        "mode": "managed",
+        "address": "aws_ssm_document.status[0]",
+        "change": {
+          "actions": [
+            "create"
+          ],
+          "before": null,
+          "after": {
+            "name": "Yeodam-V3-RunPod-Update",
+            "document_type": "Session",
+            "document_format": "JSON",
+            "content": "{\"description\":\"V3 model URL management TLS tunnel\",\"inputs\":{\"idleSessionTimeout\":\"5\",\"maxSessionDuration\":\"60\"},\"properties\":{\"host\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.gr7.ap-northeast-2.eks.amazonaws.com\",\"localPortNumber\":\"18574\",\"portNumber\":\"443\",\"type\":\"LocalPortForwarding\"},\"schemaVersion\":\"1.0\",\"sessionType\":\"Port\"}"
+          }
+        }
+      }
+    ]
+  }
+}

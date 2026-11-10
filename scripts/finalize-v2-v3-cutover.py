@@ -25,7 +25,7 @@ def live_delivery(k):
  c.require(len(tasks)==1 and tasks[0].get('state')=='RUNNING','Operating CDC Task must be running')
  ids=k.sql("SELECT s.story_id FROM yeodam.stories s JOIN yeodam.trips t ON t.current_story_id=s.story_id AND s.trip_id=t.trip_id WHERE t.deleted_at IS NULL AND s.deleted_at IS NULL AND s.processing_status='COMPLETED' ORDER BY s.story_id;").splitlines()
  script=(c.ROOT/'scripts/cutover/mongo.js').read_text()
- result=k.execute('mongodb','mongodb-0','mongodb',['env','CUTOVER_ACTION=verify-stories','mongosh','--quiet','--norc','--eval',script],c.canonical(ids))
+ result=runtime.mongo_action(k,'verify-stories',c.canonical(ids))
  stories=json.loads(result);c.require(stories['missing']==0 and stories['expected']==len(ids),'Existing story content migration incomplete')
  return {'approvedRevision':status['sync']['revision'],'readyApps':9,'cdcRunning':True,'existingStoriesVerified':stories['found']}
 

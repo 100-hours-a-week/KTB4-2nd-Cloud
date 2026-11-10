@@ -89,9 +89,9 @@ def redis_primary(k,namespace):
  return host.split('.')[0]
 def redis_action(k,namespace,action):
  return k.execute(namespace,redis_primary(k,namespace),'redis' if namespace=='redis' else 'ai-redis',['/bin/bash','-s','--',action],(ROOT/'scripts/cutover/redis.sh').read_bytes())
-def mongo_action(k,action):
+def mongo_action(k,action,source=None):
  script=(ROOT/'scripts/cutover/mongo.js').read_text()
- return k.execute('mongodb','mongodb-0','mongodb',['env','CUTOVER_ACTION='+action,'mongosh','--quiet','--norc','--eval',script])
+ return k.execute('mongodb','mongodb-0','mongodb',['env','CUTOVER_ACTION='+action,'mongosh','--nodb','--quiet','--norc','--eval',script],source=source)
 
 def capacity_snapshot(k):
  pools={name:k.get('default','nodepool',name) for name in c.POLICY['heldNodePools']}
@@ -323,7 +323,7 @@ def rollback_qa(k,directory):
  k.execute('mysql',k.primary(),'mysql',['/bin/bash','-ec',MYSQL_SHELL+' yeodam'],raw)
  c.require(capture(k)==proof['tables'] and history_hash(k)==proof['historySha256'],'QA DB rollback comparison failed')
  script=(ROOT/'scripts/cutover/mongo.js').read_text()
- result=k.execute('mongodb','mongodb-0','mongodb',['env','CUTOVER_ACTION=restore','mongosh','--quiet','--norc','--eval',script],(target/'mongodb.ejson').read_bytes())
+ result=mongo_action(k,'restore',(target/'mongodb.ejson').read_bytes())
  c.require(result.strip()==b'RESTORED','QA Mongo rollback failed')
  # Restore the retained full QA storage without ever opening an app writer.
  sts=k.get('qdrant','statefulset','qdrant')

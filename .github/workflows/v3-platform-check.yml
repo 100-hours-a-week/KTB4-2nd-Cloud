@@ -6,11 +6,23 @@ on:
     paths:
       - 'deploy/v3/**'
       - 'terraform/v3/cutover/**'
+      - 'terraform/v2/retirement/**'
+      - 'terraform/retirement-guard.tf'
+      - 'terraform/v2/production/retirement-guard.tf'
+      - 'deploy/v2/retirement/**'
+      - 'scripts/v2_retirement.py'
+      - 'scripts/retire-v2-resources.py'
+      - 'tests/ci/test_v2_retirement.py'
       - 'scripts/*v2*v3*cutover*'
       - 'scripts/cutover/**'
+      - 'tests/ci/smoke-v3-cutover-redis.py'
       - 'tests/ci/test_v2_v3_cutover*'
       - 'tests/ci/smoke-v2-v3-mysql-logical.py'
       - 'terraform/v3/delivery/**'
+      - 'terraform/v3/runpod/**'
+      - 'scripts/*v3*runpod*'
+      - 'tests/ci/*v3*runpod*'
+      - '.github/workflows/v3-runpod-update.yml'
       - 'scripts/*v3*release*'
       - 'scripts/*v3*delivery*'
       - 'scripts/*v3*candidate*'
@@ -200,6 +212,24 @@ jobs:
         with:
           terraform_version: 1.16.2
           terraform_wrapper: false
+
+      - name: Validate V3 RunPod permissions with mock AWS only
+        run: |
+          terraform -chdir=terraform/v3/runpod fmt -check -recursive
+          terraform -chdir=terraform/v3/runpod init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=terraform/v3/runpod validate -no-color
+          terraform -chdir=terraform/v3/runpod test -no-color
+
+      - name: Verify deletion-only V2 retirement and retained resources without AWS
+        run: |
+          python3 -m unittest discover -s tests/ci -p 'test_v2_retirement.py'
+          terraform fmt -check terraform/retirement-guard.tf terraform/v2/production/retirement-guard.tf
+          for target in production base; do
+            terraform -chdir="terraform/v2/retirement/$target" fmt -check -recursive
+            terraform -chdir="terraform/v2/retirement/$target" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="terraform/v2/retirement/$target" validate -no-color
+            terraform -chdir="terraform/v2/retirement/$target" test -no-color
+          done
 
       - name: Verify final cutover ordering and disabled operating DNS with mock AWS only
         run: |

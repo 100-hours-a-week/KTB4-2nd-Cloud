@@ -1,0 +1,304 @@
+{
+  "resource": {
+    "aws_cloudwatch_log_group": {
+      "ai": {
+        "log_group_class": "STANDARD",
+        "name": "/yeodam/v1/ai",
+        "retention_in_days": 30,
+        "tags": {
+          "Name": "yeodam-v1-ai",
+          "Role": "observability"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "backend": {
+        "log_group_class": "STANDARD",
+        "name": "/yeodam/v1/backend",
+        "retention_in_days": 30,
+        "tags": {
+          "Name": "yeodam-v1-backend",
+          "Role": "observability"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "discord_alarm_forwarder": {
+        "log_group_class": "STANDARD",
+        "name": "/aws/lambda/yeodam-v1-discord-alarm-forwarder",
+        "retention_in_days": 30,
+        "tags": {
+          "Name": "yeodam-v1-discord-alarm-forwarder",
+          "Role": "observability"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "nginx_access": {
+        "log_group_class": "STANDARD",
+        "name": "/yeodam/v1/nginx/access",
+        "retention_in_days": 30,
+        "tags": {
+          "Name": "yeodam-v1-nginx-access",
+          "Role": "observability"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      },
+      "nginx_error": {
+        "log_group_class": "STANDARD",
+        "name": "/yeodam/v1/nginx/error",
+        "retention_in_days": 30,
+        "tags": {
+          "Name": "yeodam-v1-nginx-error",
+          "Role": "observability"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_iam_openid_connect_provider": {
+      "github_actions": {
+        "client_id_list": [
+          "sts.amazonaws.com"
+        ],
+        "tags": {
+          "Name": "yeodam-v1-github-actions-oidc",
+          "Role": "deployment"
+        },
+        "thumbprint_list": [
+          "ab9d0263244dd0326eb67015705a667e79cfe998"
+        ],
+        "url": "https://token.actions.githubusercontent.com",
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket": {
+      "app_data": {
+        "bucket": "yeodam-v1-app-data-483175530259-ap-northeast-2",
+        "tags": {
+          "Name": "yeodam-v1-app-data",
+          "Role": "application-data"
+        },
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_cors_configuration": {
+      "app_data": {
+        "bucket": "yeodam-v1-app-data-483175530259-ap-northeast-2",
+        "cors_rule": [
+          {
+            "allowed_headers": [
+              "Content-Type",
+              "If-None-Match"
+            ],
+            "allowed_methods": [
+              "PUT"
+            ],
+            "allowed_origins": [
+              "http://localhost:5173",
+              "https://yeodam-2gether.com"
+            ]
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_lifecycle_configuration": {
+      "app_data": {
+        "bucket": "yeodam-v1-app-data-483175530259-ap-northeast-2",
+        "transition_default_minimum_object_size": "all_storage_classes_128K",
+        "rule": [
+          {
+            "id": "expire-temporary-download-archives",
+            "status": "Enabled",
+            "expiration": [
+              {
+                "days": 1
+              }
+            ],
+            "filter": [
+              {
+                "and": [
+                  {
+                    "prefix": "trip-downloads/",
+                    "tags": {
+                      "status": "temporary"
+                    }
+                  }
+                ]
+              }
+            ],
+            "noncurrent_version_expiration": [
+              {
+                "noncurrent_days": 1
+              }
+            ]
+          },
+          {
+            "id": "remove-expired-download-delete-markers",
+            "status": "Enabled",
+            "expiration": [
+              {
+                "expired_object_delete_marker": true
+              }
+            ],
+            "filter": [
+              {
+                "prefix": "trip-downloads/"
+              }
+            ]
+          },
+          {
+            "id": "expire-load-test-fixtures",
+            "status": "Enabled",
+            "expiration": [
+              {
+                "days": 1
+              }
+            ],
+            "filter": [
+              {
+                "prefix": "load-test-fixtures/"
+              }
+            ],
+            "noncurrent_version_expiration": [
+              {
+                "noncurrent_days": 1
+              }
+            ]
+          },
+          {
+            "id": "remove-load-test-fixture-delete-markers",
+            "status": "Enabled",
+            "expiration": [
+              {
+                "expired_object_delete_marker": true
+              }
+            ],
+            "filter": [
+              {
+                "prefix": "load-test-fixtures/"
+              }
+            ]
+          },
+          {
+            "id": "expire-load-test-results",
+            "status": "Enabled",
+            "expiration": [
+              {
+                "days": 30
+              }
+            ],
+            "filter": [
+              {
+                "prefix": "load-test-results/"
+              }
+            ],
+            "noncurrent_version_expiration": [
+              {
+                "noncurrent_days": 1
+              }
+            ]
+          },
+          {
+            "id": "remove-load-test-result-delete-markers",
+            "status": "Enabled",
+            "expiration": [
+              {
+                "expired_object_delete_marker": true
+              }
+            ],
+            "filter": [
+              {
+                "prefix": "load-test-results/"
+              }
+            ]
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_ownership_controls": {
+      "app_data": {
+        "bucket": "yeodam-v1-app-data-483175530259-ap-northeast-2",
+        "rule": [
+          {
+            "object_ownership": "BucketOwnerEnforced"
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_policy": {
+      "app_data": {
+        "bucket": "yeodam-v1-app-data-483175530259-ap-northeast-2",
+        "policy": "{\"Statement\":[{\"Action\":\"s3:*\",\"Condition\":{\"Bool\":{\"aws:SecureTransport\":\"false\"}},\"Effect\":\"Deny\",\"Principal\":\"*\",\"Resource\":[\"arn:aws:s3:::yeodam-v1-app-data-483175530259-ap-northeast-2/*\",\"arn:aws:s3:::yeodam-v1-app-data-483175530259-ap-northeast-2\"],\"Sid\":\"DenyInsecureTransport\"}],\"Version\":\"2012-10-17\"}",
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_public_access_block": {
+      "app_data": {
+        "block_public_acls": true,
+        "block_public_policy": true,
+        "bucket": "yeodam-v1-app-data-483175530259-ap-northeast-2",
+        "ignore_public_acls": true,
+        "restrict_public_buckets": true,
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_server_side_encryption_configuration": {
+      "app_data": {
+        "bucket": "yeodam-v1-app-data-483175530259-ap-northeast-2",
+        "rule": [
+          {
+            "blocked_encryption_types": [
+              "SSE-C"
+            ],
+            "apply_server_side_encryption_by_default": [
+              {
+                "sse_algorithm": "AES256"
+              }
+            ]
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    },
+    "aws_s3_bucket_versioning": {
+      "app_data": {
+        "bucket": "yeodam-v1-app-data-483175530259-ap-northeast-2",
+        "versioning_configuration": [
+          {
+            "mfa_delete": "Disabled",
+            "status": "Enabled"
+          }
+        ],
+        "lifecycle": {
+          "prevent_destroy": true
+        }
+      }
+    }
+  }
+}

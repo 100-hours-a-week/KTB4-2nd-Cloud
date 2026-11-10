@@ -12,6 +12,8 @@ python3 -m unittest discover -s tests/ci -p 'test_v2_mysql_backup.py'
 python3 -m unittest discover -s tests/ci -p 'test_v2_v3_photos.py'
 python3 -m unittest discover -s tests/ci -p 'test_v2_qdrant_migration.py'
 python3 -m unittest discover -s tests/ci -p 'test_v2_v3_cutover.py'
+python3 -m unittest discover -s tests/ci -p 'test_v2_retirement.py'
+python3 tests/ci/smoke-v3-cutover-redis.py
 
 python3 -m unittest discover -s tests/ci -p 'test_v3_foundation.py'
 python3 -m unittest discover -s tests/ci -p 'test_v3_node_sizing_plan.py'

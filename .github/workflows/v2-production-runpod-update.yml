@@ -1,72 +1,14 @@
-name: V2 Production RunPod URL Update
-
+name: Retired V2 RunPod URL Update
 on:
   workflow_dispatch:
-    inputs:
-      url:
-        description: "새 RunPod URL (https://<pod-id>-8000.proxy.runpod.net/v1)"
-        required: true
-        type: string
-      reason:
-        description: "변경 사유"
-        required: true
-        type: string
-
 permissions:
   contents: read
-  id-token: write
-
 jobs:
-  production:
+  retired:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-    environment: production
-    concurrency:
-      group: yeodam-v2-production-release
-      queue: max
-      cancel-in-progress: false
     steps:
-      - name: Checkout the approved workflow commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Configure production-only RunPod credentials
-        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v5.1.1
-        with:
-          role-to-assume: ${{ vars.AWS_V2_PRODUCTION_RUNPOD_UPDATE_ROLE_ARN }}
-          aws-region: ap-northeast-2
-          role-duration-seconds: 3600
-          role-session-name: yeodam-v2-production-runpod
-      - name: Verify and update the production AI API
-        env:
-          RUNPOD_URL: ${{ inputs.url }}
-          RUNPOD_UPDATE_REPORT: ${{ runner.temp }}/runpod-update.json
+      - name: Reject retired ECS update path
         run: |
-          python3 scripts/update-v2-runpod.py "$RUNPOD_URL" \
-            --environment production --production-only
-      - name: Preserve production update result
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: runpod-update-production-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/runpod-update.json
-          retention-days: 30
-          if-no-files-found: warn
-      - name: Write production update summary
-        if: always()
-        env:
-          REASON: ${{ inputs.reason }}
-          RESULT: ${{ job.status }}
-        run: |
-          {
-            echo '## V2 production RunPod URL'
-            echo "- Reason: $REASON"
-            echo "- Result: $RESULT"
-            if [[ -f "$RUNNER_TEMP/runpod-update.json" ]]; then
-              echo '```json'
-              cat "$RUNNER_TEMP/runpod-update.json"
-              echo '```'
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo '::error::V2 is retired. Use V3 Production RunPod URL Update after V3 activation.'
+          exit 1

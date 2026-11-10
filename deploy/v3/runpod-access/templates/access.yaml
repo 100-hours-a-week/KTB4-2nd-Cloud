@@ -1,0 +1,44 @@
+{{- if .Values.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: runpod-updater, namespace: ai}
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [ai-api, ai-runner]
+    verbs: [get]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [get]
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [get, list, delete]
+  - apiGroups: ['']
+    resources: [pods/exec]
+    verbs: [create]
+  - apiGroups: [external-secrets.io]
+    resources: [externalsecrets]
+    resourceNames: [ai-runtime]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: runpod-updater, namespace: ai}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: runpod-updater}
+subjects: [{kind: Group, apiGroup: rbac.authorization.k8s.io, name: yeodam-v3-runpod-updater}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: runpod-updater-observer, namespace: argocd}
+rules:
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    resourceNames: [yeodam-v3-apps]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: runpod-updater-observer, namespace: argocd}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: runpod-updater-observer}
+subjects: [{kind: Group, apiGroup: rbac.authorization.k8s.io, name: yeodam-v3-runpod-updater}]
+{{- end }}

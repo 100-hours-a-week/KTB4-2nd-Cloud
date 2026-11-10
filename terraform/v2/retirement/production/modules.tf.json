@@ -1,0 +1,10 @@
+{
+  "module": {
+    "app_alb": {
+      "source": "./retained/app_alb"
+    },
+    "ecs_foundation": {
+      "source": "./retained/ecs_foundation"
+    }
+  }
+}

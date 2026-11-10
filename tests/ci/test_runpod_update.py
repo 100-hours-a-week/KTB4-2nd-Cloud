@@ -246,15 +246,12 @@ class RunpodTests(unittest.TestCase):
         self.assertFalse(any(m.STAGING_PARAMETER in c for c in self.calls))
         self.assertTrue(any(c[:2] == ('ecs', 'update-service') for c in self.calls))
 
-    def test_production_workflow_has_no_staging_dependency(self):
+    def test_retired_production_workflow_cannot_touch_aws(self):
         text = (ROOT / '.github/workflows/v2-production-runpod-update.yml').read_text()
-        self.assertNotIn('needs: staging', text)
-        self.assertIn('environment: production', text)
-        self.assertIn('group: yeodam-v2-production-release', text)
-        self.assertIn('AWS_V2_PRODUCTION_RUNPOD_UPDATE_ROLE_ARN', text)
-        self.assertIn('--production-only', text)
-        self.assertEqual(text.count('ref: ${{ github.sha }}'), 1)
-        self.assertNotIn('STAGING_VERSION', text)
+        self.assertIn('Reject retired ECS update path', text)
+        self.assertIn('exit 1', text)
+        self.assertNotIn('configure-aws-credentials', text)
+        self.assertNotIn('id-token: write', text)
 
     def test_production_only_keeps_preflight_and_recovery_without_staging(self):
         for failure, status in [('probe', 'preflight'), ('rollout', 'restored_previous'),
