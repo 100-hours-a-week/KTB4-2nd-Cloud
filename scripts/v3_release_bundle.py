@@ -118,7 +118,7 @@ def render_profiles(files, data):
      if d['kind']=='Deployment':require(d['spec']['template']['spec']['containers'][0]['image']==c['image'],'Role image differs from approved component')
      if d['kind']=='ConfigMap':require(d['data']['RELEASE']==c['sourceSha'],'Source annotation differs from image source')
    elif profile=='ai':
-    ai.validate(docs,v);require(v['image']==data['components']['ai-app']['image']and v['source']==data['components']['ai-app']['sourceSha'],'AI image/source mismatch')
+    ai.validate_snapshot(docs,v,{n[len('charts/ai-apps/'):]:content for n,content in files.items() if n.startswith('charts/ai-apps/')});require(v['image']==data['components']['ai-app']['image']and v['source']==data['components']['ai-app']['sourceSha'],'AI image/source mismatch')
    else:access.validate(docs,v)
    documents+=docs
  identities=[(d['kind'],d['metadata'].get('namespace'),d['metadata']['name'])for d in documents]
