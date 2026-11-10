@@ -172,3 +172,35 @@ def foreign_key_violations(container):
         query='SELECT COUNT(*) FROM yeodam.'+identifier(table)+' c LEFT JOIN yeodam.'+identifier(parent)+' p ON '+join+' WHERE '+present+' AND p.'+identifier(items[0]['parentColumn'])+' IS NULL;'
         total+=int(sql(container,query))
     return total
+
+# V36-V40 change new fields and V37 advances one legacy ON UPDATE timestamp.
+SCHEMA_LOCK = json.loads((Path(__file__).resolve().parents[1]/'deploy/v3/mysql-schema-image/source.lock.json').read_text())
+SCHEMA_VERSION = SCHEMA_LOCK['schemaVersion']
+UPGRADE_TABLES = {'attachment_conversion_outbox','attachment_conversion_tasks','trip_analysis_executions','trip_analysis_execution_uploads','trip_photo_deletion_reservations'}
+
+def upgrade_baseline(execute, shape=None):
+    shape = json.loads(json.dumps(shape)) if shape is not None else capture('',query_fn=execute)
+    # Do not exempt a table, business field or a second timestamp from comparison.
+    if 'additional_attachment_executions' in shape:
+        shape['additional_attachment_executions']['columns'].remove('updated_at')
+    tables = capture('',shape,query_fn=execute)
+    history = execute('SELECT * FROM yeodam.flyway_schema_history WHERE CAST(version AS UNSIGNED)<=35 ORDER BY installed_rank;')
+    started = execute('SELECT NOW(6);')
+    require(re.fullmatch(r'\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{6}',started),'Invalid database migration clock')
+    return {'tables':tables,'historySha256':hashlib.sha256(history.encode()).hexdigest(),'startedAt':started}
+
+def verify_upgrade(execute, baseline):
+    require(capture('',baseline['tables'],query_fn=execute)==baseline['tables'],'Legacy data outside reviewed V37 timestamp changed')
+    history=execute('SELECT * FROM yeodam.flyway_schema_history WHERE CAST(version AS UNSIGNED)<=35 ORDER BY installed_rank;')
+    require(hashlib.sha256(history.encode()).hexdigest()==baseline['historySha256'],'Existing Flyway history changed')
+    require(execute("SELECT CONCAT(COUNT(*),':',SUM(success),':',COUNT(DISTINCT version),':',MAX(CAST(version AS UNSIGNED))) FROM yeodam.flyway_schema_history;")==f'{SCHEMA_VERSION}:{SCHEMA_VERSION}:{SCHEMA_VERSION}:{SCHEMA_VERSION}','Target schema migrations incomplete')
+    ended=execute('SELECT NOW(6);')
+    require(re.fullmatch(r'\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{6}',ended) and ended>=baseline['startedAt'],'Invalid database migration window')
+    start=baseline['startedAt']
+    require(execute("SELECT COUNT(*) FROM yeodam.additional_attachment_executions WHERE NOT(accepted_actor_id <=> user_id) OR processing_mode<>'LEGACY' OR analysis_failure_count<>0 OR quarantined_at IS NOT NULL OR remote_terminal_confirmed_at IS NOT NULL OR updated_at<'"+start+"' OR updated_at>'"+ended+"';")=='0','V37 actor backfill/defaults/timestamp differs from reviewed migration')
+    require(execute("SELECT COUNT(*) FROM yeodam.trip_creation_executions WHERE requires_remote_termination_confirmation <> (ended_at IS NOT NULL AND status IN ('FAILED','CANCELED') AND process_payload IS NOT NULL AND result_raw_payload IS NULL) OR remote_terminal_confirmed_at IS NOT NULL;")=='0','V40 protection flag differs from reviewed predicate')
+    names=set(execute("SELECT table_name FROM information_schema.tables WHERE table_schema='yeodam' AND table_type='BASE TABLE';").splitlines())
+    added=names-set(baseline['tables'])
+    require(added==UPGRADE_TABLES-set(baseline['tables']),'Unexpected schema tables')
+    for table in added:require(execute('SELECT COUNT(*) FROM yeodam.'+identifier(table)+';')=='0','New migration table is not empty')
+    return {'schemaVersion':SCHEMA_VERSION,'stableLegacyRowsMatch':True,'historyPreserved':True,'reviewedTimestampOnly':True,'newTablesEmpty':len(added)}

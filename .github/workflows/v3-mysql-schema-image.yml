@@ -11,6 +11,8 @@ on:
       - 'scripts/create-v3-mysql-bootstrap-secret.py'
       - 'scripts/validate-v3-mysql-schema-image.sh'
       - 'tests/ci/smoke-v3-mysql-schema.py'
+      - 'tests/ci/test_v3_schema_upgrade.py'
+      - 'tests/ci/v3/mysql-upgrade-seed.sql'
       - '.github/workflows/v3-mysql-schema-check.yml'
       - '.github/workflows/v3-mysql-schema-image.yml'
 permissions:
