@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory(prefix='v3-ai-log-fixture-') as tmp:
     for p in [logs,conf]:p.mkdir()
     for p in (CHART/'files').iterdir():(conf/p.name).write_bytes(p.read_bytes())
     cfg=(conf/'fluent-bit.conf').read_text().replace('Read_From_Head Off','Read_From_Head On')
-    cfg=cfg.split('[OUTPUT]')[0]+'[OUTPUT]\n    Name stdout\n    Match ai.*\n    Format json_lines\n'
+    cfg=cfg.split('[OUTPUT]')[0]+(conf/'backend.conf').read_text().replace('Read_From_Head Off','Read_From_Head On').split('[OUTPUT]')[0]+'[OUTPUT]\n    Name stdout\n    Match *\n    Format json_lines\n'
     (conf/'fluent-bit.conf').write_text(cfg)
     api=logs/('ai-api-fixture_ai_ai-'+'a'*64+'.log');runner=logs/('ai-runner-fixture_ai_ai-'+'b'*64+'.log')
     api.write_text(line({'event':'fixture_api','request_id':'fixture-request','job_id':'fixture-job','trace_id':None,'span_id':None,'duration_ms':12,'nested':{'access_token':'fixture-private-value'},'message':'Bearer fixture-private-value https://example.invalid/?token=fixture-private-value'}))
@@ -23,6 +23,12 @@ with tempfile.TemporaryDirectory(prefix='v3-ai-log-fixture-') as tmp:
         f.write(line('secret startup text fixture-private-value'))
         f.write(line('{"event":"fixture_fragment",','P'));f.write(line('"count":2}','F'))
     (logs/('backend-fixture_trip_ai-'+'c'*64+'.log')).write_text(line({'event':'must_not_collect'}))
+    be_roles={'auth-api':'auth','trip-api':'trip','photo-api':'photo','photo-converter':'photo','trip-result-worker':'trip'}
+    for role,ns in be_roles.items():
+        path=logs/(role+'-fixture_'+ns+'_backend-'+'d'*64+'.log')
+        path.write_text(line({'event':'fixture_'+role,'level':'INFO','job_id':'fixture-job','request_id':'fixture-request','trace_id':'c'*32,'span_id':'d'*16,'duration_ms':12,'message':'fixture-private-value','stack_trace':'java.lang.IllegalStateException: fixture-private-value\n\tat com.yeodam.Example.run(Example.java:42)','object_key':'fixture-private-value','unknown_input':'fixture-private-value','headers':{'Authorization':'fixture-private-value'}}))
+        with path.open('a') as f:f.write(line({'event':'must_not_collect_debug','level':'DEBUG'}))
+    (logs/('auth-api-forged_trip_backend-'+'e'*64+'.log')).write_text(line({'event':'must_not_collect_forged'}))
     try:
         command('docker','volume','create',volume)
         command('docker','run','-d','--name',name,'--platform','linux/amd64','--network','none','--read-only','--user','0:0','--cap-drop','ALL','--security-opt','no-new-privileges','--memory','128m','--cpus','0.5','-e','NODE_NAME=fixture-node','-v',str(logs)+':/var/log/containers:ro','-v',str(conf)+':/fluent-bit/etc:ro','-v',volume+':/buffers','--entrypoint','/bin/sh',IMAGE,'-ec','umask 077; chmod 700 /buffers; exec /fluent-bit/bin/fluent-bit -c /fluent-bit/etc/fluent-bit.conf',timeout=60)
@@ -43,7 +49,14 @@ with tempfile.TemporaryDirectory(prefix='v3-ai-log-fixture-') as tmp:
             diagnostic=subprocess.run(['docker','logs',name],capture_output=True,text=True).stderr
             raise AssertionError('Collector fixture timed out; '+diagnostic[-1600:].replace('fixture-private-value','[fixture]'))
         items=wait_for('fixture_fragment')
-        assert {x['app']['event'] for x in items}=={'fixture_api','fixture_runner','collector_unparsed_log','fixture_fragment'}
+        items=wait_for('fixture_trip-result-worker')
+        assert {x['app']['event'] for x in items}=={'fixture_api','fixture_runner','collector_unparsed_log','fixture_fragment'}|{'fixture_'+r for r in be_roles}
+        for role,ns in be_roles.items():
+            row=next(x for x in items if x['app']['event']=='fixture_'+role)
+            assert row['collector']['role']==role and row['kubernetes']['namespace_name']==ns
+            assert row['app']['trace_id']=='c'*32 and row['app']['span_id']=='d'*16
+            assert row['app']['error_type']=='java.lang.IllegalStateException' and row['app']['stack_frames']==['com.yeodam.Example.run(Example.java:42)']
+            assert not {'message','stack_trace','object_key','unknown_input','headers'} & set(row['app'])
         a=next(x for x in items if x['app']['event']=='fixture_api')
         assert a['app']['request_id']=='fixture-request' and a['app']['job_id']=='fixture-job' and a['app']['duration_ms']==12
         assert 'trace_id' in a['app'] and a['app']['trace_id'] is None and a['app']['span_id'] is None
@@ -53,8 +66,8 @@ with tempfile.TemporaryDirectory(prefix='v3-ai-log-fixture-') as tmp:
         with api.open('a') as f:f.write(line({'event':'fixture_after_restart'}))
         items=wait_for('fixture_after_restart')
         assert sum(x['app']['event']=='fixture_api' for x in items)==1,'Persisted offsets must avoid restart replay'
-        assert len(items)==5
-        print(json.dumps({'passed':True,'checks':['both AI roles','JSON identifiers/null/number preservation','nested credentials and free-text masking','unparsed omission','CRI fragment reconstruction','non-AI exclusion','restart offset retention'],'events':len(items),'awsAccess':False}))
+        assert len(items)==10
+        print(json.dumps({'passed':True,'checks':['AI roles and five exact BE roles','JSON identifiers/null/number preservation','nested credentials and free-text masking','unparsed omission','CRI fragment reconstruction','unrelated/forged namespace and DEBUG exclusion','restart offset retention'],'events':len(items),'awsAccess':False}))
     finally:
         subprocess.run(['docker','rm','-f',name],capture_output=True,timeout=15)
         subprocess.run(['docker','volume','rm',volume],capture_output=True,timeout=15)

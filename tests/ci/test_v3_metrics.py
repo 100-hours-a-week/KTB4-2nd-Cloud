@@ -47,6 +47,18 @@ class Chart(unittest.TestCase):
             data=next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='v3-metrics-config')['data']
             config=yaml.safe_load(data['prometheus.yaml']);own=next(x for x in config['scrape_configs'] if x['job_name']=='prometheus');mutate(own);data['prometheus.yaml']=yaml.safe_dump(config)
             with self.assertRaises(ValueError):chart.validate(docs)
+    def test_cloudwatch_is_opt_in_and_restarts_only_grafana(self):
+        before=chart.render(apm=True);after=chart.render(apm=True,logs=True);self.assertTrue(chart.validate(after))
+        def indexed(d):return {(x['kind'],x['metadata'].get('namespace'),x['metadata']['name']):x for x in d}
+        a,b=indexed(before),indexed(after);self.assertEqual(set(a),set(b))
+        self.assertEqual({key[2] for key in a if a[key]!=b[key]},{'v3-grafana','v3-grafana-config','v3-grafana-egress'})
+        for d in [chart.render(logs=True,apm=False),chart.render(logs=True,ai=False)]:self.assertTrue(chart.validate(d))
+    def test_cloudwatch_keys_endpoint_or_private_network_broadening_rejected(self):
+        import yaml
+        for key,value in [('authType','keys'),('endpoint','http://untrusted.invalid'),('assumeRoleArn','arn:aws:iam::other:role/other')]:
+            docs=chart.render(logs=True);data=next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='v3-grafana-config')['data']
+            source=yaml.safe_load(data['datasource.yaml']);source['datasources'][-1]['jsonData'][key]=value;data['datasource.yaml']=yaml.safe_dump(source)
+            with self.assertRaises(ValueError):chart.validate(docs)
     def test_apm_viewer_can_explore_without_editor_or_admin_role(self):
         docs=chart.render(apm=True);self.assertTrue(chart.validate(docs))
         for missing in [False,True]:

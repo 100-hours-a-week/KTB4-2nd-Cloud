@@ -25,6 +25,13 @@ data:
 {{- range $name := list "fluent-bit.conf" "parsers.conf" "sanitize.lua" }}
   {{ $name }}: |
 {{ $.Files.Get (printf "files/%s" $name) | indent 4 }}
+{{- if and $.Values.backendEnabled (eq $name "fluent-bit.conf") }}
+    @INCLUDE /fluent-bit/etc/backend.conf
+{{- end }}
+{{- end }}
+{{- if .Values.backendEnabled }}
+  backend.conf: |
+{{ .Files.Get "files/backend.conf" | indent 4 }}
 {{- end }}
 ---
 apiVersion: apps/v1
@@ -40,7 +47,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: ai-log-collector, app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
       annotations:
-        checksum/config: {{ printf "%s%s%s" (.Files.Get "files/fluent-bit.conf") (.Files.Get "files/parsers.conf") (.Files.Get "files/sanitize.lua") | sha256sum }}
+        checksum/config: {{ printf "%s%s%s%s" (.Files.Get "files/fluent-bit.conf") (.Files.Get "files/parsers.conf") (.Files.Get "files/sanitize.lua") (ternary (.Files.Get "files/backend.conf") "" .Values.backendEnabled) | sha256sum }}
     spec:
       serviceAccountName: ai-log-collector
       automountServiceAccountToken: false
