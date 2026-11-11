@@ -21,6 +21,8 @@ on:
       - 'terraform/v3/delivery/**'
       - 'terraform/v3/runpod/**'
       - 'terraform/v3/ai-logs/**'
+      - 'scripts/*v3*ai*observability*'
+      - 'tests/ci/*v3*ai*observability*'
       - 'scripts/check-v3-apm.py'
       - 'scripts/prepare-v3-apm-candidate.py'
       - 'scripts/v3_apm_contract.py'
@@ -198,6 +200,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify synthetic tracing with candidate image libraries and bounded observers
         run: python3 tests/ci/smoke-v3-apm.py
+      - name: Verify AI reader compatibility and real Langfuse SDK without network
+        run: python3 tests/ci/run-v3-ai-observability.py
 
   validate:
     name: Helm and platform contracts

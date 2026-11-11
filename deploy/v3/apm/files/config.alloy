@@ -18,11 +18,19 @@ otelcol.processor.transform "sanitize" {
   trace_statements {
     context = "span"
     statements = [
-      "keep_keys(attributes, [\"http.request.method\", \"http.response.status_code\", \"http.method\", \"http.status_code\", \"http.route\", \"db.system\", \"db.system.name\", \"db.operation.name\", \"error.type\"])",
+      "delete_key(attributes, \"yeodam.boundary\")",
+      "set(attributes[\"yeodam.boundary\"], name) where IsMatch(name, \"^ai[.](receive|execute|publish)$\")",
+      "keep_keys(attributes, [\"http.request.method\", \"http.response.status_code\", \"http.method\", \"http.status_code\", \"http.route\", \"db.system\", \"db.system.name\", \"db.operation.name\", \"error.type\", \"yeodam.operation\", \"yeodam.stage\", \"yeodam.result\", \"yeodam.boundary\"])",
+      "delete_key(attributes, \"yeodam.operation\") where attributes[\"yeodam.operation\"] != nil and not IsMatch(attributes[\"yeodam.operation\"], \"^(process|story|parse|search)$\")",
+      "delete_key(attributes, \"yeodam.stage\") where attributes[\"yeodam.stage\"] != nil and not IsMatch(attributes[\"yeodam.stage\"], \"^(downloading|embedding|clock|locating|clustering|filtering|finalizing|evaluate|filter|vectors|select|urls|place_notes|perceive|generate|validate|embed|retrieve|sign_url|parse|search|rewrite|selecting[.]filter|selecting[.]vectors|selecting[.]select|selecting[.]urls|writing[.]place_notes|writing[.]perceive|writing[.]generate|verifying[.]validate|finalizing[.]evaluate)$\")",
+      "delete_key(attributes, \"yeodam.result\") where attributes[\"yeodam.result\"] != nil and not IsMatch(attributes[\"yeodam.result\"], \"^(success|error|timeout|lease_lost|aborted|too_large|retry|cancelled|duplicate|quarantined|created|registered|rejected)$\")",
       "set(status.message, \"\")",
       "set(name, \"operation\")",
       "set(name, \"HTTP request\") where attributes[\"http.request.method\"] != nil or attributes[\"http.method\"] != nil",
       "set(name, \"database operation\") where attributes[\"db.system\"] != nil or attributes[\"db.system.name\"] != nil",
+      "set(name, attributes[\"yeodam.boundary\"]) where attributes[\"yeodam.boundary\"] != nil",
+      "set(name, Concat([\"ai.stage.\", attributes[\"yeodam.stage\"]], \"\")) where attributes[\"yeodam.stage\"] != nil",
+      "delete_key(attributes, \"yeodam.boundary\")",
     ]
   }
   trace_statements {

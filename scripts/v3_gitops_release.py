@@ -126,6 +126,9 @@ def prepare(pr, rollback, expected_previous):
         candidate = verify_merged(pr, legacy.checks.api)
         files = build(candidate)
     metadata = validate_bundle(files)
+    from v3_ai_observability import transition
+    before=None if expected_previous=='absent' else bundle.parse_json(git('show',expected_previous+':candidate.json'))
+    transition(before,bundle.parse_json(files['candidate.json']))
     return files, {'schemaVersion': 2, 'status': 'prepared' if policy['deploymentEnabled'] else 'disabled',
         'publicationEnabled': policy['deploymentEnabled'], 'published': False, 'deployed': False,
         'releaseId': metadata['releaseId'], 'expectedPrevious': expected_previous,
