@@ -14,7 +14,7 @@ run "minimal_read_only_identities" {
     error_message = "Only two roles, two policies and two associations."
   }
   assert {
-    condition     = alltrue([for k, p in aws_iam_role_policy.read : jsondecode(p.policy).Statement[0].Action == ["s3:GetObject"]]) && length(jsondecode(aws_iam_role_policy.read["ai-api"].policy).Statement[0].Resource) == 2 && length(jsondecode(aws_iam_role_policy.read["ai-runner"].policy).Statement[0].Resource) == 3
+    condition     = alltrue([for k, p in aws_iam_role_policy.read : jsondecode(p.policy).Statement[0].Action == ["s3:GetObject"]]) && length(jsondecode(aws_iam_role_policy.read["ai-api"].policy).Statement[0].Resource) == 2 && length(jsondecode(aws_iam_role_policy.read["ai-runner"].policy).Statement[0].Resource) == 4
     error_message = "Read-only V3 images; exact reference only for runner."
   }
   assert {

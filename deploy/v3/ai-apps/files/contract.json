@@ -106,5 +106,18 @@
         "PYTHONPATH": "/app"
       }
     }
+  },
+  "tourapiEnvironment": {
+    "GPU_PROCESS_GENERATION_INFLIGHT": "4",
+    "GPU_STORY_GENERATION_INFLIGHT": "4",
+    "PROCESS_WORKFLOW_ENABLED": "true",
+    "PROCESS_WORKFLOW_BUDGET_SEC": "3600",
+    "PROCESS_WORKFLOW_CONCURRENCY": "4"
+  },
+  "tourapiRunnerEnvironment": {
+    "CLOUD_TOURAPI_ENABLED": "1",
+    "TOURAPI_RAW_S3_URI": "s3://yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/tourapi/v2026-11-11/tourapi_all.json",
+    "TOURAPI_RAW_SHA256": "9a32d53d7e7b55e8440b7dae953e3f344e17c55e2ca9fa9c86258bcf5b0d4229",
+    "TOURAPI_RAW_PATH": "/data/ai-reference/tourapi-v2026-11-11.json"
   }
 }

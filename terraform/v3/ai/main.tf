@@ -11,6 +11,7 @@ locals {
   cluster   = "yeodam-v3-foundation"
   roles     = var.enabled ? toset(["ai-api", "ai-runner"]) : toset([])
   images    = ["arn:aws:s3:::yeodam-v3-foundation-app-data-483175530259-ap-northeast-2/trip-uploads/*/derived/*", "arn:aws:s3:::yeodam-v3-foundation-app-data-483175530259-ap-northeast-2/trip-additions/*/derived/*"]
+  tourapi   = "arn:aws:s3:::yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/tourapi/v2026-11-11/tourapi_all.json"
   reference = "arn:aws:s3:::yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/places/v2026-10-30/places.sqlite"
 }
 resource "aws_iam_role" "app" {
@@ -32,5 +33,5 @@ resource "aws_iam_role_policy" "read" {
   for_each = local.roles
   name     = "read-v3-derived-photos"
   role     = aws_iam_role.app[each.key].id
-  policy   = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = ["s3:GetObject"], Resource = concat(local.images, each.key == "ai-runner" ? [local.reference] : []) }] })
+  policy   = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = ["s3:GetObject"], Resource = concat(local.images, each.key == "ai-runner" ? [local.reference, local.tourapi] : []) }] })
 }

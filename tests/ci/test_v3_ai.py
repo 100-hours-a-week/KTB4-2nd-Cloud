@@ -103,7 +103,7 @@ class AITests(unittest.TestCase):
             condition={'StringEquals':{'aws:SourceAccount':'483175530259','aws:RequestTag/kubernetes-namespace':'ai','aws:RequestTag/kubernetes-service-account':role},'ArnEquals':{'aws:SourceArn':'arn:aws:eks:ap-northeast-2:483175530259:cluster/yeodam-v3-foundation'}}
             trust={'Version':'2012-10-17','Statement':[{'Effect':'Allow','Principal':{'Service':'pods.eks.amazonaws.com'},'Action':['sts:AssumeRole','sts:TagSession'],'Condition':condition}]}
             objects=['arn:aws:s3:::yeodam-v3-foundation-app-data-483175530259-ap-northeast-2/trip-uploads/*/derived/*','arn:aws:s3:::yeodam-v3-foundation-app-data-483175530259-ap-northeast-2/trip-additions/*/derived/*']
-            if role=='ai-runner':objects+=['arn:aws:s3:::yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/places/v2026-10-30/places.sqlite']
+            if role=='ai-runner':objects+=['arn:aws:s3:::yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/places/v2026-10-30/places.sqlite',guard.TOURAPI]
             records=[('aws_iam_role','app',{'name':'yeodam-v3-foundation-'+role,'assume_role_policy':json.dumps(trust)}),('aws_eks_pod_identity_association','app',{'cluster_name':'yeodam-v3-foundation','namespace':'ai','service_account':role}),('aws_iam_role_policy','read',{'policy':json.dumps({'Version':'2012-10-17','Statement':[{'Effect':'Allow','Action':['s3:GetObject'],'Resource':objects}]})})]
             for typ,name,after in records:changes.append({'mode':'managed','type':typ,'address':typ+'.'+name+'["'+role+'"]','change':{'actions':['create'],'after':after}})
         return {'complete':True,'resource_changes':changes}
