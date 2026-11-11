@@ -21,3 +21,9 @@ apmWorkloads: []
 
 # Enable only with the reviewed TourAPI-capable image and uploaded reference.
 tourapiEnabled: false
+
+# Reader capability first. Redis writing is a separate approved rollout.
+traceContextEnabled: false
+traceContextWriteEnabled: false
+traceContextWriteEverEnabled: false
+langfuseEnabled: false

@@ -53,3 +53,6 @@ jobs:
             -v "$PWD/deploy/v3/ai-apps/files/contract.json:/contract.json:ro" \
             -v "$PWD/tests/ci/smoke-v3-tourapi.py:/smoke.py:ro" \
             --entrypoint python "$IMAGE" /smoke.py
+
+      - name: Verify async AI compatibility when explicitly selected
+        run: python3 tests/ci/run-v3-ai-observability.py --candidate deploy/v3/releases/candidate.json

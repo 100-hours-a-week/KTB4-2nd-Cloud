@@ -1,3 +1,12 @@
+{{- $trace := .Values.traceContextEnabled }}
+{{- if or .Values.traceContextWriteEnabled .Values.traceContextWriteEverEnabled .Values.langfuseEnabled }}
+{{- if not $trace }}{{ fail "Enable the compatible Trace reader before writing or Langfuse" }}{{ end }}
+{{- end }}
+{{- if and .Values.traceContextWriteEnabled (not .Values.traceContextWriteEverEnabled) }}{{ fail "Record the irreversible reader compatibility floor before writing" }}{{ end }}
+{{- if $trace }}
+{{- if not (and .Values.workloads.api .Values.workloads.runner (has "api" .Values.apmWorkloads) (has "runner" .Values.apmWorkloads)) }}{{ fail "Both instrumented API and runner readers are required" }}{{ end }}
+{{- end }}
+{{- $obs := .Files.Get "files/observability.json" | fromJson }}
 {{- $active := or .Values.workloads.api .Values.workloads.runner }}
 {{- if $active }}
 {{- if not (and .Values.accessEnabled .Values.review.sourceCompatible .Values.review.imageReviewed .Values.review.connectionsReviewed) }}{{ fail "Review compatible source, immutable image, Secret supply and shared model access before enabling AI" }}{{ end }}
@@ -39,6 +48,12 @@ spec:
     - secretKey: {{ $key }}
       remoteRef: {key: yeodam/v3/foundation/ai/runtime, property: {{ $key }}, version: AWSCURRENT, decodingStrategy: None}
   {{- end }}
+  {{- if $.Values.langfuseEnabled }}
+  {{- range $key := $obs.langfuseSecrets }}
+    - secretKey: {{ $key }}
+      remoteRef: {key: yeodam/v3/foundation/ai/runtime, property: {{ $key }}, version: AWSCURRENT, decodingStrategy: None}
+  {{- end }}
+  {{- end }}
 {{- range $role, $w := $c.workloads }}
 ---
 apiVersion: v1
@@ -51,6 +66,14 @@ kind: ConfigMap
 metadata: {name: {{ $w.name }}-runtime, namespace: ai}
 data:
   RELEASE: {{ $.Values.source | quote }}
+  {{- if $.Values.traceContextEnabled }}
+  JOBS_TRACE_CONTEXT_WRITE: {{ $.Values.traceContextWriteEnabled | toString | quote }}
+  {{- end }}
+  {{- if $.Values.langfuseEnabled }}
+  {{- range $key, $value := $obs.langfuseEnvironment }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  {{- end }}
   {{- range $key, $value := $c.commonEnvironment }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}
@@ -91,6 +114,9 @@ spec:
         yeodam.io/ai-runtime: "true"
       annotations:
         checksum/runtime: {{ (printf "%s%s" ($.Files.Get "files/contract.json") (($.Files.Glob "files/runtime/*").AsConfig)) | sha256sum }}
+        {{- if $.Values.traceContextEnabled }}
+        checksum/observability: {{ printf "%s%t%t%t" ($.Files.Get "files/observability.json") $.Values.traceContextWriteEnabled $.Values.traceContextWriteEverEnabled $.Values.langfuseEnabled | sha256sum }}
+        {{- end }}
         {{- if $apm }}
         checksum/apm: {{ printf "%s%s" ($.Files.Get "files/apm.json") ($.Files.Get "files/apm/sitecustomize.py") | sha256sum }}
         {{- end }}
@@ -137,6 +163,11 @@ spec:
           {{- range $key := $keys }}
             - name: {{ $key }}
               valueFrom: {secretKeyRef: {name: ai-runtime, key: {{ $key }}}}
+          {{- end }}
+          {{- if $.Values.langfuseEnabled }}
+          {{- range $key := $obs.langfuseSecrets }}
+            - {name: {{ $key }}, valueFrom: {secretKeyRef: {name: ai-runtime, key: {{ $key }}}}}
+          {{- end }}
           {{- end }}
           {{- if $apm }}
             - {name: YEODAM_APM_ENABLED, value: 'true'}

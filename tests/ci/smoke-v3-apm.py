@@ -46,13 +46,18 @@ for i in range(50):
  try:urllib.request.urlopen(base+'/ready',timeout=1);break
  except Exception:time.sleep(.5)
 else:raise RuntimeError('Tempo not ready')
+for i in range(40):
+ try:urllib.request.urlopen('http://v3-alloy.observability.svc:12345/-/ready',timeout=1);break
+ except Exception:time.sleep(.5)
+else:raise RuntimeError('Alloy not ready')
 tid=uuid.uuid4().hex;sid=uuid.uuid4().hex[:16];now=time.time_ns()
 kv=lambda k,v:{'key':k,'value':{'stringValue':v}}
-data={'resourceSpans':[{'resource':{'attributes':[kv('service.name','apm-fixture'),kv('secret','private-fixture-value')]},'scopeSpans':[{'scope':{'name':'fixture'},'spans':[{'traceId':tid,'spanId':sid,'name':'private-fixture-value','kind':2,'startTimeUnixNano':str(now),'endTimeUnixNano':str(now+10000000),'attributes':[kv('http.request.method','GET'),kv('http.route','/fixture'),kv('authorization','private-fixture-value')],'events':[{'timeUnixNano':str(now),'name':'private-fixture-value','attributes':[kv('exception.message','private-fixture-value')]}],'status':{'code':2,'message':'private-fixture-value'}}]}]}]}
+data={'resourceSpans':[{'resource':{'attributes':[kv('service.name','apm-fixture'),kv('secret','private-fixture-value')]},'scopeSpans':[{'scope':{'name':'fixture'},'spans':[{'traceId':tid,'spanId':sid,'name':'private-fixture-value','kind':2,'startTimeUnixNano':str(now),'endTimeUnixNano':str(now+10000000),'attributes':[kv('http.request.method','GET'),kv('http.route','/fixture'),kv('authorization','private-fixture-value'),kv('yeodam.operation','process'),kv('yeodam.stage','clustering'),kv('yeodam.result','success')],'events':[{'timeUnixNano':str(now),'name':'private-fixture-value','attributes':[kv('exception.message','private-fixture-value')]}],'status':{'code':2,'message':'private-fixture-value'}}]}]}]}
+bad=json.loads(json.dumps(data['resourceSpans'][0]['scopeSpans'][0]['spans'][0]));bad['spanId']=uuid.uuid4().hex[:16];bad['attributes']=[kv('yeodam.boundary','private-fixture-value'),kv('yeodam.operation','private-fixture-value'),kv('yeodam.stage','private-fixture-value'),kv('yeodam.result','private-fixture-value')];data['resourceSpans'][0]['scopeSpans'][0]['spans'].append(bad)
 req=urllib.request.Request('http://v3-alloy.observability.svc:4318/v1/traces',data=json.dumps(data).encode(),headers={'Content-Type':'application/json'});assert urllib.request.urlopen(req,timeout=5).status==200
 for i in range(40):
  try:
-  req=urllib.request.Request(base+'/api/traces/'+tid,headers={'Accept':'application/json'});body=urllib.request.urlopen(req,timeout=2).read().decode();assert 'apm-fixture' in body and 'private-fixture-value' not in body;print('Trace persisted and sanitized');break
+  req=urllib.request.Request(base+'/api/traces/'+tid,headers={'Accept':'application/json'});body=urllib.request.urlopen(req,timeout=2).read().decode();assert 'apm-fixture' in body and 'private-fixture-value' not in body and 'ai.stage.clustering' in body and 'yeodam.result' in body;print('Trace persisted and sanitized');break
  except Exception:time.sleep(.5)
 else:raise RuntimeError('No sanitized trace')
 """
