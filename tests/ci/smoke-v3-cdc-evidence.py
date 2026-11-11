@@ -23,12 +23,15 @@ name = 'v3-cdc-evidence-' + uuid.uuid4().hex[:10]
 def command(args, source=None, timeout=60):
     p = subprocess.run(args, input=source, text=True, capture_output=True, timeout=timeout)
     if p.returncode:
-        raise RuntimeError('Synthetic MySQL operation failed; raw process output withheld')
+        code = re.search(r'\bERROR (\d+)\b', p.stderr)
+        raise RuntimeError('Synthetic MySQL operation failed: exit=' + str(p.returncode) +
+                           ', mysqlErrorCode=' + (code[1] if code else 'unknown') + '; raw output withheld')
     return p.stdout
 
 
 def sql(source):
-    return command(['docker','exec','-i',name,'mysql','-uroot','--batch','--raw','--skip-column-names','--silent'], source)
+    return command(['docker','exec','-i',name,'mysql','-uroot','--protocol=TCP','-h127.0.0.1',
+                    '--batch','--raw','--skip-column-names','--silent'], source)
 
 
 try:
@@ -39,7 +42,10 @@ try:
              image,'--skip-log-bin','--innodb-buffer-pool-size=64M','--performance-schema=OFF'])
     ready = False
     for _ in range(60):
-        p = subprocess.run(['docker','exec',name,'mysql','-uroot','-Nse','SELECT 1'],capture_output=True,timeout=10)
+        # The entrypoint's initialization server accepts Unix sockets before it
+        # deliberately shuts down. Only the FINAL server accepts TCP loopback.
+        p = subprocess.run(['docker','exec',name,'mysql','-uroot','--protocol=TCP','-h127.0.0.1',
+                            '-Nse','SELECT 1'],capture_output=True,timeout=10)
         if p.returncode == 0:
             ready = True; break
         time.sleep(1)
