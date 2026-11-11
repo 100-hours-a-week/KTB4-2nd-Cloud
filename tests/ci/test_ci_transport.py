@@ -89,11 +89,34 @@ class Transport(unittest.TestCase):
         self.assertEqual(proof['runtimeNetwork'],'none')
 
     def test_host_dns_failure_local_and_non_dns_fail_closed(self):
-        for env,system,healthy,error in [(ENV,'Linux',False,'Could not resolve'),({},'Linux',True,'Could not resolve'),(ENV,'Darwin',True,'Could not resolve'),(ENV,'Linux',True,'package version unavailable')]:
+        for env,system,healthy,error in [({},'Linux',True,'Could not resolve'),(ENV,'Darwin',True,'Could not resolve'),(ENV,'Linux',True,'package version unavailable')]:
             calls=[]
             def run(cmd, **kw):calls.append(cmd);return result(1,error=error)
             with self.assertRaises(RuntimeError):nginx.build(run,lambda:dict.fromkeys(nginx.DOMAINS,healthy),env,system)
             self.assertEqual(len(calls),1)
+
+    def test_host_dns_failure_uses_only_public_fixed_build_bindings(self):
+        calls=[];replies=iter([result(1,error='Could not resolve'),result(),result()])
+        def run(cmd, **kw):calls.append(cmd);return next(replies)
+        addresses={'archive.ubuntu.com':['91.189.91.81'],'security.ubuntu.com':['185.125.190.81']}
+        proof=nginx.build(run,lambda:dict.fromkeys(nginx.DOMAINS,False),ENV,'Linux',lambda:addresses)
+        self.assertEqual(proof['buildNetwork'],'https-dns-build-hosts')
+        self.assertIn('archive.ubuntu.com=91.189.91.81',calls[2])
+        self.assertNotIn('--network=host',calls[2])
+        self.assertEqual(len(calls),3)
+
+    def test_https_dns_rejects_wrong_question_private_addresses_and_empty_answers(self):
+        good={'Status':0,'Question':[{'name':'archive.ubuntu.com.','type':1}], 'Answer':[{'name':'archive.ubuntu.com.','type':1,'TTL':60,'data':'91.189.91.81'}]}
+        import copy
+        self.assertEqual(nginx.parse_addresses('archive.ubuntu.com',good),['91.189.91.81'])
+        variants=[]
+        for ip in ['127.0.0.1','10.0.0.1','169.254.169.254','::1']:
+            bad=copy.deepcopy(good);bad['Answer'][0]['data']=ip;variants.append(bad)
+        for field,value in [('Status',3),('TC',True),('Question',[{'name':'other.example.','type':1}]),('Answer',[])]:
+            bad=copy.deepcopy(good);bad[field]=value;variants.append(bad)
+        bad=copy.deepcopy(good);bad['Answer'][0]['TTL']=0;variants.append(bad)
+        for bad in variants:
+            with self.assertRaises(ValueError):nginx.parse_addresses('archive.ubuntu.com',bad)
 
     def test_host_build_probe_failure_blocks_package_retry(self):
         calls=[]
