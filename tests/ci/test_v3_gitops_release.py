@@ -80,6 +80,12 @@ class GitOpsReleaseTests(unittest.TestCase):
         responses.update(change or {})
         return lambda path:deepcopy(responses[path])
 
+    def test_prepare_enforces_existing_redis_reader_floor_before_publication(self):
+        prior=json.loads(self.bundle['candidate.json'])
+        prior['values']['ai'].update(traceContextEnabled=True,traceContextWriteEverEnabled=True,traceContextWriteEnabled=False)
+        with patch.object(m,'read_policy',return_value=POLICY),patch.object(m,'current_ref',return_value='d'*40),patch.object(m,'verify_merged',return_value=self.candidate),patch.object(m,'build',return_value=self.bundle),patch.object(m,'git',return_value=json.dumps(prior)),patch.object(m,'write_api',side_effect=AssertionError('No writes')):
+            with self.assertRaises(ValueError):m.prepare('100',None,'d'*40)
+
     def test_manual_main_first_attempt_and_actual_approval_are_required(self):
         with patch.object(m.legacy.checks,'api',side_effect=self.api()):m.verify_approval(CTX)
         for change in [{'GITHUB_JOB':'preview'},{'GITHUB_REF':'refs/heads/work'},{'GITHUB_EVENT_NAME':'push'},{'GITHUB_RUN_ATTEMPT':'2'},{'GITHUB_REPOSITORY':'foreign/repo'},{'GITHUB_ACTIONS':'false'}]:

@@ -26,6 +26,12 @@ def _validate(docs,v,contract,runtime_scripts,policy_sources,legacy=False):
     require(dict(Counter(d['kind'] for d in docs))==expected,'Exact inventory; no Namespace/PVC/Secret/Ingress')
     if not enabled:return
     apm_roles=v.get('apmWorkloads',[])
+    trace_enabled=v.get('traceContextEnabled',False);write=v.get('traceContextWriteEnabled',False)
+    ever=v.get('traceContextWriteEverEnabled',False);langfuse=v.get('langfuseEnabled',False)
+    obs=json.loads((CHART/'files/observability.json').read_text())
+    require(not (write or ever or langfuse) or trace_enabled,'Compatible reader required')
+    require(not write or ever,'Record sticky reader compatibility floor')
+    require(not trace_enabled or (set(roles)=={'api','runner'} and set(apm_roles)=={'api','runner'}),'Both instrumented readers required')
     if apm_roles:
         runtime_scripts=dict(runtime_scripts,sitecustomize=(CHART/'files/apm/sitecustomize.py').read_text())
         runtime_scripts['sitecustomize.py']=runtime_scripts.pop('sitecustomize')
@@ -46,15 +52,21 @@ def _validate(docs,v,contract,runtime_scripts,policy_sources,legacy=False):
                 if v.get('tourapiEnabled'):
                     environment.update(contract['tourapiEnvironment'])
                     if role=='runner':environment.update(contract['tourapiRunnerEnvironment'])
+                if trace_enabled:environment['JOBS_TRACE_CONTEXT_WRITE']=str(write).lower()
+                if langfuse:environment.update(obs['langfuseEnvironment'])
                 require(d['data']==environment,'Exact shared limits/topics and role settings')
         elif kind=='ServiceAccount':require(name in ['ai-api','ai-runner'] and d['automountServiceAccountToken'] is False,'Dedicated tokenless SA')
         elif kind=='ExternalSecret':
-            require(name=='ai-runtime','Exact credentials target');s=d['spec'];data=[{'secretKey':k,'remoteRef':{'key':'yeodam/v3/foundation/ai/runtime','property':k,'version':'AWSCURRENT','decodingStrategy':'None'}} for k in contract['secretKeys']+contract['runnerExtraSecrets']]
+            require(name=='ai-runtime','Exact credentials target');s=d['spec'];data=[{'secretKey':k,'remoteRef':{'key':'yeodam/v3/foundation/ai/runtime','property':k,'version':'AWSCURRENT','decodingStrategy':'None'}} for k in contract['secretKeys']+contract['runnerExtraSecrets']+(obs['langfuseSecrets'] if langfuse else [])]
             require(s=={'refreshPolicy':'Periodic','refreshInterval':'1h','secretStoreRef':{'kind':'SecretStore','name':'aws-secretsmanager'},'target':{'name':'ai-runtime','creationPolicy':'Orphan','deletionPolicy':'Retain','template':{'type':'Opaque'}},'data':data},'No production/cross-namespace source')
         elif kind=='Service':require(name=='ai-api' and d['spec']=={'type':'ClusterIP','selector':{'app.kubernetes.io/instance':'ai-api','yeodam.io/stage':'v3'},'ports':[{'name':'http','port':8000,'targetPort':'http'}]},'Private API service only')
         elif kind=='Deployment':
             role=next(k for k,w in contract['workloads'].items() if w['name']==name);w=contract['workloads'][role];s=d['spec'];pod=s['template']['spec'];c=pod['containers'][0]
             annotations=s['template']['metadata']['annotations'];require(annotations.get('yeodam.io/configuration-revision')==v['configurationRevision'] and re.fullmatch('[a-f0-9]{64}',annotations.get('checksum/runtime','')),'Secret-version and Chart configuration must trigger Pod replacement')
+            if trace_enabled:
+                expected_checksum=hashlib.sha256(((CHART/'files/observability.json').read_text()+str(write).lower()+str(ever).lower()+str(langfuse).lower()).encode()).hexdigest()
+                require(annotations.get('checksum/observability')==expected_checksum,'Trace/Langfuse setting changes must replace both Pods')
+            else:require('checksum/observability' not in annotations,'No implicit observability feature activation')
             require(role in roles and s['replicas']==1 and s['strategy']=={'type':'Recreate'},'One process copy per role; no surge')
             require(pod['serviceAccountName']==name and not pod['automountServiceAccountToken'] and pod['imagePullSecrets']==[{'name':'ghcr-pull'}],'Exact identity and registry references')
             require(pod['nodeSelector']=={'yeodam.io/role':w['nodeRole'],'yeodam.io/stage':'v3'} and pod['tolerations']==[{'key':'yeodam.io/role','operator':'Equal','value':w['nodeRole'],'effect':'NoSchedule'}],'API/worker NodePool placement')
@@ -66,7 +78,7 @@ def _validate(docs,v,contract,runtime_scripts,policy_sources,legacy=False):
             if apm:
                 require(pod['initContainers'][-1]==apm_contract.init('python'),'Pinned Python init only')
             require(len(pod['initContainers'])==(2 if apm else 1) and pod['initContainers'][0]['command']==['python','/runtime/prepare-trust.py'] and pod['initContainers'][0]['image']==v['image'],'Public trust bundle first')
-            keys=contract['secretKeys']+(contract['runnerExtraSecrets'] if role=='runner' else []);require(c['env']==[{'name':k,'valueFrom':{'secretKeyRef':{'name':'ai-runtime','key':k}}} for k in keys]+(apm_contract.python_env(role,v['source']) if apm else []),'Reference-only role secrets')
+            keys=contract['secretKeys']+(contract['runnerExtraSecrets'] if role=='runner' else [])+(obs['langfuseSecrets'] if langfuse else []);require(c['env']==[{'name':k,'valueFrom':{'secretKeyRef':{'name':'ai-runtime','key':k}}} for k in keys]+(apm_contract.python_env(role,v['source']) if apm else []),'Reference-only role secrets')
             volumes={x['name']:x for x in pod['volumes']};require(not any('hostPath' in x or 'persistentVolumeClaim' in x for x in pod['volumes']),'No host mount or added PVC')
             if apm:require(volumes.get('apm')=={'name':'apm','emptyDir':{'sizeLimit':'64Mi'}} and {'name':'apm','mountPath':'/otel','readOnly':True} in c['volumeMounts'],'Read-only bounded SDK mount')
             else:require('apm' not in volumes,'No implicit instrumentation')
