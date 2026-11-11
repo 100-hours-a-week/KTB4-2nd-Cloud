@@ -16,8 +16,8 @@ import v3_cdc_fault as f
 def values(snapshot):
     f.validate_snapshot(snapshot)
     v = yaml.safe_load((f.CHART / 'values.yaml').read_text())
-    v['controllerManager']['nodeSelector'] = {'kubernetes.io/hostname': snapshot['controllerNode']}
-    v['chaosDaemon']['nodeSelector'] = {'kubernetes.io/hostname': snapshot['connect']['node']}
+    v['controllerManager']['nodeSelector'] = {'yeodam.io/role': 'system', 'kubernetes.io/hostname': snapshot['controllerNode']}
+    v['chaosDaemon']['nodeSelector'] = {'yeodam.io/role': 'system', 'kubernetes.io/hostname': snapshot['connect']['node']}
     return v
 
 
@@ -88,7 +88,8 @@ def validate(docs, s):
         if kind in ('Deployment', 'DaemonSet'):
             p = d['spec']['template']['spec']
             node = s['controllerNode'] if kind == 'Deployment' else s['connect']['node']
-            f.require(p['nodeSelector'] == {'kubernetes.io/hostname': node} and not p.get('tolerations'), 'Use reviewed existing hosts only')
+            f.require(p['nodeSelector'] == {'yeodam.io/role': 'system', 'kubernetes.io/hostname': node}
+                      and not p.get('tolerations'), 'Use reviewed existing system hosts only')
             f.require(not p.get('hostNetwork') and len(p['containers']) == 1, 'Unexpected workload networking')
             c = p['containers'][0]
             key = 'chaos-mesh' if kind == 'Deployment' else 'chaos-daemon'

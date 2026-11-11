@@ -28,8 +28,8 @@ def render(s, output):
     archive = f.CHART / ('chaos-mesh-' + lock['version'] + '.tgz')
     f.require(hashlib.sha256(archive.read_bytes()).hexdigest() == lock['sha256'], 'Upstream chart checksum mismatch')
     values = yaml.safe_load((f.CHART / 'values.yaml').read_text())
-    values['controllerManager']['nodeSelector'] = {'kubernetes.io/hostname': s['controllerNode']}
-    values['chaosDaemon']['nodeSelector'] = {'kubernetes.io/hostname': s['connect']['node']}
+    values['controllerManager']['nodeSelector'] = {'yeodam.io/role': 'system', 'kubernetes.io/hostname': s['controllerNode']}
+    values['chaosDaemon']['nodeSelector'] = {'yeodam.io/role': 'system', 'kubernetes.io/hostname': s['connect']['node']}
     f.private_write(output, values)
     return {'installValuesPrepared': True, 'installed': False, 'newNodes': 0,
             'controllerPods': 1, 'daemonNodes': [s['connect']['node']],

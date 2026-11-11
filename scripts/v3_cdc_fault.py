@@ -237,7 +237,7 @@ def execute(k, p, expected, receipt_path):
             [(t.get('id'), t.get('state')) for t in status.get('connectorStatus', {}).get('tasks', [])] == [(0, 'RUNNING')],
             'CDC must already be running before injecting a new fault')
     ds = k.get('daemonset', 'chaos-mesh', 'chaos-daemon')
-    require(ds['spec']['template']['spec']['nodeSelector'] == {'kubernetes.io/hostname': p['snapshot']['connect']['node']}
+    require(ds['spec']['template']['spec']['nodeSelector'] == {'yeodam.io/role': 'system', 'kubernetes.io/hostname': p['snapshot']['connect']['node']}
             and ds['status'].get('numberReady') == ds['status'].get('desiredNumberScheduled') == 1,
             'Exactly one reviewed Chaos daemon must be Ready')
     created = bounded_json(k.call(['create', '-f', '-', '-o', 'json'], json.dumps(p['fault'])))

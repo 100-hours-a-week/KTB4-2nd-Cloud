@@ -36,7 +36,7 @@ class FakeKube:
             return copy.deepcopy(self.obj) if name else {'items': []}
         if kind == 'daemonset':
             return {'spec': {'template': {'spec': {'nodeSelector': {
-                'kubernetes.io/hostname': self.plan['snapshot']['connect']['node']}}}},
+                'yeodam.io/role':'system', 'kubernetes.io/hostname': self.plan['snapshot']['connect']['node']}}}},
                     'status': {'numberReady': 1, 'desiredNumberScheduled': 1}}
         if kind == 'kafkaconnector':
             return {'metadata': {'generation': 1}, 'spec': {'state': 'running'},
