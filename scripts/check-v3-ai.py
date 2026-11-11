@@ -41,7 +41,12 @@ def _validate(docs,v,contract,runtime_scripts,policy_sources,legacy=False):
             if name=='ai-trust':require(d['data']=={k+'.crt':v['trust'][k] for k in ['redis','qdrant','kafka']},'Public CA references only')
             elif name=='ai-runtime-scripts':require(d['data']==runtime_scripts,'Runtime scripts pinned')
             else:
-                role='api' if name=='ai-api-runtime' else 'runner';require(d['data']==dict(contract['commonEnvironment'],RELEASE=v['source'],**contract['workloads'][role].get('environment',{})),'Exact shared limits/topics and role settings')
+                role='api' if name=='ai-api-runtime' else 'runner'
+                environment=dict(contract['commonEnvironment'],RELEASE=v['source'],**contract['workloads'][role].get('environment',{}))
+                if v.get('tourapiEnabled'):
+                    environment.update(contract['tourapiEnvironment'])
+                    if role=='runner':environment.update(contract['tourapiRunnerEnvironment'])
+                require(d['data']==environment,'Exact shared limits/topics and role settings')
         elif kind=='ServiceAccount':require(name in ['ai-api','ai-runner'] and d['automountServiceAccountToken'] is False,'Dedicated tokenless SA')
         elif kind=='ExternalSecret':
             require(name=='ai-runtime','Exact credentials target');s=d['spec'];data=[{'secretKey':k,'remoteRef':{'key':'yeodam/v3/foundation/ai/runtime','property':k,'version':'AWSCURRENT','decodingStrategy':'None'}} for k in contract['secretKeys']+contract['runnerExtraSecrets']]

@@ -10,6 +10,8 @@ def api_live():
         finally:e.close()
 
 def runner_ready():
+    from reference_data import tourapi_ready
+    if not tourapi_ready():return False
     from redis import Redis
     path=Path(os.environ['PLACE_INDEX_PATH'])
     if not path.is_file() or not Path('/tmp/place-index-ready').is_file():return False
