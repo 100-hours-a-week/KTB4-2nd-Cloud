@@ -1,0 +1,6 @@
+{
+  "alloy": "grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4",
+  "tempo": "grafana/tempo:3.1.1@sha256:64e2fbd56d9c2b3412a4b430a58ea59e91a670b1e75f920a0c702213ad145044",
+  "java": "otel/autoinstrumentation-java:2.32.0@sha256:9dad1c6e3e2ecee48fc164a19bcfde703510bee972c8cb421689fde89b5f89e9",
+  "python": "otel/autoinstrumentation-python:0.66b1@sha256:499211ecc0b6237d955c77a6972c85ee9857153090e5356d5a1e13ccaff7fed9"
+}

@@ -1,0 +1,84 @@
+{{- if .Values.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-apm-deny, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: yeodam-apm}}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-alloy-ingress, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: v3-alloy}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchExpressions: [{key: kubernetes.io/metadata.name, operator: In, values: [auth, trip, photo]}]}
+          podSelector: {matchLabels: {app.kubernetes.io/name: backend}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ai}}
+          podSelector: {matchLabels: {yeodam.io/ai-runtime: 'true'}}
+      ports: [{protocol: TCP, port: 4318}]
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: v3-prometheus}}}]
+      ports: [{protocol: TCP, port: 12345}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-tempo-ingress, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: v3-tempo}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: v3-alloy}}}]
+      ports: [{protocol: TCP, port: 4317}]
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: v3-grafana}}}, {podSelector: {matchLabels: {app.kubernetes.io/name: v3-prometheus}}}]
+      ports: [{protocol: TCP, port: 3200}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-alloy-egress, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: v3-alloy}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: v3-tempo}}}]
+      ports: [{protocol: TCP, port: 4317}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-grafana-to-tempo, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: v3-grafana}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: v3-tempo}}}]
+      ports: [{protocol: TCP, port: 3200}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-prometheus-to-apm, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: v3-prometheus}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: v3-alloy}}}]
+      ports: [{protocol: TCP, port: 12345}]
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: v3-tempo}}}]
+      ports: [{protocol: TCP, port: 3200}]
+{{- range $ns := list "auth" "trip" "photo" "ai" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-v3-apm-export, namespace: {{ $ns }}}
+spec:
+  podSelector: {matchLabels: { {{ if eq $ns "ai" }}yeodam.io/ai-runtime: 'true'{{ else }}app.kubernetes.io/name: backend{{ end }} }}
+  policyTypes: [Egress]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: observability}}, podSelector: {matchLabels: {app.kubernetes.io/name: v3-alloy}}}]
+      ports: [{protocol: TCP, port: 4318}]
+{{- end }}
+{{- end }}

@@ -19,6 +19,7 @@ jobs:
     uses: ./.github/workflows/v3-platform-check.yml
     permissions:
       contents: read
+      packages: read
 
   v3-candidate:
     name: V3 candidate evidence

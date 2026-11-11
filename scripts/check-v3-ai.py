@@ -5,6 +5,8 @@ from collections import Counter
 from pathlib import Path
 import yaml
 ROOT=Path(__file__).resolve().parents[1];CHART=ROOT/'deploy/v3/ai-apps';CONTRACT=json.loads((CHART/'files/contract.json').read_text());POLICIES=json.loads((CHART/'files/policies.json').read_text())
+
+apm_spec=importlib.util.spec_from_file_location('apm_contract',ROOT/'scripts/v3_apm_contract.py');apm_contract=importlib.util.module_from_spec(apm_spec);apm_spec.loader.exec_module(apm_contract)
 spec=importlib.util.spec_from_file_location('platform',ROOT/'scripts/check-v3-platform.py');platform=importlib.util.module_from_spec(spec);spec.loader.exec_module(platform);require=platform.require
 
 def fixture():
@@ -23,6 +25,10 @@ def _validate(docs,v,contract,runtime_scripts,policy_sources,legacy=False):
         if v['workloads']['api']:expected['Service']=1
     require(dict(Counter(d['kind'] for d in docs))==expected,'Exact inventory; no Namespace/PVC/Secret/Ingress')
     if not enabled:return
+    apm_roles=v.get('apmWorkloads',[])
+    if apm_roles:
+        runtime_scripts=dict(runtime_scripts,sitecustomize=(CHART/'files/apm/sitecustomize.py').read_text())
+        runtime_scripts['sitecustomize.py']=runtime_scripts.pop('sitecustomize')
     require(not roles or all(v['review'].values()),'All source/image/model reviews required')
     identities=[(d['kind'],d['metadata']['namespace'],d['metadata']['name']) for d in docs];require(len(identities)==len(set(identities)),'Duplicate resources')
     expectedPolicies={(p['namespace'],p['name']):p['spec'] for p in policy_sources}
@@ -51,9 +57,14 @@ def _validate(docs,v,contract,runtime_scripts,policy_sources,legacy=False):
             require(len(pod['containers'])==1 and c['image']==v['image'] and c['resources']==w['resources'] and c['command']==w['command'],'Same immutable image and exact minimum role budget')
             require(pod['terminationGracePeriodSeconds']==w['grace'],'Explicit current application shutdown contract')
             for container in pod['initContainers']+[c]:require(container['securityContext']=={'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}},'Restricted containers')
-            require(len(pod['initContainers'])==1 and pod['initContainers'][0]['command']==['python','/runtime/prepare-trust.py'] and pod['initContainers'][0]['image']==v['image'],'Public trust bundle first')
-            keys=contract['secretKeys']+(contract['runnerExtraSecrets'] if role=='runner' else []);require(c['env']==[{'name':k,'valueFrom':{'secretKeyRef':{'name':'ai-runtime','key':k}}} for k in keys],'Reference-only role secrets')
+            apm=role in apm_roles
+            if apm:
+                require(pod['initContainers'][-1]==apm_contract.init('python'),'Pinned Python init only')
+            require(len(pod['initContainers'])==(2 if apm else 1) and pod['initContainers'][0]['command']==['python','/runtime/prepare-trust.py'] and pod['initContainers'][0]['image']==v['image'],'Public trust bundle first')
+            keys=contract['secretKeys']+(contract['runnerExtraSecrets'] if role=='runner' else []);require(c['env']==[{'name':k,'valueFrom':{'secretKeyRef':{'name':'ai-runtime','key':k}}} for k in keys]+(apm_contract.python_env(role,v['source']) if apm else []),'Reference-only role secrets')
             volumes={x['name']:x for x in pod['volumes']};require(not any('hostPath' in x or 'persistentVolumeClaim' in x for x in pod['volumes']),'No host mount or added PVC')
+            if apm:require(volumes.get('apm')=={'name':'apm','emptyDir':{'sizeLimit':'64Mi'}} and {'name':'apm','mountPath':'/otel','readOnly':True} in c['volumeMounts'],'Read-only bounded SDK mount')
+            else:require('apm' not in volumes,'No implicit instrumentation')
             if legacy:require('model-url' not in volumes,'Preserve the exact previously approved runtime')
             else:require(volumes.get('model-url')=={'name':'model-url','secret':{'secretName':'ai-runtime','items':[{'key':'VLM_BASE_URL','path':'base-url'}]}} and {'name':'model-url','mountPath':'/var/run/yeodam-vlm','readOnly':True} in c['volumeMounts'],'Only the VLM URL is projected for ESO confirmation')
             if role=='api':require(c['readinessProbe']['httpGet']=={'path':'/health','port':'http'} and c['livenessProbe']['exec']['command']==['python','/runtime/health.py','api-live'] and 'reference' not in volumes,'Dependency readiness separate from liveness')

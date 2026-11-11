@@ -12,7 +12,10 @@ from pathlib import Path
 import re
 import subprocess
 
+
 ROOT = Path(__file__).resolve().parents[1]
+
+apm_spec=importlib.util.spec_from_file_location('apm_contract',ROOT/'scripts/v3_apm_contract.py');apm_contract=importlib.util.module_from_spec(apm_spec);apm_spec.loader.exec_module(apm_contract)
 CHART = ROOT / 'deploy/v3/apps'
 SPEC = importlib.util.spec_from_file_location('v3_platform', ROOT / 'scripts/check-v3-platform.py')
 platform = importlib.util.module_from_spec(SPEC)
@@ -163,12 +166,17 @@ def validate(documents, values):
             expected_probe = config['probes'][probe]
             require(container[probe + 'Probe'] == expected_probe, 'Probe must use the configured endpoint and timing')
             require(expected_probe['httpGet']['port'] in ports, 'Probe port does not exist')
+        apm = name in values.get('apmWorkloads', [])
+        if apm:
+            require(values.get('backendContract') and config['name']=='backend','Only reviewed BE may opt in')
         expected_env = [{'name': key, 'value': value} for key, value in sorted(config['environment'].items())]
         require(not any(re.search(r'(password|secret|token|api_?key|private_?key)$', key, re.I) or key in ('KAKAO_CLIENT_ID', 'MONGODB_URI', 'SPRING_MONGODB_URI')
                         for key in config['environment']), 'Known secret environment keys must use secretRefs')
         for key, secret in sorted(config['secretRefs'].items()):
             require(key not in config['environment'], 'Literal and Secret environment entries must not overlap')
             expected_env.append({'name': key, 'valueFrom': {'secretKeyRef': {**secret, 'optional': False}}})
+        if apm:
+            expected_env += apm_contract.java_env(name, config)
         require(container.get('env', []) == expected_env, 'Only explicit configuration and Secret references may be injected')
         refs = ([name + '-runtime'] if data else []) + config['configMapRefs']
         require(len(set(refs)) == len(refs), 'Do not import a ConfigMap twice')
@@ -192,6 +200,9 @@ def validate(documents, values):
             mounts.append({'name': 'catalog', 'mountPath': '/app/data'})
             storage += quantity(config['catalogSizeLimit'], 'ephemeral-storage')
             initializers = pod.get('initContainers', [])
+            if apm:
+                require(initializers[-1]==apm_contract.init('java'),'Pinned Java init only')
+                initializers=initializers[:-1]
             connected = values.get('backendConnectionContract', False)
             require(len(initializers) == (2 if connected else 1), 'Backend catalog must be seeded from the same image')
             if connected:
@@ -226,6 +237,10 @@ def validate(documents, values):
             mount_paths.add(secret['mountPath'])
             volumes[secret['name']] = {'name': secret['name'], 'secret': {'secretName': secret['secretName'], 'optional': False, 'defaultMode': 0o440}}
             mounts.append({'name': secret['name'], 'mountPath': secret['mountPath'], 'readOnly': True})
+        if apm:
+            volumes['apm']={'name':'apm','emptyDir':{'sizeLimit':'48Mi'}}
+            mounts.append({'name':'apm','mountPath':'/otel','readOnly':True})
+            require(storage+48*1024*1024 <= quantity(config['resources']['limits']['ephemeral-storage'],'ephemeral-storage'),'APM must fit existing disk limit')
         require(pod['volumes'] == list(volumes.values()) and container['volumeMounts'] == mounts, 'Unreviewed volume or mount found')
         for item in [container, *pod.get('initContainers', [])]:
             require(item['securityContext'] == {'allowPrivilegeEscalation': False, 'readOnlyRootFilesystem': True, 'capabilities': {'drop': ['ALL']}},

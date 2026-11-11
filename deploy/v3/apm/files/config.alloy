@@ -1,0 +1,56 @@
+logging { level = "warn" }
+otelcol.receiver.otlp "apps" {
+  http { endpoint = "0.0.0.0:4318" }
+  output { traces = [otelcol.processor.memory_limiter.bounded.input] }
+}
+otelcol.processor.memory_limiter "bounded" {
+  check_interval = "1s"
+  limit = "96MiB"
+  spike_limit = "16MiB"
+  output { traces = [otelcol.processor.transform.sanitize.input] }
+}
+otelcol.processor.transform "sanitize" {
+  error_mode = "propagate"
+  trace_statements {
+    context = "resource"
+    statements = ["keep_keys(attributes, [\"service.name\", \"service.namespace\", \"service.version\", \"deployment.environment.name\"])"]
+  }
+  trace_statements {
+    context = "span"
+    statements = [
+      "keep_keys(attributes, [\"http.request.method\", \"http.response.status_code\", \"http.method\", \"http.status_code\", \"http.route\", \"db.system\", \"db.system.name\", \"db.operation.name\", \"error.type\"])",
+      "set(status.message, \"\")",
+      "set(name, \"operation\")",
+      "set(name, \"HTTP request\") where attributes[\"http.request.method\"] != nil or attributes[\"http.method\"] != nil",
+      "set(name, \"database operation\") where attributes[\"db.system\"] != nil or attributes[\"db.system.name\"] != nil",
+    ]
+  }
+  trace_statements {
+    context = "spanevent"
+    statements = ["keep_keys(attributes, [\"exception.type\"])", "set(name, \"event\")"]
+  }
+  output { traces = [otelcol.processor.batch.small.input] }
+}
+otelcol.processor.batch "small" {
+  timeout = "1s"
+  send_batch_size = 32
+  send_batch_max_size = 64
+  output { traces = [otelcol.exporter.otlp.tempo.input] }
+}
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "v3-tempo.observability.svc:4317"
+    tls { insecure = true }
+  }
+  sending_queue {
+    enabled = true
+    num_consumers = 1
+    queue_size = 16
+  }
+  retry_on_failure {
+    enabled = true
+    initial_interval = "1s"
+    max_interval = "5s"
+    max_elapsed_time = "30s"
+  }
+}
