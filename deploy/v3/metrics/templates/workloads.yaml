@@ -29,7 +29,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: v3-{{ $name }}, app.kubernetes.io/part-of: yeodam-observability}
       annotations:
-        checksum/config: {{ printf "%s%s%s" (($.Files.Glob "files/*").AsConfig) ($.Values.aiMetricsEnabled | toString) ($.Values.apmEnabled | toString) | sha256sum }}
+        checksum/config: {{ printf "%s%s%s%s" (($.Files.Glob "files/*").AsConfig) ($.Values.aiMetricsEnabled | toString) ($.Values.apmEnabled | toString) (ternary "cloudwatch-logs-enabled" "" (and (eq $name "grafana") $.Values.cloudwatchLogsEnabled)) | sha256sum }}
     spec:
       serviceAccountName: v3-{{ $name }}
       automountServiceAccountToken: {{ has $name (list "prometheus" "kube-state-metrics") }}
@@ -72,7 +72,7 @@ spec:
             - {name: GOGC, value: '50'}
             - {name: GF_AUTH_ANONYMOUS_ENABLED, value: 'true'}
             - {name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer}
-{{- if $.Values.apmEnabled }}
+{{- if or $.Values.apmEnabled $.Values.cloudwatchLogsEnabled }}
             - {name: GF_USERS_VIEWERS_CAN_EDIT, value: 'true'}
 {{- end }}
             - {name: GF_AUTH_DISABLE_LOGIN_FORM, value: 'true'}
@@ -82,6 +82,13 @@ spec:
             - {name: GF_ANALYTICS_REPORTING_ENABLED, value: 'false'}
             - {name: GF_ANALYTICS_CHECK_FOR_UPDATES, value: 'false'}
             - {name: GF_PLUGINS_PREINSTALL_DISABLED, value: 'true'}
+{{- if $.Values.cloudwatchLogsEnabled }}
+            - {name: AWS_REGION, value: ap-northeast-2}
+            - {name: AWS_DEFAULT_REGION, value: ap-northeast-2}
+            - {name: AWS_EC2_METADATA_DISABLED, value: 'true'}
+            - {name: GF_AWS_ALLOWED_AUTH_PROVIDERS, value: default}
+            - {name: GF_AWS_ASSUME_ROLE_ENABLED, value: 'false'}
+{{- end }}
           readinessProbe: {httpGet: {path: /api/health, port: http}, initialDelaySeconds: 10, periodSeconds: 10}
           livenessProbe: {httpGet: {path: /api/health, port: http}, initialDelaySeconds: 30, periodSeconds: 20}
           volumeMounts:

@@ -1,1 +1,4 @@
 enabled: false
+
+# Activate only after the backend log group and collector policy are applied.
+backendEnabled: false

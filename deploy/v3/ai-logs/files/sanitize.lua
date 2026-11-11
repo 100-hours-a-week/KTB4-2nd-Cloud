@@ -30,7 +30,61 @@ local function clean(value, depth)
  end
  return value
 end
+-- Backend fields are allowlisted: raw message, stack, object keys and unknown extras
+-- never leave the node. Keep the existing AI sanitizer unchanged below.
+local be_roles = {['auth-api']='auth', ['trip-api']='trip', ['photo-api']='photo', ['photo-converter']='photo', ['trip-result-worker']='trip'}
+local be_fields = {
+ timestamp=true, level=true, service=true, logger=true, event=true, result=true,
+ request_id=true, trace_id=true, span_id=true, trip_id=true, job_id=true,
+ duration_ms=true, failure_stage=true, error_code=true, attempts=true,
+ expected_count=true, saved_count=true, workflow=true, stage=true,
+ stage_started_at=true, stage_finished_at=true, message_type=true, batch_id=true,
+ failed_count=true, generation_id=true, workflow_elapsed_ms=true, batch_no=true,
+ item_id=true, photo_count=true, place_count=true, unique_coordinate_count=true,
+ lookup_failure_count=true, fallback_count=true, work_duration_ms=true,
+ stage_elapsed_ms=true, sample_count=true, release=true, commit_result=true
+}
+local function backend(tag, timestamp, record)
+ for role, namespace in pairs(be_roles) do
+  local escaped = role:gsub('%-', '%%-')
+  local pod = tag:match('^be%.work%.var%.log%.containers%.('..escaped..'%-[^_]+)_'..namespace..'_backend%-[a-f0-9]+%.log$')
+  if pod then
+   if record.level == 'DEBUG' or record.level == 'TRACE' then return -1, timestamp, record end
+   local app = {}
+   if record.log ~= nil then
+    app = {event='collector_unparsed_log', parse_error=true, omitted_bytes=#tostring(record.log)}
+   else
+    for key, value in pairs(record) do
+     if be_fields[key] and (type(value) ~= 'table') then
+      if type(value) == 'string' and #value > 512 then value='[OVERSIZE_REDACTED]' end
+      if (key == 'trace_id' and type(value)=='string' and (#value~=32 or not value:match('^[a-f0-9]+$')))
+       or (key == 'span_id' and type(value)=='string' and (#value~=16 or not value:match('^[a-f0-9]+$'))) then
+       app[key]=flb_null
+      else app[key]=clean(value, 0) end
+     end
+    end
+    -- Keep diagnostic class/frame names, never the exception message or raw stack.
+    if type(record.stack_trace)=='string' then
+     local class=record.stack_trace:match('^([%w_.$]+)')
+     if class and (class:match('Exception$') or class:match('Error$')) then
+      app.error_type=class
+      local frames={}
+      for method, file, line in record.stack_trace:gmatch('\n%s*at%s+([%w_.$<>]+)%(([%w_.$]+):(%d+)%)') do
+       if #frames>=8 then break end
+       table.insert(frames,method..'('..file..':'..line..')')
+      end
+      if #frames>0 then app.stack_frames=frames end
+     end
+    end
+    if app.event == nil then app.event=app.error_type and 'collector_exception_log' or 'collector_unclassified_log' end
+   end
+   return 2, timestamp, {app=app, kubernetes={namespace_name=namespace,pod_name=pod,container_name='backend',node_name=os.getenv('NODE_NAME') or 'unknown'},collector={role=role,stream=record.stream or 'unknown'}}
+  end
+ end
+ return -1, timestamp, record
+end
 function sanitize(tag, timestamp, record)
+ if tag:match("^be%.") then return backend(tag, timestamp, record) end
  local pod, role
  pod = tag:match('^ai%.api%.var%.log%.containers%.(ai%-api%-[^_]+)_ai_ai%-[a-f0-9]+%.log$')
  if pod then role = 'ai-api' else
