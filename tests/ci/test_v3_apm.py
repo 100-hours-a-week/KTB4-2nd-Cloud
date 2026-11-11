@@ -44,8 +44,12 @@ class APM(unittest.TestCase):
   prepare=load('prepare_apm','scripts/prepare-v3-apm-candidate.py')
   import v3_release_bundle as bundle
   original=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
+  # Stable initial rollout fixture: the candidate may already enable all roles later.
+  original['values']['backend']['apmWorkloads']=['auth-api']
+  original['values']['ai']['apmWorkloads']=['api']
+  input_copy=copy.deepcopy(original)
   expanded=prepare.prepare(original)
-  self.assertEqual(original, json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text()))
+  self.assertEqual(original,input_copy)
   unchanged=copy.deepcopy(expanded)
   for profile in ['backend','ai']:
    unchanged['values'][profile]['apmWorkloads']=original['values'][profile]['apmWorkloads']
