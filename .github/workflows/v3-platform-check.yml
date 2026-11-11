@@ -26,6 +26,9 @@ on:
       - 'scripts/v3_apm_contract.py'
       - 'tests/ci/test_v3_apm.py'
       - 'tests/ci/smoke-v3-apm.py'
+      - 'scripts/collect-v3-experiment.py'
+      - 'tests/ci/test_v3_experiment.py'
+      - 'tests/ci/smoke-v3-experiment.py'
       - 'scripts/check-v3-metrics.py'
       - 'tests/ci/test_v3_metrics.py'
       - 'tests/ci/smoke-v3-metrics.py'
@@ -258,6 +261,9 @@ jobs:
           image=$(python3 -c 'import json; print(json.load(open("deploy/v3/ai-logs/image.lock.json"))["image"])')
           docker pull "$image"
           "$RUNNER_TEMP/yeodam-v3-validation/venv/bin/python" tests/ci/smoke-v3-ai-logs.py
+
+      - name: Verify experiment query semantics with synthetic counters
+        run: '"$RUNNER_TEMP/yeodam-v3-validation/venv/bin/python" tests/ci/smoke-v3-experiment.py'
 
       - name: Verify minimal metrics and dashboards without AWS
         env:
