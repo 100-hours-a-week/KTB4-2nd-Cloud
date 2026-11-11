@@ -44,6 +44,10 @@ def validate(docs):
     require('--storage.tsdb.retention.time=3d' in prom['args'] and '--storage.tsdb.retention.size=4GB' in prom['args'],'Bound time and bytes')
     cfg=yaml.safe_load(next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='v3-metrics-config')['data']['prometheus.yaml'])
     require(all(x.get('sample_limit',0)>0 for x in cfg['scrape_configs']),'Bound every scrape')
+    own=next(x for x in cfg['scrape_configs'] if x['job_name']=='prometheus')
+    own_names={'prometheus_tsdb_head_series','prometheus_tsdb_head_samples_appended_total','prometheus_tsdb_storage_blocks_bytes','prometheus_tsdb_wal_storage_size_bytes','prometheus_tsdb_retention_limit_bytes','prometheus_target_scrapes_exceeded_sample_limit_total','prometheus_config_last_reload_successful','prometheus_config_last_reload_success_timestamp_seconds','process_resident_memory_bytes','process_cpu_seconds_total','go_memstats_heap_inuse_bytes'}
+    rules=own.get('metric_relabel_configs',[])
+    require(own['sample_limit']==1000 and len(rules)==1 and rules[0].get('source_labels')==['__name__'] and rules[0].get('action')=='keep' and set(rules[0].get('regex','').split('|'))==own_names,'Self metrics must stay within the reviewed scalar allowlist and original sample budget')
     ai=[x for x in cfg['scrape_configs'] if x['job_name']=='ai']
     if ai:require(ai[0]['authorization']=={'type':'Bearer','credentials_file':'/etc/prometheus/ai-auth/API_KEY'},'AI auth only by pre-supplied file')
     # Kubernetes network policy cannot enforce HTTP methods; exporter code is GET-only.

@@ -66,6 +66,10 @@ from urllib.parse import quote
 base='http://v3-grafana:3000'
 r=json.load(urllib.request.urlopen(base+'/api/dashboards/uid/yeodam-v3-operations',timeout=3));assert r['dashboard']['uid']=='yeodam-v3-operations'
 assert json.load(urllib.request.urlopen(base+'/api/datasources/uid/v3-prometheus/health',timeout=3))['status']=='OK'
+for expression in ['up{job="prometheus"}','prometheus_tsdb_head_series']:
+ data=json.load(urllib.request.urlopen('http://v3-prometheus:9090/api/v1/query?query='+quote(expression),timeout=3))['data']['result']
+ assert data,'Self-scrape or required head-series metric missing'
+ if expression.startswith('up'):assert data[0]['value'][1]=='1','Self-scrape rejected by sample limit'
 q='http://v3-prometheus:9090/api/v1/query?query='+quote('yeodam_cdc_task_state{state="FAILED"}')
 r=json.load(urllib.request.urlopen(q,timeout=3));assert r['data']['result'][0]['value'][1]=='1'
 raw=urllib.request.urlopen('http://v3-cdc-status:8080/metrics').read();assert b'fixture-not-for-export' not in raw

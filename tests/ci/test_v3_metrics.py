@@ -40,4 +40,11 @@ class Chart(unittest.TestCase):
         for mutate in [lambda d:d['spec'].update(replicas=2),lambda d:d['spec']['template']['spec'].update(nodeSelector={})]:
             docs=copy.deepcopy(self.docs);mutate(next(x for x in docs if x['kind']=='Deployment'))
             with self.assertRaises(ValueError):chart.validate(docs)
-if __name__=='__main__':unittest.main()
+    def test_self_scrape_growth_requires_filter_instead_of_larger_budget(self):
+        import yaml
+        for mutate in [lambda x:x.pop('metric_relabel_configs'),lambda x:x.update(sample_limit=2000),lambda x:x['metric_relabel_configs'][0].update(regex='.*')]:
+            docs=copy.deepcopy(self.docs)
+            data=next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='v3-metrics-config')['data']
+            config=yaml.safe_load(data['prometheus.yaml']);own=next(x for x in config['scrape_configs'] if x['job_name']=='prometheus');mutate(own);data['prometheus.yaml']=yaml.safe_dump(config)
+            with self.assertRaises(ValueError):chart.validate(docs)
+if __name__=='__main__' :unittest.main()
