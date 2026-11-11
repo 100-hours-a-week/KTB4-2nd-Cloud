@@ -3138,6 +3138,7 @@ data:
   JOBS_SHUTDOWN_GRACE_SEC: '60'
   JOBS_STORY_CONCURRENCY: '4'
   JOBS_STORY_HANDLER: app.story.handler:run
+  JOBS_TRACE_CONTEXT_WRITE: 'false'
   KAFKA_BOOTSTRAP_SERVERS: yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093
   KAFKA_SASL_MECHANISM: SCRAM-SHA-512
   KAFKA_SASL_USERNAME: v3-ai
@@ -3149,6 +3150,8 @@ data:
   KAFKA_TRIP_CREATE_RESULT_TOPIC: prod.yeodam.trip-create.result
   KAFKA_TRIP_UPDATE_REQUEST_TOPIC: prod.yeodam.trip-update.request
   KAFKA_TRIP_UPDATE_RESULT_TOPIC: prod.yeodam.trip-update.result
+  LANGFUSE_BASE_URL: https://cloud.langfuse.com
+  LANGFUSE_TRACING_ENVIRONMENT: production
   PROCESS_AGENT_BUDGET_SEC: '3600'
   PROCESS_AGENT_CONCURRENCY: '4'
   PROCESS_AGENT_ENABLED: 'true'
@@ -3159,7 +3162,7 @@ data:
   PYTHONPATH: /app
   PYTHONUNBUFFERED: '1'
   QDRANT_URL: https://qdrant.qdrant.svc.cluster.local:6333
-  RELEASE: dc671c7b0ff356b5ae483c2f906817a9a34c2e80
+  RELEASE: 3d86cf883e26db0822e30566986c8f7bc62d336b
   REQUESTS_CA_BUNDLE: /etc/yeodam/trust/ca-bundle.pem
   S3_BUCKET: yeodam-v3-foundation-app-data-483175530259-ap-northeast-2
   SEARCH_ENABLED: 'true'
@@ -3196,6 +3199,7 @@ data:
   JOBS_SHUTDOWN_GRACE_SEC: '60'
   JOBS_STORY_CONCURRENCY: '4'
   JOBS_STORY_HANDLER: app.story.handler:run
+  JOBS_TRACE_CONTEXT_WRITE: 'false'
   KAFKA_BOOTSTRAP_SERVERS: yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093
   KAFKA_SASL_MECHANISM: SCRAM-SHA-512
   KAFKA_SASL_USERNAME: v3-ai
@@ -3207,6 +3211,8 @@ data:
   KAFKA_TRIP_CREATE_RESULT_TOPIC: prod.yeodam.trip-create.result
   KAFKA_TRIP_UPDATE_REQUEST_TOPIC: prod.yeodam.trip-update.request
   KAFKA_TRIP_UPDATE_RESULT_TOPIC: prod.yeodam.trip-update.result
+  LANGFUSE_BASE_URL: https://cloud.langfuse.com
+  LANGFUSE_TRACING_ENVIRONMENT: production
   PLACE_INDEX_PATH: /data/ai-reference/places-v2026-10-30.sqlite
   PLACE_INDEX_S3_URI: s3://yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/places/v2026-10-30/places.sqlite
   PLACE_INDEX_SHA256: 41f531891d9bdc5417e91c80a92e51f2e92e2661a641cb627cbdb16e5f0f3b1d
@@ -3220,7 +3226,7 @@ data:
   PYTHONPATH: /app
   PYTHONUNBUFFERED: '1'
   QDRANT_URL: https://qdrant.qdrant.svc.cluster.local:6333
-  RELEASE: dc671c7b0ff356b5ae483c2f906817a9a34c2e80
+  RELEASE: 3d86cf883e26db0822e30566986c8f7bc62d336b
   REQUESTS_CA_BUNDLE: /etc/yeodam/trust/ca-bundle.pem
   S3_BUCKET: yeodam-v3-foundation-app-data-483175530259-ap-northeast-2
   SEARCH_ENABLED: 'true'
@@ -3274,8 +3280,9 @@ spec:
     metadata:
       annotations:
         checksum/apm: e837b5739f17e637c2a7e6c5273a9143940410e0ec59e20472642f96d61f32d0
+        checksum/observability: 2f90d2d0790b9a5d5f43ee864729c279f83564cb06fb0f6631bdbcdbc081f295
         checksum/runtime: 2cf599f21ef2a192220cbac76a5e2c2b0657bf0adb7197a8041b50c580488c8e
-        yeodam.io/configuration-revision: 3571c5c96b1433acdf7220eebb07b6f731cf366715dec3bda1e33c87bf37120f
+        yeodam.io/configuration-revision: ad2084cb6b23375a3ae0bf27f248729c06dd8211176815617fce3b70e8609d4c
       labels:
         app.kubernetes.io/component: api
         app.kubernetes.io/instance: ai-api
@@ -3330,6 +3337,16 @@ spec:
             secretKeyRef:
               key: EMBEDDING_API_KEY
               name: ai-runtime
+        - name: LANGFUSE_PUBLIC_KEY
+          valueFrom:
+            secretKeyRef:
+              key: LANGFUSE_PUBLIC_KEY
+              name: ai-runtime
+        - name: LANGFUSE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: LANGFUSE_SECRET_KEY
+              name: ai-runtime
         - name: YEODAM_APM_ENABLED
           value: 'true'
         - name: PYTHONPATH
@@ -3337,7 +3354,7 @@ spec:
         - name: OTEL_SERVICE_NAME
           value: ai-api
         - name: OTEL_SERVICE_VERSION
-          value: dc671c7b0ff356b5ae483c2f906817a9a34c2e80
+          value: 3d86cf883e26db0822e30566986c8f7bc62d336b
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: http://v3-alloy.observability.svc:4318
         - name: OTEL_METRICS_EXPORTER
@@ -3347,7 +3364,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ai-api-runtime
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:d05cb4b9242fbb71022bd38505045e13be3d706e1903af9086ac80b0fcd4b287
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:20263aac32ada2023053eb5182ed96d0afeae58b95f887f99438941dc8075635
         livenessProbe:
           exec:
             command:
@@ -3413,7 +3430,7 @@ spec:
       - command:
         - python
         - /runtime/prepare-trust.py
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:d05cb4b9242fbb71022bd38505045e13be3d706e1903af9086ac80b0fcd4b287
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:20263aac32ada2023053eb5182ed96d0afeae58b95f887f99438941dc8075635
         name: prepare-trust
         resources:
           limits:
@@ -3520,8 +3537,9 @@ spec:
     metadata:
       annotations:
         checksum/apm: e837b5739f17e637c2a7e6c5273a9143940410e0ec59e20472642f96d61f32d0
+        checksum/observability: 2f90d2d0790b9a5d5f43ee864729c279f83564cb06fb0f6631bdbcdbc081f295
         checksum/runtime: 2cf599f21ef2a192220cbac76a5e2c2b0657bf0adb7197a8041b50c580488c8e
-        yeodam.io/configuration-revision: 3571c5c96b1433acdf7220eebb07b6f731cf366715dec3bda1e33c87bf37120f
+        yeodam.io/configuration-revision: ad2084cb6b23375a3ae0bf27f248729c06dd8211176815617fce3b70e8609d4c
       labels:
         app.kubernetes.io/component: runner
         app.kubernetes.io/instance: ai-runner
@@ -3581,6 +3599,16 @@ spec:
             secretKeyRef:
               key: KAKAO_REST_API_KEY
               name: ai-runtime
+        - name: LANGFUSE_PUBLIC_KEY
+          valueFrom:
+            secretKeyRef:
+              key: LANGFUSE_PUBLIC_KEY
+              name: ai-runtime
+        - name: LANGFUSE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: LANGFUSE_SECRET_KEY
+              name: ai-runtime
         - name: YEODAM_APM_ENABLED
           value: 'true'
         - name: PYTHONPATH
@@ -3588,7 +3616,7 @@ spec:
         - name: OTEL_SERVICE_NAME
           value: ai-runner
         - name: OTEL_SERVICE_VERSION
-          value: dc671c7b0ff356b5ae483c2f906817a9a34c2e80
+          value: 3d86cf883e26db0822e30566986c8f7bc62d336b
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: http://v3-alloy.observability.svc:4318
         - name: OTEL_METRICS_EXPORTER
@@ -3598,7 +3626,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ai-runner-runtime
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:d05cb4b9242fbb71022bd38505045e13be3d706e1903af9086ac80b0fcd4b287
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:20263aac32ada2023053eb5182ed96d0afeae58b95f887f99438941dc8075635
         name: ai
         readinessProbe:
           exec:
@@ -3658,7 +3686,7 @@ spec:
       - command:
         - python
         - /runtime/prepare-trust.py
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:d05cb4b9242fbb71022bd38505045e13be3d706e1903af9086ac80b0fcd4b287
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:20263aac32ada2023053eb5182ed96d0afeae58b95f887f99438941dc8075635
         name: prepare-trust
         resources:
           limits:
@@ -3811,6 +3839,18 @@ spec:
       property: KAKAO_REST_API_KEY
       version: AWSCURRENT
     secretKey: KAKAO_REST_API_KEY
+  - remoteRef:
+      decodingStrategy: None
+      key: yeodam/v3/foundation/ai/runtime
+      property: LANGFUSE_PUBLIC_KEY
+      version: AWSCURRENT
+    secretKey: LANGFUSE_PUBLIC_KEY
+  - remoteRef:
+      decodingStrategy: None
+      key: yeodam/v3/foundation/ai/runtime
+      property: LANGFUSE_SECRET_KEY
+      version: AWSCURRENT
+    secretKey: LANGFUSE_SECRET_KEY
   refreshInterval: 1h
   refreshPolicy: Periodic
   secretStoreRef:

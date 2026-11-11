@@ -117,6 +117,18 @@
     },
     "tourapiEnabled": {
       "type": "boolean"
+    },
+    "traceContextEnabled": {
+      "type": "boolean"
+    },
+    "traceContextWriteEnabled": {
+      "type": "boolean"
+    },
+    "traceContextWriteEverEnabled": {
+      "type": "boolean"
+    },
+    "langfuseEnabled": {
+      "type": "boolean"
     }
   }
 }

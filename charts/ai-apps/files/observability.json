@@ -1,0 +1,15 @@
+{
+  "sourceBaseline": "3d86cf883e26db0822e30566986c8f7bc62d336b",
+  "langfuseEnvironment": {
+    "LANGFUSE_BASE_URL": "https://cloud.langfuse.com",
+    "LANGFUSE_TRACING_ENVIRONMENT": "production"
+  },
+  "langfuseSecrets": [
+    "LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_SECRET_KEY"
+  ],
+  "traceFields": [
+    "trace_context",
+    "result_trace_context"
+  ]
+}
