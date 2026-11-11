@@ -128,6 +128,30 @@ class Transport(unittest.TestCase):
         for bad in variants:
             with self.assertRaises(ValueError):nginx.parse_addresses('archive.ubuntu.com',bad)
 
+    def test_servfail_switches_resolver_with_identical_validation(self):
+        calls=[]
+        def query(endpoint,domain):
+            calls.append((endpoint,domain))
+            if endpoint==nginx.RESOLVERS[0]:return {'Status':2}
+            return {'Status':0,'Question':[{'name':domain,'type':1}], 'Answer':[{'name':domain,'type':1,'TTL':60,'data':'91.189.91.81'}]}
+        self.assertEqual(set(nginx.https_addresses(query)),set(nginx.DOMAINS))
+        self.assertEqual(len(calls),4)
+
+    def test_both_resolvers_fail_boundedly(self):
+        calls=[]
+        def query(endpoint,domain):calls.append(endpoint);return {'Status':2}
+        with self.assertRaises(RuntimeError):nginx.https_addresses(query)
+        self.assertEqual(calls,list(nginx.RESOLVERS))
+
+    def test_nxdomain_and_private_data_are_not_resolver_failover(self):
+        for status,ip in [(3,'91.189.91.81'),(0,'169.254.169.254')]:
+            calls=[]
+            def query(endpoint,domain):
+                calls.append(endpoint)
+                return {'Status':status,'Question':[{'name':domain,'type':1}], 'Answer':[{'name':domain,'type':1,'TTL':60,'data':ip}]}
+            with self.assertRaises(ValueError):nginx.https_addresses(query)
+            self.assertEqual(len(calls),1)
+
     def test_host_build_probe_failure_blocks_package_retry(self):
         calls=[]
         def run(cmd, **kw):calls.append(cmd);return result(1,error='Could not resolve')

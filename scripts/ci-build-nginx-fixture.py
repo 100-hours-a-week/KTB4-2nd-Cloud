@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import urllib.request
+import urllib.error
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = 'yeodam-nginx-jwt-468:local'
@@ -29,7 +30,8 @@ def host_dns():
 def parse_addresses(domain, data):
     if domain not in DOMAINS or data.get('Status') != 0 or data.get('TC'):
         raise ValueError('Unexpected HTTPS DNS response')
-    if data.get('Question') != [{'name': domain + '.', 'type': 1}]:
+    question = data.get('Question', [])
+    if len(question) != 1 or question[0].get('name', '').rstrip('.') != domain or question[0].get('type') != 1:
         raise ValueError('HTTPS DNS question differs')
     addresses = []
     for row in data.get('Answer', []):
@@ -44,18 +46,45 @@ def parse_addresses(domain, data):
     return addresses[:4]
 
 
-def https_addresses():
+RESOLVERS = ('https://dns.google/resolve', 'https://cloudflare-dns.com/dns-query')
+
+
+def https_query(endpoint, domain):
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs): return None
     resolver = urllib.request.build_opener(NoRedirect())
+    request = urllib.request.Request(endpoint + '?name=' + domain + '&type=A&edns_client_subnet=0.0.0.0/0', headers={'Accept': 'application/dns-json'})
+    with resolver.open(request, timeout=10) as response:
+        body = response.read(32769)
+        if response.status != 200 or len(body) > 32768:
+            raise ValueError('HTTPS DNS response unavailable or too large')
+    return json.loads(body)
+
+
+def https_addresses(query=https_query):
     result = {}
     for domain in DOMAINS:
-        request = urllib.request.Request('https://dns.google/resolve?name=' + domain + '&type=A&edns_client_subnet=0.0.0.0/0', headers={'Accept': 'application/dns-json'})
-        with resolver.open(request, timeout=10) as response:
-            body = response.read(32769)
-            if response.status != 200 or len(body) > 32768:
-                raise ValueError('HTTPS DNS response unavailable or too large')
-        result[domain] = parse_addresses(domain, json.loads(body))
+        for endpoint in RESOLVERS:
+            try:
+                data = query(endpoint, domain)
+            except urllib.error.HTTPError as error:
+                if error.code != 429 and error.code < 500:
+                    raise
+                print(json.dumps({'dnsHost': domain, 'resolver': endpoint, 'httpStatus': error.code}), file=sys.stderr)
+                continue
+            except (urllib.error.URLError, TimeoutError):
+                print(json.dumps({'dnsHost': domain, 'resolver': endpoint, 'transportFailed': True}), file=sys.stderr)
+                continue
+            # SERVFAIL and truncation are availability failures. NXDOMAIN,
+            # wrong questions/private IPs/malformed data remain hard failures.
+            if data.get('Status') == 2 or data.get('TC') is True:
+                print(json.dumps({'dnsHost': domain, 'resolver': endpoint, 'dnsStatus': data.get('Status'), 'truncated': data.get('TC', False)}), file=sys.stderr)
+                continue
+            result[domain] = parse_addresses(domain, data)
+            print(json.dumps({'dnsHost': domain, 'resolverUsed': endpoint}), file=sys.stderr)
+            break
+        if domain not in result:
+            raise RuntimeError('Both reviewed HTTPS DNS resolvers unavailable')
     return result
 
 
@@ -96,7 +125,7 @@ def build(run=subprocess.run, resolve=host_dns, env=None, system=None, resolve_h
             for address in validated:
                 flags += ['--add-host', domain + '=' + address]
         mode = 'https-dns-build-hosts'
-        print(json.dumps({'httpsDnsResolver': 'dns.google', 'buildHosts': list(DOMAINS), 'globalResolverChanged': False}), file=sys.stderr)
+        print(json.dumps({'httpsDnsPolicy': 'fixed-public-resolvers', 'buildHosts': list(DOMAINS), 'globalResolverChanged': False}), file=sys.stderr)
     probe_command = ['docker', 'build', '--progress=plain', '--platform', 'linux/amd64', '--no-cache'] + flags + ['-']
     diagnosis = execute(probe_command, probe)
     sys.stderr.write(diagnosis.stdout + diagnosis.stderr)
