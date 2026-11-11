@@ -40,6 +40,50 @@ class APM(unittest.TestCase):
   bad=copy.deepcopy(docs);target=next(x for x in bad if x['kind']=='Deployment' and x['metadata']['name']=='auth-api')
   next(x for x in target['spec']['template']['spec']['containers'][0]['env'] if x['name']=='JAVA_TOOL_OPTIONS')['value']+=' -Xmx3G'
   with self.assertRaises(ValueError):be.validate(bad,v)
+ def test_expansion_changes_only_five_selected_deployments(self):
+  prepare=load('prepare_apm','scripts/prepare-v3-apm-candidate.py')
+  import v3_release_bundle as bundle
+  original=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
+  expanded=prepare.prepare(original)
+  self.assertEqual(original, json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text()))
+  unchanged=copy.deepcopy(expanded)
+  for profile in ['backend','ai']:
+   unchanged['values'][profile]['apmWorkloads']=original['values'][profile]['apmWorkloads']
+  self.assertEqual(unchanged,original)
+  self.assertEqual(prepare.prepare(expanded),expanded)
+  charts={}
+  for chart in ['apps','ai-apps','service-access']:
+   for path in (ROOT/'deploy/v3'/chart).rglob('*'):
+    if path.is_file():charts['charts/'+chart+'/'+str(path.relative_to(ROOT/'deploy/v3'/chart))]=path.read_bytes()
+  def indexed(candidate):
+   return {(d['kind'],d['metadata'].get('namespace'),d['metadata']['name']):d for d in bundle.render_profiles(charts,candidate)}
+  before=indexed(original);after=indexed(expanded)
+  self.assertEqual(set(before),set(after))
+  changed={key[2] for key in before if before[key]!=after[key]}
+  self.assertEqual(changed,{'trip-api','photo-api','photo-converter','trip-result-worker','ai-runner'})
+  for key,doc in after.items():
+   if key[0]!='Deployment':continue
+   old=before[key]['spec'];new=doc['spec']
+   self.assertEqual(old['replicas'],new['replicas'])
+   self.assertEqual(old['strategy'],new['strategy'])
+   for field in ['containers','nodeSelector','tolerations','serviceAccountName','terminationGracePeriodSeconds']:
+    a=old['template']['spec'][field];b=new['template']['spec'][field]
+    if field=='containers':
+     for x,y in zip(a,b):
+      for protected in ['image','resources','command','readinessProbe','livenessProbe','startupProbe']:
+       self.assertEqual(x.get(protected),y.get(protected))
+    else:self.assertEqual(a,b)
+ def test_expansion_rejects_unknown_roles_and_output_overwrite(self):
+  prepare=load('prepare_apm_reject','scripts/prepare-v3-apm-candidate.py')
+  source=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
+  source['values']['backend']['apmWorkloads']=['trip-websocket']
+  with self.assertRaises(ValueError):prepare.prepare(source)
+  import subprocess
+  with tempfile.TemporaryDirectory() as folder:
+   output=Path(folder)/'candidate.json';output.write_text('preserve-reviewed-candidate')
+   result=subprocess.run([sys.executable,str(ROOT/'scripts/prepare-v3-apm-candidate.py'),'--candidate',str(ROOT/'deploy/v3/releases/candidate.json'),'--output',str(output)],capture_output=True)
+   self.assertNotEqual(result.returncode,0)
+   self.assertEqual(output.read_text(),'preserve-reviewed-candidate')
  def test_existing_grafana_tempo_datasource_and_self_metrics_opt_in(self):
   import subprocess
   text=subprocess.check_output([os.environ['V3_HELM'],'template','metrics',str(ROOT/'deploy/v3/metrics'),'--set','enabled=true','--set','apmEnabled=true'],text=True)

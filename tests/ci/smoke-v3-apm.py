@@ -80,6 +80,19 @@ else:raise RuntimeError('Cross-language trace not stored')
   logs=run('docker','logs',prefix+'-'+role)
   assert trace_id in logs and 'cloud_apm_initialization_failed' not in logs,role+' log correlation failed'
  print('Same trace ID present in both application log fixtures')
+ # A background Python process must load the same hook without starting FastAPI.
+ runner=run('docker','exec','-e','OTEL_SERVICE_NAME=ai-runner',prefix+'-ai','python','/fixture/runner-fixture.py')
+ runner_trace=json.loads(runner.splitlines()[-1])['runnerTraceId']
+ lookup="""import time,urllib.request
+for i in range(40):
+ try:
+  body=urllib.request.urlopen('http://v3-tempo.observability.svc:3200/api/traces/TRACE',timeout=3).read().decode()
+  assert 'ai-runner' in body and 'ai-api' in body
+  print('Background HTTPX client and API trace stored; no job-wide tracing claim');break
+ except Exception:time.sleep(.5)
+else:raise RuntimeError('Background HTTPX trace missing')
+""".replace('TRACE',runner_trace)
+ print(run('docker','exec',probe,'python','-c',lookup))
  print(run('docker','stats','--no-stream','--format','{{.Name}} {{.MemUsage}}',*names))
 except Exception:
  for n in names:

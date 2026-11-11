@@ -22,6 +22,7 @@ on:
       - 'terraform/v3/runpod/**'
       - 'terraform/v3/ai-logs/**'
       - 'scripts/check-v3-apm.py'
+      - 'scripts/prepare-v3-apm-candidate.py'
       - 'scripts/v3_apm_contract.py'
       - 'tests/ci/test_v3_apm.py'
       - 'tests/ci/smoke-v3-apm.py'
