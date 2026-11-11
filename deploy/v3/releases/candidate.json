@@ -92,8 +92,8 @@
       "tourapiEnabled": true,
       "langfuseEnabled": true,
       "traceContextEnabled": true,
-      "traceContextWriteEnabled": false,
-      "traceContextWriteEverEnabled": false
+      "traceContextWriteEnabled": true,
+      "traceContextWriteEverEnabled": true
     },
     "backend": {
       "backendConnectionContract": true,
