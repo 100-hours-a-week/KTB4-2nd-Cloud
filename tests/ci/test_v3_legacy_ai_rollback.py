@@ -26,6 +26,10 @@ class Compatibility(unittest.TestCase):
         with self.assertRaises(ValueError):
             bundle.build(candidate(),charts,{'candidatePr':1,'cloudCommit':'a'*40,'cloudGateRunId':1})
 
+    def test_initial_apm_approved_chart_remains_recoverable(self):
+        files=bundle.build(candidate(),self.legacy('prior-tourapi-ai-chart.fixture.json'),{'candidatePr':1,'cloudCommit':'a'*40,'cloudGateRunId':1})
+        self.assertEqual(bundle.validate(files)['schemaVersion'],2)
+
     def test_modified_legacy_runtime_is_not_accepted(self):
         for path in ['files/runtime/start-runner.py','files/contract.json','templates/resources.yaml']:
             charts=self.legacy();key='charts/ai-apps/'+path;charts[key]+=b'\n ' if path.endswith('.json') else b'\n# not the approved source\n'

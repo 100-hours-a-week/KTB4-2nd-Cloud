@@ -12,6 +12,9 @@
     },
     "aiMetricsEnabled": {
       "type": "boolean"
+    },
+    "apmEnabled": {
+      "type": "boolean"
     }
   }
 }

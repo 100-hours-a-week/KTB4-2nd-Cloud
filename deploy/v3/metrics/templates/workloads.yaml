@@ -29,7 +29,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: v3-{{ $name }}, app.kubernetes.io/part-of: yeodam-observability}
       annotations:
-        checksum/config: {{ printf "%s%s" (($.Files.Glob "files/*").AsConfig) ($.Values.aiMetricsEnabled | toString) | sha256sum }}
+        checksum/config: {{ printf "%s%s%s" (($.Files.Glob "files/*").AsConfig) ($.Values.aiMetricsEnabled | toString) ($.Values.apmEnabled | toString) | sha256sum }}
     spec:
       serviceAccountName: v3-{{ $name }}
       automountServiceAccountToken: {{ has $name (list "prometheus" "kube-state-metrics") }}
@@ -72,6 +72,9 @@ spec:
             - {name: GOGC, value: '50'}
             - {name: GF_AUTH_ANONYMOUS_ENABLED, value: 'true'}
             - {name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer}
+{{- if $.Values.apmEnabled }}
+            - {name: GF_USERS_VIEWERS_CAN_EDIT, value: 'true'}
+{{- end }}
             - {name: GF_AUTH_DISABLE_LOGIN_FORM, value: 'true'}
             - {name: GF_AUTH_BASIC_ENABLED, value: 'false'}
             - {name: GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION, value: 'true'}

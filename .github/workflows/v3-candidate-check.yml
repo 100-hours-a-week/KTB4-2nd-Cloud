@@ -42,3 +42,14 @@ jobs:
             -v "$PWD/deploy/v3/ai-apps/files/runtime:/runtime:ro" \
             -v "$PWD/tests/ci/smoke-v3-runpod-adapter.py:/smoke.py:ro" \
             --entrypoint python "$IMAGE" /smoke.py
+      - name: Verify TourAPI support when explicitly selected in the candidate
+        run: |
+          IMAGE=$(python3 -c 'import json; print(json.load(open("deploy/v3/releases/candidate.json"))["components"]["ai-app"]["image"])')
+          REQUIRED=$(python3 -c 'import json; print(str(json.load(open("deploy/v3/releases/candidate.json"))["values"]["ai"].get("tourapiEnabled",False)).lower())')
+          docker run --rm --network none --read-only --memory 512m --cpus 1 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=32m \
+            -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/runtime:/app -e TOURAPI_REVIEW_REQUIRED="$REQUIRED" \
+            -v "$PWD/deploy/v3/ai-apps/files/runtime:/runtime:ro" \
+            -v "$PWD/deploy/v3/ai-apps/files/contract.json:/contract.json:ro" \
+            -v "$PWD/tests/ci/smoke-v3-tourapi.py:/smoke.py:ro" \
+            --entrypoint python "$IMAGE" /smoke.py

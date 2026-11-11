@@ -31,7 +31,7 @@ def start(role,image,args,volumes=(),env=(),extra=(),memory='64m'):
 
 with tempfile.TemporaryDirectory(prefix='v3-metrics-') as tmp:
     root=Path(tmp);conf=root/'config';conf.mkdir();sa=root/'sa';sa.mkdir()
-    docs=chart.render()
+    docs=chart.render(apm=True)
     cm=next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='v3-metrics-config')['data']
     for key,value in cm.items():(conf/key).write_text(value)
     shutil.copyfile(ROOT/'tests/ci/v3/metrics-alerts.test.yaml',conf/'alerts.test.yaml')
@@ -66,6 +66,11 @@ from urllib.parse import quote
 base='http://v3-grafana:3000'
 r=json.load(urllib.request.urlopen(base+'/api/dashboards/uid/yeodam-v3-operations',timeout=3));assert r['dashboard']['uid']=='yeodam-v3-operations'
 assert json.load(urllib.request.urlopen(base+'/api/datasources/uid/v3-prometheus/health',timeout=3))['status']=='OK'
+assert json.load(urllib.request.urlopen(base+'/api/frontend/settings',timeout=3))['viewersCanEdit'] is True
+for expression in ['up{job="prometheus"}','prometheus_tsdb_head_series']:
+ data=json.load(urllib.request.urlopen('http://v3-prometheus:9090/api/v1/query?query='+quote(expression),timeout=3))['data']['result']
+ assert data,'Self-scrape or required head-series metric missing'
+ if expression.startswith('up'):assert data[0]['value'][1]=='1','Self-scrape rejected by sample limit'
 q='http://v3-prometheus:9090/api/v1/query?query='+quote('yeodam_cdc_task_state{state="FAILED"}')
 r=json.load(urllib.request.urlopen(q,timeout=3));assert r['data']['result'][0]['value'][1]=='1'
 raw=urllib.request.urlopen('http://v3-cdc-status:8080/metrics').read();assert b'fixture-not-for-export' not in raw
@@ -73,7 +78,7 @@ try:
  req=urllib.request.Request(base+'/api/dashboards/db',data=b'{}',headers={'Content-Type':'application/json'})
  urllib.request.urlopen(req,timeout=3);raise AssertionError('Viewer write accepted')
 except urllib.error.HTTPError as err:assert err.code in (401,403)
-print(json.dumps({'passed':True,'checks':['exact Prometheus config and rule syntax','KSM CLI compatibility','Grafana provisioned dashboard and datasource','Viewer writes denied','Connector RUNNING with Task FAILED visible','private trace omitted'],'aws':False}))
+print(json.dumps({'passed':True,'checks':['exact Prometheus config and rule syntax','KSM CLI compatibility','Grafana provisioned dashboard and datasource','Viewer Explore enabled but writes denied','Connector RUNNING with Task FAILED visible','private trace omitted'],'aws':False}))
 '''
         deadline=time.monotonic()+65
         while time.monotonic()<deadline:

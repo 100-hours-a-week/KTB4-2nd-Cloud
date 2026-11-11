@@ -21,6 +21,10 @@ on:
       - 'terraform/v3/delivery/**'
       - 'terraform/v3/runpod/**'
       - 'terraform/v3/ai-logs/**'
+      - 'scripts/check-v3-apm.py'
+      - 'scripts/v3_apm_contract.py'
+      - 'tests/ci/test_v3_apm.py'
+      - 'tests/ci/smoke-v3-apm.py'
       - 'scripts/check-v3-metrics.py'
       - 'tests/ci/test_v3_metrics.py'
       - 'tests/ci/smoke-v3-metrics.py'
@@ -52,6 +56,9 @@ on:
       - 'terraform/v3/shared-embedding/**'
       - 'scripts/check-v3-model-path-plan.py'
       - 'tests/ci/test_v3_model_path.py'
+      - 'scripts/prepare-v3-tourapi.py'
+      - 'tests/ci/test_v3_tourapi.py'
+      - 'tests/ci/smoke-v3-tourapi.py'
       - 'scripts/check-v3-ai.py'
       - 'scripts/check-v3-ai-plan.py'
       - 'scripts/inspect-v3-ai-source.py'
@@ -171,6 +178,23 @@ permissions:
   contents: read
 
 jobs:
+  apm-runtime:
+    name: APM pipeline and real image compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify synthetic tracing with candidate image libraries and bounded observers
+        run: python3 tests/ci/smoke-v3-apm.py
+
   validate:
     name: Helm and platform contracts
     runs-on: ubuntu-24.04

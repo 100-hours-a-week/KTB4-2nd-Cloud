@@ -251,3 +251,6 @@ workloads:
       operator: Equal
       value: worker
       effect: NoSchedule
+
+# Explicit per-role opt-in; no app replacement by default.
+apmWorkloads: []

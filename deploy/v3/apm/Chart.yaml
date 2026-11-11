@@ -1,0 +1,5 @@
+apiVersion: v2
+name: yeodam-v3-apm
+version: 0.1.0
+type: application
+description: Bounded private OTLP collection and single-node trace storage
