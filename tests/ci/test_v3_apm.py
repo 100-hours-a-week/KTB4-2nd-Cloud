@@ -45,6 +45,10 @@ class APM(unittest.TestCase):
   import v3_release_bundle as bundle
   original=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
   # Stable initial rollout fixture: the candidate may already enable all roles later.
+  # Async Trace is a later feature and requires APM on both AI roles.
+  # This fixture intentionally tests the earlier APM-only rollout independently.
+  for flag in ['traceContextEnabled','traceContextWriteEnabled','traceContextWriteEverEnabled','langfuseEnabled']:
+   original['values']['ai'][flag]=False
   original['values']['backend']['apmWorkloads']=['auth-api']
   original['values']['ai']['apmWorkloads']=['api']
   input_copy=copy.deepcopy(original)
