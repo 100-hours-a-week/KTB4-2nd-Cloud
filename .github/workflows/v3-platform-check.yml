@@ -235,11 +235,11 @@ jobs:
       - name: Verify Redis transaction replay with isolated fixture data
         run: |
           image=$(sed -n 's/^image: //p' deploy/v3/redis/values.yaml)
-          docker pull "$image"
-          python3 scripts/verify-v3-redis-aof.py
+          selected=$(python3 scripts/ci-pull-redis-image.py --image "$image")
+          python3 scripts/verify-v3-redis-aof.py --image "$selected"
           ai_image=$(sed -n 's/^  redis: //p' deploy/v3/ai-storage/values.yaml)
-          docker pull "$ai_image"
-          python3 scripts/verify-v3-redis-aof.py --store ai
+          ai_selected=$(python3 scripts/ci-pull-redis-image.py --image "$ai_image")
+          python3 scripts/verify-v3-redis-aof.py --store ai --image "$ai_selected"
 
       - name: Verify disabled production release contract without credentials
         run: python3 -m unittest discover -s tests/ci -p 'test_production_release_prepare.py'
