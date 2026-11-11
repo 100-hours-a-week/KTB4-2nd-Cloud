@@ -1,1 +1,16 @@
-{"$schema":"https://json-schema.org/draft-07/schema#","type":"object","additionalProperties":false,"required":["enabled"],"properties":{"enabled":{"type":"boolean"}}}
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled"
+  ],
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "backendEnabled": {
+      "type": "boolean"
+    }
+  }
+}

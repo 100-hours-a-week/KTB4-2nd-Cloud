@@ -86,7 +86,8 @@
         "runner": true
       },
       "apmWorkloads": [
-        "api"
+        "api",
+        "runner"
       ],
       "tourapiEnabled": true
     },
@@ -638,7 +639,11 @@
         }
       },
       "apmWorkloads": [
-        "auth-api"
+        "auth-api",
+        "trip-api",
+        "photo-api",
+        "photo-converter",
+        "trip-result-worker"
       ]
     },
     "frontend": {

@@ -46,6 +46,20 @@ data:
         url: http://v3-tempo:3200
         editable: false
 {{- end }}
+{{- if .Values.cloudwatchLogsEnabled }}
+      - name: V3 CloudWatch Logs
+        uid: v3-cloudwatch-logs
+        type: cloudwatch
+        access: proxy
+        editable: false
+        jsonData:
+          authType: default
+          defaultRegion: ap-northeast-2
+          logGroups:
+            - {name: /yeodam/v3/production/ai-api, arn: 'arn:aws:logs:ap-northeast-2:483175530259:log-group:/yeodam/v3/production/ai-api'}
+            - {name: /yeodam/v3/production/ai-runner, arn: 'arn:aws:logs:ap-northeast-2:483175530259:log-group:/yeodam/v3/production/ai-runner'}
+            - {name: /yeodam/v3/production/backend, arn: 'arn:aws:logs:ap-northeast-2:483175530259:log-group:/yeodam/v3/production/backend'}
+{{- end }}
   dashboard-provider.yaml: |
 {{ .Files.Get "files/dashboard-provider.yaml" | indent 4 }}
   operations.json: |

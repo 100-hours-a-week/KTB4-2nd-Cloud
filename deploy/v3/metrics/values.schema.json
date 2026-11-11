@@ -15,6 +15,9 @@
     },
     "apmEnabled": {
       "type": "boolean"
+    },
+    "cloudwatchLogsEnabled": {
+      "type": "boolean"
     }
   }
 }
