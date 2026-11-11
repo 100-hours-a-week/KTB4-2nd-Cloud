@@ -54,6 +54,16 @@ data:
   {{- range $key, $value := $c.commonEnvironment }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}
+  {{- if $.Values.tourapiEnabled }}
+  {{- range $key, $value := $c.tourapiEnvironment }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  {{- if eq $role "runner" }}
+  {{- range $key, $value := $c.tourapiRunnerEnvironment }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
   {{- range $key, $value := $w.environment }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}

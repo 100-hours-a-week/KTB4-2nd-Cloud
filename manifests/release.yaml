@@ -2719,8 +2719,9 @@ data:
     from pathlib import Path\n\ndef api_live():\n    try:\n        with urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=3)\
     \ as r:return r.status==200\n    except urllib.error.HTTPError as e:\n       \
     \ try:return e.code==503\n        finally:e.close()\n\ndef runner_ready():\n \
-    \   from redis import Redis\n    path=Path(os.environ['PLACE_INDEX_PATH'])\n \
-    \   if not path.is_file() or not Path('/tmp/place-index-ready').is_file():return\
+    \   from reference_data import tourapi_ready\n    if not tourapi_ready():return\
+    \ False\n    from redis import Redis\n    path=Path(os.environ['PLACE_INDEX_PATH'])\n\
+    \    if not path.is_file() or not Path('/tmp/place-index-ready').is_file():return\
     \ False\n    with path.open('rb') as f:\n        if f.read(16)!=b'SQLite format\
     \ 3\\x00':return False\n    with Redis.from_url(os.environ['REDIS_URL'],socket_connect_timeout=2,socket_timeout=2)\
     \ as r:return bool(r.ping())\nif __name__=='__main__':\n    try:ok=api_live()\
@@ -2731,6 +2732,21 @@ data:
     for name in ['redis','qdrant','kafka']:\n    ca=Path('/etc/yeodam/ca',name+'.crt').read_bytes()\n\
     \    if b'PRIVATE KEY' in ca:raise SystemExit('Public certificates only')\n  \
     \  roots+=b'\\n'+ca\nssl.create_default_context(cadata=roots.decode())\nPath('/etc/yeodam/trust/ca-bundle.pem').write_bytes(roots)\n"
+  reference_data.py: "\"\"\"Prepare TourAPI before Ready/claiming; old images remain\
+    \ usable with opt-in disabled.\"\"\"\nimport os\nfrom pathlib import Path\n\n\
+    SIZE = 34351861\nMARKER = Path('/tmp/tourapi-ready')\n\ndef prepare_tourapi(cfg):\n\
+    \    MARKER.unlink(missing_ok=True)\n    if os.environ.get('CLOUD_TOURAPI_ENABLED')\
+    \ != '1':\n        return\n    if not getattr(cfg, 'PROCESS_WORKFLOW_ENABLED',\
+    \ False):\n        raise RuntimeError('TourAPI requires workflow support in the\
+    \ selected image')\n    from app.pipeline.workflow.resources import prepare_tour_raw\n\
+    \    path = prepare_tour_raw(cfg)  # Existing atomic download, checksum and JSON\
+    \ validation.\n    if path is None or path != Path(os.environ['TOURAPI_RAW_PATH'])\
+    \ or path.stat().st_size != SIZE:\n        raise RuntimeError('TourAPI reference\
+    \ not ready')\n    MARKER.write_text(os.environ['TOURAPI_RAW_SHA256'])\n    print(f'TourAPI\
+    \ ready: bytes={SIZE}', flush=True)\n\ndef tourapi_ready():\n    if os.environ.get('CLOUD_TOURAPI_ENABLED')\
+    \ != '1':\n        return True\n    path = Path(os.environ['TOURAPI_RAW_PATH'])\n\
+    \    return (path.is_file() and path.stat().st_size == SIZE and MARKER.is_file()\n\
+    \            and MARKER.read_text() == os.environ['TOURAPI_RAW_SHA256'])\n"
   runpod_control.py: "\"\"\"Cloud process adapter: stop new claims, finish current\
     \ work, resume on lease expiry.\n\nNo AI repository changes. Wrap the existing\
     \ runner_loop with its supported stop Event;\nnever cancel active work to perform\
@@ -2857,9 +2873,10 @@ data:
   start-runner.py: "\"\"\"Prepare the existing index, then run the controlled process\
     \ loop; never load a GPU model here.\"\"\"\nimport os,sys,asyncio,signal\nfrom\
     \ pathlib import Path\nfrom app.jobs.config import JobsSettings\nfrom app.infra.place_index\
-    \ import prepare_place_index\ncfg=JobsSettings()\npath=prepare_place_index(cfg)\n\
+    \ import prepare_place_index\nfrom reference_data import prepare_tourapi\nPath('/tmp/place-index-ready').unlink(missing_ok=True)\n\
+    Path('/tmp/tourapi-ready').unlink(missing_ok=True)\ncfg=JobsSettings()\npath=prepare_place_index(cfg)\n\
     if path is None or path.stat().st_size!=1098801152:raise SystemExit('Reference\
-    \ index not ready')\nPath('/tmp/place-index-ready').write_text(cfg.PLACE_INDEX_SHA256)\n\
+    \ index not ready')\nprepare_tourapi(cfg)\nPath('/tmp/place-index-ready').write_text(cfg.PLACE_INDEX_SHA256)\n\
     print('Place index ready: bytes=1098801152',flush=True)\nfrom runpod_control import\
     \ install\ninstall(1)\nfrom app.jobs import runner\nasync def serve():\n    task=asyncio.create_task(runner.main())\n\
     \    asyncio.get_running_loop().add_signal_handler(signal.SIGTERM,task.cancel)\n\
@@ -2881,7 +2898,9 @@ data:
   EMBED_MODEL: qwen3-vl-embedding-2b
   FAKE_PIPELINE: 'false'
   GPU_GENERATION_INFLIGHT: '8'
+  GPU_PROCESS_GENERATION_INFLIGHT: '4'
   GPU_SEARCH_EMBEDDING_INFLIGHT: '4'
+  GPU_STORY_GENERATION_INFLIGHT: '4'
   IMAGE_SOURCE: s3
   JOBS_ENV: v3-foundation
   JOBS_FAKE_PIPELINE: 'false'
@@ -2905,11 +2924,14 @@ data:
   PROCESS_AGENT_BUDGET_SEC: '3600'
   PROCESS_AGENT_CONCURRENCY: '4'
   PROCESS_AGENT_ENABLED: 'true'
+  PROCESS_WORKFLOW_BUDGET_SEC: '3600'
+  PROCESS_WORKFLOW_CONCURRENCY: '4'
+  PROCESS_WORKFLOW_ENABLED: 'true'
   PYTHONDONTWRITEBYTECODE: '1'
   PYTHONPATH: /app
   PYTHONUNBUFFERED: '1'
   QDRANT_URL: https://qdrant.qdrant.svc.cluster.local:6333
-  RELEASE: b4b31ff7afd7cd15f8c8e8dc0e9e8f9f8bf93a08
+  RELEASE: 7505cc73461b9e2e2cfb7fd1c190452c20fa7647
   REQUESTS_CA_BUNDLE: /etc/yeodam/trust/ca-bundle.pem
   S3_BUCKET: yeodam-v3-foundation-app-data-483175530259-ap-northeast-2
   SEARCH_ENABLED: 'true'
@@ -2929,11 +2951,14 @@ data:
   AWS_DEFAULT_REGION: ap-northeast-2
   AWS_EC2_METADATA_DISABLED: 'true'
   AWS_REGION: ap-northeast-2
+  CLOUD_TOURAPI_ENABLED: '1'
   EMBEDDING_SERVED_MODEL_NAME: qwen3-vl-embedding-2b
   EMBED_MODEL: qwen3-vl-embedding-2b
   FAKE_PIPELINE: 'false'
   GPU_GENERATION_INFLIGHT: '8'
+  GPU_PROCESS_GENERATION_INFLIGHT: '4'
   GPU_SEARCH_EMBEDDING_INFLIGHT: '4'
+  GPU_STORY_GENERATION_INFLIGHT: '4'
   IMAGE_SOURCE: s3
   JOBS_ENV: v3-foundation
   JOBS_FAKE_PIPELINE: 'false'
@@ -2960,15 +2985,21 @@ data:
   PROCESS_AGENT_BUDGET_SEC: '3600'
   PROCESS_AGENT_CONCURRENCY: '4'
   PROCESS_AGENT_ENABLED: 'true'
+  PROCESS_WORKFLOW_BUDGET_SEC: '3600'
+  PROCESS_WORKFLOW_CONCURRENCY: '4'
+  PROCESS_WORKFLOW_ENABLED: 'true'
   PYTHONDONTWRITEBYTECODE: '1'
   PYTHONPATH: /app
   PYTHONUNBUFFERED: '1'
   QDRANT_URL: https://qdrant.qdrant.svc.cluster.local:6333
-  RELEASE: b4b31ff7afd7cd15f8c8e8dc0e9e8f9f8bf93a08
+  RELEASE: 7505cc73461b9e2e2cfb7fd1c190452c20fa7647
   REQUESTS_CA_BUNDLE: /etc/yeodam/trust/ca-bundle.pem
   S3_BUCKET: yeodam-v3-foundation-app-data-483175530259-ap-northeast-2
   SEARCH_ENABLED: 'true'
   SSL_CERT_FILE: /etc/yeodam/trust/ca-bundle.pem
+  TOURAPI_RAW_PATH: /data/ai-reference/tourapi-v2026-11-11.json
+  TOURAPI_RAW_S3_URI: s3://yeodam-v1-app-data-483175530259-ap-northeast-2/ai-reference/tourapi/v2026-11-11/tourapi_all.json
+  TOURAPI_RAW_SHA256: 9a32d53d7e7b55e8440b7dae953e3f344e17c55e2ca9fa9c86258bcf5b0d4229
   VLM_MODEL: gemma-4
   XDG_CACHE_HOME: /tmp/.cache
 kind: ConfigMap
@@ -3015,7 +3046,7 @@ spec:
     metadata:
       annotations:
         checksum/apm: e837b5739f17e637c2a7e6c5273a9143940410e0ec59e20472642f96d61f32d0
-        checksum/runtime: ae84d3b00ffe0049ebc24f7198be64efe7e8b72786811ee72ba9d56cc6b8eacf
+        checksum/runtime: 2cf599f21ef2a192220cbac76a5e2c2b0657bf0adb7197a8041b50c580488c8e
         yeodam.io/configuration-revision: 3571c5c96b1433acdf7220eebb07b6f731cf366715dec3bda1e33c87bf37120f
       labels:
         app.kubernetes.io/component: api
@@ -3078,7 +3109,7 @@ spec:
         - name: OTEL_SERVICE_NAME
           value: ai-api
         - name: OTEL_SERVICE_VERSION
-          value: b4b31ff7afd7cd15f8c8e8dc0e9e8f9f8bf93a08
+          value: 7505cc73461b9e2e2cfb7fd1c190452c20fa7647
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: http://v3-alloy.observability.svc:4318
         - name: OTEL_METRICS_EXPORTER
@@ -3088,7 +3119,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ai-api-runtime
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:cbeca1d96e2caed88affb586ff39a939cdd6ddd9560020d502212561dbe89e98
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:8e768056429867cdaedec416cd8a7cd5956a0ceb914c16e54ad98db4143b7cc7
         livenessProbe:
           exec:
             command:
@@ -3154,7 +3185,7 @@ spec:
       - command:
         - python
         - /runtime/prepare-trust.py
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:cbeca1d96e2caed88affb586ff39a939cdd6ddd9560020d502212561dbe89e98
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:8e768056429867cdaedec416cd8a7cd5956a0ceb914c16e54ad98db4143b7cc7
         name: prepare-trust
         resources:
           limits:
@@ -3260,7 +3291,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/runtime: ae84d3b00ffe0049ebc24f7198be64efe7e8b72786811ee72ba9d56cc6b8eacf
+        checksum/runtime: 2cf599f21ef2a192220cbac76a5e2c2b0657bf0adb7197a8041b50c580488c8e
         yeodam.io/configuration-revision: 3571c5c96b1433acdf7220eebb07b6f731cf366715dec3bda1e33c87bf37120f
       labels:
         app.kubernetes.io/component: runner
@@ -3324,7 +3355,7 @@ spec:
         envFrom:
         - configMapRef:
             name: ai-runner-runtime
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:cbeca1d96e2caed88affb586ff39a939cdd6ddd9560020d502212561dbe89e98
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:8e768056429867cdaedec416cd8a7cd5956a0ceb914c16e54ad98db4143b7cc7
         name: ai
         readinessProbe:
           exec:
@@ -3381,7 +3412,7 @@ spec:
       - command:
         - python
         - /runtime/prepare-trust.py
-        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:cbeca1d96e2caed88affb586ff39a939cdd6ddd9560020d502212561dbe89e98
+        image: ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:8e768056429867cdaedec416cd8a7cd5956a0ceb914c16e54ad98db4143b7cc7
         name: prepare-trust
         resources:
           limits:
