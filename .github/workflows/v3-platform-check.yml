@@ -4,6 +4,10 @@ on:
   workflow_call:
   push:
     paths:
+      - 'scripts/ci-build-nginx-fixture.py'
+      - 'scripts/ci-pull-redis-image.py'
+      - 'scripts/ci_image_transport.py'
+      - 'tests/ci/test_ci_transport.py'
       - 'deploy/v3/**'
       - 'terraform/v3/cutover/**'
       - 'terraform/v2/retirement/**'

@@ -56,11 +56,21 @@ class Transport(unittest.TestCase):
         self.assertEqual(len(pulls),6)
 
     def test_wrong_platform_and_digest_are_rejected(self):
-        for row in [{'Os':'linux','Architecture':'arm64','RepoDigests':[SOURCE]},
-                    {'Os':'linux','Architecture':'amd64','RepoDigests':[images.PRIMARY+'@sha256:'+'b'*64]}]:
-            with self.assertRaises(ValueError): images.inspect(SOURCE, lambda *a, **k: result(out=json.dumps([row])))
+        wrong_arch={'Os':'linux','Architecture':'arm64','RepoDigests':[SOURCE]}
+        self.assertFalse(images.inspect(SOURCE,lambda *a, **k: result(out=json.dumps([wrong_arch]))))
+        wrong_digest={'Os':'linux','Architecture':'amd64','RepoDigests':[images.PRIMARY+'@sha256:'+'b'*64]}
+        with self.assertRaises(ValueError):images.inspect(SOURCE,lambda *a, **k:result(out=json.dumps([wrong_digest])))
         for ref in ['redis:latest','other.example/redis@'+DIGEST]:
             with self.assertRaises(ValueError): images.pull(ref, lambda *a, **k: self.fail('unreviewed registry called'))
+
+    def test_old_docker_inspect_api_keeps_platform_and_digest_checks(self):
+        calls=[]
+        def run(cmd, **kw):
+            calls.append(cmd)
+            if '--platform' in cmd:return result(1,error='requires newer API for platform inspect')
+            return result(out=json.dumps([{'Os':'linux','Architecture':'amd64','RepoDigests':[SOURCE]}]))
+        self.assertTrue(images.inspect(SOURCE,run));self.assertEqual(len(calls),2)
+        self.assertNotIn('--platform',calls[1])
 
     def test_all_sources_exhaust_at_six_pulls(self):
         pulls=[]

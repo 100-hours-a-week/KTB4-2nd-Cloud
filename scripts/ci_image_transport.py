@@ -22,7 +22,11 @@ def transient(message):
 def inspect(reference, run):
     result = run(['docker', 'image', 'inspect', '--platform', 'linux/amd64', reference], capture_output=True, text=True, timeout=30)
     if result.returncode:
-        return False
+        # Older hosted Docker APIs lack platform-selective inspect. Native inspect
+        # is equally strict after validating Architecture/Os and RepoDigests below.
+        result = run(['docker', 'image', 'inspect', reference], capture_output=True, text=True, timeout=30)
+        if result.returncode:
+            return False
     rows = json.loads(result.stdout)
     expected = REF.fullmatch(reference)
     if len(rows) != 1 or not expected:
@@ -32,8 +36,10 @@ def inspect(reference, run):
     if expected[1] == MIRROR:
         acceptable.add('redis@' + expected[2])
         acceptable.add('library/redis@' + expected[2])
-    if row.get('Os') != 'linux' or row.get('Architecture') != 'amd64' or not acceptable.intersection(row.get('RepoDigests', [])):
-        raise ValueError('Downloaded image platform or immutable repository digest differs')
+    if not acceptable.intersection(row.get('RepoDigests', [])):
+        raise ValueError('Downloaded immutable repository digest differs')
+    if row.get('Os') != 'linux' or row.get('Architecture') != 'amd64':
+        return False
     return True
 
 
