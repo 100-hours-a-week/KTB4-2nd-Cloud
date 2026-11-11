@@ -22,11 +22,11 @@
       "buildSourceSha": "bfe94c9267e4d8cb9e0f4c3da80919a4475b9f1a"
     },
     "websocket": {
-      "buildRunId": 41836683635,
-      "buildSourceSha": "b2630abbbb1b6072bfae6f811b8405ad13840bc9",
-      "image": "ghcr.io/100-hours-a-week/yeodam-websocket@sha256:cfef5c0c9b9a6a2fe0852f4af45d43748acc2a703fb24aa5dd69a0af05d99f83",
       "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
-      "sourceSha": "1f46254e1100aa9e3f5ebd2a0da088a021b3135d"
+      "sourceSha": "3098c82fb26d258e6d35ec19a14da231bcdd5550",
+      "image": "ghcr.io/100-hours-a-week/yeodam-websocket@sha256:7a5f9db26c3fc6bb8e332e2274ef64aeadfc6375799bb0d6f259ce3ed5c28827",
+      "buildRunId": 42979624082,
+      "buildSourceSha": "41281e5d7e6669e03a02af18920ff80f9a512b03"
     }
   },
   "schemaVersion": 2,
@@ -788,7 +788,7 @@
           "REDIS_PORT": "6379",
           "REDIS_SSL_ENABLED": "true",
           "REDIS_USERNAME": "app",
-          "RELEASE": "1f46254e1100aa9e3f5ebd2a0da088a021b3135d",
+          "RELEASE": "3098c82fb26d258e6d35ec19a14da231bcdd5550",
           "SERVER_PORT": "8081",
           "SERVER_SHUTDOWN": "graceful",
           "SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE": "30s",
@@ -910,14 +910,14 @@
       "frontendContract": false,
       "frontendServiceOnly": false,
       "images": {
-        "websocket": "ghcr.io/100-hours-a-week/yeodam-websocket@sha256:cfef5c0c9b9a6a2fe0852f4af45d43748acc2a703fb24aa5dd69a0af05d99f83"
+        "websocket": "ghcr.io/100-hours-a-week/yeodam-websocket@sha256:7a5f9db26c3fc6bb8e332e2274ef64aeadfc6375799bb0d6f259ce3ed5c28827"
       },
       "websocketContract": true,
       "workloads": {
         "trip-websocket": {
           "component": "websocket",
           "configMapData": {
-            "RELEASE": "1f46254e1100aa9e3f5ebd2a0da088a021b3135d",
+            "RELEASE": "3098c82fb26d258e6d35ec19a14da231bcdd5550",
             "WEBSOCKET_ALLOWED_ORIGINS": "https://yeodam-2gether.com"
           },
           "enabled": true,
