@@ -7,6 +7,8 @@ rule_files: [/etc/prometheus/alerts.yaml]
 scrape_configs:
   - job_name: prometheus
     static_configs: [{targets: ['127.0.0.1:9090']}]
+    metric_relabel_configs:
+      - {source_labels: [__name__], regex: 'prometheus_tsdb_head_series|prometheus_tsdb_head_samples_appended_total|prometheus_tsdb_storage_blocks_bytes|prometheus_tsdb_wal_storage_size_bytes|prometheus_tsdb_retention_limit_bytes|prometheus_target_scrapes_exceeded_sample_limit_total|prometheus_config_last_reload_successful|prometheus_config_last_reload_success_timestamp_seconds|process_resident_memory_bytes|process_cpu_seconds_total|go_memstats_heap_inuse_bytes', action: keep}
     sample_limit: 1000
   - job_name: kubernetes-state
     static_configs: [{targets: ['v3-kube-state-metrics:8080']}]
