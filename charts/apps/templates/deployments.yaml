@@ -1,6 +1,9 @@
 {{- range $instance, $workload := .Values.workloads }}
 {{- $c := include "yeodam-v3-apps.resolveConfig" (dict "root" $ "instance" $instance "workload" $workload) | fromYaml }}
 {{- if and $c.enabled (not (and $.Values.frontendContract $.Values.frontendServiceOnly)) }}
+{{- $apm := has $instance $.Values.apmWorkloads }}
+{{- $apmConfig := fromJson ($.Files.Get "files/apm.json") }}
+{{- if and $apm (not $.Values.backendContract) }}{{ fail "APM may instrument only reviewed backend profiles" }}{{ end }}
 {{- $ctx := dict "root" $ "instance" $instance "config" $c }}
 {{- include "yeodam-v3-apps.check" $ctx }}
 ---
@@ -111,6 +114,14 @@ spec:
           volumeMounts:
             - name: catalog
               mountPath: /catalog
+        {{- if $apm }}
+        - name: prepare-apm
+          image: {{ $apmConfig.javaImage }}
+          command: [cp, /javaagent.jar, /otel/javaagent.jar]
+          resources: {requests: {cpu: 25m, memory: 32Mi}, limits: {cpu: 100m, memory: 64Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts: [{name: apm, mountPath: /otel}]
+        {{- end }}
       {{- end }}
       containers:
         - name: {{ $c.name }}
@@ -161,6 +172,22 @@ spec:
                   key: {{ $secret.key }}
                   optional: false
             {{- end }}
+            {{- if $apm }}
+            - {name: JAVA_TOOL_OPTIONS, value: {{ printf "%s -javaagent:/otel/javaagent.jar" $c.configMapData.JAVA_TOOL_OPTIONS | quote }}}
+            - {name: OTEL_SERVICE_NAME, value: {{ $instance | quote }}}
+            - {name: OTEL_RESOURCE_ATTRIBUTES, value: {{ printf "service.namespace=%s,deployment.environment.name=production,service.version=%s" $c.namespace $c.configMapData.RELEASE | quote }}}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: {{ $apmConfig.endpoint | quote }}}
+            - {name: OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf}
+            - {name: OTEL_TRACES_SAMPLER, value: {{ $apmConfig.sampler | quote }}}
+            - {name: OTEL_TRACES_SAMPLER_ARG, value: {{ $apmConfig.samplerArg | quote }}}
+            - {name: OTEL_PROPAGATORS, value: tracecontext}
+            - {name: OTEL_METRICS_EXPORTER, value: none}
+            - {name: OTEL_LOGS_EXPORTER, value: none}
+            - {name: OTEL_BSP_MAX_QUEUE_SIZE, value: '128'}
+            - {name: OTEL_BSP_MAX_EXPORT_BATCH_SIZE, value: '32'}
+            - {name: OTEL_BSP_SCHEDULE_DELAY, value: '1000'}
+            - {name: OTEL_EXPORTER_OTLP_TIMEOUT, value: '1000'}
+            {{- end }}
           {{- end }}
           startupProbe:
             {{- toYaml $c.probes.startup | nindent 12 }}
@@ -192,6 +219,9 @@ spec:
               mountPath: {{ .mountPath | quote }}
               readOnly: true
             {{- end }}
+            {{- if $apm }}
+            - {name: apm, mountPath: /otel, readOnly: true}
+            {{- end }}
       volumes:
         {{- if $.Values.frontendContract }}
         - name: next-cache
@@ -214,6 +244,9 @@ spec:
             secretName: {{ .secretName }}
             optional: false
             defaultMode: 0440
+        {{- end }}
+        {{- if $apm }}
+        - {name: apm, emptyDir: {sizeLimit: 48Mi}}
         {{- end }}
 {{- end }}
 {{- end }}

@@ -13,6 +13,7 @@
     "privateModelPeers"
   ],
   "properties": {
+    "apmWorkloads": {"type": "array","uniqueItems": true,"items": {"type": "string","enum": ["api","runner"]}},
     "accessEnabled": {
       "type": "boolean"
     },

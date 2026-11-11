@@ -724,6 +724,35 @@ spec:
               key: WEBSOCKET_INTERNAL_SERVICE_TOKEN
               name: backend-credentials
               optional: false
+        - name: JAVA_TOOL_OPTIONS
+          value: -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts
+            -Djavax.net.ssl.trustStorePassword=public-ca-only -javaagent:/otel/javaagent.jar
+        - name: OTEL_SERVICE_NAME
+          value: auth-api
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: service.namespace=auth,deployment.environment.name=production,service.version=eaa2b81502461a344e05456b53e40bb07ed855c1
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://v3-alloy.observability.svc:4318
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: http/protobuf
+        - name: OTEL_TRACES_SAMPLER
+          value: parentbased_traceidratio
+        - name: OTEL_TRACES_SAMPLER_ARG
+          value: '0.01'
+        - name: OTEL_PROPAGATORS
+          value: tracecontext
+        - name: OTEL_METRICS_EXPORTER
+          value: none
+        - name: OTEL_LOGS_EXPORTER
+          value: none
+        - name: OTEL_BSP_MAX_QUEUE_SIZE
+          value: '128'
+        - name: OTEL_BSP_MAX_EXPORT_BATCH_SIZE
+          value: '32'
+        - name: OTEL_BSP_SCHEDULE_DELAY
+          value: '1000'
+        - name: OTEL_EXPORTER_OTLP_TIMEOUT
+          value: '1000'
         envFrom:
         - configMapRef:
             name: auth-api-runtime
@@ -793,6 +822,9 @@ spec:
         - mountPath: /etc/yeodam/ca
           name: trust-input
           readOnly: true
+        - mountPath: /otel
+          name: apm
+          readOnly: true
       imagePullSecrets:
       - name: ghcr-pull
       initContainers:
@@ -855,6 +887,28 @@ spec:
         volumeMounts:
         - mountPath: /catalog
           name: catalog
+      - command:
+        - cp
+        - /javaagent.jar
+        - /otel/javaagent.jar
+        image: otel/autoinstrumentation-java:2.32.0@sha256:9dad1c6e3e2ecee48fc164a19bcfde703510bee972c8cb421689fde89b5f89e9
+        name: prepare-apm
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 25m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /otel
+          name: apm
       nodeSelector:
         yeodam.io/role: api
         yeodam.io/stage: v3
@@ -887,6 +941,9 @@ spec:
           defaultMode: 288
           optional: false
           secretName: backend-trust
+      - emptyDir:
+          sizeLimit: 48Mi
+        name: apm
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -2765,6 +2822,33 @@ data:
     \n\nif __name__ == '__main__':\n    try:\n        cli()\n    except Exception:\n\
     \        raise SystemExit('AI control failed; sensitive output suppressed') from\
     \ None\n"
+  sitecustomize.py: "\"\"\"Bounded HTTP tracing only; no model import, payload logging\
+    \ or command replacement.\"\"\"\nimport os\nimport sys\n\n# Management probes\
+    \ and maintenance CLI must keep their existing lightweight behavior.\n_skip =\
+    \ any(x.endswith((\"health.py\", \"runpod_control.py\", \"prepare-trust.py\"))\
+    \ for x in getattr(sys, \"orig_argv\", sys.argv))\nif os.environ.get(\"YEODAM_APM_ENABLED\"\
+    ) == \"true\" and not _skip:\n    try:\n        from opentelemetry import trace\n\
+    \        from opentelemetry.sdk.resources import Resource\n        from opentelemetry.sdk.trace\
+    \ import TracerProvider\n        from opentelemetry.sdk.trace.sampling import\
+    \ ParentBased, TraceIdRatioBased\n        from opentelemetry.sdk.trace.export\
+    \ import BatchSpanProcessor\n        from opentelemetry.exporter.otlp.proto.http.trace_exporter\
+    \ import OTLPSpanExporter\n        from opentelemetry.instrumentation.fastapi\
+    \ import FastAPIInstrumentor\n        from opentelemetry.instrumentation.httpx\
+    \ import HTTPXClientInstrumentor\n        from opentelemetry.propagate import\
+    \ set_global_textmap\n        from opentelemetry.trace.propagation.tracecontext\
+    \ import TraceContextTextMapPropagator\n        provider = TracerProvider(resource=Resource.create({\n\
+    \            \"service.name\": os.environ[\"OTEL_SERVICE_NAME\"], \"service.namespace\"\
+    : \"ai\",\n            \"service.version\": os.environ[\"OTEL_SERVICE_VERSION\"\
+    ], \"deployment.environment.name\": \"production\",\n        }), sampler=ParentBased(TraceIdRatioBased(0.01)))\n\
+    \        provider.add_span_processor(BatchSpanProcessor(\n            OTLPSpanExporter(endpoint=os.environ[\"\
+    OTEL_EXPORTER_OTLP_ENDPOINT\"]+\"/v1/traces\", timeout=1),\n            max_queue_size=128,\
+    \ max_export_batch_size=32, schedule_delay_millis=1000, export_timeout_millis=1000))\n\
+    \        trace.set_tracer_provider(provider)\n        set_global_textmap(TraceContextTextMapPropagator())\n\
+    \        FastAPIInstrumentor().instrument(excluded_urls=r\".*/(health|metrics)(?:\\\
+    ?.*)?$\")\n        HTTPXClientInstrumentor().instrument()\n    except Exception\
+    \ as error:\n        # Telemetry setup must not prevent the original app from\
+    \ starting. CI rejects this condition.\n        print('{\"event\":\"cloud_apm_initialization_failed\"\
+    ,\"error_type\":\"'+type(error).__name__+'\"}', file=sys.stderr, flush=True)\n"
   start-api.py: "\"\"\"Use the unchanged AI image with Cloud's reversible maintenance\
     \ adapter.\"\"\"\nimport os\nimport uvicorn\nfrom runpod_control import install\n\
     \ncontrol = install(int(os.environ['JOBS_STORY_CONCURRENCY']))\nfrom app.v2_main\
@@ -2930,6 +3014,7 @@ spec:
   template:
     metadata:
       annotations:
+        checksum/apm: e837b5739f17e637c2a7e6c5273a9143940410e0ec59e20472642f96d61f32d0
         checksum/runtime: ae84d3b00ffe0049ebc24f7198be64efe7e8b72786811ee72ba9d56cc6b8eacf
         yeodam.io/configuration-revision: 3571c5c96b1433acdf7220eebb07b6f731cf366715dec3bda1e33c87bf37120f
       labels:
@@ -2986,6 +3071,20 @@ spec:
             secretKeyRef:
               key: EMBEDDING_API_KEY
               name: ai-runtime
+        - name: YEODAM_APM_ENABLED
+          value: 'true'
+        - name: PYTHONPATH
+          value: /runtime:/otel:/app
+        - name: OTEL_SERVICE_NAME
+          value: ai-api
+        - name: OTEL_SERVICE_VERSION
+          value: b4b31ff7afd7cd15f8c8e8dc0e9e8f9f8bf93a08
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://v3-alloy.observability.svc:4318
+        - name: OTEL_METRICS_EXPORTER
+          value: none
+        - name: OTEL_LOGS_EXPORTER
+          value: none
         envFrom:
         - configMapRef:
             name: ai-api-runtime
@@ -3046,6 +3145,9 @@ spec:
         - mountPath: /var/run/yeodam-vlm
           name: model-url
           readOnly: true
+        - mountPath: /otel
+          name: apm
+          readOnly: true
       imagePullSecrets:
       - name: ghcr-pull
       initContainers:
@@ -3075,6 +3177,29 @@ spec:
           readOnly: true
         - mountPath: /etc/yeodam/trust
           name: trust
+      - command:
+        - cp
+        - -R
+        - /autoinstrumentation/.
+        - /otel/
+        image: otel/autoinstrumentation-python:0.66b1@sha256:499211ecc0b6237d955c77a6972c85ee9857153090e5356d5a1e13ccaff7fed9
+        name: prepare-apm
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+          requests:
+            cpu: 25m
+            memory: 32Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /otel
+          name: apm
       nodeSelector:
         yeodam.io/role: api
         yeodam.io/stage: v3
@@ -3093,6 +3218,9 @@ spec:
         operator: Equal
         value: api
       volumes:
+      - emptyDir:
+          sizeLimit: 64Mi
+        name: apm
       - configMap:
           defaultMode: 292
           name: ai-runtime-scripts
