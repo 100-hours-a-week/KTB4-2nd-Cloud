@@ -3138,7 +3138,7 @@ data:
   JOBS_SHUTDOWN_GRACE_SEC: '60'
   JOBS_STORY_CONCURRENCY: '4'
   JOBS_STORY_HANDLER: app.story.handler:run
-  JOBS_TRACE_CONTEXT_WRITE: 'false'
+  JOBS_TRACE_CONTEXT_WRITE: 'true'
   KAFKA_BOOTSTRAP_SERVERS: yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093
   KAFKA_SASL_MECHANISM: SCRAM-SHA-512
   KAFKA_SASL_USERNAME: v3-ai
@@ -3199,7 +3199,7 @@ data:
   JOBS_SHUTDOWN_GRACE_SEC: '60'
   JOBS_STORY_CONCURRENCY: '4'
   JOBS_STORY_HANDLER: app.story.handler:run
-  JOBS_TRACE_CONTEXT_WRITE: 'false'
+  JOBS_TRACE_CONTEXT_WRITE: 'true'
   KAFKA_BOOTSTRAP_SERVERS: yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093
   KAFKA_SASL_MECHANISM: SCRAM-SHA-512
   KAFKA_SASL_USERNAME: v3-ai
@@ -3280,7 +3280,7 @@ spec:
     metadata:
       annotations:
         checksum/apm: e837b5739f17e637c2a7e6c5273a9143940410e0ec59e20472642f96d61f32d0
-        checksum/observability: 2f90d2d0790b9a5d5f43ee864729c279f83564cb06fb0f6631bdbcdbc081f295
+        checksum/observability: 517dcf4ba67de6b30789e4f605471a31c4fdd62f32170426772807c509094a1a
         checksum/runtime: 2cf599f21ef2a192220cbac76a5e2c2b0657bf0adb7197a8041b50c580488c8e
         yeodam.io/configuration-revision: ad2084cb6b23375a3ae0bf27f248729c06dd8211176815617fce3b70e8609d4c
       labels:
@@ -3537,7 +3537,7 @@ spec:
     metadata:
       annotations:
         checksum/apm: e837b5739f17e637c2a7e6c5273a9143940410e0ec59e20472642f96d61f32d0
-        checksum/observability: 2f90d2d0790b9a5d5f43ee864729c279f83564cb06fb0f6631bdbcdbc081f295
+        checksum/observability: 517dcf4ba67de6b30789e4f605471a31c4fdd62f32170426772807c509094a1a
         checksum/runtime: 2cf599f21ef2a192220cbac76a5e2c2b0657bf0adb7197a8041b50c580488c8e
         yeodam.io/configuration-revision: ad2084cb6b23375a3ae0bf27f248729c06dd8211176815617fce3b70e8609d4c
       labels:
