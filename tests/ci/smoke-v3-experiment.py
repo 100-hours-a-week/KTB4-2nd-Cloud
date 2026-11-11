@@ -45,6 +45,6 @@ fixture={'rule_files':['rules.yaml'],'evaluation_interval':'30s','tests':[{'inte
 with tempfile.TemporaryDirectory(prefix='645-promql-') as d:
     p=Path(d);(p/'rules.yaml').write_text(yaml.safe_dump(rules));(p/'test.yaml').write_text(yaml.safe_dump(fixture))
     target='linux/arm64' if platform.system()=='Darwin' and platform.machine()=='arm64' else 'linux/amd64'
-    command=['docker','run','--rm','--platform',target,'--network','none','--read-only','--tmpfs','/tmp:size=32m,mode=1777','--cap-drop','ALL','--memory','128m','--cpus','.5','-v',str(p)+':/fixture:ro','-w','/fixture','--entrypoint','/bin/promtool',image,'test','rules','test.yaml']
+    command=['docker','run','--rm','--platform',target,'--network','none','--user',str(os.getuid())+':'+str(os.getgid()),'--read-only','--tmpfs','/tmp:size=32m,mode=1777','--cap-drop','ALL','--memory','128m','--cpus','.5','-v',str(p)+':/fixture:ro','-w','/fixture','--entrypoint','/bin/promtool',image,'test','rules','test.yaml']
     subprocess.run(command,check=True,timeout=60)
 print(json.dumps({'passed':True,'querySyntax':len(rules['groups'][0]['rules']),'checks':['health excluded','zero errors with traffic','whole-window histogram p95','shared AI queue not summed twice','missing CDC unknown','counter reset estimate'],'aws':False}))
