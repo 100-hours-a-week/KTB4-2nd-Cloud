@@ -170,7 +170,9 @@ def exercise(image, vulnerable, store="app"):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--store', choices=['app','ai'], default='app')
-    store = parser.parse_args().store
+    parser.add_argument('--image', help='CI-only same-digest Redis mirror override')
+    args = parser.parse_args()
+    store = args.store
     if store == 'ai':
         match = re.search(r'^  redis: (public\.ecr\.aws/docker/library/redis@sha256:[a-f0-9]{64})$',
                           (ROOT / 'deploy/v3/ai-storage/values.yaml').read_text(), re.M)
@@ -180,6 +182,13 @@ def main():
     if not match:
         raise RuntimeError('Pinned Redis digest required')
     image = match[1]
+    if args.image:
+        from ci_image_transport import REF
+        original = REF.fullmatch(image)
+        replacement = REF.fullmatch(args.image)
+        if not original or not replacement or replacement[2] != original[2]:
+            raise ValueError('CI mirror must preserve the configured immutable Digest')
+        image = args.image
     docker('image', 'inspect', image)
     results = [exercise(image, False, store)] if store == 'ai' else [exercise(image, True), exercise(image, False)]
     print(json.dumps({'results': results, 'network': 'none', 'memoryLimitMi': 256,

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Rendering/schema/contract checks only: no kubeconfig, AWS credentials or apply.
 set -Eeuo pipefail
+
+python3 -m unittest discover -s tests/ci -p 'test_ci_transport.py'
 repository_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repository_dir}"
 validation_dir="${V3_VALIDATION_DIR:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}/yeodam-v3-validation}"
