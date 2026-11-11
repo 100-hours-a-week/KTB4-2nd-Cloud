@@ -29,7 +29,7 @@ chmod 0644 "${fixture_dir}/gate.mjs" "${fixture_dir}/site.conf" "${fixture_dir}/
 chmod 0600 "${fixture_dir}/key.pem" "${fixture_dir}/config.json"
 # The package versions are fixed in the Dockerfile. Build/pull is preparation only.
 if ! docker image inspect yeodam-nginx-jwt-468:local >/dev/null 2>&1; then
-  docker build --platform linux/amd64 -f tests/ci/nginx-jwt-gate.Dockerfile -t yeodam-nginx-jwt-468:local .
+  python3 scripts/ci-build-nginx-fixture.py
 fi
 docker run --rm --platform linux/amd64 --network none -v "${fixture_dir}:/work:ro" yeodam-nginx-jwt-468:local nginx -t -c /work/nginx.conf
 docker run --rm --platform linux/amd64 --network none -v "${fixture_dir}:/work:ro" yeodam-nginx-jwt-468:local python3 /work/check.py
