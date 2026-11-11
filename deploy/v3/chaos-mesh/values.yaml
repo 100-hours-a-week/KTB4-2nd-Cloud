@@ -1,0 +1,31 @@
+# Input to the pinned upstream chart. Not installed by GitOps or CI.
+# No node has this opt-in label by default. The preparation tool replaces it
+# with the reviewed existing hostnames; it never labels nodes or adds capacity.
+clusterScoped: false
+enableProfiling: false
+controllerManager:
+  targetNamespace: kafka
+  replicaCount: 1
+  allowHostNetworkTesting: false
+  hostNetwork: false
+  enableFilterNamespace: false
+  enabledControllers: [networkchaos, podnetworkchaos]
+  enabledWebhooks: [networkchaos]
+  leaderElection: {enabled: false}
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 300m, memory: 256Mi}
+  nodeSelector: {yeodam.io/chaos-reviewed-host: not-selected}
+chaosDaemon:
+  runtime: containerd
+  socketPath: /run/containerd/containerd.sock
+  privileged: true
+  hostNetwork: false
+  mtls: {enabled: true}
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 300m, memory: 128Mi}
+  nodeSelector: {yeodam.io/chaos-reviewed-host: not-selected}
+dashboard: {create: false}
+dnsServer: {create: false}
+prometheus: {create: false}
