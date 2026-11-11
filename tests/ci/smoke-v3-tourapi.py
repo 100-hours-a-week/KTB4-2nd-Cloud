@@ -18,7 +18,7 @@ contract = json.loads(Path('/contract.json').read_text())
 settings = dict(contract['commonEnvironment'], **contract['tourapiEnvironment'],
                 **contract['workloads']['runner']['environment'], **contract['tourapiRunnerEnvironment'])
 # Settings only: no clients, models, queues or credentials are accessed.
-cfg = JobsSettings(_env_file=None, KAFKA_SASL_PASSWORD='synthetic-only', QDRANT_API_KEY='synthetic-only', **settings)
+cfg = JobsSettings(_env_file=None, API_KEY='synthetic-only', KAFKA_SASL_PASSWORD='synthetic-only', QDRANT_API_KEY='synthetic-only', **settings)
 assert cfg.PROCESS_WORKFLOW_ENABLED
 assert cfg.PROCESS_WORKFLOW_BUDGET_SEC < cfg.JOBS_PROCESS_TIMEOUT_SEC
 assert cfg.PROCESS_WORKFLOW_CONCURRENCY == 4
