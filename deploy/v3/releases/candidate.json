@@ -1,11 +1,11 @@
 {
   "components": {
     "ai-app": {
-      "buildRunId": 42832970436,
-      "buildSourceSha": "b4b31ff7afd7cd15f8c8e8dc0e9e8f9f8bf93a08",
-      "image": "ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:cbeca1d96e2caed88affb586ff39a939cdd6ddd9560020d502212561dbe89e98",
+      "buildRunId": 42960450264,
+      "buildSourceSha": "7505cc73461b9e2e2cfb7fd1c190452c20fa7647",
+      "image": "ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:8e768056429867cdaedec416cd8a7cd5956a0ceb914c16e54ad98db4143b7cc7",
       "sourceRepository": "100-hours-a-week/KTB4-2nd-AI",
-      "sourceSha": "b4b31ff7afd7cd15f8c8e8dc0e9e8f9f8bf93a08"
+      "sourceSha": "7505cc73461b9e2e2cfb7fd1c190452c20fa7647"
     },
     "backend": {
       "buildRunId": 42774581196,
@@ -63,7 +63,7 @@
     "ai": {
       "accessEnabled": true,
       "configurationRevision": "3571c5c96b1433acdf7220eebb07b6f731cf366715dec3bda1e33c87bf37120f",
-      "image": "ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:cbeca1d96e2caed88affb586ff39a939cdd6ddd9560020d502212561dbe89e98",
+      "image": "ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:8e768056429867cdaedec416cd8a7cd5956a0ceb914c16e54ad98db4143b7cc7",
       "privateModelPeers": [
         {
           "cidr": "10.30.10.162/32",
@@ -75,7 +75,7 @@
         "imageReviewed": true,
         "sourceCompatible": true
       },
-      "source": "b4b31ff7afd7cd15f8c8e8dc0e9e8f9f8bf93a08",
+      "source": "7505cc73461b9e2e2cfb7fd1c190452c20fa7647",
       "trust": {
         "kafka": "-----BEGIN CERTIFICATE-----\nMIIFLTCCAxWgAwIBAgIUFju2DmP2e+Yn+mCqEzLHw9bUvP0wDQYJKoZIhvcNAQEN\nBQAwLTETMBEGA1UECgwKaW8uc3RyaW16aTEWMBQGA1UEAwwNY2x1c3Rlci1jYSB2\nMDAeFw0yNjExMDUwMTA0MThaFw0yNzExMDUwMTA0MThaMC0xEzARBgNVBAoMCmlv\nLnN0cmltemkxFjAUBgNVBAMMDWNsdXN0ZXItY2EgdjAwggIiMA0GCSqGSIb3DQEB\nAQUAA4ICDwAwggIKAoICAQDdyBFCxez4L9wV1mNQTAsOgFlM2TbRwOqbyjNnZGxy\nJa1x6og2OUZvMPwtJcoNsWTZi9+cXtJz6qg80nXfHBhV84Ni/WfyftQ7h+2DH6cM\n3lyORGSz1D5vRtVMwNr4BjtYJ7uCUu4uGSfnkHIKy6ffvr7FyrCTvj/i03SzcsRv\neGChnt1pk2Mw1Xc+n+BKkN/LXpKobIrA9sEslw/srynnoY6dCpRaKmZyiWinjAak\nBdOGNTo4vmelg3MlOJ9GBQ1cnK4zCJYu4IF4IR50/5JVvABqfd/zpIzc1XiOA2l1\n3WqP5tc9wy4Utk4FLwGL4J/U4EcaCpLprZqn7iN6k12aCgalxZUnydndam6O+lsQ\nnIk+b5Oqi9Z71mnZFUDiJMTFXduCTMucNds1RxvlhAfent3RtPQ8pme5t3gnC7g9\n+wTTrSwX7iL2mVKRslKGVpVugCwluEwEBolWawZFnJZ7wOQonmxjYjCkPSo53dFv\nPJPTzKv+oy41LRU/99Omz4eXrQSPXMQNPyXGkgpBX+huqzTDZMt8eG8Cuc1b2pGl\nXzdFXTNkU2/Mb9DYrhSpxQpTZJj3PTMhtS3FxxiNyXjhbQui9qDPfYAgKpWvDhQY\nT/9KBvsW6RIij4DbtkMU/YOYG+4n6IlLDGnczP/vuK/jKI3reqO9T182Eb1Yy5is\nbQIDAQABo0UwQzAdBgNVHQ4EFgQU1v1r+K1Gi2RSO9F1XQ4bcnxkB14wEgYDVR0T\nAQH/BAgwBgEB/wIBADAOBgNVHQ8BAf8EBAMCAQYwDQYJKoZIhvcNAQENBQADggIB\nABw/SEkJx06yBhkMLVh9PC+TBUSCbGU1q/uaXN+AHcZdazp951i8KwYsX0Vys2WN\n1N/9vlxXlSNq//KFrc/qlX7NElV/wL2lmd49OJywZRtl90oHM1t+WHdJweNFTFYY\nW4mwsV+XQqPzIvSQ7+5NE0im5It2gyD+A8YJrs04zL/xSOSIqauHFp2IKEF9yZCP\nNTZNtM8aRNqiRfXorsBsUrcReqbotH8tJDhouwDSxeXi0Eo4j6u1agV6ihqTJYvH\n7EZL9R2T8BwZebdtltYuEUjLIAvzv6VC61E4YPnn762D/5uynwtbRD42PPed8XSg\nJvSytHqzE4LWZCr9lyzIn6fT0GOQC1IyHHnwni/EV+KBKy68NqfWTy3Zof64g/Rn\ntrVlam6gZxlbmnP/FXkDY+i72SbvNEWmWmE6PYf+1Tf+kRYrYkneWKriJh1N0dnk\ntd749erRjHXfFi/bgIx7YMCNyEIG/l5ieIFbWtUB/d7SaNCD9QQ2LZWfhC47ei9a\nW0P61kWVsmk5b3TzxKfFOcVSbSD+l7kcOrmbWDtC5HryO6j/NC9D9ohrpUu/gvd+\n1QpYWyYts2zzFXpsNsmTug4nPRa+1OzIhhZyn3+tz4Ki5N6d/Rc6tSgCAMTHEV+D\nkSXqa5QIk1XRd30cBhl6ozvHa17auOHasWL2+EH2Td26\n-----END CERTIFICATE-----\n",
         "qdrant": "-----BEGIN CERTIFICATE-----\nMIIDLTCCAhWgAwIBAgIUX7TyC3mpij/AUDTrwAR/kN2RdQowDQYJKoZIhvcNAQEL\nBQAwHjEcMBoGA1UEAwwTeWVvZGFtLXYzLXFkcmFudC1jYTAeFw0yNjExMDYxNDUy\nMDdaFw0yNzExMDYxNDUyMDdaMB4xHDAaBgNVBAMME3llb2RhbS12My1xZHJhbnQt\nY2EwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCtCXK6hBwr9XZfZ40K\nruVtVMHgTQql9OoEKR/o133ZtYLAvqFTWcTRwwwczHKXlT+XMH2Zao1Ttp9aTRoE\nsuW+vrhcsUZARRZe2IgzS+IuYvVSOQsvIULSpgDElVz8SGoTbMTbBU7g/KsSI8hn\noXP75uRZFIvQ1OXINIh2G3n7Bg2X7ixfL+GcCWepacbmqqAtN3Av1YkKDwLBamrb\nPBQXU0XZl7BScsx6H6aBM1UGCaDA8YMBzBLe69ae8GMgRLevyZNH5nelGXjPI78P\nyZLL7F64F8bKfet9nMBJFWUEC8TbxScjtz5fNi6cPFYFwoYKLPiRAawxDeT4zQqX\noxltAgMBAAGjYzBhMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMB0G\nA1UdDgQWBBTU69eWLJTdaexXsVACST9APKaB7jAfBgNVHSMEGDAWgBTU69eWLJTd\naexXsVACST9APKaB7jANBgkqhkiG9w0BAQsFAAOCAQEAQdGZjFjAHOXHk3s90kZi\nUmSpvirnWh8i2gbl9D7Qf0gSFy5t5iN7u8hsN3FGI3+0P3aGD65W1eDNr4kht5HY\n6RudLf0WVq1xhAPjRolh1eLh8t7n9+YvbgcGj5FTPIUCKlcgUu3GkJJVwuOXN1YN\nzsksA847VKQ7vsW3p/W9UNg84DiHXivPU2gikcQJpYfAlH7Pq+Hvgdx63lMD2J6/\nEDJ8eST8bWq43UexrBJ7pFOCMP2bfpeIyRX7oNmJZJYeAfi6j9a/KxVOXalVh1Ts\nTq5Lp/ow+ynELv2sRIumMBJF5S0w5a6JsKVAG3SN8u7LslrNvkFj1wzTu3Q80uaQ\nIQ==\n-----END CERTIFICATE-----\n",
@@ -87,7 +87,8 @@
       },
       "apmWorkloads": [
         "api"
-      ]
+      ],
+      "tourapiEnabled": true
     },
     "backend": {
       "backendConnectionContract": true,
