@@ -72,6 +72,9 @@ spec:
             - {name: GOGC, value: '50'}
             - {name: GF_AUTH_ANONYMOUS_ENABLED, value: 'true'}
             - {name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer}
+{{- if $.Values.apmEnabled }}
+            - {name: GF_USERS_VIEWERS_CAN_EDIT, value: 'true'}
+{{- end }}
             - {name: GF_AUTH_DISABLE_LOGIN_FORM, value: 'true'}
             - {name: GF_AUTH_BASIC_ENABLED, value: 'false'}
             - {name: GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION, value: 'true'}

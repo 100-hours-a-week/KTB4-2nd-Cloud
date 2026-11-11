@@ -47,4 +47,11 @@ class Chart(unittest.TestCase):
             data=next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='v3-metrics-config')['data']
             config=yaml.safe_load(data['prometheus.yaml']);own=next(x for x in config['scrape_configs'] if x['job_name']=='prometheus');mutate(own);data['prometheus.yaml']=yaml.safe_dump(config)
             with self.assertRaises(ValueError):chart.validate(docs)
-if __name__=='__main__' :unittest.main()
+    def test_apm_viewer_can_explore_without_editor_or_admin_role(self):
+        docs=chart.render(apm=True);self.assertTrue(chart.validate(docs))
+        for missing in [False,True]:
+            bad=copy.deepcopy(docs);env=next(x for x in bad if x['kind']=='Deployment' and x['metadata']['name']=='v3-grafana')['spec']['template']['spec']['containers'][0]['env']
+            if missing:env[:]=[x for x in env if x['name']!='GF_USERS_VIEWERS_CAN_EDIT']
+            else:next(x for x in env if x['name']=='GF_AUTH_ANONYMOUS_ORG_ROLE')['value']='Editor'
+            with self.assertRaises(ValueError):chart.validate(bad)
+if __name__=='__main__'  :unittest.main()
