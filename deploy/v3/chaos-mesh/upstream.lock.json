@@ -1,0 +1,16 @@
+{
+  "version": "2.8.8",
+  "url": "https://charts.chaos-mesh.org/chaos-mesh-2.8.8.tgz",
+  "sha256": "35f3caded3d33428d0864eb6d6ece97a5d859a1c0a6e49020fb4d07dd3676bdf",
+  "networkTypesSource": "https://github.com/chaos-mesh/chaos-mesh/blob/v2.8.8/api/v1alpha1/networkchaos_types.go",
+  "packetScopeSources": {
+    "controllers/podnetworkchaos/netutils/cidr.go": "e5960684db3fb76f19e29d6ac378e472b3d72e65ba7ffba0214266494fde9cc0",
+    "controllers/podnetworkchaos/netutils/cidr_test.go": "10ea500d9657c2a8cf6c6621a886ff91be2e80c66b85942431abc522ff7660eb",
+    "controllers/podnetworkchaos/ipset/ipset.go": "ddbd2aef32137f1ca388297a87a8ec4e782bb4fe9a8e79d48c0725614e6b368a",
+    "pkg/chaosdaemon/ipset_server.go": "271dee95d4ff42a7fd973a4fa6101e2b08300244233acfc1b29b2c30ffa4ab05"
+  },
+  "images": {
+    "chaos-mesh": "ghcr.io/chaos-mesh/chaos-mesh@sha256:8d0cbda45236a51f8c1b572dd9abce990a086f3267ecd767a55b93ea57eb1595",
+    "chaos-daemon": "ghcr.io/chaos-mesh/chaos-daemon@sha256:adbc4fb417ff425a449e904de582acaf72a7add0b465ee1e0545f9be94564443"
+  }
+}

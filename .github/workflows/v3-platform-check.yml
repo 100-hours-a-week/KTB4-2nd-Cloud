@@ -33,6 +33,11 @@ on:
       - 'tests/ci/test_v3_apm.py'
       - 'tests/ci/smoke-v3-apm.py'
       - 'scripts/collect-v3-experiment.py'
+      - 'scripts/*v3*cdc*fault*'
+      - 'scripts/v3_chaos_install.py'
+      - 'tests/ci/test_v3_cdc_fault.py'
+      - 'tests/ci/smoke-v3-cdc-evidence.py'
+      - 'deploy/v3/chaos-mesh/**'
       - 'tests/ci/test_v3_experiment.py'
       - 'tests/ci/smoke-v3-experiment.py'
       - 'scripts/check-v3-metrics.py'
@@ -272,6 +277,9 @@ jobs:
 
       - name: Verify experiment query semantics with synthetic counters
         run: '"$RUNNER_TEMP/yeodam-v3-validation/venv/bin/python" tests/ci/smoke-v3-experiment.py'
+
+      - name: Verify bounded CDC evidence SQL with isolated synthetic MySQL
+        run: python3 tests/ci/smoke-v3-cdc-evidence.py
 
       - name: Verify minimal metrics and dashboards without AWS
         env:

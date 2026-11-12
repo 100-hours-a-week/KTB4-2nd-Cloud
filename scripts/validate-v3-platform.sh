@@ -215,6 +215,7 @@ python3 -m unittest discover -s tests/ci -p "test_v3_schema_upgrade.py"
 
 # Read-only experiment reporting: missing data must never imply recovery.
 python3 -m unittest discover -s tests/ci -p test_v3_experiment.py
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p test_v3_cdc_fault.py
 
 # Reader-first Trace and reference-only Langfuse settings.
 python3 -m unittest discover -s tests/ci -p test_v3_ai_observability.py
