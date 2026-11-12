@@ -121,6 +121,14 @@ def observe_pair(k,candidate,jar):
  if remaining>0:time.sleep(remaining)
  return [first,sample(k,candidate,jar)]
 
+def topic_release(k):
+ owners=set()
+ for name in sorted(policy.TOPICS):
+  annotations=k.get('kafkatopic','kafka',name)['metadata'].get('annotations',{})
+  owners.add((annotations.get('meta.helm.sh/release-name'),annotations.get('meta.helm.sh/release-namespace')))
+ require(owners=={('yeodam-v3-kafka-access','default')},'All four Topics must belong to the reviewed release and its existing default storage namespace')
+ return next(iter(owners))
+
 def main():
  p=argparse.ArgumentParser();p.add_argument('action',choices=['provision-access','observe','prepare','candidate','expand','activate','rollback']);p.add_argument('--kubeconfig');p.add_argument('--candidate',type=Path,default=ROOT/'deploy/v3/releases/candidate.json');p.add_argument('--proof',type=Path);p.add_argument('--observations',type=Path);p.add_argument('--plan',type=Path);p.add_argument('--plan-sha256');p.add_argument('--output',type=Path);p.add_argument('--client-jar',type=Path);p.add_argument('--traffic-quiet-confirmed',action='store_true');p.add_argument('--execute-reviewed-change',action='store_true');p.add_argument('--approved-secret-copy',action='store_true');p.add_argument('--execute-reviewed-observation',action='store_true');a=p.parse_args();candidate=json.loads(a.candidate.read_text())
  if a.action=='prepare':
@@ -148,13 +156,12 @@ def main():
  require(fresh_plan['approvedRef']==plan['approvedRef'] and fresh_plan['topics']==plan['topics'],'Refresh plan after approved Snapshot/Topic changes')
  if a.action=='expand':
   require(plan['currentPartitions']==1,'Only 1 to 2 expansion permitted; never decrease')
-  topic=k.get('kafkatopic','kafka',next(iter(policy.TOPICS)));name=topic['metadata']['annotations']['meta.helm.sh/release-name']
-  require(name=='yeodam-v3-kafka-access','Only the existing business Topic release may expand')
-  v=json.loads(helm(['get','values',name,'-n','kafka','--kubeconfig',k.config,'-o','json']));before=records(helm(['template',name,str(ROOT/'deploy/v3/kafka-access'),'-n','kafka','-f','-'],json.dumps(v)));v.update(imagePartitions=2,imagePartitionExpansionReviewed=True);after=records(helm(['template',name,str(ROOT/'deploy/v3/kafka-access'),'-n','kafka','-f','-'],json.dumps(v)))
-  live=records(helm(['get','manifest',name,'-n','kafka','--kubeconfig',k.config]));require(index(before)==index(live),'Deployed Topic release differs from reviewed Chart; stop rather than overwrite drift')
+  name,release_namespace=topic_release(k)
+  v=json.loads(helm(['get','values',name,'-n',release_namespace,'--kubeconfig',k.config,'-o','json']));before=records(helm(['template',name,str(ROOT/'deploy/v3/kafka-access'),'-n',release_namespace,'-f','-'],json.dumps(v)));v.update(imagePartitions=2,imagePartitionExpansionReviewed=True);after=records(helm(['template',name,str(ROOT/'deploy/v3/kafka-access'),'-n',release_namespace,'-f','-'],json.dumps(v)))
+  live=records(helm(['get','manifest',name,'-n',release_namespace,'--kubeconfig',k.config]));require(index(before)==index(live),'Deployed Topic release differs from reviewed Chart; stop rather than overwrite drift')
   policy.review_partition_change(before,after)
   cdc_state(k,plan['connectorUid'],'stopped')
-  helm(['upgrade',name,str(ROOT/'deploy/v3/kafka-access'),'-n','kafka','--kubeconfig',k.config,'-f','-'],json.dumps(v));
+  helm(['upgrade',name,str(ROOT/'deploy/v3/kafka-access'),'-n',release_namespace,'--kubeconfig',k.config,'-f','-'],json.dumps(v));
   for _ in range(60):
    topics=[k.get('kafkatopic','kafka',n)for n in sorted(policy.TOPICS)]
    if all(t['spec']['partitions']==2 and t.get('status',{}).get('observedGeneration',0)>=t['metadata']['generation'] and any(c['type']=='Ready'and c['status']=='True'for c in t.get('status',{}).get('conditions',[]))for t in topics):break

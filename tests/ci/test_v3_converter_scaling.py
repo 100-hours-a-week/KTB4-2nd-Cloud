@@ -49,6 +49,17 @@ class Converter(unittest.TestCase):
    with self.subTest(latency=latency),patch.object(manager,'sample',side_effect=read),patch.object(manager.time,'time',side_effect=lambda:clock[0]),patch.object(manager.time,'sleep',side_effect=sleep):
     pair=manager.observe_pair(None,None,None)
     self.assertEqual(pair[1]['recordedAt']-pair[0]['recordedAt'],expected)
+ def test_topic_resource_and_helm_storage_namespaces_are_distinct(self):
+  import importlib.util
+  spec=importlib.util.spec_from_file_location('manager_owner',ROOT/'scripts/manage-v3-converter-scaling.py');manager=importlib.util.module_from_spec(spec);spec.loader.exec_module(manager)
+  class Fake:
+   def __init__(self):self.changed=None;self.calls=[]
+   def get(self,kind,namespace,name):
+    self.calls.append((kind,namespace,name));return {'metadata':{'annotations':{'meta.helm.sh/release-name':'yeodam-v3-kafka-access','meta.helm.sh/release-namespace':self.changed if name==sorted(m.TOPICS)[-1] and self.changed else 'default'}}}
+  fake=Fake();self.assertEqual(manager.topic_release(fake),('yeodam-v3-kafka-access','default'))
+  self.assertEqual({x[2]for x in fake.calls},m.TOPICS);self.assertTrue(all(x[1]=='kafka'for x in fake.calls))
+  fake.changed='kafka'
+  with self.assertRaises(ValueError):manager.topic_release(fake)
  def test_fixed_sql_hash_and_observer_has_no_mutation_api(self):
   lock=json.loads((ROOT/'deploy/v3/autoscaling/converter-runtime.lock.json').read_text());sql=(ROOT/'deploy/v3/autoscaling/files/converter-drain.sql').read_bytes()
   self.assertEqual(hashlib.sha256(sql).hexdigest(),lock['businessSqlSha256'])
