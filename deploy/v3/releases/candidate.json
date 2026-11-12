@@ -103,11 +103,6 @@
         "photo-converter",
         "trip-result-worker"
       ],
-      "autoscaledWorkloads": [
-        "auth-api",
-        "trip-api",
-        "photo-api"
-      ],
       "backendConnectionContract": true,
       "backendContract": true,
       "defaults": {
@@ -658,9 +653,6 @@
       }
     },
     "frontend": {
-      "autoscaledWorkloads": [
-        "frontend"
-      ],
       "backendConnectionContract": false,
       "backendContract": false,
       "defaults": {
