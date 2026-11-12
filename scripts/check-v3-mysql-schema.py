@@ -7,11 +7,14 @@ s=importlib.util.spec_from_file_location('platform',ROOT/'scripts/check-v3-platf
 LOCK=json.loads((ROOT/'deploy/v3/mysql-schema-image/source.lock.json').read_text());CHART=ROOT/'deploy/v3/mysql-schema'
 def require(value,message):
  if not value:raise ValueError(message)
-def render(files=()):
+def render(files=(),worker_host=None):
  args=[os.environ['V3_HELM'],'template','yeodam-v3-mysql-schema',str(CHART),'-n','default','--kube-version','1.36.0']
  for f in files:args+=['-f',str(f)]
+ if worker_host:
+  require(re.fullmatch(r'ip-10-40-[0-9]{1,3}-[0-9]{1,3}\.ap-northeast-2\.compute\.internal',worker_host),'Explicit V3 worker hostname required')
+  args+=['--set-string','workerHostname='+worker_host]
  return subprocess.check_output(args,text=True)
-def validate(docs,enabled=False):
+def validate(docs,enabled=False,worker_host=None):
  if not enabled:require(not docs,'Disabled schema release must create zero resources');return
  require(collections.Counter(x['kind'] for x in docs)=={'Job':1,'NetworkPolicy':2},'Only one Job and two scoped policies; no DB/Secret/PVC/Node changes')
  require(all(x['metadata'].get('namespace')=='mysql' and x['metadata']['labels'].get('yeodam.io/stage')=='v3' for x in docs),'V3 mysql namespace only')
@@ -19,9 +22,14 @@ def validate(docs,enabled=False):
  job=next(x for x in docs if x['kind']=='Job');require(job['metadata']['name']=='v3-mysql-schema','Reviewed Job identity only')
  spec=job['spec'];require(set(spec)=={'suspend','backoffLimit','activeDeadlineSeconds','template'} and spec['suspend'] is True and spec['backoffLimit']==0 and spec['activeDeadlineSeconds']==600,'No automatic migration retries')
  t=spec['template'];require(t['metadata']['labels']=={'app.kubernetes.io/instance':'mysql-schema','app.kubernetes.io/part-of':'yeodam','yeodam.io/stage':'v3'},'Dedicated migration label only')
- p=t['spec'];require(set(p)=={'restartPolicy','automountServiceAccountToken','enableServiceLinks','nodeSelector','imagePullSecrets','securityContext','containers','volumes'},'No alternate scheduling/host/service account settings')
+ p=t['spec'];require(set(p)==({'tolerations'} if worker_host else set())|{'restartPolicy','automountServiceAccountToken','enableServiceLinks','nodeSelector','imagePullSecrets','securityContext','containers','volumes'},'No alternate scheduling/host/service account settings')
  require(p['restartPolicy']=='Never' and p['automountServiceAccountToken'] is False and p['enableServiceLinks'] is False,'No Kubernetes API credentials or restart loop')
- require(p['nodeSelector']=={'yeodam.io/role':'system'} and p['imagePullSecrets']==[{'name':'ghcr-pull'}],'Existing system Node and explicit registry prerequisite')
+ expected_selector={'yeodam.io/role':'system'}
+ if worker_host:
+  require(re.fullmatch(r'ip-10-40-[0-9]{1,3}-[0-9]{1,3}\.ap-northeast-2\.compute\.internal',worker_host),'Explicit V3 worker hostname required')
+  expected_selector={'yeodam.io/role':'worker','node.kubernetes.io/instance-type':'t3a.medium','kubernetes.io/hostname':worker_host}
+  require(p.get('tolerations')==[{'key':'yeodam.io/role','operator':'Equal','value':'worker','effect':'NoSchedule'}],'One exact worker toleration only')
+ require(p['nodeSelector']==expected_selector and p['imagePullSecrets']==[{'name':'ghcr-pull'}],'Reviewed existing host and explicit registry prerequisite')
  require(p['securityContext']=={'runAsNonRoot':True,'runAsUser':1001,'fsGroup':1001,'seccompProfile':{'type':'RuntimeDefault'}},'Restricted Job only')
  require(len(p['containers'])==1,'One migration process only');c=p['containers'][0]
  require(set(c)=={'name','image','resources','securityContext','volumeMounts'} and c['name']=='migrate','No command/env/config overrides')

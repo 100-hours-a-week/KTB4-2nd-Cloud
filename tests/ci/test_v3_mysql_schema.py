@@ -24,6 +24,17 @@ class Contracts(unittest.TestCase):
     if change=='resume':next(x for x in docs if x['kind']=='Job')['spec']['suspend']=False
     if change=='extra':docs.append({'kind':'Secret','metadata':{'name':'bad'}})
     with self.assertRaises(ValueError):c.validate(docs,True)
+ def test_explicit_minimal_worker_is_optional_and_exact(self):
+  host='ip-10-40-41-221.ap-northeast-2.compute.internal'
+  docs=c.platform.load_documents(c.render([ROOT/'tests/ci/v3/mysql-schema.values.fixture.yaml'],worker_host=host))
+  c.validate(docs,True,worker_host=host);c.platform.schema_check(__import__('yaml').safe_dump_all(docs))
+  with self.assertRaises(ValueError):c.validate(docs,True)
+  for mutate in ('hostname','instance-type','toleration'):
+   changed=copy.deepcopy(docs);spec=next(x for x in changed if x['kind']=='Job')['spec']['template']['spec']
+   if mutate=='hostname':spec['nodeSelector']['kubernetes.io/hostname']='unreviewed'
+   if mutate=='instance-type':spec['nodeSelector']['node.kubernetes.io/instance-type']='g6.xlarge'
+   if mutate=='toleration':spec['tolerations']=[{'operator':'Exists'}]
+   with self.subTest(mutate=mutate),self.assertRaises(ValueError):c.validate(changed,True,worker_host=host)
  def test_network_widening_rejected(self):
   docs=copy.deepcopy(self.docs);next(x for x in docs if x['kind']=='NetworkPolicy')['spec']['egress'][0]['to']=[{'podSelector':{}}]
   with self.assertRaises(ValueError):c.validate(docs,True)
