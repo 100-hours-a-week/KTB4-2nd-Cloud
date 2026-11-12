@@ -48,9 +48,9 @@ def acl_rules(access):
     return rules
 
 
-def topic_spec(topic):
+def topic_spec(topic, image_partitions=1):
     policy = VALUES['topicPolicies'][topic['kind']]
-    return {'topicName': topic['name'], 'partitions': topic['partitions'], 'replicas': 3,
+    return {'topicName': topic['name'], 'partitions': image_partitions if topic['kind']=='image-request' else topic['partitions'], 'replicas': 3,
             'config': {'min.insync.replicas': 2, 'cleanup.policy': 'delete',
                        'retention.ms': policy['retentionMs'], 'retention.bytes': VALUES['retentionBytes'],
                        'segment.bytes': VALUES['segmentBytes'], 'segment.ms': VALUES['segmentMs'],
@@ -81,7 +81,8 @@ def expected_access():
     return users
 
 
-def validate(documents, enabled=False, verification=False):
+def validate(documents, enabled=False, verification=False, image_partitions=1):
+    require(image_partitions in (1,2), "Only one-to-two image partition expansion")
     require({k: CONTRACT[k] for k in ('backendEnvironment', 'backendSpringGroups')} == json.loads((ROOT / 'deploy/v3/apps/files/business-contract.json').read_text()),
             'App and Kafka copies of the shared contract differ')
     if not enabled:
@@ -119,7 +120,7 @@ def validate(documents, enabled=False, verification=False):
             continue
         require(m.get('annotations') == {'helm.sh/resource-policy': 'keep'}, 'Business data and identities require explicit deletion review')
         if d['kind'] == 'KafkaTopic':
-            require(m['name'] in topics and d['spec'] == topic_spec(topics[m['name']]), 'Topic settings differ from bounded RF3/ISR2 policy')
+            require(m['name'] in topics and d['spec'] == topic_spec(topics[m['name']], image_partitions), 'Topic settings differ from bounded RF3/ISR2 policy')
         elif d['kind'] == 'KafkaUser':
             role = m['name'].removeprefix('v3-')
             require(role in CONTRACT['users'], 'Unknown Kafka identity')

@@ -18,6 +18,10 @@
     },
     "cloudwatchLogsEnabled": {
       "type": "boolean"
+    },
+    "autoscalingMetricsEnabled": {"type": "boolean"},
+    "outboxEnabled": {
+      "type": "boolean"
     }
   }
 }

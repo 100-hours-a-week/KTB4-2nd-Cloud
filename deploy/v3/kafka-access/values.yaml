@@ -1,3 +1,5 @@
+imagePartitions: 1
+imagePartitionExpansionReviewed: false
 # Existing V3 Kafka only. No Broker, Node, PVC, app or Connect deployment.
 # Size retention may delete before the time limit; it is not a disk quota.
 enabled: false

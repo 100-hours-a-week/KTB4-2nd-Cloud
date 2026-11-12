@@ -16,6 +16,9 @@
     },
     "automatedSync": {
       "type": "boolean"
+    },
+    "autoscalingAdoptionReviewed": {
+      "type": "boolean"
     }
   }
 }

@@ -27,8 +27,24 @@ data:
           - {source_labels: [__name__], regex: 'tempo_distributor_.*|tempo_live_store_.*|process_resident_memory_bytes', action: keep}
         sample_limit: 1000
 {{- end }}
+{{- if .Values.autoscalingMetricsEnabled }}
+      - job_name: keda
+        static_configs: [{targets: ['keda-operator.keda.svc:8080']}]
+        metric_relabel_configs:
+          - {source_labels: [__name__], regex: 'keda_scaler_metrics_value|keda_scaler_errors_total|keda_scaled_object_errors_total', action: keep}
+        sample_limit: 1000
+{{- end }}
   alerts.yaml: |
 {{ .Files.Get "files/alerts.yaml" | indent 4 }}
+{{- if .Values.outboxEnabled }}
+{{ (regexReplaceAll "^groups:\n" (.Files.Get "files/outbox-alerts.yaml") "") | indent 4 }}
+{{- end }}
+  outbox.sql: |
+{{ .Files.Get "files/outbox.sql" | indent 4 }}
+  outbox-query.sh: |
+{{ .Files.Get "files/outbox-query.sh" | indent 4 }}
+  outbox-metrics.py: |
+{{ .Files.Get "files/outbox-metrics.py" | indent 4 }}
   cdc-status.py: |
 {{ .Files.Get "files/cdc-status.py" | indent 4 }}
 ---
@@ -64,4 +80,14 @@ data:
 {{ .Files.Get "files/dashboard-provider.yaml" | indent 4 }}
   operations.json: |
 {{ .Files.Get "files/operations.json" | indent 4 }}
+{{- end }}
+
+{{- if and .Values.enabled .Values.outboxEnabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: v3-outbox-dashboard, namespace: observability}
+data:
+  outbox.json: |
+{{ .Files.Get "files/outbox.json" | indent 4 }}
 {{- end }}

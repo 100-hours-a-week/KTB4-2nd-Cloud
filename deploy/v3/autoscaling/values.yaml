@@ -1,0 +1,12 @@
+# Keep all scaling inactive until prerequisites and approved app snapshot are ready.
+enabled: false
+apiEnabled: false
+converterEnabled: false
+metricsServerReady: false
+replicaOwnershipReviewed: false
+converterReview:
+  partitions: 1
+  keyOrderingReviewed: false
+  rebalanceAndShutdownVerified: false
+cpuTargetMilli: 200
+lagThreshold: 5

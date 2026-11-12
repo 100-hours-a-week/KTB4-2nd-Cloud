@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "enabled",
+    "apiEnabled",
+    "converterEnabled",
+    "metricsServerReady",
+    "replicaOwnershipReviewed",
+    "converterReview",
+    "cpuTargetMilli",
+    "lagThreshold"
+  ],
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "apiEnabled": {
+      "type": "boolean"
+    },
+    "converterEnabled": {
+      "type": "boolean"
+    },
+    "metricsServerReady": {
+      "type": "boolean"
+    },
+    "replicaOwnershipReviewed": {
+      "type": "boolean"
+    },
+    "cpuTargetMilli": {
+      "type": "integer",
+      "minimum": 150,
+      "maximum": 500
+    },
+    "lagThreshold": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "converterReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "partitions",
+        "keyOrderingReviewed",
+        "rebalanceAndShutdownVerified"
+      ],
+      "properties": {
+        "partitions": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "keyOrderingReviewed": {
+          "type": "boolean"
+        },
+        "rebalanceAndShutdownVerified": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

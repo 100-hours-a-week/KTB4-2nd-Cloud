@@ -1,0 +1,85 @@
+watchNamespace: photo
+nodeSelector:
+  yeodam.io/role: worker
+  yeodam.io/stage: v3
+  kubernetes.io/arch: amd64
+  kubernetes.io/os: linux
+tolerations:
+- key: yeodam.io/role
+  operator: Equal
+  value: worker
+  effect: NoSchedule
+resources:
+  operator:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 192Mi
+  metricServer:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 192Mi
+  webhooks:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 192Mi
+rbac:
+  aggregateToDefaultRoles: false
+  enabledCustomScaledRefKinds: false
+permissions:
+  operator:
+    restrict:
+      secret: true
+      namesAllowList:
+      - v3-keda-kafka
+  metricServer:
+    restrict:
+      secret: true
+prometheus:
+  operator:
+    enabled: true
+  metricServer:
+    enabled: true
+image:
+  keda:
+    registry: ghcr.io
+    repository: kedacore/keda
+    tag: 2.21.0@sha256:81fe6547ce8d1cc29273f887b76507e9b853e5bc1f875ec23fe60061a38ed809
+  metricsApiServer:
+    registry: ghcr.io
+    repository: kedacore/keda-metrics-apiserver
+    tag: 2.21.0@sha256:255375037fe592732eeb554743aae360c2da88cf0b9b1258d0a987ef885f0881
+  webhooks:
+    registry: ghcr.io
+    repository: kedacore/keda-admission-webhooks
+    tag: 2.21.0@sha256:e1969628cca6123e32eea13c47c75817091af2657fa68d9d0d58a8620d1b75b1
+podSecurityContext:
+  operator:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  metricServer:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  webhooks:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault

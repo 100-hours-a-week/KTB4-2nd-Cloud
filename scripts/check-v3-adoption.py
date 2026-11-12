@@ -40,7 +40,9 @@ def verify(files,live):
  for d in desired:
   key=(d['kind'],d['metadata']['namespace'],d['metadata']['name']);current=index[key]
   if d['kind']=='Deployment':
-   bundle.require(not current['spec'].get('paused',False)and current['spec'].get('replicas')==d['spec']['replicas'],'Resolve paused/scaled workloads before adoption')
+   replicas=current['spec'].get('replicas')
+   replica_ok=replicas==d['spec']['replicas'] if 'replicas'in d['spec'] else type(replicas)is int and 1<=replicas<=2
+   bundle.require(not current['spec'].get('paused',False)and replica_ok,'Resolve paused/out-of-budget workloads before adoption')
    bundle.require(trim_defaults(current['spec']['template'],d['spec']['template'])==d['spec']['template'],'Pod template differs; refresh public inputs before adoption: '+d['metadata']['name'])
   if d['kind']=='Service':
    bundle.require(current['spec'].get('type','ClusterIP')=='ClusterIP'and current['spec']['selector']==d['spec']['selector'],'Service identity differs')

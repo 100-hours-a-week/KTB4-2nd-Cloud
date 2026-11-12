@@ -72,6 +72,11 @@ def validate(documents, values):
     require(not values.get('frontendServiceOnly') or values.get('frontendContract'), 'Service-only bootstrap is FE-only')
     platform_values = platform.load_documents((ROOT / 'deploy/v3/platform/values.yaml').read_text())[0]
     accounts = platform.expected_accounts(platform_values)
+    scaled = values.get('autoscaledWorkloads', [])
+    require(isinstance(scaled, list) and len(scaled) == len(set(scaled)) and
+            set(scaled) <= {'frontend','auth-api','trip-api','photo-api','photo-converter'},
+            'Only reviewed CPU API/converter targets may relinquish replica ownership')
+    require(all(values['workloads'][n]['enabled'] for n in scaled), 'Disabled role cannot be autoscaled')
     configs = {name: merge(values['defaults'], item) for name, item in values['workloads'].items() if item['enabled']}
     expected = {('Deployment', c['namespace'], name) for name, c in configs.items() if not (values.get('frontendContract') and values.get('frontendServiceOnly'))}
     expected |= {('Service', c['namespace'], name) for name, c in configs.items() if c['service']['enabled']}
@@ -126,7 +131,7 @@ def validate(documents, values):
         pod = pod_template['spec']
         require(not any(pod.get(flag, False) for flag in ['hostNetwork', 'hostPID', 'hostIPC']),
                 'Host namespace access is outside the application contract')
-        require(spec['replicas'] == config['replicas'], 'Replica count must be explicit')
+        require('replicas' not in spec if name in scaled else spec.get('replicas') == config['replicas'], 'Replica ownership differs from the reviewed scaling contract')
         require(spec['strategy'] == {'type': 'RollingUpdate', 'rollingUpdate': config['rollout']}, 'Rollout budget mismatch')
         require(config['rollout']['maxSurge'] + config['rollout']['maxUnavailable'] > 0, 'Rollout cannot have two zero budgets')
         require(config['rollout']['maxUnavailable'] <= config['replicas'], 'Rollout unavailability exceeds replicas')
@@ -140,6 +145,10 @@ def validate(documents, values):
         role = roles[name]
         require(config['nodeSelector'] == {'yeodam.io/role': role, 'yeodam.io/stage': 'v3'} and pod.get('nodeSelector') == config['nodeSelector'], 'App must select its own V3 CPU pool')
         require(config['tolerations'] == [{'key': 'yeodam.io/role', 'operator': 'Equal', 'value': role, 'effect': 'NoSchedule'}] and pod.get('tolerations') == config['tolerations'], 'Do not tolerate other or fixed-node roles')
+        expected_affinity = {'podAntiAffinity': {'requiredDuringSchedulingIgnoredDuringExecution': [
+            {'labelSelector': {'matchLabels': {'app.kubernetes.io/instance': 'photo-converter'}},
+             'topologyKey': 'kubernetes.io/hostname'}]}} if name == 'photo-converter' and name in scaled else None
+        require(pod.get('affinity') == expected_affinity, 'Only scaled converter replicas may require separate CPU nodes')
         container = pod['containers'][0]
         require(not container.get('command') and not container.get('args'), 'Use image default startup, not per-role commands')
         require(len(pod['containers']) == 1, 'Unreviewed sidecars are outside this chart')

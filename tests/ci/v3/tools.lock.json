@@ -131,6 +131,10 @@
     "persistentvolumeclaim": {
       "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/persistentvolumeclaim.json",
       "sha256": "0e83188a756b9df1cc719f98c7fafa558bcc9bf1da83039c8e1c31cd398ef6e9"
+    },
+    "horizontalpodautoscaler": {
+      "url": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459/v1.36.0-standalone-strict/horizontalpodautoscaler-autoscaling-v2.json",
+      "sha256": "dae451f66e51f43b9c54255f4ed6684c22afc2e429b587d476bd057f1170e5e6"
     }
   }
 }
