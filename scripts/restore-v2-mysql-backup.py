@@ -71,7 +71,7 @@ def schema_image_id(image):
     expected=''.join(hashlib.sha256((ROOT/'deploy/v3/mysql-schema-image'/name).read_bytes()).hexdigest()
         +'  /schema/'+name+'\n' for name in ['migrate.sh','source.lock.json'])
     expected+=''.join(item['sha256']+'  '+item['name']+'\n' for item in lock['migrations'])
-    logical.require(actual==expected,'Schema image differs from pinned V40 source')
+    logical.require(actual==expected,'Schema image differs from pinned V41 source')
     return image_id
 
 
@@ -118,7 +118,7 @@ def restore_package(package,image,directory,after_verify=None):
                 '-v',f'{cred}:/credentials:ro','-v',f'{cred}:/tls:ro',image_id)
         baseline=logical.upgrade_baseline(sql,manifest['tables'])
         migrate()
-        logical.require(sql("SELECT CONCAT(COUNT(*),':',SUM(success),':',MAX(CAST(version AS UNSIGNED))) FROM yeodam.flyway_schema_history;")=='40:40:40','V40 migration incomplete')
+        logical.require(sql("SELECT CONCAT(COUNT(*),':',SUM(success),':',MAX(CAST(version AS UNSIGNED))) FROM yeodam.flyway_schema_history;")=='41:41:41','V41 migration incomplete')
         logical.verify_upgrade(sql,baseline)
         logical.require(logical.foreign_key_violations(name)==0,'Foreign key orphans detected')
         history=sql('SELECT * FROM yeodam.flyway_schema_history ORDER BY installed_rank;')
@@ -126,13 +126,13 @@ def restore_package(package,image,directory,after_verify=None):
         logical.require(len(new)==5 and all(sql('SELECT COUNT(*) FROM yeodam.'+logical.identifier(t))=='0' for t in new),'Unexpected new-table contents')
         migrate()
         logical.require(sql('SELECT * FROM yeodam.flyway_schema_history ORDER BY installed_rank;')==history
-            and logical.capture(name,baseline['tables'])==baseline['tables'],'V40 rerun changed data')
+            and logical.capture(name,baseline['tables'])==baseline['tables'],'V41 rerun changed data')
         if after_verify is not None:
             sql('SET GLOBAL read_only=ON; SET GLOBAL super_read_only=ON;')
             after_verify(name,manifest)
             logical.require(logical.capture(name,baseline['tables'])==baseline['tables'],'Read-only inspection changed legacy data')
         return {'restored':True,'sensitivity':manifest['sensitivity'],'legacyTablesCompared':len(manifest['tables']),
-            'legacyRowsAndHistoryMatch':True,'foreignKeyViolations':0,'targetEngine':'8.4.13','targetSchema':40,'reviewedV37TimestampChange':True,'v40ProtectionPredicateVerified':True,
+            'legacyRowsAndHistoryMatch':True,'foreignKeyViolations':0,'targetEngine':'8.4.13','targetSchema':41,'reviewedV37TimestampChange':True,'v40ProtectionPredicateVerified':True,
             'rerunNoop':True,'sourceDumpSha256':manifest['sha256'],'qaDatabaseAccessed':False,
             'runtimeName':name}
     finally:
@@ -158,4 +158,4 @@ if __name__=='__main__':
     package=download(args.run_id,args.directory,args.profile)
     result=restore_package(package,args.image,args.directory/'runtime')
     logical.private_json(args.directory/'result.json',{**result,'runtimeCleaned':True})
-    print('PASS: private V2 backup restored and V40 verified; isolated runtime removed')
+    print('PASS: private V2 backup restored and V41 verified; isolated runtime removed')

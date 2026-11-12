@@ -17,7 +17,16 @@ spec:
       restartPolicy: Never
       automountServiceAccountToken: false
       enableServiceLinks: false
+      {{- if .Values.workerHostname }}
+      nodeSelector:
+        yeodam.io/role: worker
+        node.kubernetes.io/instance-type: t3a.medium
+        kubernetes.io/hostname: {{ .Values.workerHostname | quote }}
+      tolerations:
+        - {key: yeodam.io/role, operator: Equal, value: worker, effect: NoSchedule}
+      {{- else }}
       nodeSelector: {yeodam.io/role: system}
+      {{- end }}
       imagePullSecrets: [{name: {{ .Values.imagePullSecret }}}]
       securityContext: {runAsNonRoot: true, runAsUser: 1001, fsGroup: 1001, seccompProfile: {type: RuntimeDefault}}
       containers:

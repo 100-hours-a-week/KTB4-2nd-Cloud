@@ -1,3 +1,6 @@
 enabled: false
 image: ''
 imagePullSecret: ghcr-pull
+
+# Explicit opt-in for an already-reviewed minimal CPU worker; no autoscaling.
+workerHostname: ""

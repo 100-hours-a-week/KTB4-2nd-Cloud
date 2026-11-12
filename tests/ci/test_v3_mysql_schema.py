@@ -24,13 +24,31 @@ class Contracts(unittest.TestCase):
     if change=='resume':next(x for x in docs if x['kind']=='Job')['spec']['suspend']=False
     if change=='extra':docs.append({'kind':'Secret','metadata':{'name':'bad'}})
     with self.assertRaises(ValueError):c.validate(docs,True)
+ def test_explicit_minimal_worker_is_optional_and_exact(self):
+  host='ip-10-40-41-221.ap-northeast-2.compute.internal'
+  docs=c.platform.load_documents(c.render([ROOT/'tests/ci/v3/mysql-schema.values.fixture.yaml'],worker_host=host))
+  c.validate(docs,True,worker_host=host);c.platform.schema_check(__import__('yaml').safe_dump_all(docs))
+  with self.assertRaises(ValueError):c.validate(docs,True)
+  for mutate in ('hostname','instance-type','toleration'):
+   changed=copy.deepcopy(docs);spec=next(x for x in changed if x['kind']=='Job')['spec']['template']['spec']
+   if mutate=='hostname':spec['nodeSelector']['kubernetes.io/hostname']='unreviewed'
+   if mutate=='instance-type':spec['nodeSelector']['node.kubernetes.io/instance-type']='g6.xlarge'
+   if mutate=='toleration':spec['tolerations']=[{'operator':'Exists'}]
+   with self.subTest(mutate=mutate),self.assertRaises(ValueError):c.validate(changed,True,worker_host=host)
  def test_network_widening_rejected(self):
   docs=copy.deepcopy(self.docs);next(x for x in docs if x['kind']=='NetworkPolicy')['spec']['egress'][0]['to']=[{'podSelector':{}}]
   with self.assertRaises(ValueError):c.validate(docs,True)
  def test_v34_sql_hashes_cannot_change(self):
   migrations=copy.deepcopy(c.LOCK['migrations']);migrations[0]['sha256']='f'*64
   with patch.dict(c.LOCK,{'migrations':migrations}):
-   with self.assertRaisesRegex(ValueError,'V1-V35'):c.validate_source()
+   with self.assertRaisesRegex(ValueError,'V1-V40'):c.validate_source()
+ def test_v40_prefix_and_nullable_trace_sql_are_fixed(self):
+  migrations=copy.deepcopy(c.LOCK['migrations']);migrations[39]['sha256']='f'*64
+  with patch.dict(c.LOCK,{'migrations':migrations}):
+   with self.assertRaisesRegex(ValueError,'V1-V40'):c.validate_source()
+  sql=(ROOT/'deploy/v3/mysql-schema-image/upgrades/V41__add_async_trace_context.sql').read_text()
+  self.assertEqual(sql.count('ADD COLUMN'),10);self.assertEqual(sql.count('ALTER TABLE'),5)
+  for unsafe in ['UPDATE ','DELETE ','DROP ','NOT NULL']:self.assertNotIn(unsafe,sql)
  def test_only_candidate_v40_source_is_accepted(self):
   with patch.dict(c.LOCK,{'sourceCommit':'f'*40}):
    with self.assertRaisesRegex(ValueError,'candidate'):c.validate_source()
@@ -41,9 +59,9 @@ class Contracts(unittest.TestCase):
   original=Path.read_text
   def modified(path,*args,**kwargs):
    text=original(path,*args,**kwargs)
-   return text.replace('flyway.target=40','flyway.target=34') if path.name=='migrate.sh' else text
+   return text.replace('flyway.target=41','flyway.target=34') if path.name=='migrate.sh' else text
   with patch.object(Path,'read_text',modified):
-   with self.assertRaisesRegex(ValueError,'flyway.target=40'):c.validate_source()
+   with self.assertRaisesRegex(ValueError,'flyway.target=41'):c.validate_source()
  def test_fixture_does_not_enable_production_target_override(self):
   script=(ROOT/'deploy/v3/mysql-schema-image/migrate.sh').read_text()
   self.assertIn('[[ $# == 0 ]] || exit 1',script)
@@ -62,7 +80,7 @@ class Contracts(unittest.TestCase):
  def test_image_preparation_rejects_changed_baseline_before_download(self):
   migrations=copy.deepcopy(p.LOCK['migrations']);migrations[0]['sha256']='f'*64
   with tempfile.TemporaryDirectory() as d,patch.dict(p.LOCK,{'migrations':migrations}),patch.object(p.urllib.request,'urlopen') as download:
-   with self.assertRaisesRegex(ValueError,'V1-V35'):p.prepare(Path(d))
+   with self.assertRaisesRegex(ValueError,'V1-V40'):p.prepare(Path(d))
    download.assert_not_called()
  def test_cached_archive_tamper_rejected_before_extraction(self):
   with tempfile.TemporaryDirectory() as d:
