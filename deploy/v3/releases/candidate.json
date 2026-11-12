@@ -62,7 +62,7 @@
   "values": {
     "ai": {
       "accessEnabled": true,
-      "configurationRevision": "3571c5c96b1433acdf7220eebb07b6f731cf366715dec3bda1e33c87bf37120f",
+      "configurationRevision": "ad2084cb6b23375a3ae0bf27f248729c06dd8211176815617fce3b70e8609d4c",
       "image": "ghcr.io/100-hours-a-week/yeodam-ai-app@sha256:20263aac32ada2023053eb5182ed96d0afeae58b95f887f99438941dc8075635",
       "privateModelPeers": [
         {
@@ -89,7 +89,11 @@
         "api",
         "runner"
       ],
-      "tourapiEnabled": true
+      "tourapiEnabled": true,
+      "langfuseEnabled": true,
+      "traceContextEnabled": true,
+      "traceContextWriteEnabled": true,
+      "traceContextWriteEverEnabled": true
     },
     "backend": {
       "backendConnectionContract": true,

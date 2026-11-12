@@ -4,6 +4,10 @@ on:
   workflow_call:
   push:
     paths:
+      - 'scripts/ci-build-nginx-fixture.py'
+      - 'scripts/ci-pull-redis-image.py'
+      - 'scripts/ci_image_transport.py'
+      - 'tests/ci/test_ci_transport.py'
       - 'deploy/v3/**'
       - 'terraform/v3/cutover/**'
       - 'terraform/v2/retirement/**'
@@ -29,6 +33,11 @@ on:
       - 'tests/ci/test_v3_apm.py'
       - 'tests/ci/smoke-v3-apm.py'
       - 'scripts/collect-v3-experiment.py'
+      - 'scripts/*v3*cdc*fault*'
+      - 'scripts/v3_chaos_install.py'
+      - 'tests/ci/test_v3_cdc_fault.py'
+      - 'tests/ci/smoke-v3-cdc-evidence.py'
+      - 'deploy/v3/chaos-mesh/**'
       - 'tests/ci/test_v3_experiment.py'
       - 'tests/ci/smoke-v3-experiment.py'
       - 'scripts/check-v3-metrics.py'
@@ -235,11 +244,11 @@ jobs:
       - name: Verify Redis transaction replay with isolated fixture data
         run: |
           image=$(sed -n 's/^image: //p' deploy/v3/redis/values.yaml)
-          docker pull "$image"
-          python3 scripts/verify-v3-redis-aof.py
+          selected=$(python3 scripts/ci-pull-redis-image.py --image "$image")
+          python3 scripts/verify-v3-redis-aof.py --image "$selected"
           ai_image=$(sed -n 's/^  redis: //p' deploy/v3/ai-storage/values.yaml)
-          docker pull "$ai_image"
-          python3 scripts/verify-v3-redis-aof.py --store ai
+          ai_selected=$(python3 scripts/ci-pull-redis-image.py --image "$ai_image")
+          python3 scripts/verify-v3-redis-aof.py --store ai --image "$ai_selected"
 
       - name: Verify disabled production release contract without credentials
         run: python3 -m unittest discover -s tests/ci -p 'test_production_release_prepare.py'
@@ -268,6 +277,9 @@ jobs:
 
       - name: Verify experiment query semantics with synthetic counters
         run: '"$RUNNER_TEMP/yeodam-v3-validation/venv/bin/python" tests/ci/smoke-v3-experiment.py'
+
+      - name: Verify bounded CDC evidence SQL with isolated synthetic MySQL
+        run: python3 tests/ci/smoke-v3-cdc-evidence.py
 
       - name: Verify minimal metrics and dashboards without AWS
         env:
