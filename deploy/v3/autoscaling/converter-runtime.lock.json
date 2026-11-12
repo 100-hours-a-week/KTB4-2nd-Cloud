@@ -1,0 +1,5 @@
+{
+  "kafkaClient": "kafka-clients-4.2.1.jar",
+  "kafkaClientSha256": "6a281026416938a53c105f2d91d2807fdc83d5658452abf0ad1b6d8ab8a553c8",
+  "businessSqlSha256": "98aea5698f8c27a44fa8e1327aeadd9b7573199a772b242058c28d761d21e46a"
+}

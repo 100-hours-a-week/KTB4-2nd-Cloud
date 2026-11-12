@@ -1,4 +1,4 @@
-{{- if and .Values.enabled .Values.converterEnabled }}
+{{- if and .Values.enabled (or .Values.converterEnabled .Values.converterAccessEnabled) }}
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaUser
 metadata:
@@ -28,4 +28,18 @@ spec:
   ingress:
     - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: keda}}, podSelector: {matchLabels: {app.kubernetes.io/name: keda-operator}}}]
       ports: [{protocol: TCP, port: 9093}]
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: keda}}, podSelector: {matchLabels: {yeodam.io/component: converter-lag-probe}}}]
+      ports: [{protocol: TCP, port: 9093}]
+{{- end }}
+
+{{- if and .Values.enabled (or .Values.converterEnabled .Values.converterAccessEnabled) }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ClusterTriggerAuthentication
+metadata: {name: v3-conversion-lag}
+spec:
+  secretTargetRef:
+    - {parameter: username, name: v3-keda-kafka, key: username}
+    - {parameter: password, name: v3-keda-kafka, key: password}
+    - {parameter: ca, name: v3-keda-kafka, key: ca.crt}
 {{- end }}

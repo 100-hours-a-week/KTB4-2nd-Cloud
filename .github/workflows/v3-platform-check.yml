@@ -42,6 +42,8 @@ on:
       - 'tests/ci/smoke-v3-experiment.py'
       - 'scripts/check-v3-autoscaling.py'
       - 'scripts/v3_autoscaling.py'
+      - 'scripts/*v3*converter*'
+      - 'tests/ci/*v3*converter*'
       - 'scripts/prepare-v3-scaling-candidate.py'
       - 'scripts/provision-v3-outbox-observer.py'
       - 'scripts/inspect-v3-autoscaling.py'
@@ -221,6 +223,32 @@ jobs:
         run: python3 tests/ci/smoke-v3-apm.py
       - name: Verify AI reader compatibility and real Langfuse SDK without network
         run: python3 tests/ci/run-v3-ai-observability.py
+
+  converter-scaling:
+    name: Converter two-partition ownership and shutdown
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Verify real converter classes with synthetic local work only
+        run: python3 tests/ci/smoke-v3-converter-scaling.py --output "$RUNNER_TEMP/converter-proof.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: converter-proof-${{ github.sha }}
+          path: ${{ runner.temp }}/converter-proof.json
+          retention-days: 7
 
   mongodb-health:
     name: MongoDB TLS health runtime

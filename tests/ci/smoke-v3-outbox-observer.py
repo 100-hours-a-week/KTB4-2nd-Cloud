@@ -65,6 +65,16 @@ with tempfile.TemporaryDirectory(prefix='outbox-observer-fixture-') as tmp:
         capped=query((ROOT/'deploy/v3/metrics/files/outbox.sql').read_text(),'cloud_outbox_observer',PASSWORD,True).stdout
         assert int(capped.splitlines()[0].split('\t')[1])==10001
         assert query('SELECT COUNT(*) FROM yeodam.attachment_conversion_outbox;').stdout.strip()=='4','Collector must preserve source rows'
+        # Actual SQL semantics for the converter quiet window; old successful receipt remnants are not active work.
+        query("CREATE TABLE yeodam.attachment_conversion_tasks(task_id VARCHAR(40) PRIMARY KEY,status VARCHAR(20)); ALTER TABLE yeodam.attachment_conversion_outbox ADD task_id VARCHAR(40) DEFAULT 'done'; INSERT INTO yeodam.attachment_conversion_tasks VALUES ('done','SUCCEEDED');")
+        drain=(ROOT/'deploy/v3/autoscaling/files/converter-drain.sql').read_text()
+        assert json.loads(query(drain).stdout)==dict(waiting=0,running=0,unknown=0,unpublishedActive=0)
+        query("INSERT INTO yeodam.attachment_conversion_tasks VALUES ('active','WAITING'); INSERT INTO yeodam.attachment_conversion_outbox(status,cdc_managed,created_at,payload,task_id) VALUES ('PENDING',TRUE,UTC_TIMESTAMP(6),'synthetic','active');")
+        assert json.loads(query(drain).stdout)==dict(waiting=1,running=0,unknown=0,unpublishedActive=1)
+        query("UPDATE yeodam.attachment_conversion_tasks SET status='RUNNING' WHERE task_id='active';")
+        assert json.loads(query(drain).stdout)==dict(waiting=0,running=1,unknown=0,unpublishedActive=1)
+        query("DELETE FROM yeodam.attachment_conversion_tasks WHERE task_id='active';")
+        assert json.loads(query(drain).stdout)['unknown']==1
         print('Synthetic TLS Outbox aggregates, column-only ACL, non-root client, capped count and stale-data failure verified')
     finally:
         run(['docker','rm','-f',PREFIX],check=False)
