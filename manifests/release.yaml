@@ -61,7 +61,6 @@ metadata:
   name: frontend
   namespace: frontend
 spec:
-  replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -631,7 +630,6 @@ metadata:
   name: auth-api
   namespace: auth
 spec:
-  replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -961,7 +959,6 @@ metadata:
   name: photo-api
   namespace: photo
 spec:
-  replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -1621,7 +1618,6 @@ metadata:
   name: trip-api
   namespace: trip
 spec:
-  replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:

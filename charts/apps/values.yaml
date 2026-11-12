@@ -1,3 +1,4 @@
+autoscaledWorkloads: []
 # All workloads are disabled until real images, configuration and access are reviewed.
 # Empty runtime values are intentional; enabling an incomplete target fails rendering.
 # Placement selects only bounded Karpenter app pools.
