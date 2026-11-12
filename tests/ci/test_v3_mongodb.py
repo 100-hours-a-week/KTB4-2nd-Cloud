@@ -50,6 +50,12 @@ class MongoDBContracts(unittest.TestCase):
             q = subprocess.run([os.environ['V3_HELM'], 'template', 'test', str(m.CHART), '--set', value], capture_output=True)
             self.assertNotEqual(q.returncode, 0)
 
+    def test_probe_must_not_spawn_driver_or_accept_extended_failure_window(self):
+        prefix = ['spec', 'template', 'spec', 'containers', 0]
+        self.reject('StatefulSet', prefix + ['readinessProbe', 'exec', 'command'],
+                    ['/bin/bash', '/runtime/shell.sh', '/runtime/health.js'])
+        self.reject('StatefulSet', prefix + ['livenessProbe', 'failureThreshold'], 60)
+
     def test_mongodb_credentials_san_and_creation_guard(self):
         from unittest.mock import patch
         from types import SimpleNamespace

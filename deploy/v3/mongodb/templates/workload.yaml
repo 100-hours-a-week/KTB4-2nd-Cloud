@@ -97,17 +97,17 @@ spec:
             requests: {cpu: 100m, memory: 512Mi}
             limits: {cpu: 500m, memory: 1Gi}
           startupProbe:
-            exec: {command: [/bin/bash, /runtime/shell.sh, /runtime/health.js]}
+            exec: {command: [/bin/bash, /runtime/health-probe.sh]}
             periodSeconds: 10
             timeoutSeconds: 10
             failureThreshold: 60
           readinessProbe:
-            exec: {command: [/bin/bash, /runtime/shell.sh, /runtime/health.js]}
+            exec: {command: [/bin/bash, /runtime/health-probe.sh]}
             periodSeconds: 10
             timeoutSeconds: 10
             failureThreshold: 3
           livenessProbe:
-            exec: {command: [/bin/bash, /runtime/shell.sh, /runtime/health.js]}
+            exec: {command: [/bin/bash, /runtime/health-probe.sh]}
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 6

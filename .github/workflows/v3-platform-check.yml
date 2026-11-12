@@ -136,6 +136,7 @@ on:
       - 'scripts/check-v3-mongodb.py'
       - 'scripts/create-v3-mongodb-bootstrap-secret.py'
       - 'tests/ci/test_v3_mongodb.py'
+      - 'tests/ci/smoke-v3-mongodb-health.py'
       - 'scripts/check-v3-redis.py'
       - 'scripts/verify-v3-redis-aof.py'
       - 'scripts/create-v3-redis-bootstrap-secret.py'
@@ -211,6 +212,20 @@ jobs:
         run: python3 tests/ci/smoke-v3-apm.py
       - name: Verify AI reader compatibility and real Langfuse SDK without network
         run: python3 tests/ci/run-v3-ai-observability.py
+
+  mongodb-health:
+    name: MongoDB TLS health runtime
+    # The pinned production binary rejects kernel >=6.19 (MongoDB SERVER-121912).
+    # Keep the actual image/TLS test; do not bypass its allocator safety check.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify MongoDB authenticated cached health at minimum resources
+        run: |
+          uname -r
+          python3 tests/ci/smoke-v3-mongodb-health.py
 
   validate:
     name: Helm and platform contracts

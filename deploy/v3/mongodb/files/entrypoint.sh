@@ -22,4 +22,11 @@ if [[ ! -f /data/db/.initialized ]]; then
   touch /data/db/.initialized
   trap - EXIT
 fi
+# One long-lived authenticated client, rather than a new JS runtime per probe.
+# emptyDir survives a container restart: discard the previous process evidence.
+mkdir -p /tmp/mongodb-health
+chmod 700 /tmp/mongodb-health
+rm -f /tmp/mongodb-health/status /tmp/mongodb-health/status.next /tmp/mongodb-health/monitor.pid
+bash /runtime/shell.sh /runtime/health-loop.js > /dev/null 2>&1 &
+printf '%s\n' "$!" > /tmp/mongodb-health/monitor.pid
 exec mongod --config /runtime/mongod.yaml
