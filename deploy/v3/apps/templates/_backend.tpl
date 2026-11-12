@@ -24,11 +24,18 @@
 {{- $connected := .root.Values.backendConnectionContract -}}
 {{- $allowed := concat $contract.requiredConfig $contract.topicConfig $contract.conversionConfig $contract.conversionTopicConfig $contract.optionalConfig (list "SPRING_APPLICATION_JSON") -}}
 {{- if $connected }}{{ $allowed = concat $allowed (keys $connection.commonConfig) (list "KAFKA_SASL_USERNAME") }}{{ end -}}
+{{- $boundedMemory := hasKey $c.configMapData "MALLOC_ARENA_MAX" -}}
+{{- if $boundedMemory -}}
+{{- if or (ne .instance "photo-converter") (ne $c.configMapData.MALLOC_ARENA_MAX $contract.photoConverterMemory.allocatorArenas) }}{{ fail "Allocator budget belongs only to the reviewed photo-converter profile" }}{{ end -}}
+{{- if ne $c.resources.limits.memory $contract.photoConverterMemory.containerMemoryLimit }}{{ fail "Photo converter heap budget requires the existing 1Gi limit" }}{{ end -}}
+{{- $allowed = concat $allowed (list "MALLOC_ARENA_MAX") -}}
+{{- end -}}
 {{- range $key, $_ := $c.configMapData -}}
 {{- if not (has $key $allowed) }}{{ fail (printf "Unreviewed BE ConfigMap key %s" $key) }}{{ end -}}
 {{- end -}}
 {{- $java := $contract.javaToolOptions -}}
 {{- if $connected }}{{ $java = $connection.javaToolOptions }}{{ end -}}
+{{- if $boundedMemory }}{{ $java = replace $contract.javaToolOptions $contract.photoConverterMemory.javaToolOptions $java }}{{ end -}}
 {{- if ne $c.configMapData.JAVA_TOOL_OPTIONS $java }}{{ fail "Use reviewed heap settings without JVM role-property overrides" }}{{ end -}}
 {{- $secretCount := len $contract.requiredSecrets -}}
 {{- if $connected }}{{ $secretCount = add $secretCount 3 }}{{ end -}}

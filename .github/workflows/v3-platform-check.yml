@@ -115,6 +115,8 @@ on:
       - 'scripts/check-v3-backend-prerequisites.py'
       - 'tests/ci/test_v3_backend_rollout.py'
       - 'scripts/prepare_v3_backend_values_contract.py'
+      - 'scripts/prepare-v3-photo-memory-candidate.py'
+      - 'scripts/observe-v3-photo-conversion.py'
       - 'tests/ci/test_v3_backend_connections.py'
       - 'scripts/v3_outbox_contract.py'
       - 'scripts/check-v3-outbox.py'

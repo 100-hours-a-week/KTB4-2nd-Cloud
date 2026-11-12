@@ -122,5 +122,10 @@
     "VIPS_CONCURRENCY"
   ],
   "javaToolOptions": "-XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5",
-  "kafkaNamesSource": "files/business-contract.json"
+  "kafkaNamesSource": "files/business-contract.json",
+  "photoConverterMemory": {
+    "allocatorArenas": "2",
+    "javaToolOptions": "-XX:MaxRAMPercentage=37.5 -XX:InitialRAMPercentage=12.5",
+    "containerMemoryLimit": "1Gi"
+  }
 }
