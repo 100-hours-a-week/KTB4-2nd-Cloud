@@ -1,12 +1,12 @@
 {
   "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
-  "sourceCommit": "6347e029a2f9950564a0e22123db7ae92980243a",
-  "archiveUrl": "https://codeload.github.com/100-hours-a-week/KTB4-2nd-BE/tar.gz/6347e029a2f9950564a0e22123db7ae92980243a",
-  "archiveSha256": "4972fb95beda5528b37f5bdbcc69c55412f6ffb646487df64f1529554b44dcbe",
-  "archiveBytes": 2125909,
+  "sourceCommit": "2dd1ea6d4c7e9279dd9d74c0991ded09f4753143",
+  "archiveUrl": "https://codeload.github.com/100-hours-a-week/KTB4-2nd-BE/tar.gz/2dd1ea6d4c7e9279dd9d74c0991ded09f4753143",
+  "archiveSha256": "a73a1c914aa0eae4ae51408a5d2fbbcd2ccb9f902adaffb0145c289b6bd4b388",
+  "archiveBytes": 2434422,
   "flywayVersion": "12.4.0",
   "baseImage": "redgate/flyway@sha256:0472749995c526ef293a9d1651bc6af7e485def77fe7b9b23f223203af1cb5ac",
-  "schemaVersion": 40,
+  "schemaVersion": 41,
   "migrations": [
     {
       "name": "V1__create_user_tables.sql",
@@ -207,6 +207,11 @@
       "name": "V40__protect_canceled_initial_analysis_input.sql",
       "sha256": "f071c71cfb88107b81c305b95f7c0582de77eb5d5dc4583885ce6790df7baab1",
       "bytes": 406
+    },
+    {
+      "name": "V41__add_async_trace_context.sql",
+      "sha256": "dbae80038986d3ea5ab6813b636e86057bd5d752af6ae89e17c4f7fc196c2418",
+      "bytes": 663
     }
   ],
   "cdcTables": [

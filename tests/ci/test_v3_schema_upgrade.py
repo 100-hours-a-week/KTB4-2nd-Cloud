@@ -13,7 +13,7 @@ class Upgrade(unittest.TestCase):
   def execute(query):
    if query=='SELECT NOW(6);':return '2026-11-10 00:01:00.000000'
    if 'SELECT * FROM yeodam.flyway_schema_history' in query:return 'history'
-   if 'COUNT(DISTINCT version)' in query:return '40:40:40:40'
+   if 'COUNT(DISTINCT version)' in query:return '41:41:41:41'
    if 'table_name FROM' in query:return '\n'.join(set(tables)|logical.UPGRADE_TABLES)
    return '0'
   return baseline,execute
@@ -51,6 +51,6 @@ class Upgrade(unittest.TestCase):
   cutover.require_schema_image('ghcr.io/100-hours-a-week/yeodam-v3-mysql-schema@sha256:'+'a'*64)
  def test_reviewed_sql_matches_frozen_v35_prefix(self):
   source=logical.SCHEMA_LOCK;baseline=json.loads((ROOT/'deploy/v3/mysql-schema-image/v35-baseline.lock.json').read_text())
-  self.assertEqual(source['migrations'][:35],baseline['migrations']);self.assertEqual(len(source['migrations']),40)
+  self.assertEqual(source['migrations'][:35],baseline['migrations']);self.assertEqual(len(source['migrations']),41)
 
 if __name__=='__main__':unittest.main()

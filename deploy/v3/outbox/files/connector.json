@@ -21,7 +21,7 @@
   "transforms.outbox.table.field.event.id": "outbox_id",
   "transforms.outbox.table.field.event.key": "trip_id",
   "transforms.outbox.table.field.event.payload": "payload",
-  "transforms.outbox.table.fields.additional.placement": "event_source:header:outbox-source,request_id:header:X-Request-ID",
+  "transforms.outbox.table.fields.additional.placement": "event_source:header:outbox-source,request_id:header:X-Request-ID,traceparent:header:traceparent,tracestate:header:tracestate",
   "transforms.outbox.route.by.field": "topic",
   "transforms.outbox.route.topic.replacement": "${routedByValue}",
   "transforms.key.type": "org.apache.kafka.connect.transforms.Cast$Key",
@@ -34,7 +34,7 @@
   "snapshot.select.statement.overrides.yeodam.story_generation_outbox": "SELECT * FROM yeodam.story_generation_outbox WHERE cdc_managed = TRUE AND status = 'PENDING'",
   "transforms.owned.type": "io.debezium.transforms.Filter",
   "transforms.owned.language": "jsr223.groovy",
-  "transforms.owned.condition": "value != null && (value.op == 'c' || value.op == 'r') && (value.after.cdc_managed == true || value.after.cdc_managed == 1) && value.after.status == 'PENDING'",
+  "transforms.owned.condition": "value != null && (value.op == 'c' || value.op == 'r') && (value.after.cdc_managed == true || value.after.cdc_managed == 1) && value.after.status == 'PENDING' && value.after.getString('event_source').length() >= 0 && value.after.getString('request_id').length() >= 0",
   "errors.tolerance": "none",
   "snapshot.select.statement.overrides.yeodam.attachment_conversion_outbox": "SELECT * FROM yeodam.attachment_conversion_outbox WHERE cdc_managed = TRUE AND status = 'PENDING'",
   "database.ssl.mode": "verify_identity",
@@ -73,5 +73,6 @@
   "transforms.outbox.predicate": "heartbeat",
   "transforms.outbox.negate": "true",
   "transforms.key.predicate": "heartbeat",
-  "transforms.key.negate": "true"
+  "transforms.key.negate": "true",
+  "transforms.outbox.table.fields.additional.error.on.missing": "false"
 }
