@@ -1288,7 +1288,6 @@ metadata:
   name: photo-converter
   namespace: photo
 spec:
-  replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -1313,6 +1312,13 @@ spec:
         yeodam.io/deployment-purpose: conversion-worker
         yeodam.io/stage: v3
     spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: photo-converter
+            topologyKey: kubernetes.io/hostname
       automountServiceAccountToken: false
       containers:
       - env:
