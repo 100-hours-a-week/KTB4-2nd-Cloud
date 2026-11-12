@@ -9,10 +9,10 @@
     },
     "backend": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-BE",
-      "sourceSha": "6240949a8b735ead0af4837ed71310ec3a65047e",
-      "image": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:76d9857c9a7d456bd0e38a95433cf6815e91e7acc9a0a534ea8f439f0e12ad0f",
-      "buildRunId": 43171463722,
-      "buildSourceSha": "6240949a8b735ead0af4837ed71310ec3a65047e"
+      "sourceSha": "914356f45e1db7eb3e7f82314d782eabc02a4bec",
+      "image": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:b1b8047b2ce59fc4e74da74f2ca0c19c8d043374a5df1274f6171d6095ce88dd",
+      "buildRunId": 43171976787,
+      "buildSourceSha": "914356f45e1db7eb3e7f82314d782eabc02a4bec"
     },
     "frontend": {
       "sourceRepository": "100-hours-a-week/KTB4-2nd-FE",
@@ -141,7 +141,7 @@
           "REDIS_PORT": "6379",
           "REDIS_SSL_ENABLED": "true",
           "REDIS_USERNAME": "app",
-          "RELEASE": "6240949a8b735ead0af4837ed71310ec3a65047e",
+          "RELEASE": "914356f45e1db7eb3e7f82314d782eabc02a4bec",
           "SERVER_SHUTDOWN": "graceful",
           "SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE": "60s",
           "SPRING_PROFILES_ACTIVE": "prod,internal-metrics",
@@ -352,7 +352,7 @@
       "frontendContract": false,
       "frontendServiceOnly": false,
       "images": {
-        "backend": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:76d9857c9a7d456bd0e38a95433cf6815e91e7acc9a0a534ea8f439f0e12ad0f"
+        "backend": "ghcr.io/100-hours-a-week/yeodam-backend@sha256:b1b8047b2ce59fc4e74da74f2ca0c19c8d043374a5df1274f6171d6095ce88dd"
       },
       "websocketContract": false,
       "workloads": {
@@ -366,7 +366,7 @@
             "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
             "KAFKA_SASL_USERNAME": "v3-auth-api",
             "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback",
-            "RELEASE": "6240949a8b735ead0af4837ed71310ec3a65047e",
+            "RELEASE": "914356f45e1db7eb3e7f82314d782eabc02a4bec",
             "STORY_RESULT_LISTENER_ENABLED": "false",
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
@@ -421,7 +421,7 @@
             "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
             "KAFKA_SASL_USERNAME": "v3-photo-api",
             "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback",
-            "RELEASE": "6240949a8b735ead0af4837ed71310ec3a65047e",
+            "RELEASE": "914356f45e1db7eb3e7f82314d782eabc02a4bec",
             "STORY_RESULT_LISTENER_ENABLED": "false",
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
@@ -476,7 +476,7 @@
             "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
             "KAFKA_SASL_USERNAME": "v3-photo-converter",
             "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback",
-            "RELEASE": "6240949a8b735ead0af4837ed71310ec3a65047e",
+            "RELEASE": "914356f45e1db7eb3e7f82314d782eabc02a4bec",
             "STORY_RESULT_LISTENER_ENABLED": "false",
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
@@ -531,7 +531,7 @@
             "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
             "KAFKA_SASL_USERNAME": "v3-trip-api",
             "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback",
-            "RELEASE": "6240949a8b735ead0af4837ed71310ec3a65047e",
+            "RELEASE": "914356f45e1db7eb3e7f82314d782eabc02a4bec",
             "STORY_RESULT_LISTENER_ENABLED": "false",
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
@@ -586,7 +586,7 @@
             "FRONTEND_ORIGIN": "https://yeodam-2gether.com",
             "KAFKA_SASL_USERNAME": "v3-trip-result-worker",
             "KAKAO_REDIRECT_URI": "https://yeodam-2gether.com/api/auth/kakao/callback",
-            "RELEASE": "6240949a8b735ead0af4837ed71310ec3a65047e",
+            "RELEASE": "914356f45e1db7eb3e7f82314d782eabc02a4bec",
             "STORY_RESULT_LISTENER_ENABLED": "true",
             "STORY_STATUS_POLLING_ENABLED": "true",
             "TRIP_RESULT_WORKER_ENABLED": "true",
