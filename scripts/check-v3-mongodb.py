@@ -63,8 +63,12 @@ def validate(documents, enabled=False, smoke=False):
     require(container['command'] == ['/bin/bash', '/runtime/entrypoint.sh'], 'Guarded initialization required')
     require(pod['terminationGracePeriodSeconds'] == 120, 'Graceful storage shutdown required')
     for probe in ['startupProbe', 'readinessProbe', 'livenessProbe']:
-        require(container[probe]['exec']['command'] == ['/bin/bash', '/runtime/shell.sh', '/runtime/health.js']
-                and container[probe]['timeoutSeconds'] == 10, 'Authenticated local probe contract')
+        require(container[probe]['exec']['command'] == ['/bin/bash', '/runtime/health-probe.sh']
+                and container[probe]['timeoutSeconds'] == 10, 'Fresh authenticated monitor evidence required')
+    require(container['readinessProbe'] == {'exec': {'command': ['/bin/bash', '/runtime/health-probe.sh']},
+                'periodSeconds': 10, 'timeoutSeconds': 10, 'failureThreshold': 3}
+            and container['livenessProbe'] == {'exec': {'command': ['/bin/bash', '/runtime/health-probe.sh']},
+                'periodSeconds': 30, 'timeoutSeconds': 10, 'failureThreshold': 6}, 'Preserve reviewed failure windows')
     require(container['startupProbe']['periodSeconds'] * container['startupProbe']['failureThreshold'] == 600, 'Bounded 10min initial startup')
     require(any(m['name'] == 'data' and m['mountPath'] == '/data/db' for m in container['volumeMounts']), 'Use image data volume, not an anonymous nested path')
     config = next(d for d in documents if d['kind'] == 'ConfigMap')['data']
@@ -76,6 +80,11 @@ def validate(documents, enabled=False, smoke=False):
     require('no reset' in config['entrypoint.sh'] and '--bind_ip 127.0.0.1 --noauth' in config['entrypoint.sh'], 'First accounts cannot be exposed or data reset automatically')
     require(yaml.safe_load(config['mongosh.conf']) == {'mongosh': {'forceDisableTelemetry': True, 'logLocation': '/tmp/mongosh-logs', 'logMaxFileCount': 8, 'logRetentionGB': 0.001, 'updateURL': ''}}, 'Bound probe logs outside database files')
     require('authenticatedUsers' in config['health.js'], 'Ping alone is not proof of authenticated access')
+    require('authenticatedUsers' in config['health-loop.js'] and "user.db === 'admin'" in config['health-loop.js']
+            and 'socketTimeoutMS=3000' in config['health-loop.js'] and 'sleep(5000)' in config['health-loop.js'],
+            'Bound authenticated TLS monitor cadence and network wait')
+    require('now - observed <= 30' in config['health-probe.sh'] and 'kill -0 "$monitor"' in config['health-probe.sh']
+            and '$pid == "$monitor"' in config['health-probe.sh'], 'Reject stale evidence or dead/replaced monitor')
     for service in [d['spec'] for d in documents if d['kind'] == 'Service']:
         require(service.get('type', 'ClusterIP') == 'ClusterIP' and not service.get('externalIPs') and
                 service['ports'] == [{'name': 'mongodb', 'port': 27017, 'targetPort': 'mongodb'}] and
@@ -117,7 +126,8 @@ def main():
         validate(platform.load_documents(source), enabled, smoke)
         platform.schema_check(source)
         (args.output / f'mongodb-{name}.yaml').write_text(source)
-    subprocess.run(['bash', '-n', str(CHART / 'files/entrypoint.sh')], check=True)
+    for script in ['entrypoint.sh', 'health-probe.sh']:
+        subprocess.run(['bash', '-n', str(CHART / 'files' / script)], check=True)
     print(json.dumps({'mongodbPods': 1, 'memoryLimit': '1Gi', 'cacheMi': 256, 'retainedDataGiB': 5, 'additionalNodes': 0, 'clusterAccessed': False}))
 
 

@@ -136,6 +136,7 @@ on:
       - 'scripts/check-v3-mongodb.py'
       - 'scripts/create-v3-mongodb-bootstrap-secret.py'
       - 'tests/ci/test_v3_mongodb.py'
+      - 'tests/ci/smoke-v3-mongodb-health.py'
       - 'scripts/check-v3-redis.py'
       - 'scripts/verify-v3-redis-aof.py'
       - 'scripts/create-v3-redis-bootstrap-secret.py'
@@ -228,6 +229,9 @@ jobs:
 
       - name: Check offline V2 to V3 migration evidence without credentials
         run: python3 -m unittest discover -s tests/ci -p 'test_v2_v3_migration.py'
+
+      - name: Verify MongoDB authenticated cached health at minimum resources
+        run: python3 tests/ci/smoke-v3-mongodb-health.py
 
       - name: Verify synthetic Qdrant snapshot and isolated restore without AWS
         run: bash scripts/validate-v2-qdrant-backup.sh
