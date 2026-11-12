@@ -18,6 +18,10 @@ def fixture():
             'kubeSystemUid': '11111111-1111-1111-1111-111111111111',
             'approvedRevision': 'a' * 40, 'serviceIp': '172.20.20.10',
             'controllerNode': 'ip-10-40-12-10.ap-northeast-2.compute.internal',
+            'controllerNodeUid': '55555555-5555-5555-5555-555555555555',
+            'controllerRole': 'system', 'workerControllerApproved': False,
+            'podCapacity': {name: {'limit': 17, 'used': 16, 'ownPods': 0} for name in (
+                'ip-10-40-12-10.ap-northeast-2.compute.internal', 'ip-10-40-12-11.ap-northeast-2.compute.internal')},
             'connect': {'name': f.CONNECT + '-connect-0', 'uid': '22222222-2222-2222-2222-222222222222',
                         'node': 'ip-10-40-12-11.ap-northeast-2.compute.internal', 'ip': '10.40.12.100',
                         'ownerKind': 'StrimziPodSet', 'ownerName': f.CONNECT + '-connect'},
@@ -60,6 +64,49 @@ class FakeKube:
 
 
 class FaultTests(unittest.TestCase):
+    def test_capacity_blocks_before_render_and_counts_installed_daemon_slot(self):
+        s = fixture(); c = s['podCapacity'][s['connect']['node']]; c['used'] = 17
+        with self.assertRaises(f.GuardError): install.values(s)
+        c['ownPods'] = 1
+        install.values(s)
+        s['podCapacity'][s['controllerNode']]['used'] = 17
+        with self.assertRaises(f.GuardError): install.values(s)
+
+    def test_worker_requires_explicit_opt_in_and_narrow_taint(self):
+        s = fixture(); name = s['controllerNode']
+        node = {'metadata': {'name': name, 'uid': s['controllerNodeUid'], 'labels': {
+            'yeodam.io/role': 'worker', 'node.kubernetes.io/instance-type': 't3a.medium'}},
+            'spec': {'taints': [{'key': 'yeodam.io/role', 'value': 'worker', 'effect': 'NoSchedule'}]},
+            'status': {'conditions': [{'type': 'Ready', 'status': 'True'}], 'allocatable': {'pods': '17'},
+                       'nodeInfo': {'operatingSystem': 'linux', 'architecture': 'amd64'}}}
+        connect = copy.deepcopy(node); connect['metadata']['name'] = s['connect']['node']
+        connect['metadata']['labels']['yeodam.io/role'] = 'system'; connect['spec'] = {}
+        nodes = [node, connect]
+        for host, opt in ((None, False), (None, True), (name, False)):
+            with self.subTest(host=host, opt=opt), self.assertRaises(f.GuardError):
+                f.controller_placement(nodes, [], s['connect']['node'], host, opt)
+        s.update(f.controller_placement(nodes, [], s['connect']['node'], name, True))
+        v = install.values(s)
+        self.assertEqual(v['controllerManager']['nodeSelector']['yeodam.io/role'], 'worker')
+        self.assertEqual(v['controllerManager']['tolerations'], [{'key': 'yeodam.io/role',
+            'operator': 'Equal', 'value': 'worker', 'effect': 'NoSchedule'}])
+        self.assertEqual(v['chaosDaemon']['nodeSelector']['yeodam.io/role'], 'system')
+        for role in ('api', 'data', 'gpu'):
+            node['metadata']['labels']['yeodam.io/role'] = role
+            with self.assertRaises(f.GuardError):
+                f.controller_placement(nodes, [], s['connect']['node'], name, True)
+
+    def test_null_exec_environment_uses_controlled_profile(self):
+        config = {'users': [{'user': {'exec': {'command': 'aws', 'env': None, 'args': [
+            'eks', 'get-token', '--cluster-name', f.CLUSTER, '--region', 'ap-northeast-2']}}}],
+                  'clusters': [{'cluster': {}}]}
+        k = f.Kube('/unused')
+        with patch.object(k, 'call', return_value=json.dumps(config)), \
+                patch.object(k, 'get', return_value={'metadata': {'uid': fixture()['kubeSystemUid']}}), \
+                patch.object(f.subprocess, 'run') as run:
+            run.return_value.returncode = 0; run.return_value.stdout = '{"Account":"483175530259"}'
+            self.assertEqual(k.identity(), fixture()['kubeSystemUid'])
+
     def test_partition_exact_source_and_port_no_mysql_target_injection(self):
         p = f.prepare(fixture(), 'cdc-first', 60)
         spec = p['fault']['spec']
@@ -169,6 +216,7 @@ class FaultTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('V3_HELM'), 'Set pinned V3_HELM for actual Helm/schema validation')
     def test_actual_upstream_helm_render_and_official_fault_schema(self):
         s = fixture()
+        s.update(controllerRole='worker', workerControllerApproved=True)
         with tempfile.TemporaryDirectory() as t:
             p = Path(t)/'values.json'; f.private_write(p,install.values(s))
             docs = install.render(s,os.environ['V3_HELM'],p)
