@@ -18,7 +18,7 @@
     "currentPartitionsPerTopic": 1,
     "requiredPartitionsPerTopic": 2,
     "shutdownWaitSeconds": 60,
-    "existingGraceSeconds": 90
+    "existingGraceSeconds": 180
   },
   "trip-result-worker": {
     "status": "fixed-one",

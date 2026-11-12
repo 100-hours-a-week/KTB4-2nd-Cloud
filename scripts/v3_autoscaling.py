@@ -34,6 +34,6 @@ def validate_prerequisites(items,converter=False):
             d=by.get(('KafkaTopic','kafka','prod.yeodam.image.'+lane),{})
             require(d.get('spec',{}).get('partitions')==2 and any(c.get('type')=='Ready'and c.get('status')=='True'for c in d.get('status',{}).get('conditions',[])),'All four image topics need two Ready partitions')
         dep=by[('Deployment','photo','photo-converter')]
-        require(dep['spec']['template']['spec']['terminationGracePeriodSeconds']>=90,'Preserve shutdown/drain grace')
+        require(dep['spec']['template']['spec']['terminationGracePeriodSeconds']>=180,'Preserve shutdown/drain grace')
         require(not any(x['kind']=='HorizontalPodAutoscaler'and x.get('metadata',{}).get('namespace')=='photo'and x.get('spec',{}).get('scaleTargetRef',{}).get('name')=='photo-converter' and x.get('metadata',{}).get('name')!='keda-hpa-photo-converter' for x in items),'KEDA is the only converter HPA owner')
     return {'targets':sorted(targets),'minReplicas':1,'maxReplicas':2,'liveChanges':False}
