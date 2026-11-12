@@ -43,7 +43,7 @@ class Scaling(unittest.TestCase):
         c=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text());n=policy.prepare_candidate(c)
         for profile in ('frontend','backend'):n['values'][profile].pop('autoscaledWorkloads')
         self.assertEqual(c,n)
-    def test_snapshot_pod_templates_are_preserved(self):
+    def test_snapshot_preserves_templates_except_converter_placement(self):
         c=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text());n=policy.prepare_candidate(c,True)
         for profile in ('frontend','backend'):
             with tempfile.TemporaryDirectory() as tmp:
@@ -56,6 +56,10 @@ class Scaling(unittest.TestCase):
                     old=before[d['kind'],d['metadata']['name']]
                     if d['kind']=='Deployment'and d['metadata']['name']in n['values'][profile]['autoscaledWorkloads']:
                         self.assertNotIn('replicas',d['spec']);old=copy.deepcopy(old);old['spec'].pop('replicas')
+                        if d['metadata']['name']=='photo-converter':
+                            affinity={'podAntiAffinity':{'requiredDuringSchedulingIgnoredDuringExecution':[{'labelSelector':{'matchLabels':{'app.kubernetes.io/instance':'photo-converter'}},'topologyKey':'kubernetes.io/hostname'}]}}
+                            self.assertEqual(d['spec']['template']['spec']['affinity'],affinity)
+                            old['spec']['template']['spec']['affinity']=affinity
                     self.assertEqual(old,d)
     def test_worker_or_ai_ownership_widening_rejected(self):
         c=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())['values']['backend'];c['autoscaledWorkloads']=['trip-result-worker']

@@ -38,6 +38,14 @@ spec:
         yeodam.io/configuration-checksum: {{ $c.configMapData | toJson | sha256sum | quote }}
         {{- end }}
     spec:
+      {{- if and (eq $instance "photo-converter") (has $instance $.Values.autoscaledWorkloads) }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: {app.kubernetes.io/instance: photo-converter}
+              topologyKey: kubernetes.io/hostname
+      {{- end }}
       serviceAccountName: {{ $c.serviceAccountName }}
       nodeSelector:
         {{- toYaml $c.nodeSelector | nindent 8 }}

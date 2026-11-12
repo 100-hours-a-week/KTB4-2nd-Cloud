@@ -145,6 +145,10 @@ def validate(documents, values):
         role = roles[name]
         require(config['nodeSelector'] == {'yeodam.io/role': role, 'yeodam.io/stage': 'v3'} and pod.get('nodeSelector') == config['nodeSelector'], 'App must select its own V3 CPU pool')
         require(config['tolerations'] == [{'key': 'yeodam.io/role', 'operator': 'Equal', 'value': role, 'effect': 'NoSchedule'}] and pod.get('tolerations') == config['tolerations'], 'Do not tolerate other or fixed-node roles')
+        expected_affinity = {'podAntiAffinity': {'requiredDuringSchedulingIgnoredDuringExecution': [
+            {'labelSelector': {'matchLabels': {'app.kubernetes.io/instance': 'photo-converter'}},
+             'topologyKey': 'kubernetes.io/hostname'}]}} if name == 'photo-converter' and name in scaled else None
+        require(pod.get('affinity') == expected_affinity, 'Only scaled converter replicas may require separate CPU nodes')
         container = pod['containers'][0]
         require(not container.get('command') and not container.get('args'), 'Use image default startup, not per-role commands')
         require(len(pod['containers']) == 1, 'Unreviewed sidecars are outside this chart')
