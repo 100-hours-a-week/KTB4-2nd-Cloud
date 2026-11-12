@@ -30,7 +30,14 @@ class Contracts(unittest.TestCase):
  def test_v34_sql_hashes_cannot_change(self):
   migrations=copy.deepcopy(c.LOCK['migrations']);migrations[0]['sha256']='f'*64
   with patch.dict(c.LOCK,{'migrations':migrations}):
-   with self.assertRaisesRegex(ValueError,'V1-V35'):c.validate_source()
+   with self.assertRaisesRegex(ValueError,'V1-V40'):c.validate_source()
+ def test_v40_prefix_and_nullable_trace_sql_are_fixed(self):
+  migrations=copy.deepcopy(c.LOCK['migrations']);migrations[39]['sha256']='f'*64
+  with patch.dict(c.LOCK,{'migrations':migrations}):
+   with self.assertRaisesRegex(ValueError,'V1-V40'):c.validate_source()
+  sql=(ROOT/'deploy/v3/mysql-schema-image/upgrades/V41__add_async_trace_context.sql').read_text()
+  self.assertEqual(sql.count('ADD COLUMN'),10);self.assertEqual(sql.count('ALTER TABLE'),5)
+  for unsafe in ['UPDATE ','DELETE ','DROP ','NOT NULL']:self.assertNotIn(unsafe,sql)
  def test_only_candidate_v40_source_is_accepted(self):
   with patch.dict(c.LOCK,{'sourceCommit':'f'*40}):
    with self.assertRaisesRegex(ValueError,'candidate'):c.validate_source()
@@ -41,9 +48,9 @@ class Contracts(unittest.TestCase):
   original=Path.read_text
   def modified(path,*args,**kwargs):
    text=original(path,*args,**kwargs)
-   return text.replace('flyway.target=40','flyway.target=34') if path.name=='migrate.sh' else text
+   return text.replace('flyway.target=41','flyway.target=34') if path.name=='migrate.sh' else text
   with patch.object(Path,'read_text',modified):
-   with self.assertRaisesRegex(ValueError,'flyway.target=40'):c.validate_source()
+   with self.assertRaisesRegex(ValueError,'flyway.target=41'):c.validate_source()
  def test_fixture_does_not_enable_production_target_override(self):
   script=(ROOT/'deploy/v3/mysql-schema-image/migrate.sh').read_text()
   self.assertIn('[[ $# == 0 ]] || exit 1',script)
@@ -62,7 +69,7 @@ class Contracts(unittest.TestCase):
  def test_image_preparation_rejects_changed_baseline_before_download(self):
   migrations=copy.deepcopy(p.LOCK['migrations']);migrations[0]['sha256']='f'*64
   with tempfile.TemporaryDirectory() as d,patch.dict(p.LOCK,{'migrations':migrations}),patch.object(p.urllib.request,'urlopen') as download:
-   with self.assertRaisesRegex(ValueError,'V1-V35'):p.prepare(Path(d))
+   with self.assertRaisesRegex(ValueError,'V1-V40'):p.prepare(Path(d))
    download.assert_not_called()
  def test_cached_archive_tamper_rejected_before_extraction(self):
   with tempfile.TemporaryDirectory() as d:

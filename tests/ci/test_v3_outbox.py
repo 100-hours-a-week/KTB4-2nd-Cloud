@@ -17,10 +17,18 @@ class Outbox(unittest.TestCase):
   c.validate(self.docs,True,True);c.connect.kafka.platform.schema_check(yaml.safe_dump_all(self.docs));c.connect.validate(self.worker,True,False,True)
   prepared=[d for d in self.docs if d['kind']!='KafkaConnector'];c.validate(prepared,True,False)
  def test_config_mutations_cannot_weaken_tls_filter_or_wire(self):
-  for key,value in [('database.hostname','mysql.production.internal'),('database.ssl.mode','required'),('database.password','literal-password'),('snapshot.mode','no_data'),('tasks.max','2'),('transforms.owned.condition',"value.op == 'c'"),('transforms.outbox.table.fields.additional.placement','request_id:header:request_id'),('schema.history.internal.producer.security.protocol','PLAINTEXT'),('database.server.id','1'),('max.queue.size','99999')]:
+  for key,value in [('database.hostname','mysql.production.internal'),('database.ssl.mode','required'),('database.password','literal-password'),('snapshot.mode','no_data'),('tasks.max','2'),('transforms.owned.condition',"value.op == 'c'"),('transforms.outbox.table.fields.additional.placement','request_id:header:request_id'),('schema.history.internal.producer.security.protocol','PLAINTEXT'),('database.server.id','1'),('transforms.outbox.table.fields.additional.error.on.missing','true'),('max.queue.size','99999')]:
    with self.subTest(key=key):
     config=copy.deepcopy(c.CONFIG);config[key]=value
     with self.assertRaises(ValueError):c.config_contract(config)
+ def test_missing_optional_trace_does_not_relax_mandatory_header_checks(self):
+  config=copy.deepcopy(c.CONFIG)
+  self.assertEqual(config['errors.tolerance'],'none')
+  for field in ('event_source','request_id'):
+   strict=" && value.after.getString('"+field+"').length() >= 0"
+   self.assertIn(strict,config['transforms.owned.condition'])
+   bad=copy.deepcopy(config);bad['transforms.owned.condition']=bad['transforms.owned.condition'].replace(strict,'')
+   with self.assertRaises(ValueError):c.config_contract(bad)
  def test_retry_budget_and_fail_closed_snapshot(self):
   for retry in [{'enabled':False},{'enabled':True},{'enabled':True,'maxRestarts':4}]:
    docs=copy.deepcopy(self.docs);next(d for d in docs if d['kind']=='KafkaConnector')['spec']['autoRestart']=retry

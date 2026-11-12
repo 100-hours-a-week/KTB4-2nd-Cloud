@@ -1,5 +1,5 @@
 {
-  "backendCommit": "fba61303f90afecddf703de108e19fd821213601",
+  "backendCommit": "2dd1ea6d4c7e9279dd9d74c0991ded09f4753143",
   "tables": [
     "trip_creation_outbox",
     "additional_attachment_upload_outbox",
@@ -21,5 +21,9 @@
     "id": "outbox_id",
     "outbox-source": "event_source",
     "X-Request-ID": "request_id"
+  },
+  "optionalHeaders": {
+    "traceparent": "traceparent",
+    "tracestate": "tracestate"
   }
 }

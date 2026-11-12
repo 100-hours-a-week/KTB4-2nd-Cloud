@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic V32/9.7.2 -> logical restore -> V40/8.4.13. No AWS access."""
+"""Synthetic V32/9.7.2 -> logical restore -> V41/8.4.13. No AWS access."""
 import argparse, importlib.util, json, shutil, subprocess, tempfile, time, uuid, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
@@ -23,7 +23,7 @@ def smoke(image,output):
   args=['run','--rm','--platform','linux/amd64','--network',prefix+'-'+side+'-net','--memory','512m','--cpus','.5','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp:rw,size=32m','-v',f'{cred}:/credentials:ro','-v',f'{cred}:/tls:ro']
   if baseline:args+=['--entrypoint','/bin/bash']
   args+=[image]
-  if baseline:args+=['-ec',"test $(grep -c '^flyway.target=40$' /schema/migrate.sh) -eq 1; sed 's/^flyway.target=40$/flyway.target=32/;s/through V40/through V32 fixture/' /schema/migrate.sh > /tmp/v32.sh; /bin/bash /tmp/v32.sh"]
+  if baseline:args+=['-ec',"test $(grep -c '^flyway.target=41$' /schema/migrate.sh) -eq 1; sed 's/^flyway.target=41$/flyway.target=32/;s/through V41/through V32 fixture/' /schema/migrate.sh > /tmp/v32.sh; /bin/bash /tmp/v32.sh"]
   r=docker(*args,check=False)
   if r.returncode:
    (output/('flyway-'+side+'.log')).write_text(r.stdout+r.stderr);raise RuntimeError('Synthetic Flyway failed; see fixture diagnostic')
@@ -73,7 +73,7 @@ SET GLOBAL read_only=ON; SET GLOBAL super_read_only=ON;""")
   else:raise AssertionError('Nonempty target accepted')
   baseline=logical.upgrade_baseline(lambda query:sql('target',query),manifest['tables'])
   migrate('target')
-  assert sql('target',"SELECT CONCAT(COUNT(*),':',SUM(success),':',MAX(CAST(version AS UNSIGNED))) FROM yeodam.flyway_schema_history;")=='40:40:40'
+  assert sql('target',"SELECT CONCAT(COUNT(*),':',SUM(success),':',MAX(CAST(version AS UNSIGNED))) FROM yeodam.flyway_schema_history;")=='41:41:41'
   logical.verify_upgrade(lambda query:sql('target',query),baseline)
   assert sql('target','SELECT prepared_content_metadata IS NULL FROM yeodam.story_generation_jobs WHERE generation_id=93001;')=='1'
   assert logical.foreign_key_violations(prefix+'-target')==0
@@ -82,7 +82,7 @@ SET GLOBAL read_only=ON; SET GLOBAL super_read_only=ON;""")
   migrate('target');logical.verify_upgrade(lambda query:sql('target',query),baseline)
   assert logical.capture(prefix+'-source')==manifest['tables']
   assert sql('source','SELECT @@global.read_only AND @@global.super_read_only;')=='1'
-  (output/'result.json').write_text(json.dumps({**restored,'sourceEngine':'9.7.2','sourceSchema':32,'targetEngine':'8.4.13','targetSchema':40,'tamperRejectedBeforeImport':True,'nonemptyTargetRejected':True,'foreignKeyViolations':0,'newTablesEmpty':True,'v40RerunNoop':True,'sourceUnchangedAndFrozen':True,'syntheticOnly':True},indent=2))
+  (output/'result.json').write_text(json.dumps({**restored,'sourceEngine':'9.7.2','sourceSchema':32,'targetEngine':'8.4.13','targetSchema':41,'tamperRejectedBeforeImport':True,'nonemptyTargetRejected':True,'foreignKeyViolations':0,'newTablesEmpty':True,'v41RerunNoop':True,'sourceUnchangedAndFrozen':True,'syntheticOnly':True},indent=2))
   photo_refs={}
   def inspect_photos(container,manifest):
    photo_refs.update(photos.extract(container,manifest))
@@ -95,7 +95,7 @@ SET GLOBAL read_only=ON; SET GLOBAL super_read_only=ON;""")
   (output/'photo-reference-result.json').write_text(json.dumps({'requiredKeys':4,'excludedReferences':photo_refs['excludedReferences'],'readOnlyAppInspection':True,'deletedStoryPhotoExcluded':True,'httpKakaoProfileExcluded':True,'syntheticOnly':True},indent=2))
   assert live_result['legacyRowsAndHistoryMatch'] and not (directory/'live-runtime').exists()
   (output/'live-path-result.json').write_text(json.dumps({**live_result,'runtimeCleaned':True},indent=2))
-  print('PASS: synthetic V32 logical restore to V40, row/history hashes, FK, tamper and overwrite refusal',flush=True)
+  print('PASS: synthetic V32 logical restore to V41, row/history hashes, FK, tamper and overwrite refusal',flush=True)
  finally:
   for name in reversed(containers):
    r=docker('logs',name,check=False);(output/(name+'.log')).write_text(r.stdout+r.stderr);docker('rm','-f',name,check=False)

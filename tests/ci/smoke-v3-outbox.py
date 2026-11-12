@@ -4,6 +4,8 @@ import argparse,base64,collections,http.client,importlib.util,json,secrets,subpr
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts'))
 from v3_outbox_contract import CONFIG,CONTRACT,ENV_CONFIG
+TRACEPARENT='00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'
+TRACESTATE='vendor=fixture'
 
 def module(name,path):
  s=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
@@ -41,6 +43,7 @@ class Outbox:
   finally:docker('rm',cid,check=False)
   ctx['command'](['javac','--release','17','-cp',str(d/'kafka-clients.jar'),'-d',str(d/'classes'),str(ROOT/'tests/ci/v3/OutboxWire.java')])
   docker('run','--rm','--label','yeodam.run='+ctx['prefix'],'--label','yeodam.issue=542','--platform','linux/amd64','--network',ctx['net'],'--memory','256m','--cpus','.5','--read-only','--tmpfs','/tmp:rw,size=32m','-v',f'{d}:/check:ro','--entrypoint','java',ctx['image'],'-Xmx96m','-cp','/opt/kafka/libs/*:/check/classes','OutboxWire','--setup','/check/admin.properties')
+  self.trace_schema=False
   self.expected={};self.stage_rows(3)
   for table in TABLES:
    self.sql(self.insert(table,'1',False,'PENDING',OUTPUTS[0])+self.insert(table,'2',True,'PUBLISHED',OUTPUTS[0]))
@@ -52,13 +55,14 @@ class Outbox:
   return ['-e','V3_CDC_PASSWORD='+self.dbpassword,'-e','V3_KAFKA_PASSWORD='+ctx['password'],'-e','V3_KAFKA_CA_PEM='+(ctx['tls']/'ca.crt').read_text(),'-v',str(ctx['directory']/'mysql-ca')+':/mnt/mysql-ca:ro']
  def insert(self,table,id,managed,status,topic):
   payload=json.dumps({'fixture':'542','source':table,'id':id},separators=(',',':'))
-  return f"INSERT INTO yeodam.{table} VALUES ('{id}',77,'{topic}','{payload}','{table}','trace-542',{1 if managed else 0},'{status}');"
+  trace_values=(f",'{TRACEPARENT}','{TRACESTATE}'" if getattr(self,'trace_schema',False) and getattr(self,'trace_write',True) and managed and status=='PENDING' else ',NULL,NULL') if getattr(self,'trace_schema',False) else ''
+  return f"INSERT INTO yeodam.{table} VALUES ('{id}',77,'{topic}','{payload}','{table}','trace-542',{1 if managed else 0},'{status}'{trace_values});"
  def stage_rows(self,stage):
   for i,table in enumerate(TABLES):
    targets=OUTPUTS[3:] if table=='attachment_conversion_outbox' else [OUTPUTS[i]]
    for topic in targets:
     id=str(stage)+'-'+topic.rsplit('.',1)[-1] if table=='attachment_conversion_outbox' else str(stage)
-    self.sql(self.insert(table,id,True,'PENDING',topic));self.expected[(table,id)]={'topic':topic,'payload':json.dumps({'fixture':'542','source':table,'id':id},separators=(',',':'))}
+    self.sql(self.insert(table,id,True,'PENDING',topic));self.expected[(table,id)]={'topic':topic,'payload':json.dumps({'fixture':'542','source':table,'id':id},separators=(',',':')),'trace':getattr(self,'trace_schema',False) and getattr(self,'trace_write',True)}
  def request(self,path,method='GET',data=None):
   req=urllib.request.Request('http://127.0.0.1:'+str(self.port)+path,data=(json.dumps(data).encode() if data is not None else None),headers={'Content-Type':'application/json'},method=method)
   try:
@@ -84,7 +88,10 @@ class Outbox:
   found=collections.Counter()
   for r in records:
    h={k:base64.b64decode(v).decode() for k,v in r['headers'].items()};identity=(h['outbox-source'],h['id']);assert identity in self.expected,'Unexpected filtered/replayed event'
-   expected=self.expected[identity];assert r['topic']==expected['topic'] and base64.b64decode(r['key']).decode()=='77' and base64.b64decode(r['value']).decode()==expected['payload'] and h['X-Request-ID']=='trace-542';found[identity]+=1
+   expected=self.expected[identity];assert r['topic']==expected['topic'] and base64.b64decode(r['key']).decode()=='77' and base64.b64decode(r['value']).decode()==expected['payload'] and h['X-Request-ID']=='trace-542'
+   if expected['trace']:assert h.get('traceparent')==TRACEPARENT and h.get('tracestate')==TRACESTATE,'Trace carrier changed or omitted'
+   else:assert not h.get('traceparent') and not h.get('tracestate'),'Old record gained fabricated Trace context'
+   found[identity]+=1
   return found if len(found)>=minimum else None
  def receive(self,minimum):
   for _ in range(20):
@@ -95,7 +102,9 @@ class Outbox:
  def exercise(self,ctx):
   self.port=ctx['port'];config=dict(CONFIG);config['schema.history.internal.kafka.bootstrap.servers']='broker1:9093'
   self.request('/connectors','POST',{'name':NAME,'config':config});self.running();self.receive(7)
-  print('PASS: initial snapshot7 pending rows and exact wire',flush=True)
+  print('PASS: initial snapshot7 without Trace columns and exact required wire',flush=True)
+  for table in TABLES:self.sql(f'ALTER TABLE yeodam.{table} ADD COLUMN traceparent VARCHAR(55) NULL, ADD COLUMN tracestate VARCHAR(512) NULL;')
+  self.trace_schema=True
   # Updates, polling-owned/PUBLISHED inserts and rolled-back inserts must not publish work.
   for table in TABLES:
    self.sql(f"UPDATE yeodam.{table} SET status='PUBLISHED' WHERE outbox_id LIKE '3%';"+self.insert(table,'5',False,'PENDING',OUTPUTS[0])+self.insert(table,'6',True,'PUBLISHED',OUTPUTS[0])+'START TRANSACTION;'+self.insert(table,'8',True,'PENDING',OUTPUTS[0])+'ROLLBACK;')
@@ -145,8 +154,11 @@ class Outbox:
   assert self.request('/connectors/'+NAME+'/config')['snapshot.mode']=='initial'
   found=self.check_wire(self.records(),28);assert found and all(v==1 for v in found.values()),'Normal-mode restore replayed work'
   print('PASS: empty-Outbox recovery, new stream7, committed offsets and normal mode restored',flush=True)
+  self.trace_write=False;self.stage_rows(10);found=self.receive(35)
+  assert found and all(v==1 for v in found.values()),'Nullable Trace row changed business delivery'
+  print('PASS: V41 NULL Trace rows delivered without fabricated context',flush=True)
   state=json.loads(ctx['docker']('inspect',ctx['worker']).stdout)[0];assert state['State']['Running'] and not state['State']['OOMKilled']
-  (ctx['output']/'outbox-result.json').write_text(json.dumps({'sourceTables':4,'businessTopics':7,'initialPendingRecords':7,'streamRecords':7,'offlineRecoveryRecords':7,'unexpectedEvents':0,'controlledRestartDuplicates':0,'expiredBinlogRejected':True,'emptySnapshotOffsetCommitted':True,'heartbeatBusinessLeak':False,'emptyOutboxRecovery':True,'normalSnapshotModeRestored':True,'postRecoveryStreamRecords':7,'committedOffsetBeforeRestart':True,'configProviderReferencesRetained':True,'dbTlsVerifyIdentity':True,'kafkaTlsScram':True,'schemaHistoryRf':3,'schemaHistoryMinIsr':2,'connectMemoryMi':768,'heapMi':256,'cpuLimit':0.5,'businessTasks':1},indent=2))
+  (ctx['output']/'outbox-result.json').write_text(json.dumps({'sourceTables':4,'businessTopics':7,'initialPendingRecords':7,'streamRecords':7,'offlineRecoveryRecords':7,'unexpectedEvents':0,'oldSchemaWithoutTracePassed':True,'newTraceHeadersPreserved':True,'nullableTraceRowsPassed':True,'controlledRestartDuplicates':0,'expiredBinlogRejected':True,'emptySnapshotOffsetCommitted':True,'heartbeatBusinessLeak':False,'emptyOutboxRecovery':True,'normalSnapshotModeRestored':True,'postRecoveryStreamRecords':7,'committedOffsetBeforeRestart':True,'configProviderReferencesRetained':True,'dbTlsVerifyIdentity':True,'kafkaTlsScram':True,'schemaHistoryRf':3,'schemaHistoryMinIsr':2,'connectMemoryMi':768,'heapMi':256,'cpuLimit':0.5,'businessTasks':1},indent=2))
   print('PASS: Outbox4 -> topics7 exact wire; snapshot/stream/offline recovery21, filters+rollback, committed offsets and768Mi worker',flush=True)
  def cleanup(self,ctx):
   data=ctx['directory']/'mysql-data'

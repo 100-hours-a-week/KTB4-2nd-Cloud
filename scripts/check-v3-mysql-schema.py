@@ -37,14 +37,16 @@ def validate_source():
  require(LOCK['cdcTables']==['trip_creation_outbox','additional_attachment_upload_outbox','story_generation_outbox','attachment_conversion_outbox'],'Only the four reviewed Outbox tables may be granted SELECT')
  require(LOCK['sourceRepository']=='100-hours-a-week/KTB4-2nd-BE' and re.fullmatch('[a-f0-9]{40}',LOCK['sourceCommit']),'Pinned BE source required')
  require(LOCK['jdbcArtifact']['url']=='https://repo.maven.apache.org/maven2/com/mysql/mysql-connector-j/9.7.0/mysql-connector-j-9.7.0.jar' and re.fullmatch('[a-f0-9]{64}',LOCK['jdbcArtifact']['sha256']),'Pinned official MySQL JDBC required')
- require(LOCK['flywayVersion']=='12.4.0' and LOCK['schemaVersion']==40 and [int(x['name'].split('__')[0][1:]) for x in LOCK['migrations']]==list(range(1,41)),'BE Flyway version and complete migrations required')
+ require(LOCK['flywayVersion']=='12.4.0' and LOCK['schemaVersion']==41 and [int(x['name'].split('__')[0][1:]) for x in LOCK['migrations']]==list(range(1,42)),'BE Flyway version and complete migrations required')
+ frozen=json.loads((ROOT/'deploy/v3/mysql-schema-image/v40-baseline.lock.json').read_text())
+ require(LOCK['migrations'][:40]==frozen['migrations'],'Preserve every V1-V40 migration hash')
  baseline=json.loads((ROOT/'deploy/v3/mysql-schema-image/v35-baseline.lock.json').read_text())
  candidate=json.loads((ROOT/'deploy/v3/mysql-schema-image/upgrade.lock.json').read_text())
  original=json.loads((ROOT/'deploy/v3/mysql-schema-image/v34-baseline.lock.json').read_text())
  v35=json.loads((ROOT/'deploy/v3/candidates/be-ai/manifest.json').read_text())
  require(baseline['migrations'][:34]==original['migrations'] and baseline['migrations'][34]==v35['migration']['additionalMigration'],'Frozen V35 baseline differs from the historical V34/V35 contracts')
  require(baseline['schemaVersion']==35 and LOCK['migrations'][:35]==baseline['migrations'],'Preserve every V1-V35 migration hash')
- require(LOCK['sourceCommit']==candidate['sourceCommit'] and LOCK['migrations'][35:]==candidate['additionalMigrations'],'V40 must match the selected BE schema candidate')
+ require(LOCK['sourceCommit']==candidate['sourceCommit'] and LOCK['migrations'][35:]==candidate['additionalMigrations'],'V41 must match the selected BE schema candidate')
  for migration in LOCK['migrations'][35:]:
   path=ROOT/'deploy/v3/mysql-schema-image/upgrades'/migration['name']
   import hashlib
@@ -52,7 +54,7 @@ def validate_source():
  require(all(LOCK[k]==baseline[k] for k in ['baseImage','flywayVersion','jdbcArtifact','cdcTables']),'Keep existing base/JDBC/CDC scope')
  require(all(re.fullmatch('[a-f0-9]{64}',x['sha256']) and re.fullmatch(r'V\d+__[a-z0-9_]+\.sql',x['name']) for x in LOCK['migrations']),'Fixed named SQL hashes required')
  script=(ROOT/'deploy/v3/mysql-schema-image/migrate.sh').read_text()
- for required in ['[[ $# == 0 ]] || exit 1','flyway.target=40','flyway.driver=com.mysql.cj.jdbc.Driver','sslMode=VERIFY_IDENTITY','fallbackToSystemTrustStore=false','flyway.cleanDisabled=true','flyway.baselineOnMigrate=false','flyway.outOfOrder=false','flyway.validateOnMigrate=true','flyway.ignoreMigrationPatterns=','sha256sum -c','env -i','-Xmx128m']:
+ for required in ['[[ $# == 0 ]] || exit 1','flyway.target=41','flyway.driver=com.mysql.cj.jdbc.Driver','sslMode=VERIFY_IDENTITY','fallbackToSystemTrustStore=false','flyway.cleanDisabled=true','flyway.baselineOnMigrate=false','flyway.outOfOrder=false','flyway.validateOnMigrate=true','flyway.ignoreMigrationPatterns=','sha256sum -c','env -i','-Xmx128m']:
   require(required in script,'Missing migration safety contract: '+required)
  for forbidden in ['flyway clean','flyway repair','baselineOnMigrate=true','sslMode=REQUIRED']:
   require(forbidden not in script,'Unsafe migration behavior')
