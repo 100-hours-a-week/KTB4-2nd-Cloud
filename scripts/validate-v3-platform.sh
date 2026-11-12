@@ -219,3 +219,7 @@ python3 -m unittest discover -s tests/ci -p test_v3_experiment.py
 
 # Reader-first Trace and reference-only Langfuse settings.
 python3 -m unittest discover -s tests/ci -p test_v3_ai_observability.py
+
+# Bounded scaling and Outbox aggregates; default is disabled, no live credentials.
+"${validation_dir}/venv/bin/python" scripts/check-v3-autoscaling.py
+"${validation_dir}/venv/bin/python" -m unittest discover -s tests/ci -p test_v3_autoscaling.py

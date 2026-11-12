@@ -126,3 +126,26 @@ spec:
       ports: [{protocol: TCP, port: 8000}]
 {{- end }}
 {{- end }}
+
+{{- if and .Values.enabled .Values.outboxEnabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-outbox-egress, namespace: observability}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: v3-cdc-status}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: mysql}}, podSelector: {matchLabels: {app.kubernetes.io/name: mysql}}}]
+      ports: [{protocol: TCP, port: 3306}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-mysql-from-outbox-observer, namespace: mysql}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: mysql}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: observability}}, podSelector: {matchLabels: {app.kubernetes.io/name: v3-cdc-status}}}]
+      ports: [{protocol: TCP, port: 3306}]
+{{- end }}

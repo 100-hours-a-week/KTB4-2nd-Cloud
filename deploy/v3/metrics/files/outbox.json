@@ -1,0 +1,151 @@
+{
+  "uid": "v3-outbox-scaling",
+  "title": "V3 Outbox and scaling",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "panels": [
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Outbox unconfirmed publication (capped at 10001)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "v3-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_outbox_pending",
+          "legendFormat": "{{outbox}} {{deployment}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Oldest unconfirmed publication",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "v3-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_outbox_oldest_pending_age_seconds",
+          "legendFormat": "{{outbox}} {{deployment}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Outbox observation success (missing is UNKNOWN)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "v3-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_outbox_probe_success",
+          "legendFormat": "{{outbox}} {{deployment}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Available API / Worker replicas",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "v3-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "kube_deployment_status_replicas_available{namespace=~\"frontend|auth|trip|photo|ai\"}",
+          "legendFormat": "{{outbox}} {{deployment}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 999,
+      "type": "timeseries",
+      "title": "KEDA observed Kafka lag (no series means UNKNOWN / not installed)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "v3-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "keda_scaler_metrics_value{scaledObject=\"photo-converter\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

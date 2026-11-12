@@ -1,3 +1,4 @@
+{{- if and (eq (int .Values.imagePartitions) 2) (not .Values.imagePartitionExpansionReviewed) }}{{ fail "Review drained image-topic key ordering before irreversible partition expansion" }}{{ end }}
 {{- if .Values.enabled }}
 {{- $contract := .Files.Get "files/business-contract.json" | fromJson }}
 {{- range $topic := $contract.topics }}
@@ -16,7 +17,7 @@ metadata:
   annotations: {helm.sh/resource-policy: keep}
 spec:
   topicName: {{ $topic.name }}
-  partitions: {{ $topic.partitions }}
+  partitions: {{ if eq $topic.kind "image-request" }}{{ $.Values.imagePartitions }}{{ else }}{{ $topic.partitions }}{{ end }}
   replicas: {{ $.Values.replicas }}
   config:
     min.insync.replicas: {{ $.Values.minInSyncReplicas }}

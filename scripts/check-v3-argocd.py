@@ -30,7 +30,7 @@ def render_access(**values):
     return subprocess.check_output(command, text=True, stderr=subprocess.DEVNULL)
 
 
-def validate_access(docs, adopted=False, automated=False):
+def validate_access(docs, adopted=False, automated=False, autoscaling=False):
     expected = {'Namespace':1,'NetworkPolicy':2,'Role':7,'RoleBinding':7}
     if adopted: expected.update(Application=1,AppProject=1)
     require(Counter(x['kind'] for x in docs)==Counter(expected),'Exact app-only Argo access inventory')
@@ -53,7 +53,9 @@ def validate_access(docs, adopted=False, automated=False):
         require(app['metadata']['name']=='yeodam-v3-apps'and not app['metadata'].get('finalizers'),'No cascading app deletion')
         require(a['project']=='yeodam-v3-apps'and a['source']=={'repoURL':'https://github.com/100-hours-a-week/KTB4-2nd-Cloud.git','targetRevision':'deploy/v3-approved','path':'manifests','directory':{'recurse':False,'include':'release.yaml'}},'Only the approved full bundle')
         require(a['destination']=={'server':'https://kubernetes.default.svc','namespace':'frontend'},'Exact in-cluster destination')
-        require(a['syncPolicy']=={'automated':{'enabled':automated,'prune':False,'selfHeal':False,'allowEmpty':False},'syncOptions':['FailOnSharedResource=true']},'No prune or implicit self-heal')
+        require(a['syncPolicy']=={'automated':{'enabled':automated,'prune':False,'selfHeal':False,'allowEmpty':False},'syncOptions':['FailOnSharedResource=true']+(['RespectIgnoreDifferences=true']if autoscaling else [])},'No prune or implicit self-heal')
+        expected_ignore=[{'group':'apps','kind':'Deployment','namespace':ns,'name':name,'jsonPointers':['/spec/replicas']} for name,ns in [('frontend','frontend'),('auth-api','auth'),('trip-api','trip'),('photo-api','photo'),('photo-converter','photo')]]
+        require(a.get('ignoreDifferences',[])==(expected_ignore if autoscaling else []),'Ignore only reviewed replica fields; never image/config/health')
         project=next(x for x in docs if x['kind']=='AppProject')['spec']
         require(project['sourceRepos']==[a['source']['repoURL']]and project['destinations']==[{'server':'https://kubernetes.default.svc','namespace':n}for n in NAMESPACES],'Exact project namespaces and repository')
         require(project['clusterResourceWhitelist']==[]and project['namespaceResourceWhitelist']==project_kinds(),'No Secret/PVC/cluster ownership')

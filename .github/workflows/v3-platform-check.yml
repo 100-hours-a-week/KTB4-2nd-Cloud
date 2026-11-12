@@ -40,6 +40,13 @@ on:
       - 'deploy/v3/chaos-mesh/**'
       - 'tests/ci/test_v3_experiment.py'
       - 'tests/ci/smoke-v3-experiment.py'
+      - 'scripts/check-v3-autoscaling.py'
+      - 'scripts/v3_autoscaling.py'
+      - 'scripts/prepare-v3-scaling-candidate.py'
+      - 'scripts/provision-v3-outbox-observer.py'
+      - 'scripts/inspect-v3-autoscaling.py'
+      - 'tests/ci/test_v3_autoscaling.py'
+      - 'tests/ci/smoke-v3-outbox-observer.py'
       - 'scripts/check-v3-metrics.py'
       - 'tests/ci/test_v3_metrics.py'
       - 'tests/ci/smoke-v3-metrics.py'
@@ -242,6 +249,9 @@ jobs:
           V3_RENDERED_DIR: ${{ runner.temp }}/v3-rendered
           GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/validate-v3-platform.sh
+
+      - name: Verify read-only Outbox aggregates with isolated MySQL
+        run: python3 tests/ci/smoke-v3-outbox-observer.py
 
       - name: Check offline V2 to V3 migration evidence without credentials
         run: python3 -m unittest discover -s tests/ci -p 'test_v2_v3_migration.py'

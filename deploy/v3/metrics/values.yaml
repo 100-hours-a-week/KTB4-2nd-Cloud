@@ -7,3 +7,7 @@ apmEnabled: false
 
 # Enable after its dedicated Pod Identity and log groups are ready.
 cloudwatchLogsEnabled: false
+
+# Supply a dedicated SELECT-only client.cnf and CA before opt-in.
+outboxEnabled: false
+autoscalingMetricsEnabled: false

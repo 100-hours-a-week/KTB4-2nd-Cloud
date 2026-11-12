@@ -1,0 +1,31 @@
+{{- if and .Values.enabled .Values.converterEnabled }}
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: v3-conversion-lag
+  namespace: kafka
+  labels: {strimzi.io/cluster: yeodam-v3-kafka}
+spec:
+  authentication: {type: scram-sha-512}
+  authorization:
+    type: simple
+    acls:
+{{- range $lane := list "initial-light" "initial-heic" "additional-light" "additional-heic" }}
+      - resource: {type: topic, name: prod.yeodam.image.{{ $lane }}, patternType: literal}
+        operations: [Describe]
+        host: '*'
+      - resource: {type: group, name: prod.yeodam.image-conversion-{{ $lane }}, patternType: literal}
+        operations: [Describe]
+        host: '*'
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: v3-kafka-from-keda, namespace: kafka}
+spec:
+  podSelector: {matchLabels: {strimzi.io/cluster: yeodam-v3-kafka, strimzi.io/kind: Kafka}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: keda}}, podSelector: {matchLabels: {app.kubernetes.io/name: keda-operator}}}]
+      ports: [{protocol: TCP, port: 9093}]
+{{- end }}

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read only one Connect status endpoint. Never restart tasks or expose errors/config."""
 import json
+import os
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -53,7 +54,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/healthz':
             body, content_type = b'ok\n', 'text/plain'
         elif self.path == '/metrics':
-            body, content_type = metrics().encode(), 'text/plain; version=0.0.4; charset=utf-8'
+            data = metrics()
+            if os.environ.get('OUTBOX_ENABLED') == 'true':
+                import importlib.util
+                spec = importlib.util.spec_from_file_location('outbox_metrics', '/exporter/outbox-metrics.py')
+                module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+                data += module.metrics()
+            body, content_type = data.encode(), 'text/plain; version=0.0.4; charset=utf-8'
         else:
             self.send_error(404)
             return

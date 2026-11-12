@@ -1,0 +1,42 @@
+{
+  "api": {
+    "targets": [
+      "frontend",
+      "auth-api",
+      "trip-api",
+      "photo-api"
+    ],
+    "min": 1,
+    "max": 2,
+    "cpuTargetMilli": 200,
+    "thresholdStatus": "provisional-until-baseline"
+  },
+  "photo-converter": {
+    "status": "blocked-until-review",
+    "min": 1,
+    "max": 2,
+    "currentPartitionsPerTopic": 1,
+    "requiredPartitionsPerTopic": 2,
+    "shutdownWaitSeconds": 60,
+    "existingGraceSeconds": 90
+  },
+  "trip-result-worker": {
+    "status": "fixed-one",
+    "reason": "single-partition result topics; review partition/order and receipt processing before expansion"
+  },
+  "ai-api": {
+    "status": "fixed-one",
+    "reason": "also runs story workers; CPU-only HTTP autoscaling is not an adequate work/concurrency contract"
+  },
+  "ai-runner": {
+    "status": "blocked",
+    "reason": "Redis queue:process is the signal; cancellation can mark a running job FAILED; safe per-Pod scale-in not proven"
+  },
+  "trip-websocket": {
+    "status": "fixed-one",
+    "reason": "connection metric and reconnect behavior not yet used for autoscaling"
+  },
+  "gpu": {
+    "status": "excluded"
+  }
+}

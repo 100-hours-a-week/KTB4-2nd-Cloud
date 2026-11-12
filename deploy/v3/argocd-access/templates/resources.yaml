@@ -92,13 +92,23 @@ spec:
     directory: {recurse: false, include: release.yaml}
   destination: {server: https://kubernetes.default.svc, namespace: frontend}
   revisionHistoryLimit: 3
+  {{- if .Values.autoscalingAdoptionReviewed }}
+  ignoreDifferences:
+  {{- range $target := list (dict "ns" "frontend" "name" "frontend") (dict "ns" "auth" "name" "auth-api") (dict "ns" "trip" "name" "trip-api") (dict "ns" "photo" "name" "photo-api") (dict "ns" "photo" "name" "photo-converter") }}
+    - group: apps
+      kind: Deployment
+      namespace: {{ $target.ns }}
+      name: {{ $target.name }}
+      jsonPointers: [/spec/replicas]
+  {{- end }}
+  {{- end }}
   syncPolicy:
     automated:
       enabled: {{ .Values.automatedSync }}
       prune: false
       selfHeal: false
       allowEmpty: false
-    syncOptions: [FailOnSharedResource=true]
+    syncOptions: [FailOnSharedResource=true{{ if .Values.autoscalingAdoptionReviewed }}, RespectIgnoreDifferences=true{{ end }}]
 {{- else if .Values.automatedSync }}
 {{- fail "All app Helm ownership must be reviewed before automated sync" }}
 {{- end }}

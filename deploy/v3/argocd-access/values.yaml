@@ -1,3 +1,4 @@
 enabled: false
 appsAdoptionReviewed: false
 automatedSync: false
+autoscalingAdoptionReviewed: false

@@ -29,7 +29,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: v3-{{ $name }}, app.kubernetes.io/part-of: yeodam-observability}
       annotations:
-        checksum/config: {{ printf "%s%s%s%s" (($.Files.Glob "files/*").AsConfig) ($.Values.aiMetricsEnabled | toString) ($.Values.apmEnabled | toString) (ternary "cloudwatch-logs-enabled" "" (and (eq $name "grafana") $.Values.cloudwatchLogsEnabled)) | sha256sum }}
+        checksum/config: {{ printf "%s%s%s%s%s" (($.Files.Glob "files/*").AsConfig) ($.Values.aiMetricsEnabled | toString) ($.Values.apmEnabled | toString) ($.Values.outboxEnabled | toString) (ternary "cloudwatch-logs-enabled" "" (and (eq $name "grafana") $.Values.cloudwatchLogsEnabled)) | sha256sum }}
     spec:
       serviceAccountName: v3-{{ $name }}
       automountServiceAccountToken: {{ has $name (list "prometheus" "kube-state-metrics") }}
@@ -93,6 +93,9 @@ spec:
           livenessProbe: {httpGet: {path: /api/health, port: http}, initialDelaySeconds: 30, periodSeconds: 20}
           volumeMounts:
             - {name: data, mountPath: /var/lib/grafana}
+{{- if $.Values.outboxEnabled }}
+            - {name: outbox-dashboard, mountPath: /etc/grafana/dashboards/outbox.json, subPath: outbox.json, readOnly: true}
+{{- end }}
             - {name: tmp, mountPath: /tmp}
             - {name: config, mountPath: /etc/grafana/provisioning/datasources/default.yaml, subPath: datasource.yaml, readOnly: true}
             - {name: config, mountPath: /etc/grafana/provisioning/dashboards/default.yaml, subPath: dashboard-provider.yaml, readOnly: true}
@@ -106,10 +109,23 @@ spec:
           livenessProbe: {httpGet: {path: /livez, port: http}, initialDelaySeconds: 15, periodSeconds: 20}
 {{- else }}
           command: [python, -B, /exporter/cdc-status.py]
-          env: [{name: PYTHONDONTWRITEBYTECODE, value: '1'}]
+          env: [{name: PYTHONDONTWRITEBYTECODE, value: '1'}, {name: OUTBOX_ENABLED, value: {{ $.Values.outboxEnabled | quote }}}]
           readinessProbe: {httpGet: {path: /healthz, port: http}, initialDelaySeconds: 5, periodSeconds: 10}
           livenessProbe: {httpGet: {path: /healthz, port: http}, initialDelaySeconds: 15, periodSeconds: 20}
-          volumeMounts: [{name: config, mountPath: /exporter, readOnly: true}]
+          volumeMounts:
+            - {name: config, mountPath: /exporter, readOnly: true}
+{{- if $.Values.outboxEnabled }}
+            - {name: outbox, mountPath: /outbox, readOnly: true}
+        - name: outbox-query
+          image: {{ index $images "outbox-query" }}
+          command: [/bin/bash, /exporter/outbox-query.sh]
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {cpu: 100m, memory: 96Mi}}
+          volumeMounts:
+            - {name: config, mountPath: /exporter, readOnly: true}
+            - {name: outbox, mountPath: /outbox}
+            - {name: outbox-auth, mountPath: /outbox-auth, readOnly: true}
+{{- end }}
 {{- end }}
 {{- if eq $name "prometheus" }}
       volumes:
@@ -124,11 +140,19 @@ spec:
 {{- end }}
 {{- else if eq $name "grafana" }}
       volumes:
+{{- if $.Values.outboxEnabled }}
+        - {name: outbox-dashboard, configMap: {name: v3-outbox-dashboard}}
+{{- end }}
         - {name: data, emptyDir: {sizeLimit: 128Mi}}
         - {name: tmp, emptyDir: {sizeLimit: 16Mi}}
         - {name: config, configMap: {name: v3-grafana-config}}
 {{- else if eq $name "cdc-status" }}
-      volumes: [{name: config, configMap: {name: v3-metrics-config}}]
+      volumes:
+        - {name: config, configMap: {name: v3-metrics-config}}
+{{- if $.Values.outboxEnabled }}
+        - {name: outbox, emptyDir: {medium: Memory, sizeLimit: 1Mi}}
+        - {name: outbox-auth, secret: {secretName: v3-outbox-observer, defaultMode: 0440}}
+{{- end }}
 {{- end }}
 {{- end }}
 ---

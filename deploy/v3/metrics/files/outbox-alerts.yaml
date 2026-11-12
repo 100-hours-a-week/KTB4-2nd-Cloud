@@ -1,0 +1,17 @@
+groups:
+  - name: v3-outbox-observation
+    rules:
+      - alert: V3OutboxObservationUnavailable
+        expr: (yeodam_outbox_probe_success == 0) or absent(yeodam_outbox_probe_success) or (time() - yeodam_outbox_last_success_timestamp_seconds > 65)
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: Outbox observation missing or stale; recovery cannot be inferred}
+      - alert: V3OutboxPendingTooOld
+        expr: (yeodam_outbox_oldest_pending_age_seconds > 120) and on(job,instance) (yeodam_outbox_probe_success == 1)
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: Unconfirmed CDC-managed publication older than provisional 120s threshold}
+      - alert: V3OutboxCountCapped
+        expr: yeodam_outbox_count_capped == 1
+        labels: {severity: warning}
+        annotations: {summary: Outbox count is a lower bound at 10001; do not report an exact backlog}

@@ -1,0 +1,74 @@
+{{- if .Values.enabled }}
+{{- if not .Values.replicaOwnershipReviewed }}{{ fail "Review approved app replica ownership first" }}{{ end }}
+{{- if .Values.apiEnabled }}
+{{- if not .Values.metricsServerReady }}{{ fail "Verify metrics.k8s.io before API HPA activation" }}{{ end }}
+{{- range $target := list (dict "ns" "frontend" "name" "frontend" "container" "frontend") (dict "ns" "auth" "name" "auth-api" "container" "backend") (dict "ns" "trip" "name" "trip-api" "container" "backend") (dict "ns" "photo" "name" "photo-api" "container" "backend") }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: {{ $target.name }}, namespace: {{ $target.ns }}}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: {{ $target.name }}}
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: ContainerResource
+      containerResource:
+        name: cpu
+        container: {{ $target.container }}
+        target: {type: AverageValue, averageValue: {{ printf "%dm" (int $.Values.cpuTargetMilli) | quote }}}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies: [{type: Pods, value: 1, periodSeconds: 60}]
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies: [{type: Pods, value: 1, periodSeconds: 300}]
+{{- end }}
+{{- end }}
+{{- if .Values.converterEnabled }}
+{{- if or (ne (int .Values.converterReview.partitions) 2) (not .Values.converterReview.keyOrderingReviewed) (not .Values.converterReview.rebalanceAndShutdownVerified) }}{{ fail "Converter expansion requires two live partitions, key-ordering review and verified rebalance/shutdown" }}{{ end }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ClusterTriggerAuthentication
+metadata: {name: v3-conversion-lag}
+spec:
+  secretTargetRef:
+    - {parameter: username, name: v3-keda-kafka, key: username}
+    - {parameter: password, name: v3-keda-kafka, key: password}
+    - {parameter: ca, name: v3-keda-kafka, key: ca.crt}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata: {name: photo-converter, namespace: photo}
+spec:
+  scaleTargetRef: {name: photo-converter}
+  pollingInterval: 30
+  minReplicaCount: 1
+  maxReplicaCount: 2
+  fallback: {failureThreshold: 3, replicas: 1, behavior: currentReplicasIfHigher}
+  advanced:
+    restoreToOriginalReplicaCount: false
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp: {stabilizationWindowSeconds: 30, policies: [{type: Pods, value: 1, periodSeconds: 60}]}
+        scaleDown: {stabilizationWindowSeconds: 300, policies: [{type: Pods, value: 1, periodSeconds: 300}]}
+  triggers:
+{{- range $lane := list "initial-light" "initial-heic" "additional-light" "additional-heic" }}
+    - type: kafka
+      authenticationRef: {name: v3-conversion-lag, kind: ClusterTriggerAuthentication}
+      metadata:
+        bootstrapServers: yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093
+        consumerGroup: prod.yeodam.image-conversion-{{ $lane }}
+        topic: prod.yeodam.image.{{ $lane }}
+        lagThreshold: {{ $.Values.lagThreshold | quote }}
+        tls: enable
+        sasl: scram_sha512
+        unsafeSsl: 'false'
+        allowIdleConsumers: 'false'
+        scaleToZeroOnInvalidOffset: 'false'
+        offsetResetPolicy: earliest
+{{- end }}
+{{- end }}
+{{- else if or .Values.apiEnabled .Values.converterEnabled }}{{ fail "Enable bounded scaling explicitly" }}
+{{- end }}

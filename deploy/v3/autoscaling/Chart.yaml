@@ -1,0 +1,5 @@
+apiVersion: v2
+name: yeodam-v3-autoscaling
+version: 0.1.0
+type: application
+description: Bounded CPU scaling and disabled-until-reviewed Kafka scaling
