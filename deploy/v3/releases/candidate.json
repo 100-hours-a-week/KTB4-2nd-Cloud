@@ -106,7 +106,8 @@
       "autoscaledWorkloads": [
         "auth-api",
         "trip-api",
-        "photo-api"
+        "photo-api",
+        "photo-converter"
       ],
       "backendConnectionContract": true,
       "backendContract": true,
