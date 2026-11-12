@@ -37,6 +37,18 @@ class Converter(unittest.TestCase):
   spec=importlib.util.spec_from_file_location('manager_approval',ROOT/'scripts/manage-v3-converter-scaling.py');manager=importlib.util.module_from_spec(spec);spec.loader.exec_module(manager)
   for action in ('provision-access','observe','expand','activate','rollback'):
    with self.subTest(action=action),patch.object(sys,'argv',['manage',action,'--kubeconfig','synthetic']),patch.object(manager,'Live',side_effect=AssertionError('No live access before approval')),self.assertRaises(ValueError):manager.main()
+ def test_slow_read_does_not_add_another_quiet_wait(self):
+  import importlib.util
+  from unittest.mock import patch
+  spec=importlib.util.spec_from_file_location('manager_spacing',ROOT/'scripts/manage-v3-converter-scaling.py');manager=importlib.util.module_from_spec(spec);spec.loader.exec_module(manager)
+  for latency,expected in [(1,5),(42,42)]:
+   clock=[100.0]
+   def read(*args):
+    start=clock[0];clock[0]+=latency;return {'recordedAt':start}
+   def sleep(seconds):clock[0]+=seconds
+   with self.subTest(latency=latency),patch.object(manager,'sample',side_effect=read),patch.object(manager.time,'time',side_effect=lambda:clock[0]),patch.object(manager.time,'sleep',side_effect=sleep):
+    pair=manager.observe_pair(None,None,None)
+    self.assertEqual(pair[1]['recordedAt']-pair[0]['recordedAt'],expected)
  def test_fixed_sql_hash_and_observer_has_no_mutation_api(self):
   lock=json.loads((ROOT/'deploy/v3/autoscaling/converter-runtime.lock.json').read_text());sql=(ROOT/'deploy/v3/autoscaling/files/converter-drain.sql').read_bytes()
   self.assertEqual(hashlib.sha256(sql).hexdigest(),lock['businessSqlSha256'])
