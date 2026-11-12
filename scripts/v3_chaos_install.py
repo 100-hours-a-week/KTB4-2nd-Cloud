@@ -13,10 +13,17 @@ import yaml
 import v3_cdc_fault as f
 
 
+def controller_tolerations(s):
+    return ([{'key': 'yeodam.io/role', 'operator': 'Equal', 'value': 'worker', 'effect': 'NoSchedule'}]
+            if s['controllerRole'] == 'worker' else [])
+
+
 def values(snapshot):
     f.validate_snapshot(snapshot)
+    f.validate_install_capacity(snapshot)
     v = yaml.safe_load((f.CHART / 'values.yaml').read_text())
-    v['controllerManager']['nodeSelector'] = {'yeodam.io/role': 'system', 'kubernetes.io/hostname': snapshot['controllerNode']}
+    v['controllerManager']['nodeSelector'] = {'yeodam.io/role': snapshot['controllerRole'], 'kubernetes.io/hostname': snapshot['controllerNode']}
+    v['controllerManager']['tolerations'] = controller_tolerations(snapshot)
     v['chaosDaemon']['nodeSelector'] = {'yeodam.io/role': 'system', 'kubernetes.io/hostname': snapshot['connect']['node']}
     return v
 
@@ -88,8 +95,10 @@ def validate(docs, s):
         if kind in ('Deployment', 'DaemonSet'):
             p = d['spec']['template']['spec']
             node = s['controllerNode'] if kind == 'Deployment' else s['connect']['node']
-            f.require(p['nodeSelector'] == {'yeodam.io/role': 'system', 'kubernetes.io/hostname': node}
-                      and not p.get('tolerations'), 'Use reviewed existing system hosts only')
+            role = s['controllerRole'] if kind == 'Deployment' else 'system'
+            tolerations = controller_tolerations(s) if kind == 'Deployment' else []
+            f.require(p['nodeSelector'] == {'yeodam.io/role': role, 'kubernetes.io/hostname': node}
+                      and p.get('tolerations', []) == tolerations, 'Use reviewed exact hosts and role toleration only')
             f.require(not p.get('hostNetwork') and len(p['containers']) == 1, 'Unexpected workload networking')
             c = p['containers'][0]
             key = 'chaos-mesh' if kind == 'Deployment' else 'chaos-daemon'

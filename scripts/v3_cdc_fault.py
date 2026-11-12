@@ -87,7 +87,7 @@ class Kube:
                 args[args.index('--cluster-name') + 1] == CLUSTER, 'Wrong EKS cluster binding')
         require('--region' in args and args[args.index('--region') + 1] == 'ap-northeast-2', 'Wrong region')
         require(not any(v.get('name') == 'AWS_PROFILE' and v.get('value') != 'yeodam-admin'
-                        for v in e.get('env', [])), 'Unexpected exec profile override')
+                        for v in (e.get('env') or [])), 'Unexpected exec profile override')
         if '--profile' in args:
             require(args[args.index('--profile') + 1] == 'yeodam-admin', 'Unexpected AWS profile')
         require('--role-arn' not in args, 'Review role-assuming kubeconfig separately')
@@ -115,7 +115,53 @@ def pod_record(p):
             'ownerKind': owner[0]['kind'], 'ownerName': owner[0]['name']}
 
 
-def snapshot(k):
+def controller_placement(nodes, pods, connect_node, controller_node=None, allow_worker=False):
+    """No automatic fallback to application nodes. Capture slots before rendering."""
+    ready = [n for n in nodes if not n.get('spec', {}).get('unschedulable') and
+             any(c['type'] == 'Ready' and c['status'] == 'True' for c in n['status'].get('conditions', []))]
+    if controller_node is None:
+        require(not allow_worker, 'Worker placement requires an explicit hostname')
+        candidates = sorted(n['metadata']['name'] for n in ready if
+                            n['metadata']['labels'].get('yeodam.io/role') == 'system' and
+                            n['metadata']['name'] != connect_node)
+        require(candidates, 'Another existing Ready system node required')
+        controller_node = candidates[0]
+    selected = next((n for n in ready if n['metadata']['name'] == controller_node), None)
+    require(selected is not None and controller_node != connect_node, 'Invalid controller host')
+    role = selected['metadata']['labels'].get('yeodam.io/role')
+    taints = selected.get('spec', {}).get('taints', [])
+    worker_taint = {'key': 'yeodam.io/role', 'value': 'worker', 'effect': 'NoSchedule'}
+    require((role == 'system' and not allow_worker and not taints) or
+            (role == 'worker' and allow_worker and taints == [worker_taint] and
+             selected['metadata']['labels'].get('node.kubernetes.io/instance-type') == 't3a.medium'),
+            'Only system or explicitly reviewed minimal CPU worker placement allowed')
+    info = selected['status']['nodeInfo']
+    require(info['operatingSystem'] == 'linux' and info['architecture'] == 'amd64', 'CPU Linux host required')
+    capacities = {}
+    for name, workload in ((controller_node, 'chaos-controller-manager'), (connect_node, 'chaos-daemon')):
+        node = next(n for n in ready if n['metadata']['name'] == name)
+        bound = [p for p in pods if p['spec'].get('nodeName') == name and
+                 p['status'].get('phase') not in ('Succeeded', 'Failed')]
+        # An installed daemon can reuse its slot; Deployment rolling updates still need headroom.
+        own = sum(p['metadata'].get('namespace') == 'chaos-mesh' and any(
+            o.get('controller') and ((workload == 'chaos-daemon' and o['kind'] == 'DaemonSet' and o['name'] == workload) or
+            (workload == 'chaos-controller-manager' and o['kind'] == 'ReplicaSet' and o['name'].startswith(workload + '-')))
+            for o in p['metadata'].get('ownerReferences', [])) for p in bound)
+        capacities[name] = {'limit': int(node['status']['allocatable']['pods']), 'used': len(bound), 'ownPods': own}
+    return {'controllerNode': controller_node, 'controllerNodeUid': selected['metadata']['uid'],
+            'controllerRole': role, 'workerControllerApproved': allow_worker, 'podCapacity': capacities}
+
+
+def validate_install_capacity(s):
+    for name in (s['controllerNode'], s['connect']['node']):
+        c = s.get('podCapacity', {}).get(name, {})
+        require(all(type(c.get(key)) is int for key in ('limit', 'used', 'ownPods')) and
+                0 <= c['ownPods'] <= c['used'] <= c['limit'] and
+                c['limit'] - c['used'] + (min(c['ownPods'], 1) if name == s['connect']['node'] else 0) >= 1,
+                'Reviewed host has no free Pod slot; do not create installation resources')
+
+
+def snapshot(k, controller_node=None, allow_worker=False):
     uid = k.identity()
     ps = k.get('pods', 'kafka', selector='strimzi.io/cluster=' + CONNECT)['items']
     require(len(ps) == 1, 'Exactly one Connect pod, including terminating pods, required')
@@ -145,13 +191,14 @@ def snapshot(k):
             info = n['status']['nodeInfo']
             require(info['containerRuntimeVersion'].startswith('containerd://') and
                     info['operatingSystem'] == 'linux' and info['architecture'] == 'amd64', 'Review runtime compatibility')
+    placement = controller_placement(nodes, bounded_json(k.call(['get', 'pods', '-A', '-o', 'json']))['items'], connect['node'], controller_node, allow_worker)
     argo = k.get('application', 'argocd', 'yeodam-v3-apps')
     require(argo['spec']['source']['targetRevision'] == 'deploy/v3-approved' and
             argo['status']['health']['status'] == 'Healthy' and argo['status']['sync']['status'] == 'Synced',
             'Approved application must be Synced and Healthy')
     return {'version': 1, 'capturedAt': now(), 'cluster': CLUSTER, 'kubeSystemUid': uid,
             'approvedRevision': argo['status']['sync']['revision'], 'connect': connect, 'mysql': mysql,
-            'serviceIp': service['spec']['clusterIP'], 'controllerNode': sorted(set(system) - {connect['node']})[0]}
+            'serviceIp': service['spec']['clusterIP'], **placement}
 
 
 def validate_snapshot(s):
@@ -168,6 +215,11 @@ def validate_snapshot(s):
     require(s['mysql']['ownerKind'] == 'StatefulSet' and s['mysql']['ownerName'] == 'mysql', 'Wrong MySQL owner')
     require(s['connect']['name'].startswith(CONNECT + '-') and
             s['controllerNode'] != s['connect']['node'], 'Unexpected Connect/controller placement')
+    require(re.fullmatch(r'[a-z0-9][a-z0-9.-]{0,252}', s['controllerNode']) and
+            UUID.fullmatch(s.get('controllerNodeUid', '')) and
+            ((s.get('controllerRole') == 'system' and s.get('workerControllerApproved') is False) or
+             (s.get('controllerRole') == 'worker' and s.get('workerControllerApproved') is True)),
+            'Explicit controller role and Node UID required')
     age = (datetime.now(timezone.utc) - datetime.fromisoformat(s['capturedAt'])).total_seconds()
     require(0 <= age <= 300, 'Snapshot must be refreshed within five minutes')
 
@@ -200,7 +252,7 @@ def verify_plan(p, expected):
 
 def compare_live(p, live):
     validate_snapshot(live)
-    for key in ('cluster', 'kubeSystemUid', 'approvedRevision', 'connect', 'mysql', 'serviceIp', 'controllerNode'):
+    for key in ('cluster', 'kubeSystemUid', 'approvedRevision', 'connect', 'mysql', 'serviceIp', 'controllerNode', 'controllerNodeUid', 'controllerRole', 'workerControllerApproved'):
         require(p['snapshot'][key] == live[key], 'Live target or deployment changed; prepare a new plan')
 
 
@@ -226,7 +278,7 @@ def recover(k, p, uid):
 def execute(k, p, expected, receipt_path):
     verify_plan(p, expected)
     require(not Path(str(receipt_path) + '.finished.json').exists(), 'Finished receipt already exists')
-    compare_live(p, snapshot(k))
+    compare_live(p, snapshot(k, p['snapshot']['controllerNode'], p['snapshot']['workerControllerApproved']))
     # A new run cannot coexist even with a paused/unrecovered older experiment.
     require(not k.get('networkchaos', 'kafka')['items'], 'Existing NetworkChaos requires review/cleanup')
     connector = k.get('kafkaconnector', 'kafka', CONNECTOR)

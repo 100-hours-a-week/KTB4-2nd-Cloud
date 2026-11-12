@@ -22,14 +22,12 @@ def load(p):
 
 
 def render(s, output):
-    import yaml
     f.validate_snapshot(s)
     lock = load(f.CHART / 'upstream.lock.json')
     archive = f.CHART / ('chaos-mesh-' + lock['version'] + '.tgz')
     f.require(hashlib.sha256(archive.read_bytes()).hexdigest() == lock['sha256'], 'Upstream chart checksum mismatch')
-    values = yaml.safe_load((f.CHART / 'values.yaml').read_text())
-    values['controllerManager']['nodeSelector'] = {'yeodam.io/role': 'system', 'kubernetes.io/hostname': s['controllerNode']}
-    values['chaosDaemon']['nodeSelector'] = {'yeodam.io/role': 'system', 'kubernetes.io/hostname': s['connect']['node']}
+    import v3_chaos_install as install
+    values = install.values(s)
     f.private_write(output, values)
     return {'installValuesPrepared': True, 'installed': False, 'newNodes': 0,
             'controllerPods': 1, 'daemonNodes': [s['connect']['node']],
@@ -43,6 +41,8 @@ def main():
     sub = p.add_subparsers(dest='action', required=True)
     a = sub.add_parser('snapshot', help='Read-only target identities; no secrets or installation')
     a.add_argument('--kubeconfig', required=True, type=Path); a.add_argument('--output', required=True, type=Path)
+    a.add_argument('--controller-node', help='Explicit existing hostname; no automatic app-node fallback')
+    a.add_argument('--allow-worker-controller', action='store_true', help='Reviewed temporary CPU worker placement only')
     for name in ('plan', 'install-values', 'render-install'):
         a = sub.add_parser(name)
         a.add_argument('--snapshot', required=True, type=Path); a.add_argument('--output', required=True, type=Path)
@@ -69,7 +69,7 @@ def main():
     f.require(not a.output.exists() and not a.output.is_symlink() and a.output.parent.is_dir()
               and a.output.parent.stat().st_mode & 0o077 == 0, 'Use a fresh output under a mode-700 directory')
     if a.action == 'snapshot':
-        result = f.snapshot(f.Kube(a.kubeconfig)); f.private_write(a.output, result)
+        result = f.snapshot(f.Kube(a.kubeconfig), a.controller_node, a.allow_worker_controller); f.private_write(a.output, result)
         print(json.dumps({'snapshotPrepared': True, 'mutation': False})); return
     if a.action == 'plan':
         result = f.prepare(load(a.snapshot), a.run_id, a.seconds); f.private_write(a.output, result)
