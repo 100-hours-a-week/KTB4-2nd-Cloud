@@ -349,7 +349,7 @@ data:
   AWS_REGION: ap-northeast-2
   FRONTEND_OAUTH_CALLBACK_URI: https://yeodam-2gether.com/auth/callback
   FRONTEND_ORIGIN: https://yeodam-2gether.com
-  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts
+  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=37.5 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts
     -Djavax.net.ssl.trustStorePassword=public-ca-only
   JWT_ISSUER: https://yeodam-2gether.com
   KAFKA_BOOTSTRAP_SERVERS: yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093
@@ -362,6 +362,7 @@ data:
   KAFKA_TRIP_UPDATE_RESULT_CONSUMER_GROUP: yeodam-trip-update-results
   KAFKA_TRIP_UPDATE_RESULT_TOPIC: prod.yeodam.trip-update.result
   KAKAO_REDIRECT_URI: https://yeodam-2gether.com/api/auth/kakao/callback
+  MALLOC_ARENA_MAX: '2'
   MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
   MYSQL_URL: jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true
   REDIS_HOST: redis-members.redis.svc.cluster.local
@@ -1304,7 +1305,7 @@ spec:
   template:
     metadata:
       annotations:
-        yeodam.io/configuration-checksum: 107ee492a4fad8a8701e7fd4141739c6d53b637a24379db45cc647c42d20d808
+        yeodam.io/configuration-checksum: 2911051c447d230428333311d5b5f974df6c7cf1fbc0aed68e3162478f1d006b
         yeodam.io/configuration-revision: 42c0a06903d141bdfaca85b4c2d8ee32b13e18359f9712f94a7f05abc4abe26c
         yeodam.io/image: ghcr.io/100-hours-a-week/yeodam-backend@sha256:ae558dc766d0431dffed2e86310753b1483da02c1e3f9efc34e994967a763bb8
       labels:
@@ -1385,7 +1386,7 @@ spec:
               name: backend-credentials
               optional: false
         - name: JAVA_TOOL_OPTIONS
-          value: -XX:MaxRAMPercentage=50.0 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts
+          value: -XX:MaxRAMPercentage=37.5 -XX:InitialRAMPercentage=12.5 -Djavax.net.ssl.trustStore=/etc/yeodam/trust/cacerts
             -Djavax.net.ssl.trustStorePassword=public-ca-only -javaagent:/otel/javaagent.jar
         - name: OTEL_SERVICE_NAME
           value: photo-converter
