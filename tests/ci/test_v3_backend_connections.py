@@ -79,7 +79,13 @@ class Connections(unittest.TestCase):
  def test_photo_memory_candidate_preserves_apm_and_all_other_components(self):
   prepare=module('photo_candidate','scripts/prepare-v3-photo-memory-candidate.py')
   import v3_release_bundle as bundle
-  source=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text());original=deepcopy(source);result=prepare.prepare(source)
+  source=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
+  # A live candidate may already use this profile. Test the transition from an
+  # explicit legacy fixture, then test idempotence on the prepared result.
+  import v3_backend_contract as contract
+  legacy=source['values']['backend']['workloads']['photo-converter'].setdefault('configMapData',{})
+  legacy.pop('MALLOC_ARENA_MAX',None);legacy['JAVA_TOOL_OPTIONS']=contract.CONNECTION['javaToolOptions']
+  original=deepcopy(source);result=prepare.prepare(source)
   self.assertEqual(source,original);self.assertEqual(prepare.prepare(result),result)
   restored=deepcopy(result);restored['values']['backend']['workloads']['photo-converter']=source['values']['backend']['workloads']['photo-converter']
   self.assertEqual(restored,source)
