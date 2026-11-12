@@ -49,6 +49,15 @@ def exercise():
             while time.monotonic() < end:
                 if probe().returncode == 0: return
                 if docker('inspect', '-f', '{{.State.Running}}', name).stdout.strip() != 'true':
+                    rows = []
+                    for line in docker('logs', name, check=False).stdout.splitlines():
+                        try: row = json.loads(line)
+                        except ValueError: continue
+                        if row.get('s') not in ('E', 'F'): continue
+                        message = str(row.get('msg', ''))
+                        if any(word in message.lower() for word in ('password', 'mongodb://', 'secret')): message = 'redacted'
+                        rows.append({'id': row.get('id'), 'severity': row.get('s'), 'message': message[:300]})
+                    print(json.dumps({'stage': 'synthetic_server_exit', 'errors': rows[-6:]}), flush=True)
                     raise RuntimeError('Synthetic MongoDB exited')
                 time.sleep(2)
             raise RuntimeError('Synthetic authenticated health deadline exceeded')
@@ -111,6 +120,12 @@ def exercise():
                     'retainedDataAfterContainerRestart': True, 'cpus': 0.5, 'memoryLimit': '1Gi', 'productionAccess': False}
         finally:
             docker('rm', '-f', name, check=False)
+            # Linux bind mounts retain UID999 ownership (Docker Desktop masks it).
+            # Change only this freshly-created synthetic scratch data for host cleanup.
+            docker('run', '--rm', '--network', 'none', '--user', '999:999', '--cap-drop', 'ALL',
+                   '--security-opt', 'no-new-privileges', '-v', str(data) + ':/scratch',
+                   '--entrypoint', '/bin/bash', IMAGE, '-ec',
+                   'find /scratch -mindepth 1 -maxdepth 1 -exec chmod -R a+rwX {} +')
 
 
 if __name__ == '__main__':
