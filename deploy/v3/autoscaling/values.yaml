@@ -10,3 +10,6 @@ converterReview:
   rebalanceAndShutdownVerified: false
 cpuTargetMilli: 200
 lagThreshold: 5
+
+# Provision Describe-only observer before any Topic expansion or scaling.
+converterAccessEnabled: false

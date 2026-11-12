@@ -60,6 +60,9 @@
           "type": "boolean"
         }
       }
+    },
+    "converterAccessEnabled": {
+      "type": "boolean"
     }
   }
 }

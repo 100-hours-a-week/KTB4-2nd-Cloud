@@ -30,15 +30,6 @@ spec:
 {{- if or (ne (int .Values.converterReview.partitions) 2) (not .Values.converterReview.keyOrderingReviewed) (not .Values.converterReview.rebalanceAndShutdownVerified) }}{{ fail "Converter expansion requires two live partitions, key-ordering review and verified rebalance/shutdown" }}{{ end }}
 ---
 apiVersion: keda.sh/v1alpha1
-kind: ClusterTriggerAuthentication
-metadata: {name: v3-conversion-lag}
-spec:
-  secretTargetRef:
-    - {parameter: username, name: v3-keda-kafka, key: username}
-    - {parameter: password, name: v3-keda-kafka, key: password}
-    - {parameter: ca, name: v3-keda-kafka, key: ca.crt}
----
-apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata: {name: photo-converter, namespace: photo}
 spec:
