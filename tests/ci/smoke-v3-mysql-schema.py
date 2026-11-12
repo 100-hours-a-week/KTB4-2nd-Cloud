@@ -83,11 +83,11 @@ INSERT INTO yeodam.story_generation_jobs(generation_id,execution_id,trip_id,user
   assert sql('mysql-0','SELECT * FROM yeodam.flyway_schema_history WHERE CAST(version AS UNSIGNED)<=40 ORDER BY installed_rank;')==v40_history
   trace_tables=['trip_creation_outbox','additional_attachment_upload_outbox','story_generation_outbox','attachment_conversion_outbox','trip_creation_executions']
   for table in trace_tables:
-   prefix='result_' if table=='trip_creation_executions' else ''
+   column_prefix='result_' if table=='trip_creation_executions' else ''
    for field,size in [('traceparent',55),('tracestate',512)]:
-    q=f"SELECT CONCAT(DATA_TYPE,':',IS_NULLABLE,':',CHARACTER_MAXIMUM_LENGTH) FROM information_schema.columns WHERE table_schema='yeodam' AND table_name='{table}' AND column_name='{prefix+field}';"
+    q=f"SELECT CONCAT(DATA_TYPE,':',IS_NULLABLE,':',CHARACTER_MAXIMUM_LENGTH) FROM information_schema.columns WHERE table_schema='yeodam' AND table_name='{table}' AND column_name='{column_prefix+field}';"
     wait('mysql-0',q,f'varchar:YES:{size}');wait('mysql-1',q,f'varchar:YES:{size}')
-   assert sql('mysql-0',f'SELECT COUNT(*) FROM yeodam.{table} WHERE {prefix}traceparent IS NOT NULL OR {prefix}tracestate IS NOT NULL;')=='0'
+   assert sql('mysql-0',f'SELECT COUNT(*) FROM yeodam.{table} WHERE {column_prefix}traceparent IS NOT NULL OR {column_prefix}tracestate IS NOT NULL;')=='0'
   logical.verify_upgrade(lambda query:sql('mysql-0',query),upgrade);assert sql('mysql-0',history)=='41:41:41:41';wait('mysql-1',history,'41:41:41:41')
   for member in ['mysql-0','mysql-1']:
    wait(member,"SELECT CONCAT(accepted_actor_id,':',processing_mode) FROM yeodam.additional_attachment_executions WHERE execution_id='v37-existing-actor';",'91001:LEGACY')
