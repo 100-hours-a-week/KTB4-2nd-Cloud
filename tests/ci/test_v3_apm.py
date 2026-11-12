@@ -41,9 +41,15 @@ class APM(unittest.TestCase):
   next(x for x in target['spec']['template']['spec']['containers'][0]['env'] if x['name']=='JAVA_TOOL_OPTIONS')['value']+=' -Xmx3G'
   with self.assertRaises(ValueError):be.validate(bad,v)
  def test_expansion_changes_only_five_selected_deployments(self):
+  from v3_autoscaling import prepare_candidate
+  source=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
+  for profile in ('frontend','backend'):source['values'][profile].pop('autoscaledWorkloads',None)
+  for autoscaled in (False,True):
+   with self.subTest(autoscaled=autoscaled):
+    self.assert_expansion_preserves_ownership(prepare_candidate(source) if autoscaled else copy.deepcopy(source))
+ def assert_expansion_preserves_ownership(self,original):
   prepare=load('prepare_apm','scripts/prepare-v3-apm-candidate.py')
   import v3_release_bundle as bundle
-  original=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
   # Stable initial rollout fixture: the candidate may already enable all roles later.
   # Async Trace is a later feature and requires APM on both AI roles.
   # This fixture intentionally tests the earlier APM-only rollout independently.
@@ -72,7 +78,8 @@ class APM(unittest.TestCase):
   for key,doc in after.items():
    if key[0]!='Deployment':continue
    old=before[key]['spec'];new=doc['spec']
-   self.assertEqual(old['replicas'],new['replicas'])
+   self.assertEqual('replicas' in old,'replicas' in new)
+   if 'replicas' in old:self.assertEqual(old['replicas'],new['replicas'])
    self.assertEqual(old['strategy'],new['strategy'])
    for field in ['containers','nodeSelector','tolerations','serviceAccountName','terminationGracePeriodSeconds']:
     a=old['template']['spec'][field];b=new['template']['spec'][field]
