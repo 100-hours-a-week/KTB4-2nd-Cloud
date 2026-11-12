@@ -52,6 +52,55 @@ class Connections(unittest.TestCase):
   self.assertEqual(values['defaults']['springProperties']['spring']['kafka']['security']['protocol'],'SASL_SSL')
   self.reject({'defaults':{'springProperties':{'spring':{'kafka':{'security':{'protocol':'PLAINTEXT'}}}}}})
  def test_jvm_override_rejected(self):self.reject({'defaults':{'configMapData':{'JAVA_TOOL_OPTIONS':'-XX:MaxRAMPercentage=90'}}})
+ def test_photo_memory_pair_is_role_scoped_and_legacy_is_preserved(self):
+  legacy,_=self.rendered({'workloads':{r:{'enabled':True} for r in values.ROLES}})
+  old=next(x for x in legacy if x['kind']=='ConfigMap' and x['metadata']['name']=='photo-converter-runtime')['data']
+  self.assertIn('-XX:MaxRAMPercentage=50.0',old['JAVA_TOOL_OPTIONS']);self.assertNotIn('MALLOC_ARENA_MAX',old)
+  prepare=module('photo_memory','scripts/prepare-v3-photo-memory-candidate.py')
+  import v3_backend_contract as contract
+  java=contract.CONNECTION['javaToolOptions'].replace('MaxRAMPercentage=50.0','MaxRAMPercentage=37.5')
+  override={'workloads':{r:{'enabled':True} for r in values.ROLES}}
+  override['workloads']['photo-converter']['configMapData']={'JAVA_TOOL_OPTIONS':java,'MALLOC_ARENA_MAX':'2'}
+  docs,_=self.rendered(override)
+  before={(d['kind'],d['metadata']['name']):d for d in legacy};after={(d['kind'],d['metadata']['name']):d for d in docs}
+  self.assertEqual(set(before),set(after));self.assertEqual({k for k in before if before[k]!=after[k]}, {('Deployment','photo-converter'),('ConfigMap','photo-converter-runtime')})
+  for key in after:
+   if key[0]=='Deployment':self.assertEqual(before[key]['spec']['template']['spec']['containers'][0]['resources'],after[key]['spec']['template']['spec']['containers'][0]['resources'])
+ def test_photo_memory_profile_rejects_unpaired_or_widened_settings(self):
+  import v3_backend_contract as contract
+  java=contract.CONNECTION['javaToolOptions'].replace('MaxRAMPercentage=50.0','MaxRAMPercentage=37.5')
+  for override in [
+   {'workloads':{'auth-api':{'configMapData':{'JAVA_TOOL_OPTIONS':java,'MALLOC_ARENA_MAX':'2'}}}},
+   {'workloads':{'photo-converter':{'enabled':True,'configMapData':{'JAVA_TOOL_OPTIONS':java}}}},
+   {'workloads':{'photo-converter':{'enabled':True,'configMapData':{'MALLOC_ARENA_MAX':'8'}}}},
+   {'workloads':{'photo-converter':{'enabled':True,'configMapData':{'JAVA_TOOL_OPTIONS':java,'MALLOC_ARENA_MAX':'2'},'resources':{'limits':{'memory':'2Gi'}}}}},
+   {'workloads':{'photo-converter':{'enabled':True,'configMapData':{'JAVA_TOOL_OPTIONS':java+' -Xmx3G','MALLOC_ARENA_MAX':'2'}}}}]:
+   with self.subTest(override=override):self.reject(override)
+ def test_photo_memory_candidate_preserves_apm_and_all_other_components(self):
+  prepare=module('photo_candidate','scripts/prepare-v3-photo-memory-candidate.py')
+  import v3_release_bundle as bundle
+  source=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text());original=deepcopy(source);result=prepare.prepare(source)
+  self.assertEqual(source,original);self.assertEqual(prepare.prepare(result),result)
+  restored=deepcopy(result);restored['values']['backend']['workloads']['photo-converter']=source['values']['backend']['workloads']['photo-converter']
+  self.assertEqual(restored,source)
+  charts={}
+  for chart in ['apps','ai-apps','service-access']:
+   for path in (ROOT/'deploy/v3'/chart).rglob('*'):
+    if path.is_file():charts['charts/'+chart+'/'+str(path.relative_to(ROOT/'deploy/v3'/chart))]=path.read_bytes()
+  def index(c):return {(d['kind'],d['metadata'].get('namespace'),d['metadata']['name']):d for d in bundle.render_profiles(charts,c)}
+  old=index(source);new=index(result);self.assertEqual(set(old),set(new))
+  self.assertEqual({key for key in old if old[key]!=new[key]}, {('Deployment','photo','photo-converter'),('ConfigMap','photo','photo-converter-runtime')})
+  dep=new[('Deployment','photo','photo-converter')];env={e['name']:e.get('value') for e in dep['spec']['template']['spec']['containers'][0]['env']}
+  self.assertIn('-javaagent:/otel/javaagent.jar',env['JAVA_TOOL_OPTIONS']);self.assertIn('-Djavax.net.ssl.trustStore=',env['JAVA_TOOL_OPTIONS']);self.assertIn('MaxRAMPercentage=37.5',env['JAVA_TOOL_OPTIONS'])
+  apps.platform.schema_check(yaml.safe_dump_all(new.values()))
+ def test_photo_observer_accepts_aggregates_only_and_preserves_lane_age(self):
+  observe=module('photo_observer','scripts/observe-v3-photo-conversion.py')
+  rows=[{'lane':'HEIC','status':'WAITING','tasks':8,'photos':76,'bytes':133057003,'oldestAgeSec':831},
+        {'lane':'HEIC','status':'RUNNING','tasks':1,'photos':7,'bytes':12079926,'oldestAgeSec':832}]
+  total=observe.aggregate(rows);self.assertEqual(total['HEIC']['photos'],83);self.assertEqual(total['HEIC']['oldestAgeSec'],832)
+  for bad in [rows+[rows[0]], [dict(rows[0],trip_id=70)], [dict(rows[0],photos=-1)]]:
+   with self.assertRaises(ValueError):observe.aggregate(bad)
+  self.assertIn('START TRANSACTION READ ONLY',observe.SQL)
  def test_actual_eks_version_suffix_is_accepted(self):
   source=subprocess.check_output([os.environ['V3_HELM'],'template','yeodam-v3-backend-access',str(ROOT/'deploy/v3/backend-access'),'--kube-version','1.36.5-eks-577a51e','-f',str(self.access_file)],text=True)
   access.validate(access.platform.load_documents(source),True)

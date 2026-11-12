@@ -104,8 +104,18 @@ def validate_backend(configs, connected=False):
         allowed = set(CONTRACT['requiredConfig'] + CONTRACT['topicConfig'] + CONTRACT['conversionConfig'] + CONTRACT['conversionTopicConfig'] + CONTRACT['optionalConfig'] + ['SPRING_APPLICATION_JSON'])
         if connected:
             allowed |= set(CONNECTION['commonConfig']) | {'KAFKA_SASL_USERNAME'}
+        legacy_java = CONNECTION['javaToolOptions'] if connected else CONTRACT['javaToolOptions']
+        java = legacy_java
+        if 'MALLOC_ARENA_MAX' in data:
+            memory = CONTRACT['photoConverterMemory']
+            require(instance == 'photo-converter' and data['MALLOC_ARENA_MAX'] == memory['allocatorArenas'],
+                    'Allocator budget belongs only to the reviewed photo-converter profile')
+            require(config['resources']['limits']['memory'] == memory['containerMemoryLimit'],
+                    'Photo converter heap budget requires the existing 1Gi limit')
+            allowed.add('MALLOC_ARENA_MAX')
+            java = legacy_java.replace(CONTRACT['javaToolOptions'], memory['javaToolOptions'], 1)
         require(set(data) <= allowed, 'Unreviewed ConfigMap key could bypass the role contract')
-        require(data.get('JAVA_TOOL_OPTIONS') == (CONNECTION['javaToolOptions'] if connected else CONTRACT['javaToolOptions']), 'Use the reviewed heap settings; no JVM property override of role flags')
+        require(data.get('JAVA_TOOL_OPTIONS') == java, 'Use the reviewed heap settings; no JVM property override of role flags')
         require(set(config['secretRefs']) == set(CONTRACT['requiredSecrets']) | (set(CONNECTION['extraSecrets']) | {'KAFKA_SASL_PASSWORD'} if connected else set()), 'Only reviewed BE Secret bindings may inject environment values')
         for key in CONTRACT['requiredSecrets']:
             require(config['secretRefs'].get(key) == {'name': 'backend-credentials', 'key': key}, 'Missing or incorrect BE Secret key reference')
@@ -167,7 +177,9 @@ def validate_backend(configs, connected=False):
                 require(data[key].isdigit() and int(data[key]) > 0, 'Kafka count/byte settings must be positive integers')
         require(int(data['ATTACHMENT_CONVERSION_FETCH_MAX_BYTES']) >= int(data['ATTACHMENT_CONVERSION_PARTITION_FETCH_MAX_BYTES'])
                 >= int(data['ATTACHMENT_CONVERSION_MAX_MESSAGE_BYTES']), 'Inconsistent conversion fetch/message budgets')
-        common_data = {k: v for k, v in data.items() if k not in role['environment'] and k not in ('SPRING_APPLICATION_JSON', 'KAFKA_SASL_USERNAME')}
+        common_data = {k: v for k, v in data.items() if k not in role['environment'] and k not in ('SPRING_APPLICATION_JSON', 'KAFKA_SASL_USERNAME', 'MALLOC_ARENA_MAX')}
+        # The exact role-specific pair was checked above; dependency equality stays strict.
+        common_data['JAVA_TOOL_OPTIONS'] = legacy_java
         shared_spring = deepcopy(app)
         del shared_spring['trip']['result-listener-enabled']
         del shared_spring['outbox']['receipt-listener-enabled']
