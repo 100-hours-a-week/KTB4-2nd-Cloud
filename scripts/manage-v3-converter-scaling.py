@@ -114,6 +114,13 @@ def sample(k,candidate,jar):
  kafka=probe(k,jar)
  return {'brokerFreeBytes':free,'recordedAt':measured,'clusterUid':uid,'approvedRef':app['status']['sync']['revision'],'converterUid':dep['metadata']['uid'],'converterReady':True,'image':parts['containers'][0]['image'],'graceSeconds':parts['terminationGracePeriodSeconds'],'business':db,'topics':topics,'cdcRunning':cdc,'connectorUid':connector['metadata']['uid'],'kafka':kafka}
 
+def observe_pair(k,candidate,jar):
+ first=sample(k,candidate,jar)
+ # The first read already takes time. Space measurement starts, not read completion.
+ remaining=5-(time.time()-first['recordedAt'])
+ if remaining>0:time.sleep(remaining)
+ return [first,sample(k,candidate,jar)]
+
 def main():
  p=argparse.ArgumentParser();p.add_argument('action',choices=['provision-access','observe','prepare','candidate','expand','activate','rollback']);p.add_argument('--kubeconfig');p.add_argument('--candidate',type=Path,default=ROOT/'deploy/v3/releases/candidate.json');p.add_argument('--proof',type=Path);p.add_argument('--observations',type=Path);p.add_argument('--plan',type=Path);p.add_argument('--plan-sha256');p.add_argument('--output',type=Path);p.add_argument('--client-jar',type=Path);p.add_argument('--traffic-quiet-confirmed',action='store_true');p.add_argument('--execute-reviewed-change',action='store_true');p.add_argument('--approved-secret-copy',action='store_true');p.add_argument('--execute-reviewed-observation',action='store_true');a=p.parse_args();candidate=json.loads(a.candidate.read_text())
  if a.action=='prepare':
@@ -122,7 +129,7 @@ def main():
  if a.action=='provision-access':
   require(a.execute_reviewed_change and a.approved_secret_copy,'Explicit Kafka-to-keda secret-copy approval required');provisioning(Live(a.kubeconfig),candidate);return
  if a.action=='observe':
-  require(a.execute_reviewed_observation and a.client_jar and a.output,'Explicit temporary probe and aggregate SQL approval required');k=Live(a.kubeconfig);first=sample(k,candidate,a.client_jar);time.sleep(5);second=sample(k,candidate,a.client_jar);private_write(a.output,[first,second]);print('Saved two fresh aggregates; temporary observer resources removed');return
+  require(a.execute_reviewed_observation and a.client_jar and a.output,'Explicit temporary probe and aggregate SQL approval required');k=Live(a.kubeconfig);private_write(a.output,observe_pair(k,candidate,a.client_jar));print('Saved two fresh aggregates; temporary observer resources removed');return
  require(a.proof and a.observations and a.plan and a.plan_sha256,'Reviewed evidence and exact plan hash required');proof=json.loads(a.proof.read_text());observations=json.loads(a.observations.read_text());plan=json.loads(a.plan.read_text());
  if a.action=='rollback':
   require(policy.digest(plan)==a.plan_sha256 and a.execute_reviewed_change,'Exact reviewed rollback required');policy.verify_proof(proof,candidate['components']['backend']);k=Live(a.kubeconfig);k.identity();dep=k.get('deployment','photo','photo-converter');require(dep['metadata']['uid']==observations[-1]['converterUid'] and dep['spec']['template']['spec']['containers'][0]['image']==plan['image'],'Rollback target changed');v=release_values(k);require(v.get('apiEnabled')is True,'Preserve API HPAs');v['converterEnabled']=False;helm(['upgrade',RELEASE,str(CHART),'-n','observability','--kubeconfig',k.config,'-f','-','--wait','--timeout','180s'],json.dumps(v));k.call(['-n','photo','scale','deployment','photo-converter','--replicas=1'])
@@ -137,7 +144,7 @@ def main():
  require(a.execute_reviewed_change,'Explicit post-merge live execution approval required');k=Live(a.kubeconfig);identity(k,candidate)
  # Live execution rechecks two fresh, quiescent observations. No offset/data mutation APIs exist here.
  require(a.client_jar and a.execute_reviewed_observation and a.traffic_quiet_confirmed,'Fresh quiet-window observation approval required')
- fresh=[sample(k,candidate,a.client_jar)];time.sleep(5);fresh.append(sample(k,candidate,a.client_jar));fresh_plan=policy.prepare(fresh,proof,candidate,True)
+ fresh=observe_pair(k,candidate,a.client_jar);fresh_plan=policy.prepare(fresh,proof,candidate,True)
  require(fresh_plan['approvedRef']==plan['approvedRef'] and fresh_plan['topics']==plan['topics'],'Refresh plan after approved Snapshot/Topic changes')
  if a.action=='expand':
   require(plan['currentPartitions']==1,'Only 1 to 2 expansion permitted; never decrease')
