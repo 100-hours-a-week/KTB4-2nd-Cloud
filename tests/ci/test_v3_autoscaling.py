@@ -40,11 +40,15 @@ class Scaling(unittest.TestCase):
         self.assertEqual({x['metadata']['consumerGroup']for x in scale['spec']['triggers']},{'prod.yeodam.image-conversion-'+x for x in policy.LANES})
         self.assertEqual(scale['spec']['fallback']['behavior'],'currentReplicasIfHigher')
     def test_candidate_only_relinquishes_selected_ownership(self):
-        c=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text());n=policy.prepare_candidate(c)
+        c=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
+        for profile in ('frontend','backend'):c['values'][profile].pop('autoscaledWorkloads',None)
+        n=policy.prepare_candidate(c)
         for profile in ('frontend','backend'):n['values'][profile].pop('autoscaledWorkloads')
         self.assertEqual(c,n)
     def test_snapshot_preserves_templates_except_converter_placement(self):
-        c=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text());n=policy.prepare_candidate(c,True)
+        c=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
+        for profile in ('frontend','backend'):c['values'][profile].pop('autoscaledWorkloads',None)
+        n=policy.prepare_candidate(c,True)
         for profile in ('frontend','backend'):
             with tempfile.TemporaryDirectory() as tmp:
                 docs=[]

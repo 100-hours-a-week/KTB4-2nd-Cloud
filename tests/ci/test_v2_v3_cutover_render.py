@@ -5,6 +5,7 @@ ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts'))
 import yaml
 import v2_v3_cutover as c
 import v3_release_bundle as bundle
+import v3_autoscaling as scaling
 
 def module(name,file):
  s=importlib.util.spec_from_file_location(name,ROOT/'scripts'/file);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
@@ -46,15 +47,23 @@ class Render(unittest.TestCase):
   bad=copy.deepcopy(values);bad['host']='other.example.com'
   with self.assertRaises(ValueError):external.validate_access(docs,bad)
  def test_all_nine_operating_apps_render_with_identical_qa_images(self):
-  data=c.operating_candidate(json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text()));bundle.prepared(data)
+  source=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
+  for profile in ('frontend','backend'):source['values'][profile].pop('autoscaledWorkloads',None)
   files={}
   for chart in ['apps','ai-apps','service-access']:
    for path in (ROOT/'deploy/v3'/chart).rglob('*'):
     if path.is_file():files['charts/'+chart+'/'+str(path.relative_to(ROOT/'deploy/v3'/chart))]=path.read_bytes()
-  docs=bundle.render_profiles(files,bundle.normalize(data))
-  self.assertEqual(sum(d['kind']=='Deployment' for d in docs),9)
-  for d in docs:
-   if d['kind']=='Deployment':self.assertEqual(d['spec']['replicas'],1)
+  for autoscaled in (False,True):
+   with self.subTest(autoscaled=autoscaled):
+    candidate=scaling.prepare_candidate(source) if autoscaled else source
+    data=c.operating_candidate(candidate);bundle.prepared(data)
+    docs=bundle.render_profiles(files,bundle.normalize(data))
+    deployments=[d for d in docs if d['kind']=='Deployment'];self.assertEqual(len(deployments),9)
+    self.assertEqual(data['components'],source['components'])
+    for d in deployments:
+     if autoscaled and (d['metadata']['namespace'],d['metadata']['name']) in {(ns,name) for name,ns in scaling.API.items()}:
+      self.assertNotIn('replicas',d['spec'])
+     else:self.assertEqual(d['spec']['replicas'],1)
  def test_mixed_operating_and_qa_callback_is_rejected(self):
   data=c.operating_candidate(json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text()));data['values']['frontend']['defaults']['configMapData']['SERVER_API_BASE_URL']='https://v3.yeodam-2gether.com/api'
   with self.assertRaises(ValueError):bundle.prepared(data)
