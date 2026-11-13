@@ -72,21 +72,21 @@ else:raise RuntimeError('No sanitized trace')
  if not SANITIZER_ONLY:
   cross="""import json,time,uuid,urllib.request,socket
 
- trace=uuid.uuid4().hex;parent=uuid.uuid4().hex[:16]
- for i in range(240):
-  try:
-   req=urllib.request.Request('http://apm-be:8080/fixture',headers={'traceparent':'00-'+trace+'-'+parent+'-01'})
-   response=json.load(urllib.request.urlopen(req,timeout=5));assert response['javaTrace']==trace==response['ai']['trace_id'];print(json.dumps({'trace_id':trace,'httpContext':True}));break
-  except Exception as error:
-   last_error=type(error).__name__+': '+str(error);time.sleep(.5)
- else:raise RuntimeError('Real image HTTP fixture failed: '+last_error)
- for i in range(40):
-  try:
-   req=urllib.request.Request('http://v3-tempo.observability.svc:3200/api/traces/'+trace,headers={'Accept':'application/json'})
-   body=urllib.request.urlopen(req,timeout=3).read().decode();assert 'auth-api' in body and 'ai-api' in body;print('Java and AI spans retrieved together');break
-  except Exception:time.sleep(.5)
- else:raise RuntimeError('Cross-language trace not stored')
- """
+trace=uuid.uuid4().hex;parent=uuid.uuid4().hex[:16]
+for i in range(240):
+ try:
+  req=urllib.request.Request('http://apm-be:8080/fixture',headers={'traceparent':'00-'+trace+'-'+parent+'-01'})
+  response=json.load(urllib.request.urlopen(req,timeout=5));assert response['javaTrace']==trace==response['ai']['trace_id'];print(json.dumps({'trace_id':trace,'httpContext':True}));break
+ except Exception as error:
+  last_error=type(error).__name__+': '+str(error);time.sleep(.5)
+else:raise RuntimeError('Real image HTTP fixture failed: '+last_error)
+for i in range(40):
+ try:
+  req=urllib.request.Request('http://v3-tempo.observability.svc:3200/api/traces/'+trace,headers={'Accept':'application/json'})
+  body=urllib.request.urlopen(req,timeout=3).read().decode();assert 'auth-api' in body and 'ai-api' in body;print('Java and AI spans retrieved together');break
+ except Exception:time.sleep(.5)
+else:raise RuntimeError('Cross-language trace not stored')
+"""
   result=run('docker','exec',probe,'python','-c',cross);print(result)
   trace_id=json.loads(result.splitlines()[0])['trace_id']
   for role in ['be','ai']:
@@ -97,14 +97,14 @@ else:raise RuntimeError('No sanitized trace')
   runner=run('docker','exec','-e','OTEL_SERVICE_NAME=ai-runner',prefix+'-ai','python','/fixture/runner-fixture.py')
   runner_trace=json.loads(runner.splitlines()[-1])['runnerTraceId']
   lookup="""import time,urllib.request
- for i in range(40):
-  try:
-   body=urllib.request.urlopen('http://v3-tempo.observability.svc:3200/api/traces/TRACE',timeout=3).read().decode()
-   assert 'ai-runner' in body and 'ai-api' in body
-   print('Background HTTPX client and API trace stored; no job-wide tracing claim');break
-  except Exception:time.sleep(.5)
- else:raise RuntimeError('Background HTTPX trace missing')
- """.replace('TRACE',runner_trace)
+for i in range(40):
+ try:
+  body=urllib.request.urlopen('http://v3-tempo.observability.svc:3200/api/traces/TRACE',timeout=3).read().decode()
+  assert 'ai-runner' in body and 'ai-api' in body
+  print('Background HTTPX client and API trace stored; no job-wide tracing claim');break
+ except Exception:time.sleep(.5)
+else:raise RuntimeError('Background HTTPX trace missing')
+""".replace('TRACE',runner_trace)
   print(run('docker','exec',probe,'python','-c',lookup))
  if SANITIZER_ONLY:print('Sanitizer-only run: no private application image compatibility claim')
  print(run('docker','stats','--no-stream','--format','{{.Name}} {{.MemUsage}}',*names))

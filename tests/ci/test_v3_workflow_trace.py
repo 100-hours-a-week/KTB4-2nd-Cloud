@@ -45,6 +45,20 @@ class Evidence(unittest.TestCase):
         for url in ['http://169.254.169.254','https://example.com','http://user@localhost:3200','http://localhost/path']:
             with self.assertRaises(ValueError):read_tempo(url, '1'*32)
 
+    def test_embedded_runtime_probe_programs_compile(self):
+        import ast
+        path = Path(__file__).resolve().parent / 'smoke-v3-apm.py'
+        assignments = [node for node in ast.walk(ast.parse(path.read_text())) if isinstance(node, ast.Assign)]
+        checked = set()
+        for node in assignments:
+            names = {target.id for target in node.targets if isinstance(target, ast.Name)} & {'code', 'cross', 'lookup'}
+            if not names:continue
+            value = node.value
+            if isinstance(value, ast.Call):value = value.func.value
+            compile(ast.literal_eval(value), str(path) + ':' + next(iter(names)), 'exec')
+            checked.update(names)
+        self.assertEqual(checked, {'code', 'cross', 'lookup'})
+
     def test_private_manifest_refuses_overwrite_and_public_parent(self):
         import importlib.util, tempfile, os
         spec = importlib.util.spec_from_file_location('inspector', Path(__file__).resolve().parents[2] / 'scripts/inspect-v3-workflow-trace.py')
