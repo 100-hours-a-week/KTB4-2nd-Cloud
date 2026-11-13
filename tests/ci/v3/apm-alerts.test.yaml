@@ -1,0 +1,46 @@
+rule_files: [/etc/prometheus/apm-alerts.yaml]
+evaluation_interval: 15s
+tests:
+  - name: lazy-first-refusal-is-visible-and-eventually-clears
+    interval: 15s
+    input_series:
+      - series: 'otelcol_receiver_refused_spans_total{job="apm-alloy"}'
+        values: '_ _ 1+0x24'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: V3ApmCollectionFailure
+        exp_alerts:
+          - exp_labels: {job: apm-alloy, severity: warning}
+            exp_annotations:
+              summary: APM collection rejected or failed telemetry
+              description: Business completion and exporter sent counters do not prove a complete trace. Mark the experiment as partial until reconciled.
+      - eval_time: 300s
+        alertname: V3ApmCollectionFailure
+        exp_alerts: []
+  - name: sustained-queue-pressure-and-recovery
+    interval: 15s
+    input_series:
+      - series: 'otelcol_exporter_queue_size{job="apm-alloy",exporter="tempo",data_type="traces"}'
+        values: '90+0x4 0+0x8'
+      - series: 'otelcol_exporter_queue_capacity{job="apm-alloy",exporter="tempo",data_type="traces"}'
+        values: '100+0x13'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: V3ApmQueueNearCapacity
+        exp_alerts:
+          - exp_labels: {job: apm-alloy, exporter: tempo, data_type: traces, severity: warning}
+            exp_annotations: {summary: APM byte queue is at least 80 percent full}
+      - eval_time: 90s
+        alertname: V3ApmQueueNearCapacity
+        exp_alerts: []
+  - name: missing-collectors-are-unknown
+    interval: 15s
+    input_series: []
+    alert_rule_test:
+      - eval_time: 45s
+        alertname: V3ApmObservationUnavailable
+        exp_alerts:
+          - exp_labels: {job: apm-alloy, severity: warning}
+            exp_annotations: {summary: APM observation is unavailable; absence is not zero loss}
+          - exp_labels: {job: apm-tempo, severity: warning}
+            exp_annotations: {summary: APM observation is unavailable; absence is not zero loss}

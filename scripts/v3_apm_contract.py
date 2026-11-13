@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 CONTRACT=json.loads((ROOT/'deploy/v3/apps/files/apm.json').read_text())
 
-def java_env(name,config):
+def java_env(name,config,reliable=False):
     c=CONTRACT
     values={
       'JAVA_TOOL_OPTIONS':config['configMapData']['JAVA_TOOL_OPTIONS']+' -javaagent:/otel/javaagent.jar',
@@ -15,14 +15,25 @@ def java_env(name,config):
       'OTEL_PROPAGATORS':'tracecontext','OTEL_METRICS_EXPORTER':'none','OTEL_LOGS_EXPORTER':'none',
       'OTEL_BSP_MAX_QUEUE_SIZE':'128','OTEL_BSP_MAX_EXPORT_BATCH_SIZE':'32','OTEL_BSP_SCHEDULE_DELAY':'1000','OTEL_EXPORTER_OTLP_TIMEOUT':'1000',
     }
+    if reliable:
+        from urllib.parse import urlsplit, parse_qsl
+        url=config['configMapData']['MYSQL_URL']
+        if any(k.lower()=='opentelemetry' for k,v in parse_qsl(urlsplit(url[5:]).query)):
+            raise ValueError('Native telemetry property must be controlled by the reviewed profile')
+        p=c['reliability']
+        values.update(MYSQL_URL=url+('&' if '?' in url else '?')+'openTelemetry=DISABLED',
+          OTEL_BSP_MAX_QUEUE_SIZE=str(p['javaQueue']),OTEL_BSP_MAX_EXPORT_BATCH_SIZE=str(p['batch']),
+          OTEL_BSP_SCHEDULE_DELAY=str(p['delayMs']),OTEL_EXPORTER_OTLP_TIMEOUT=str(p['javaTimeoutMs']))
+        for key in p['disabledJavaInstrumentation']:
+            values['OTEL_INSTRUMENTATION_'+key.upper().replace('-','_')+'_ENABLED']='false'
     return [{'name':k,'value':v} for k,v in values.items()]
 
-def python_env(role,source):
+def python_env(role,source,reliable=False):
     return [{'name':k,'value':v} for k,v in {
       'YEODAM_APM_ENABLED':'true','PYTHONPATH':'/runtime:/otel:/app',
       'OTEL_SERVICE_NAME':'ai-'+role,'OTEL_SERVICE_VERSION':source,
       'OTEL_EXPORTER_OTLP_ENDPOINT':CONTRACT['endpoint'],'OTEL_METRICS_EXPORTER':'none','OTEL_LOGS_EXPORTER':'none',
-    }.items()]
+    }.items()]+([{'name':'YEODAM_APM_RELIABILITY_ENABLED','value':'true'}] if reliable else [])
 
 def init(language):
     return {'name':'prepare-apm','image':CONTRACT['javaImage' if language=='java' else 'pythonImage'],

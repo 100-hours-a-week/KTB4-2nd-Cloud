@@ -22,9 +22,9 @@ overrides:
   defaults:
     compaction: {block_retention: 24h}
     ingestion:
-      rate_limit_bytes: 4096
-      burst_size_bytes: 65536
-      max_traces_per_user: 100
+      rate_limit_bytes: 16384
+      burst_size_bytes: 2097152
+      max_traces_per_user: 16
     global:
-      max_bytes_per_trace: 262144
+      max_bytes_per_trace: 1048576
 usage_report: {reporting_enabled: false}

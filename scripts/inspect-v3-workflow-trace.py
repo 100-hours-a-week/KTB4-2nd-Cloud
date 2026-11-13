@@ -26,6 +26,12 @@ def main():
     check = sub.add_parser('inspect');check.add_argument('--manifest', type=Path, required=True)
     check.add_argument('--tempo', default='http://127.0.0.1:3200')
     check.add_argument('--output', type=Path, required=True)
+    observe = sub.add_parser('observe')
+    observe.add_argument('--manifest', type=Path, required=True)
+    observe.add_argument('--tempo', default='http://127.0.0.1:3200')
+    observe.add_argument('--prometheus', default='http://127.0.0.1:9090')
+    observe.add_argument('--output', type=Path, required=True)
+    observe.add_argument('--deadline', type=int, default=300)
     args = parser.parse_args()
     if args.action == 'prepare':
         private_write(args.output, trial())
@@ -34,6 +40,11 @@ def main():
     if args.manifest.is_symlink() or args.manifest.stat().st_size > 4096:
         raise ValueError('Invalid manifest file')
     tid = trace_id(json.loads(args.manifest.read_text()))
+    if args.action == 'observe':
+        from v3_apm_evidence import observe
+        result=observe(tid,args.tempo,args.prometheus,args.output,args.deadline)
+        print(json.dumps({'traceEvidenceReady':result['traceEvidenceReady'],'telemetryIntegrity':result['telemetryIntegrity']}))
+        return 0 if result['traceEvidenceReady'] else 2
     result = inspect_trace(read_tempo(args.tempo, tid), tid)
     private_write(args.output, result)
     print(json.dumps({key:result[key] for key in ('status','tracePathComplete')}))
@@ -42,4 +53,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

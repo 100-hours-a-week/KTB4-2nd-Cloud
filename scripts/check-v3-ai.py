@@ -16,7 +16,7 @@ def fixture():
 def render(values=None):
     args=[os.environ['V3_HELM'],'template','yeodam-v3-ai-apps',str(CHART),'-n','ai','--kube-version','1.36.0']
     return subprocess.check_output(args+(['-f','-'] if values else []),input=yaml.safe_dump(values) if values else None,text=True,stderr=subprocess.PIPE)
-def _validate(docs,v,contract,runtime_scripts,policy_sources,legacy=False):
+def _validate(docs,v,contract,runtime_scripts,policy_sources,legacy=False,apm_source=None):
     require(contract['workloads']['runner'].get('environment',{}).get('PYTHONPATH')=='/app','File-based runner must resolve the /app package')
     enabled=v['accessEnabled'];roles=[r for r,x in v['workloads'].items() if x];expected={}
     if enabled:
@@ -26,6 +26,7 @@ def _validate(docs,v,contract,runtime_scripts,policy_sources,legacy=False):
     require(dict(Counter(d['kind'] for d in docs))==expected,'Exact inventory; no Namespace/PVC/Secret/Ingress')
     if not enabled:return
     apm_roles=v.get('apmWorkloads',[])
+    require(not v.get('apmReliabilityEnabled') or set(apm_roles)=={'api','runner'}, 'Reliability profile requires both instrumented AI roles')
     trace_enabled=v.get('traceContextEnabled',False);write=v.get('traceContextWriteEnabled',False)
     ever=v.get('traceContextWriteEverEnabled',False);langfuse=v.get('langfuseEnabled',False)
     obs=json.loads((CHART/'files/observability.json').read_text())
@@ -33,7 +34,7 @@ def _validate(docs,v,contract,runtime_scripts,policy_sources,legacy=False):
     require(not write or ever,'Record sticky reader compatibility floor')
     require(not trace_enabled or (set(roles)=={'api','runner'} and set(apm_roles)=={'api','runner'}),'Both instrumented readers required')
     if apm_roles:
-        runtime_scripts=dict(runtime_scripts,sitecustomize=(CHART/'files/apm/sitecustomize.py').read_text())
+        runtime_scripts=dict(runtime_scripts,sitecustomize=apm_source if apm_source is not None else (CHART/'files/apm/sitecustomize.py').read_text())
         runtime_scripts['sitecustomize.py']=runtime_scripts.pop('sitecustomize')
     require(not roles or all(v['review'].values()),'All source/image/model reviews required')
     identities=[(d['kind'],d['metadata']['namespace'],d['metadata']['name']) for d in docs];require(len(identities)==len(set(identities)),'Duplicate resources')
@@ -78,7 +79,7 @@ def _validate(docs,v,contract,runtime_scripts,policy_sources,legacy=False):
             if apm:
                 require(pod['initContainers'][-1]==apm_contract.init('python'),'Pinned Python init only')
             require(len(pod['initContainers'])==(2 if apm else 1) and pod['initContainers'][0]['command']==['python','/runtime/prepare-trust.py'] and pod['initContainers'][0]['image']==v['image'],'Public trust bundle first')
-            keys=contract['secretKeys']+(contract['runnerExtraSecrets'] if role=='runner' else [])+(obs['langfuseSecrets'] if langfuse else []);require(c['env']==[{'name':k,'valueFrom':{'secretKeyRef':{'name':'ai-runtime','key':k}}} for k in keys]+(apm_contract.python_env(role,v['source']) if apm else []),'Reference-only role secrets')
+            keys=contract['secretKeys']+(contract['runnerExtraSecrets'] if role=='runner' else [])+(obs['langfuseSecrets'] if langfuse else []);require(c['env']==[{'name':k,'valueFrom':{'secretKeyRef':{'name':'ai-runtime','key':k}}} for k in keys]+(apm_contract.python_env(role,v['source'],v.get('apmReliabilityEnabled',False)) if apm else []),'Reference-only role secrets')
             volumes={x['name']:x for x in pod['volumes']};require(not any('hostPath' in x or 'persistentVolumeClaim' in x for x in pod['volumes']),'No host mount or added PVC')
             if apm:require(volumes.get('apm')=={'name':'apm','emptyDir':{'sizeLimit':'64Mi'}} and {'name':'apm','mountPath':'/otel','readOnly':True} in c['volumeMounts'],'Read-only bounded SDK mount')
             else:require('apm' not in volumes,'No implicit instrumentation')
@@ -98,7 +99,7 @@ def validate_snapshot(docs,v,files):
     if record is not None:
         contract=json.loads(files['files/contract.json'])
         scripts={p[len('files/runtime/'):]:content.decode() for p,content in files.items() if p.startswith('files/runtime/')}
-        return _validate(docs,v,contract,scripts,json.loads(files['files/policies.json']),legacy=record.get('legacy',True))
+        return _validate(docs,v,contract,scripts,json.loads(files['files/policies.json']),legacy=record.get('legacy',True),apm_source=files.get('files/apm/sitecustomize.py',b'').decode())
     return validate(docs,v)
 
 def main():

@@ -42,6 +42,8 @@ with tempfile.TemporaryDirectory(prefix='v3-metrics-') as tmp:
     (conf/'datasource.yaml').write_text(yaml.safe_dump(sources))
 
     shutil.copyfile(ROOT/'tests/ci/v3/metrics-alerts.test.yaml',conf/'alerts.test.yaml')
+    shutil.copyfile(CHART/'files/apm-alerts.yaml',conf/'apm-alerts.yaml')
+    shutil.copyfile(ROOT/'tests/ci/v3/apm-alerts.test.yaml',conf/'apm-alerts.test.yaml')
     (conf/'ai-auth').mkdir();(conf/'ai-auth/API_KEY').write_text('synthetic-fixture-only')
     (sa/'token').write_text('synthetic-fixture-only');(sa/'namespace').write_text('observability')
     cafile=ssl.get_default_verify_paths().cafile
@@ -50,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix='v3-metrics-') as tmp:
     try:
         # Validate exact deployed config, including auth files and Kubernetes discovery.
         run('docker','run','--rm','--platform',PLATFORM,'--network','none','--read-only','--cap-drop','ALL','-e','KUBERNETES_SERVICE_HOST=127.0.0.1','-e','KUBERNETES_SERVICE_PORT=443','-v',str(conf)+':/etc/prometheus:ro','-v',str(sa)+':/var/run/secrets/kubernetes.io/serviceaccount:ro','--entrypoint','/bin/promtool',images['prometheus'],'check','config','/etc/prometheus/prometheus.yaml')
-        run('docker','run','--rm','--platform',PLATFORM,'--network','none','-v',str(conf)+':/etc/prometheus:ro','--entrypoint','/bin/promtool',images['prometheus'],'test','rules','/etc/prometheus/alerts.test.yaml')
+        run('docker','run','--rm','--platform',PLATFORM,'--network','none','-v',str(conf)+':/etc/prometheus:ro','--entrypoint','/bin/promtool',images['prometheus'],'test','rules','/etc/prometheus/alerts.test.yaml','/etc/prometheus/apm-alerts.test.yaml')
         helptext=run('docker','run','--rm','--platform',PLATFORM,'--network','none',images['kube-state-metrics'],'--help')
         assert '--metric-allowlist' in helptext and '--namespaces' in helptext
         run('docker','network','create','--internal',network)
@@ -67,12 +69,13 @@ HTTPServer(('0.0.0.0',8083),H).serve_forever()
         start('cdc-status',images['cdc-status'],['python','-B','/exporter/cdc-status.py'],[(CHART/'files','/exporter')],extra=['--user','65534:65534'])
         start('prometheus',images['prometheus'],['--config.file=/etc/prometheus/prometheus.yaml','--storage.tsdb.path=/prometheus','--storage.tsdb.retention.time=3d','--storage.tsdb.retention.size=4GB'],[(conf,'/etc/prometheus'),(sa,'/var/run/secrets/kubernetes.io/serviceaccount')],['KUBERNETES_SERVICE_HOST=127.0.0.1','KUBERNETES_SERVICE_PORT=443'],extra=['--user','65534:65534','--tmpfs','/prometheus:uid=65534,gid=65534,mode=0700'],memory='512m')
         grafana=next(x for x in docs if x['kind']=='Deployment' and x['metadata']['name']=='v3-grafana')['spec']['template']['spec']['containers'][0]
-        start('grafana',images['grafana'],[],[(conf/'datasource.yaml','/etc/grafana/provisioning/datasources/default.yaml'),(sa/'token','/fixture/token'),(CHART/'files/dashboard-provider.yaml','/etc/grafana/provisioning/dashboards/default.yaml'),(CHART/'files/operations.json','/etc/grafana/dashboards/operations.json')],[x['name']+'='+x['value'] for x in grafana['env']]+['AWS_CONTAINER_CREDENTIALS_FULL_URI=http://127.0.0.1:8085/credentials','AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE=/fixture/token'],extra=['--user','472:472','--tmpfs','/var/lib/grafana:uid=472,gid=472,mode=0700','--tmpfs','/tmp:uid=472,gid=472'],memory='256m')
+        start('grafana',images['grafana'],[],[(conf/'datasource.yaml','/etc/grafana/provisioning/datasources/default.yaml'),(sa/'token','/fixture/token'),(CHART/'files/dashboard-provider.yaml','/etc/grafana/provisioning/dashboards/default.yaml'),(CHART/'files/operations.json','/etc/grafana/dashboards/operations.json'),(CHART/'files/apm.json','/etc/grafana/dashboards/apm.json')],[x['name']+'='+x['value'] for x in grafana['env']]+['AWS_CONTAINER_CREDENTIALS_FULL_URI=http://127.0.0.1:8085/credentials','AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE=/fixture/token'],extra=['--user','472:472','--tmpfs','/var/lib/grafana:uid=472,gid=472,mode=0700','--tmpfs','/tmp:uid=472,gid=472'],memory='256m')
         start('cloudwatch-fixture',images['cdc-status'],['python','-B','/fixture.py'],[(ROOT/'tests/ci/v3/cloudwatch-fixture.py','/fixture.py')],extra=['--user','65534:65534'],network_mode='container:'+prefix+'-grafana')
         probe='''import json,urllib.request,urllib.error
 from urllib.parse import quote
 base='http://v3-grafana:3000'
 r=json.load(urllib.request.urlopen(base+'/api/dashboards/uid/yeodam-v3-operations',timeout=3));assert r['dashboard']['uid']=='yeodam-v3-operations'
+assert json.load(urllib.request.urlopen(base+'/api/dashboards/uid/yeodam-v3-apm-integrity',timeout=3))['dashboard']['uid']=='yeodam-v3-apm-integrity'
 assert json.load(urllib.request.urlopen(base+'/api/datasources/uid/v3-prometheus/health',timeout=3))['status']=='OK'
 assert json.load(urllib.request.urlopen(base+'/api/frontend/settings',timeout=3))['viewersCanEdit'] is True
 for expression in ['up{job="prometheus"}','prometheus_tsdb_head_series']:

@@ -1,0 +1,27 @@
+groups:
+  - name: yeodam-v3-apm
+    rules:
+      - alert: V3ApmCollectionFailure
+        expr: |
+          sum by (__name__) (increase({job=~"apm-alloy|apm-tempo",__name__=~"otelcol_exporter_(enqueue|send)_failed_spans_total|otelcol_receiver_refused_spans_total|tempo_discarded_(spans|bytes)_total"}[2m])) > 0
+          or
+          ({job=~"apm-alloy|apm-tempo",__name__=~"otelcol_exporter_(enqueue|send)_failed_spans_total|otelcol_receiver_refused_spans_total|tempo_discarded_(spans|bytes)_total"} > 0
+            unless {job=~"apm-alloy|apm-tempo",__name__=~"otelcol_exporter_(enqueue|send)_failed_spans_total|otelcol_receiver_refused_spans_total|tempo_discarded_(spans|bytes)_total"} offset 2m)
+        labels: {severity: warning}
+        annotations:
+          summary: APM collection rejected or failed telemetry
+          description: Business completion and exporter sent counters do not prove a complete trace. Mark the experiment as partial until reconciled.
+      - alert: V3ApmQueueNearCapacity
+        expr: otelcol_exporter_queue_size{job="apm-alloy",data_type="traces"} / otelcol_exporter_queue_capacity{job="apm-alloy",data_type="traces"} >= 0.8
+        for: 30s
+        labels: {severity: warning}
+        annotations: {summary: APM byte queue is at least 80 percent full}
+      - alert: V3ApmObservationUnavailable
+        expr: |
+          up{job=~"apm-alloy|apm-tempo"} == 0
+          or absent(up{job="apm-alloy"})
+          or absent(up{job="apm-tempo"})
+          or sum without (data_type) (absent(otelcol_exporter_queue_capacity{job="apm-alloy",data_type="traces"}))
+        for: 30s
+        labels: {severity: warning}
+        annotations: {summary: APM observation is unavailable; absence is not zero loss}
