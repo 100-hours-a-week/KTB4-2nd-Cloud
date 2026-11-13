@@ -53,6 +53,7 @@ class APM(unittest.TestCase):
   # Stable initial rollout fixture: the candidate may already enable all roles later.
   # Async Trace is a later feature and requires APM on both AI roles.
   # This fixture intentionally tests the earlier APM-only rollout independently.
+  for profile in ['backend','ai']:original['values'][profile]['apmReliabilityEnabled']=False
   for flag in ['traceContextEnabled','traceContextWriteEnabled','traceContextWriteEverEnabled','langfuseEnabled']:
    original['values']['ai'][flag]=False
   original['values']['backend']['apmWorkloads']=['auth-api']

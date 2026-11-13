@@ -40,6 +40,11 @@ class Reliability(unittest.TestCase):
   self.assertEqual(old['JAVA_TOOL_OPTIONS'],new['JAVA_TOOL_OPTIONS']);self.assertEqual(new['OTEL_BSP_MAX_QUEUE_SIZE'],'512')
   config['configMapData']['MYSQL_URL']+='&OpenTelemetry=PREFERRED'
   with self.assertRaises(ValueError):java_env('photo-converter',config,True)
+ def test_enabled_candidate_preparation_is_idempotent(self):
+  prep=load('enabled_reliable','scripts/prepare-v3-apm-reliability.py')
+  source=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
+  for profile in ['backend','ai']:source['values'][profile]['apmReliabilityEnabled']=True
+  original=copy.deepcopy(source);self.assertEqual(prep.prepare(source),original);self.assertEqual(source,original)
  def test_dashboard_file_is_mounted_on_existing_grafana(self):
   chart=load('metrics_reliable','scripts/check-v3-metrics.py');docs=chart.render(apm=True);chart.validate(docs)
   grafana=next(d for d in docs if d['kind']=='Deployment'and d['metadata']['name']=='v3-grafana')
@@ -47,7 +52,9 @@ class Reliability(unittest.TestCase):
   self.assertIn({'name':'config','mountPath':'/etc/grafana/dashboards/apm.json','subPath':'apm.json','readOnly':True},mounts)
  def test_opt_in_changes_only_telemetry_on_existing_seven_apps(self):
   prep=load('reliable','scripts/prepare-v3-apm-reliability.py')
-  source=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text());original=copy.deepcopy(source);new=prep.prepare(source)
+  source=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
+  for profile in ['backend','ai']:source['values'][profile]['apmReliabilityEnabled']=False
+  original=copy.deepcopy(source);new=prep.prepare(source)
   self.assertEqual(source,original)
   charts={'charts/'+c+'/'+str(p.relative_to(ROOT/'deploy/v3'/c)):p.read_bytes()for c in ['apps','ai-apps','service-access']for p in (ROOT/'deploy/v3'/c).rglob('*')if p.is_file()}
   def idx(v):return {(d['kind'],d['metadata'].get('namespace'),d['metadata']['name']):d for d in bundle.render_profiles(charts,v)}
