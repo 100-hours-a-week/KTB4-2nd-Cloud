@@ -1,0 +1,14 @@
+[Unit]
+Description=Bounded startup CPU burst on new V3 Worker nodes
+Requires=yeodam-cpu-credit-standard.service
+After=network-online.target yeodam-cpu-credit-standard.service
+Wants=network-online.target
+Before=kubelet.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/yeodam-worker-credit prepare
+ExecStopPost=/usr/local/sbin/yeodam-worker-credit restore
+RemainAfterExit=yes
+TimeoutStartSec=90
+TimeoutStopSec=300

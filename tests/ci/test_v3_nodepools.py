@@ -69,7 +69,7 @@ class PoolContracts(unittest.TestCase):
             conditions=statement['Condition']['StringEquals']
             prefix='aws:RequestTag/' if 'aws:RequestTag/karpenter.sh/nodepool' in conditions else 'aws:ResourceTag/'
             self.assertEqual(conditions[prefix+'karpenter.sh/nodepool'],'')
-            self.assertEqual(conditions[prefix+'karpenter.k8s.aws/ec2nodeclass'],'yeodam-v3-app')
+            self.assertEqual(conditions[prefix+'karpenter.k8s.aws/ec2nodeclass'],['yeodam-v3-app','yeodam-v3-worker'])
             self.assertEqual(conditions[prefix+'kubernetes.io/cluster/yeodam-v3-foundation'],'owned')
             actions=statement['Action'] if isinstance(statement['Action'],list) else [statement['Action']]
             self.assertNotIn('ec2:TerminateInstances',actions)
@@ -92,6 +92,33 @@ class PoolContracts(unittest.TestCase):
         self.assertIn('TimeoutStartSec=300',unit)
         self.assertIn('Requires=yeodam-cpu-credit-standard.service',gate)
         self.assertIn('After=yeodam-cpu-credit-standard.service',gate)
+
+
+    def test_worker_burst_is_opt_in_and_does_not_change_api_or_old_class(self):
+        docs=p.platform.load_documents(p.render([p.FOUNDATION,ROOT/'tests/ci/v3/nodepools-worker-burst.fixture.yaml']))
+        p.validate(docs,True,True)
+        p.platform.schema_check(yaml.safe_dump_all(docs))
+        before={(d['kind'],d['metadata']['name']):d for d in self.docs}
+        after={(d['kind'],d['metadata']['name']):d for d in docs}
+        self.assertEqual(before[('EC2NodeClass','yeodam-v3-app')],after[('EC2NodeClass','yeodam-v3-app')])
+        self.assertEqual(before[('NodePool','api')],after[('NodePool','api')])
+        worker=copy.deepcopy(before[('NodePool','worker')])
+        worker['spec']['template']['spec']['nodeClassRef']['name']='yeodam-v3-worker'
+        self.assertEqual(worker,after[('NodePool','worker')])
+        for seconds in [60,601,3600]:
+            with tempfile.TemporaryDirectory() as tmp:
+                file=Path(tmp)/'override.yaml';file.write_text(yaml.safe_dump({'workerStartupBurst':{'seconds':seconds}}))
+                with self.assertRaises(subprocess.CalledProcessError):p.render([p.FOUNDATION,p.FIXTURE,file])
+
+    def test_worker_timer_and_shell_are_valid_and_cannot_renew_from_boot(self):
+        for name in ['worker-credit.sh','cpu-credit-standard.sh']:
+            subprocess.run(['bash','-n',str(p.CHART/'files'/name)],check=True)
+        timer=(p.CHART/'files/worker-credit-restore.timer').read_text()
+        self.assertIn('OnBootSec=600s',timer)
+        self.assertNotIn('OnActiveSec=',timer)
+        unit=(p.CHART/'files/worker-credit-restore.service').read_text()
+        self.assertIn('Restart=on-failure',unit)
+        self.assertIn('RestartSec=15s',unit)
 
 
 class CreditBootstrap(unittest.TestCase):
@@ -163,3 +190,106 @@ else:raise AssertionError('Unexpected API mutation')
                 self.assertNotEqual(result.returncode,0)
                 self.assertEqual(calls,[])
                 self.assertNotIn('synthetic-never-log-token',result.stdout+result.stderr)
+
+
+class WorkerStartupBurst(unittest.TestCase):
+    def harness(self,case,operations):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);binpath=root/'bin';binpath.mkdir()
+            source=(p.CHART/'files/worker-credit.sh').read_text()
+            source=source.replace('export PATH=/usr/local/bin:/usr/bin:/bin',f'export PATH={binpath}:/usr/bin:/bin')
+            source=source.replace('state=/var/lib/yeodam/worker-credit',f'state={root}/state')
+            source=source.replace('standard=/usr/local/sbin/yeodam-cpu-credit-standard',f'standard={binpath}/standard')
+            source=source.replace('/run/lock/yeodam-worker-credit.lock',str(root/'lock'))
+            source=source.replace("boot=$(awk '$1==\"btime\"{print $2}' /proc/stat)",'boot=1000')
+            script=root/'worker.sh';script.write_text(source)
+            helpers={
+'curl':r"""import sys
+s=' '.join(sys.argv)
+if '/api/token' in s:print('synthetic-never-log-token')
+elif 'instance-id' in s:print('i-0123456789abcdef0')
+elif 'placement/region' in s:print('ap-northeast-2')
+elif 'instance-type' in s:print('t3a.medium')
+else:sys.exit(90)
+""",
+'date':r"""import os
+print(1700 if os.environ['CASE']=='expired' else 1010)
+""",
+'flock':'pass',
+'sync':'pass',
+'sleep':'pass',
+'standard':r"""import os,sys
+from pathlib import Path
+r=Path(os.environ['TEST_ROOT'])
+with (r/'calls').open('a') as f:f.write('standard\n')
+if os.environ['CASE']=='restore-denied':sys.exit(1)
+(r/'mode').write_text('standard')
+""",
+'systemctl':r"""import os,sys
+from pathlib import Path
+r=Path(os.environ['TEST_ROOT']);args=sys.argv[1:]
+with (r/'calls').open('a') as f:f.write('systemctl '+' '.join(args)+'\n')
+if args[0]=='enable' and os.environ['CASE']=='timer-failure':sys.exit(1)
+if args[0]=='is-active' and os.environ['CASE']=='timer-inactive':sys.exit(1)
+if args[0]=='is-enabled' and os.environ['CASE']=='timer-disabled':sys.exit(1)
+""",
+'aws':r"""import os,sys
+from pathlib import Path
+r=Path(os.environ['TEST_ROOT']);args=sys.argv[1:]
+assert args[args.index('--region')+1]=='ap-northeast-2'
+assert '--cli-connect-timeout' in args and '--cli-read-timeout' in args
+if args[1]=='modify-instance-credit-specification':
+ assert args[args.index('--instance-credit-specifications')+1]=='InstanceId=i-0123456789abcdef0,CpuCredits=unlimited'
+ with (r/'calls').open('a') as f:f.write('modify own unlimited\n')
+ if os.environ['CASE']=='unverified':print('{"Unsuccessful":[{}]}')
+ else:(r/'mode').write_text('unlimited');print('{}')
+elif args[1]=='describe-instance-credit-specifications':
+ assert args[args.index('--instance-ids')+1]=='i-0123456789abcdef0'
+ print((r/'mode').read_text() if (r/'mode').exists() else 'standard')
+else:raise AssertionError('Unexpected AWS API')
+"""}
+            for name,text in helpers.items():
+                helper=binpath/name;helper.write_text('#!'+sys.executable+'\n'+text);helper.chmod(0o755)
+            results=[]
+            for op in operations:
+                results.append(subprocess.run(['bash',str(script),op],text=True,capture_output=True,env={**os.environ,'CASE':case,'TEST_ROOT':str(root)},timeout=10))
+            calls=(root/'calls').read_text().splitlines()if (root/'calls').exists()else []
+            return results,calls,(root/'mode').read_text()if (root/'mode').exists()else None,(root/'state'/'attempted').read_text()if (root/'state'/'attempted').exists()else None
+
+    def test_timer_is_armed_before_unlimited_and_restore_really_returns_standard(self):
+        results,calls,mode,deadline=self.harness('success',['prepare','restore'])
+        self.assertEqual([r.returncode for r in results],[0,0])
+        self.assertLess(next(i for i,x in enumerate(calls)if 'is-active' in x),calls.index('modify own unlimited'))
+        self.assertEqual(mode,'standard');self.assertEqual(deadline.strip(),'1600')
+        self.assertNotIn('synthetic-never-log-token',''.join(x.stdout+x.stderr for x in results))
+
+    def test_reentry_or_reboot_never_reopens_burst(self):
+        results,calls,mode,_=self.harness('success',['prepare','prepare'])
+        self.assertEqual([r.returncode for r in results],[0,0])
+        self.assertEqual(calls.count('modify own unlimited'),1)
+        self.assertEqual(mode,'standard')
+
+    def test_expired_boot_window_never_enables_chargeable_cpu(self):
+        results,calls,mode,deadline=self.harness('expired',['prepare'])
+        self.assertEqual(results[0].returncode,0)
+        self.assertNotIn('modify own unlimited',calls)
+        self.assertEqual(mode,'standard');self.assertIsNone(deadline)
+
+    def test_timer_failure_does_not_enable_unlimited(self):
+        for case in ['timer-failure','timer-inactive','timer-disabled']:
+            results,calls,mode,_=self.harness(case,['prepare'])
+            self.assertNotEqual(results[0].returncode,0)
+            self.assertNotIn('modify own unlimited',calls)
+
+    def test_unverified_change_blocks_join_and_starts_independent_restore(self):
+        results,calls,mode,_=self.harness('unverified',['prepare'])
+        self.assertNotEqual(results[0].returncode,0)
+        self.assertEqual(calls.count('modify own unlimited'),3)
+        self.assertIn('systemctl start --no-block yeodam-worker-credit-restore.service',calls)
+        self.assertIn('kubelet start denied',results[0].stderr)
+
+    def test_failed_restore_does_not_claim_success_or_disable_timer(self):
+        results,calls,mode,_=self.harness('restore-denied',['restore'])
+        self.assertNotEqual(results[0].returncode,0)
+        self.assertIn('restore FAILED',results[0].stderr)
+        self.assertFalse(any(x.startswith('systemctl stop')for x in calls))

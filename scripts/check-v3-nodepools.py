@@ -28,7 +28,7 @@ def render(files=()):
     return subprocess.check_output(cmd, text=True)
 
 
-def bootstrap_script(userdata):
+def bootstrap_script(userdata, worker_burst=False):
     msg = email.message_from_string(userdata)
     require(msg.is_multipart() and len(msg.get_payload()) == 1, 'One reviewed shell MIME part only')
     part = msg.get_payload()[0]
@@ -42,16 +42,23 @@ def bootstrap_script(userdata):
     require(source.startswith('#!/bin/bash\nset -Eeuo pipefail\numask 077\n'), 'Strict root bootstrap required')
     require('systemctl daemon-reload' in source and 'chmod 0700 /usr/local/sbin/yeodam-cpu-credit-standard' in source, 'Install the executable and load its systemd dependency')
     require('nodeadm init' not in source and 'modify-default-credit' not in source, 'No duplicate bootstrap or account-wide credit mutation')
+    if worker_burst:
+        for filename,marker,target in [('kubelet-worker-credit-gate.conf','WORKER_GATE','/etc/systemd/system/kubelet.service.d/20-yeodam-credit.conf'),('worker-credit.sh','WORKER_SCRIPT','/usr/local/sbin/yeodam-worker-credit'),('worker-credit.service','WORKER_UNIT','/etc/systemd/system/yeodam-worker-credit.service'),('worker-credit-restore.service','RESTORE_UNIT','/etc/systemd/system/yeodam-worker-credit-restore.service'),('worker-credit-restore.timer','RESTORE_TIMER','/etc/systemd/system/yeodam-worker-credit-restore.timer')]:
+            content=(CHART/'files'/filename).read_text()
+            require(f"cat > {target} <<'{marker}'\n{content}\n{marker}" in source,'Worker restoration bootstrap changed')
+        require('chmod 0700 /usr/local/sbin/yeodam-worker-credit' in source,'Executable Worker gate required')
+    else:
+        require('WORKER_SCRIPT' not in source,'API/default class must retain Standard bootstrap')
     return source
 
 
-def validate(docs, enabled):
+def validate(docs, enabled, worker_burst=False):
     if not enabled:
         require(docs == [], 'Disabled app pools must not create any objects')
         return
-    require(Counter(d['kind'] for d in docs) == {'NodePool': 2, 'EC2NodeClass': 1}, 'Two CPU pools and one class only; no workloads/compute')
+    require(Counter(d['kind'] for d in docs) == {'NodePool': 2, 'EC2NodeClass': 2 if worker_burst else 1}, 'Two CPU pools and one class only; no workloads/compute')
     ids = [(d['kind'], d['metadata']['name']) for d in docs]
-    require(len(set(ids)) == 3 and all(not d['metadata'].get('namespace') for d in docs), 'Unique cluster-scoped identities required')
+    require(len(set(ids)) == (4 if worker_burst else 3) and all(not d['metadata'].get('namespace') for d in docs), 'Unique cluster-scoped identities required')
     reviewed = yaml.safe_load(FOUNDATION.read_text())['nodeClass']
     c = next(d for d in docs if d['kind'] == 'EC2NodeClass')
     require(c['metadata']['name'] == 'yeodam-v3-app', 'Dedicated app class required')
@@ -67,12 +74,19 @@ def validate(docs, enabled):
     }
     require(set(c['spec']) == set(expected) | {'userData'} and all(c['spec'][k] == v for k, v in expected.items()), 'Unreviewed class, AMI, network, IAM, IMDS or disk change')
     bootstrap_script(c['spec']['userData'])
+    classes={d['metadata']['name']:d for d in docs if d['kind']=='EC2NodeClass'}
+    require(set(classes)==({'yeodam-v3-app','yeodam-v3-worker'} if worker_burst else {'yeodam-v3-app'}),'Exact reviewed classes only')
+    if worker_burst:
+        worker=classes['yeodam-v3-worker']
+        require(worker['metadata'].get('annotations')=={'helm.sh/resource-policy':'keep'},'Retain Worker class during rollback while old claims exist')
+        require(set(worker['spec'])==set(expected)|{'userData'} and all(worker['spec'][k]==v for k,v in expected.items()),'Worker class must preserve the exact AMI/network/size/disk/identity')
+        bootstrap_script(worker['spec']['userData'],True)
     pools = {d['metadata']['name']: d for d in docs if d['kind'] == 'NodePool'}
     require(set(pools) == {'api', 'worker'}, 'Never adopt fixed system/Kafka/data or GPU nodes')
     for role, d in pools.items():
         expected = {
             'template': {'metadata': {'labels': {'yeodam.io/role': role, 'yeodam.io/stage': 'v3'}}, 'spec': {
-                'nodeClassRef': {'group': 'karpenter.k8s.aws', 'kind': 'EC2NodeClass', 'name': 'yeodam-v3-app'},
+                'nodeClassRef': {'group': 'karpenter.k8s.aws', 'kind': 'EC2NodeClass', 'name': 'yeodam-v3-worker' if worker_burst and role=='worker' else 'yeodam-v3-app'},
                 'taints': [{'key': 'yeodam.io/role', 'value': role, 'effect': 'NoSchedule'}],
                 'requirements': [
                     {'key': 'kubernetes.io/arch', 'operator': 'In', 'values': ['amd64']},
@@ -109,7 +123,10 @@ def main():
     validate(docs, True); schemas(args.directory); platform.schema_check(source)
     args.output.mkdir(exist_ok=True, parents=True)
     (args.output / 'nodepools-ci-fixture.yaml').write_text(source)
-    print('App CPU pool/placement schema contracts passed; default0, opt-in3 resources. No AWS changes.')
+    burst_source=render([FOUNDATION, ROOT/'tests/ci/v3/nodepools-worker-burst.fixture.yaml'])
+    validate(platform.load_documents(burst_source),True,True);platform.schema_check(burst_source)
+    (args.output/'nodepools-worker-burst-ci-fixture.yaml').write_text(burst_source)
+    print('App pools passed: default0, Standard3, explicit Worker burst4 resources. No AWS changes.')
 
 
 if __name__ == '__main__': main()

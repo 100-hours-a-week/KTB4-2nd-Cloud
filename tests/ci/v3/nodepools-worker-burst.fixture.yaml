@@ -1,0 +1,5 @@
+# CI only. Real activation requires reviewed IAM and a separate apply.
+enabled: true
+creditBootstrapReady: true
+workerStartupBurst:
+  enabled: true

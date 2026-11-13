@@ -1,0 +1,12 @@
+[Unit]
+Description=Restore Standard CPU credits independently of workloads
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/yeodam-worker-credit restore
+Restart=on-failure
+RestartSec=15s
+TimeoutStartSec=300

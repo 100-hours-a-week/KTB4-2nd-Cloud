@@ -11,7 +11,10 @@
           "aws:RequestTag/kubernetes.io/cluster/yeodam-v3-foundation": "owned",
           "aws:RequestTag/eks:eks-cluster-name": "yeodam-v3-foundation",
           "aws:RequestTag/karpenter.sh/nodepool": "",
-          "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "yeodam-v3-app",
+          "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": [
+            "yeodam-v3-app",
+            "yeodam-v3-worker"
+          ],
           "aws:RequestedRegion": "ap-northeast-2"
         }
       }
@@ -36,7 +39,10 @@
           "aws:RequestTag/kubernetes.io/cluster/yeodam-v3-foundation": "owned",
           "aws:RequestTag/eks:eks-cluster-name": "yeodam-v3-foundation",
           "aws:RequestTag/karpenter.sh/nodepool": "",
-          "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "yeodam-v3-app",
+          "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": [
+            "yeodam-v3-app",
+            "yeodam-v3-worker"
+          ],
           "aws:RequestedRegion": "ap-northeast-2"
         }
       }
@@ -53,7 +59,10 @@
         "StringEquals": {
           "aws:ResourceTag/kubernetes.io/cluster/yeodam-v3-foundation": "owned",
           "aws:ResourceTag/karpenter.sh/nodepool": "",
-          "aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "yeodam-v3-app",
+          "aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": [
+            "yeodam-v3-app",
+            "yeodam-v3-worker"
+          ],
           "aws:RequestedRegion": "ap-northeast-2"
         }
       }
@@ -75,7 +84,10 @@
           "aws:RequestTag/kubernetes.io/cluster/yeodam-v3-foundation": "owned",
           "aws:RequestTag/eks:eks-cluster-name": "yeodam-v3-foundation",
           "aws:RequestTag/karpenter.sh/nodepool": "",
-          "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "yeodam-v3-app",
+          "aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": [
+            "yeodam-v3-app",
+            "yeodam-v3-worker"
+          ],
           "aws:RequestedRegion": "ap-northeast-2",
           "ec2:CreateAction": [
             "RunInstances",
@@ -94,7 +106,10 @@
         "StringEquals": {
           "aws:ResourceTag/kubernetes.io/cluster/yeodam-v3-foundation": "owned",
           "aws:ResourceTag/karpenter.sh/nodepool": "",
-          "aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "yeodam-v3-app",
+          "aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": [
+            "yeodam-v3-app",
+            "yeodam-v3-worker"
+          ],
           "aws:RequestedRegion": "ap-northeast-2"
         }
       }

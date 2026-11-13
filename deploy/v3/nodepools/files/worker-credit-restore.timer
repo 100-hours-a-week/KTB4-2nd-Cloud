@@ -1,0 +1,10 @@
+[Unit]
+Description=Restore Worker CPU credits at ten minutes from boot
+
+[Timer]
+OnBootSec=600s
+AccuracySec=1s
+Unit=yeodam-worker-credit-restore.service
+
+[Install]
+WantedBy=timers.target
