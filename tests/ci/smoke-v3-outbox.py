@@ -101,8 +101,15 @@ class Outbox:
   raise RuntimeError('Expected Outbox records not observed')
  def exercise(self,ctx):
   self.port=ctx['port'];config=dict(CONFIG);config['schema.history.internal.kafka.bootstrap.servers']='broker1:9093'
+  # Validate against the actual pinned plugin, not a locally copied configuration table.
+  validated=self.request('/connector-plugins/io.debezium.connector.mysql.MySqlConnector/config/validate','PUT',config)
+  keepalive=next(x for x in validated['configs'] if x['definition']['name']=='connect.keep.alive.interval.ms')
+  # Debezium validate() populates field errors but may leave ConfigValue.value null.
+  assert keepalive['definition']['type']=='LONG' and not keepalive['value']['errors'],'Pinned plugin must recognize and accept reconnect-check interval'
   self.request('/connectors','POST',{'name':NAME,'config':config});self.running();self.receive(7)
-  print('PASS: initial snapshot7 without Trace columns and exact required wire',flush=True)
+  accepted=self.request('/connectors/'+NAME+'/config')
+  assert accepted['connect.keep.alive.interval.ms']=='10000','Running connector must retain the requested interval'
+  print('PASS: actual plugin recognizes interval10000; running connector retained it, initial snapshot7 and required wire verified',flush=True)
   for table in TABLES:self.sql(f'ALTER TABLE yeodam.{table} ADD COLUMN traceparent VARCHAR(55) NULL, ADD COLUMN tracestate VARCHAR(512) NULL;')
   self.trace_schema=True
   # Updates, polling-owned/PUBLISHED inserts and rolled-back inserts must not publish work.

@@ -47,10 +47,13 @@ RANGE = {
     'outbox_pending_raw': 'yeodam_outbox_pending',
     'outbox_pending_age_raw_seconds': 'yeodam_outbox_oldest_pending_age_seconds',
     'outbox_count_capped': 'yeodam_outbox_count_capped',
+    'conversion_outbox_by_state': 'yeodam_conversion_outbox_pending',
+    'conversion_outbox_age_by_state_seconds': 'yeodam_conversion_outbox_oldest_pending_age_seconds',
+    'conversion_outbox_classification_capped': 'yeodam_conversion_outbox_classification_capped',
     'conversion_lag': 'keda_scaler_metrics_value{scaledObject="photo-converter"}',
 }
 LABELS = {'job', 'namespace', 'deployment', 'workload', 'operation', 'status', 'phase', 'state', 'task', 'connector',
-          'outbox','scaledObject','metric','scaler','scalerIndex'}
+          'outbox','category','scaledObject','metric','scaler','scalerIndex'}
 
 
 def utc(ts):

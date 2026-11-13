@@ -6,6 +6,93 @@
   "editable": false,
   "panels": [
     {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Conversion unconfirmed publication by business state (lower bounds when capped)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "v3-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_conversion_outbox_pending",
+          "legendFormat": "{{category}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Conversion oldest unconfirmed publication by business state",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "v3-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_conversion_outbox_oldest_pending_age_seconds",
+          "legendFormat": "{{category}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Conversion classification capped (1 = incomplete coverage)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "v3-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "yeodam_conversion_outbox_classification_capped",
+          "legendFormat": "{{category}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
       "id": 18,
       "type": "timeseries",
       "title": "Outbox unconfirmed publication (capped at 10001)",
@@ -15,7 +102,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 0,
+        "y": 18,
         "w": 24,
         "h": 6
       },
@@ -44,7 +131,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 6,
+        "y": 24,
         "w": 24,
         "h": 6
       },
@@ -73,7 +160,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 12,
+        "y": 30,
         "w": 24,
         "h": 6
       },
@@ -102,7 +189,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 36,
         "w": 24,
         "h": 6
       },
@@ -131,7 +218,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 42,
         "w": 24,
         "h": 6
       },

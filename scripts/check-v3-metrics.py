@@ -13,8 +13,8 @@ def require(ok, message):
     if not ok:
         raise ValueError(message)
 
-def render(enabled=True, ai=True, apm=False, logs=False):
-    source = subprocess.check_output([os.environ.get('V3_HELM','helm'),'template','v3-metrics',str(CHART),'--kube-version','1.36.0','--set','enabled='+str(enabled).lower(),'--set','aiMetricsEnabled='+str(ai).lower(),'--set','apmEnabled='+str(apm).lower(),'--set','cloudwatchLogsEnabled='+str(logs).lower()],text=True)
+def render(enabled=True, ai=True, apm=False, logs=False, outbox=False):
+    source = subprocess.check_output([os.environ.get('V3_HELM','helm'),'template','v3-metrics',str(CHART),'--kube-version','1.36.0','--set','enabled='+str(enabled).lower(),'--set','aiMetricsEnabled='+str(ai).lower(),'--set','apmEnabled='+str(apm).lower(),'--set','cloudwatchLogsEnabled='+str(logs).lower(),'--set','outboxEnabled='+str(outbox).lower()],text=True)
     return [x for x in yaml.safe_load_all(source) if x]
 
 def validate(docs):

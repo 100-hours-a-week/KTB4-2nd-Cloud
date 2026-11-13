@@ -10,5 +10,5 @@ while true; do
     rm -f /outbox/snapshot
   fi
   rm -f /outbox/rows.new
-  sleep 30
+  sleep 15
 done

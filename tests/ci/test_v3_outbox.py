@@ -35,6 +35,11 @@ class Outbox(unittest.TestCase):
    with self.assertRaises(ValueError):c.validate(docs,True,True)
   config=copy.deepcopy(c.CONFIG);config['snapshot.mode']='when_needed'
   with self.assertRaises(ValueError):c.config_contract(config)
+ def test_reconnect_interval_does_not_relax_other_recovery_controls(self):
+  self.assertEqual(c.CONFIG['connect.keep.alive.interval.ms'],'10000')
+  for key,value in [('connect.keep.alive.interval.ms','60000'),('connect.keep.alive','false'),('connect.timeout.ms','1000')]:
+   config=copy.deepcopy(c.CONFIG);config[key]=value
+   with self.assertRaises(ValueError):c.config_contract(config)
  def test_heartbeat_cannot_enter_business_transforms_or_expand_storage(self):
   for key,value in [('heartbeat.interval.ms','0'),('transforms.owned.negate','false'),('predicates.heartbeat.pattern','.*')]:
    config=copy.deepcopy(c.CONFIG);config[key]=value
