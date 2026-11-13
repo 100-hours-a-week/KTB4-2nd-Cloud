@@ -1,0 +1,15 @@
+{
+  "scope": "two simultaneous sampled JPEG20 workflows, synthetic transport envelope; not a throughput claim",
+  "workflows": 2,
+  "spansPerWorkflow": 2048,
+  "maxWireBytesPerWorkflow": 786432,
+  "maxTraceBytes": 1048576,
+  "alloyQueueBytes": 2097152,
+  "tempoBytesPerSecond": 16384,
+  "tempoBurstBytes": 2097152,
+  "maxActiveTraces": 16,
+  "retention": "24h",
+  "pvc": "3Gi",
+  "failurePolicy": "bounded buffering; collector loss invalidates experiment evidence, never business completion",
+  "rootSampleRatio": 0.01
+}

@@ -13,6 +13,7 @@
     "privateModelPeers"
   ],
   "properties": {
+    "apmReliabilityEnabled": {"type": "boolean"},
     "apmWorkloads": {
       "type": "array",
       "uniqueItems": true,

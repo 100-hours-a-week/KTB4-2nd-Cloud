@@ -12,7 +12,7 @@ import urllib.request
 
 BOUNDARIES = ('photo.convert', 'trip.process.dispatch', 'ai.receive', 'ai.execute',
               'ai.publish', 'trip.result.apply')
-MAX_BYTES = 4 * 1024 * 1024
+MAX_BYTES = 8 * 1024 * 1024
 
 
 def trial():

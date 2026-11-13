@@ -19,12 +19,12 @@ data:
       - job_name: apm-alloy
         static_configs: [{targets: ['v3-alloy:12345']}]
         metric_relabel_configs:
-          - {source_labels: [__name__], regex: 'otelcol_.*spans(_total)?|process_resident_memory_bytes', action: keep}
+          - {source_labels: [__name__], regex: 'otelcol_.*spans(_total)?|otelcol_exporter_queue_(size|capacity)|process_start_time_seconds|process_resident_memory_bytes', action: keep}
         sample_limit: 1000
       - job_name: apm-tempo
         static_configs: [{targets: ['v3-tempo:3200']}]
         metric_relabel_configs:
-          - {source_labels: [__name__], regex: 'tempo_distributor_.*|tempo_live_store_.*|process_resident_memory_bytes', action: keep}
+          - {source_labels: [__name__], regex: 'tempo_distributor_.*|tempo_live_store_.*|tempo_discarded_(spans|bytes)_total|tempo_receiver_.*|process_start_time_seconds|process_resident_memory_bytes', action: keep}
         sample_limit: 1000
 {{- end }}
 {{- if .Values.autoscalingMetricsEnabled }}
@@ -38,6 +38,9 @@ data:
 {{ .Files.Get "files/alerts.yaml" | indent 4 }}
 {{- if .Values.outboxEnabled }}
 {{ (regexReplaceAll "^groups:\n" (.Files.Get "files/outbox-alerts.yaml") "") | indent 4 }}
+{{- end }}
+{{- if .Values.apmEnabled }}
+{{ (regexReplaceAll "^groups:\n" (.Files.Get "files/apm-alerts.yaml") "") | indent 4 }}
 {{- end }}
   outbox.sql: |
 {{ .Files.Get "files/outbox.sql" | indent 4 }}
@@ -80,6 +83,10 @@ data:
 {{ .Files.Get "files/dashboard-provider.yaml" | indent 4 }}
   operations.json: |
 {{ .Files.Get "files/operations.json" | indent 4 }}
+{{- if .Values.apmEnabled }}
+  apm.json: |
+{{ .Files.Get "files/apm.json" | indent 4 }}
+{{- end }}
 {{- end }}
 
 {{- if and .Values.enabled .Values.outboxEnabled }}

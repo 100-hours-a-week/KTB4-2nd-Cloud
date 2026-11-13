@@ -100,6 +100,9 @@ spec:
             - {name: config, mountPath: /etc/grafana/provisioning/datasources/default.yaml, subPath: datasource.yaml, readOnly: true}
             - {name: config, mountPath: /etc/grafana/provisioning/dashboards/default.yaml, subPath: dashboard-provider.yaml, readOnly: true}
             - {name: config, mountPath: /etc/grafana/dashboards/operations.json, subPath: operations.json, readOnly: true}
+{{- if $.Values.apmEnabled }}
+            - {name: config, mountPath: /etc/grafana/dashboards/apm.json, subPath: apm.json, readOnly: true}
+{{- end }}
 {{- else if eq $name "kube-state-metrics" }}
           args:
             - --resources=pods,nodes,deployments,statefulsets,daemonsets

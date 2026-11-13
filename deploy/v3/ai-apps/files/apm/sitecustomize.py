@@ -20,9 +20,10 @@ if os.environ.get("YEODAM_APM_ENABLED") == "true" and not _skip:
             "service.name": os.environ["OTEL_SERVICE_NAME"], "service.namespace": "ai",
             "service.version": os.environ["OTEL_SERVICE_VERSION"], "deployment.environment.name": "production",
         }), sampler=ParentBased(TraceIdRatioBased(0.01)))
+        reliable = os.environ.get('YEODAM_APM_RELIABILITY_ENABLED') == 'true'
         provider.add_span_processor(BatchSpanProcessor(
             OTLPSpanExporter(endpoint=os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"]+"/v1/traces", timeout=1),
-            max_queue_size=128, max_export_batch_size=32, schedule_delay_millis=1000, export_timeout_millis=1000))
+            max_queue_size=256 if reliable else 128, max_export_batch_size=64 if reliable else 32, schedule_delay_millis=200 if reliable else 1000, export_timeout_millis=1000))
         trace.set_tracer_provider(provider)
         set_global_textmap(TraceContextTextMapPropagator())
         FastAPIInstrumentor().instrument(excluded_urls=r".*/(health|metrics)(?:\?.*)?$")

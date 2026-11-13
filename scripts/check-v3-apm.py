@@ -28,7 +28,13 @@ def validate(docs):
     cfg=next(x for x in docs if x['kind']=='ConfigMap')['data']
     require(cfg['config.alloy']==(CHART/'files/config.alloy').read_text(),'Reviewed sanitization pipeline only')
     tempo=yaml.safe_load(cfg['tempo.yaml'])
-    require(tempo['overrides']['defaults']['compaction']['block_retention']=='24h' and tempo['overrides']['defaults']['ingestion']['rate_limit_bytes']==4096,'Short retention and strict ingestion budget')
+    require(tempo['overrides']['defaults']['compaction']['block_retention']=='24h' and tempo['overrides']['defaults']['ingestion']['rate_limit_bytes']==16384,'Short retention and strict ingestion budget')
+    budget=json.loads((CHART/'budget.json').read_text())
+    ingestion=tempo['overrides']['defaults']['ingestion']
+    require(ingestion['burst_size_bytes']==budget['tempoBurstBytes'] and ingestion['max_traces_per_user']==budget['maxActiveTraces'], 'Bounded burst/active trace budget')
+    require(tempo['overrides']['defaults']['global']['max_bytes_per_trace']==budget['maxTraceBytes'], 'Reviewed finite trace size')
+    require(budget['workflows']*budget['maxWireBytesPerWorkflow']<=budget['alloyQueueBytes'] and budget['maxWireBytesPerWorkflow']<budget['maxTraceBytes'], 'Envelope must fit queue and per-trace cap')
+    require('sizer = "bytes"' in cfg['config.alloy'] and 'queue_size = '+str(budget['alloyQueueBytes']) in cfg['config.alloy'], 'Queue must be byte bounded')
     require(tempo['storage']['trace']['backend']=='local' and tempo['usage_report']['reporting_enabled'] is False,'No remote storage/account dependency')
     for chart in ['apps','ai-apps']:
         lock=json.loads((ROOT/f'deploy/v3/{chart}/files/apm.json').read_text())

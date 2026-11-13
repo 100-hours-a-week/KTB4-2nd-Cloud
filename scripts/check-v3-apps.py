@@ -70,6 +70,7 @@ def validate(documents, values):
     require(sum(bool(values.get(k)) for k in ['backendContract','websocketContract','frontendContract'])<=1, 'BE and WebSocket use separate release profiles')
     require(not values.get('backendConnectionContract') or values.get('backendContract'), 'Connections require the BE runtime contract')
     require(not values.get('frontendServiceOnly') or values.get('frontendContract'), 'Service-only bootstrap is FE-only')
+    require(not values.get('apmReliabilityEnabled') or (values.get('backendContract') and values.get('apmWorkloads')), 'Reliability profile requires instrumented BE roles')
     platform_values = platform.load_documents((ROOT / 'deploy/v3/platform/values.yaml').read_text())[0]
     accounts = platform.expected_accounts(platform_values)
     scaled = values.get('autoscaledWorkloads', [])
@@ -185,7 +186,7 @@ def validate(documents, values):
             require(key not in config['environment'], 'Literal and Secret environment entries must not overlap')
             expected_env.append({'name': key, 'valueFrom': {'secretKeyRef': {**secret, 'optional': False}}})
         if apm:
-            expected_env += apm_contract.java_env(name, config)
+            expected_env += apm_contract.java_env(name, config, values.get("apmReliabilityEnabled",False))
         require(container.get('env', []) == expected_env, 'Only explicit configuration and Secret references may be injected')
         refs = ([name + '-runtime'] if data else []) + config['configMapRefs']
         require(len(set(refs)) == len(refs), 'Do not import a ConfigMap twice')

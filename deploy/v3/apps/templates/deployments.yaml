@@ -193,10 +193,21 @@ spec:
             - {name: OTEL_PROPAGATORS, value: tracecontext}
             - {name: OTEL_METRICS_EXPORTER, value: none}
             - {name: OTEL_LOGS_EXPORTER, value: none}
+            {{- if $.Values.apmReliabilityEnabled }}
+            {{- if contains "opentelemetry" (lower $c.configMapData.MYSQL_URL) }}{{ fail "Native telemetry property is profile-owned" }}{{ end }}
+            - {name: OTEL_BSP_MAX_QUEUE_SIZE, value: {{ $apmConfig.reliability.javaQueue | quote }}}
+            - {name: OTEL_BSP_MAX_EXPORT_BATCH_SIZE, value: {{ $apmConfig.reliability.batch | quote }}}
+            - {name: OTEL_BSP_SCHEDULE_DELAY, value: {{ $apmConfig.reliability.delayMs | quote }}}
+            - {name: OTEL_EXPORTER_OTLP_TIMEOUT, value: {{ $apmConfig.reliability.javaTimeoutMs | quote }}}
+            - {name: MYSQL_URL, value: {{ printf "%s%sopenTelemetry=DISABLED" $c.configMapData.MYSQL_URL (ternary "&" "?" (contains "?" $c.configMapData.MYSQL_URL)) | quote }}}
+            - {name: OTEL_INSTRUMENTATION_HIBERNATE_ENABLED, value: 'false'}
+            - {name: OTEL_INSTRUMENTATION_SPRING_DATA_ENABLED, value: 'false'}
+            {{- else }}
             - {name: OTEL_BSP_MAX_QUEUE_SIZE, value: '128'}
             - {name: OTEL_BSP_MAX_EXPORT_BATCH_SIZE, value: '32'}
             - {name: OTEL_BSP_SCHEDULE_DELAY, value: '1000'}
             - {name: OTEL_EXPORTER_OTLP_TIMEOUT, value: '1000'}
+            {{- end }}
             {{- end }}
           {{- end }}
           startupProbe:

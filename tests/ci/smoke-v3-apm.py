@@ -29,7 +29,7 @@ try:
   run('javac','--release','17','-cp',str(lib/'*'),'-d',str(classes),str(r/'tests/ci/v3/apm/ApmFixture.java'))
  run('docker','network','create','--internal',prefix)
  for name,mem,go,ports,cmd in [('tempo','384m','256MiB',['3200'],['-target=all','-config.file=/etc/apm/tempo.yaml']),('alloy','128m','80MiB',['4318','12345'],['run','--server.http.listen-addr=0.0.0.0:12345','--storage.path=/var/alloy','--disable-reporting','/etc/apm/config.alloy'])]:
-  n=prefix+'-'+name;names.append(n);a=['docker','run','-d','--name',n,'--platform',PLATFORM,'--network',prefix,'-e','NO_PROXY=*','-e','no_proxy=*','--network-alias','v3-'+name+'.observability.svc','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--user','10001:10001','--memory',mem,'--cpus','.5','-e','GOMEMLIMIT='+go,'-e','GOGC=50','-v',str(r/'deploy/v3/apm/files')+':/etc/apm:ro','--tmpfs',('/var/tempo' if name=='tempo' else '/var/alloy')+':uid=10001,gid=10001,mode=0700']
+  n=prefix+'-'+name;names.append(n);a=['docker','run','-d','--name',n,'--platform',PLATFORM,'--network',prefix,'-e','NO_PROXY=*','-e','no_proxy=*','--network-alias','v3-'+name+'.observability.svc','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--user','10001:10001','--memory',mem,'--cpus',('.2' if name=='alloy' else '.5'),'-e','GOMEMLIMIT='+go,'-e','GOGC=50','-v',str(r/'deploy/v3/apm/files')+':/etc/apm:ro','--tmpfs',('/var/tempo' if name=='tempo' else '/var/alloy')+':uid=10001,gid=10001,mode=0700']
   run(*a,images[name],*cmd)
  if not SANITIZER_ONLY:
   components=json.loads((r/'deploy/v3/releases/candidate.json').read_text())['components']

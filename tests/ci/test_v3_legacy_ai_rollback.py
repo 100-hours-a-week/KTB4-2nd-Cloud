@@ -30,6 +30,15 @@ class Compatibility(unittest.TestCase):
         files=bundle.build(candidate(),self.legacy('prior-tourapi-ai-chart.fixture.json'),{'candidatePr':1,'cloudCommit':'a'*40,'cloudGateRunId':1})
         self.assertEqual(bundle.validate(files)['schemaVersion'],2)
 
+    def test_previous_reliability_chart_and_hook_are_hash_pinned(self):
+        charts=self.legacy('prior-reliability-ai-chart.fixture.json')
+        data=candidate();data['values']['ai']['apmWorkloads']=['api','runner']
+        files=bundle.build(data,charts,{'candidatePr':1,'cloudCommit':'a'*40,'cloudGateRunId':1})
+        self.assertEqual(bundle.validate(files)['schemaVersion'],2)
+        charts['charts/ai-apps/files/apm/sitecustomize.py']+=b'\n# unapproved hook\n'
+        with self.assertRaises(ValueError):
+            bundle.build(data,charts,{'candidatePr':1,'cloudCommit':'a'*40,'cloudGateRunId':1})
+
     def test_modified_legacy_runtime_is_not_accepted(self):
         for path in ['files/runtime/start-runner.py','files/contract.json','templates/resources.yaml']:
             charts=self.legacy();key='charts/ai-apps/'+path;charts[key]+=b'\n ' if path.endswith('.json') else b'\n# not the approved source\n'

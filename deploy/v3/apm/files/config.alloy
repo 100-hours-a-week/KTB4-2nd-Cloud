@@ -40,9 +40,9 @@ otelcol.processor.transform "sanitize" {
   output { traces = [otelcol.processor.batch.small.input] }
 }
 otelcol.processor.batch "small" {
-  timeout = "1s"
-  send_batch_size = 32
-  send_batch_max_size = 64
+  timeout = "200ms"
+  send_batch_size = 64
+  send_batch_max_size = 128
   output { traces = [otelcol.exporter.otlp.tempo.input] }
 }
 otelcol.exporter.otlp "tempo" {
@@ -52,8 +52,9 @@ otelcol.exporter.otlp "tempo" {
   }
   sending_queue {
     enabled = true
-    num_consumers = 1
-    queue_size = 16
+    num_consumers = 2
+    sizer = "bytes"
+    queue_size = 2097152
   }
   retry_on_failure {
     enabled = true

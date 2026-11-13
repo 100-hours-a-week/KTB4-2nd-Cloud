@@ -28,6 +28,15 @@ on:
       - 'scripts/*v3*ai*observability*'
       - 'tests/ci/*v3*ai*observability*'
       - 'scripts/check-v3-apm.py'
+      - 'scripts/prepare-v3-apm-reliability.py'
+      - 'scripts/v3_apm_evidence.py'
+      - 'scripts/v3_workflow_trace.py'
+      - 'scripts/inspect-v3-workflow-trace.py'
+      - 'tests/ci/test_v3_workflow_trace.py'
+      - 'tests/ci/test_v3_legacy_ai_rollback.py'
+      - 'tests/ci/test_v3_apm_reliability.py'
+      - 'tests/ci/smoke-v3-apm-capacity.py'
+      - 'tests/ci/smoke-v3-apm-workflow.py'
       - 'scripts/prepare-v3-apm-candidate.py'
       - 'scripts/v3_apm_contract.py'
       - 'tests/ci/test_v3_apm.py'
@@ -210,12 +219,16 @@ jobs:
   apm-runtime:
     name: APM pipeline and real image compatibility
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
+        with:
+          distribution: temurin
+          java-version: '25'
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
         with:
           registry: ghcr.io
@@ -225,6 +238,23 @@ jobs:
         run: python3 tests/ci/smoke-v3-apm.py
       - name: Verify AI reader compatibility and real Langfuse SDK without network
         run: python3 tests/ci/run-v3-ai-observability.py
+
+      - name: Verify production collector budgets and complete late spans
+        env:
+          V3_APM_RESULTS: ${{ runner.temp }}/apm-capacity
+        run: python3 tests/ci/smoke-v3-apm-capacity.py
+      - name: Verify production workflow boundaries and collector unavailability
+        env:
+          V3_APM_RESULTS: ${{ runner.temp }}/apm-workflow
+        run: python3 tests/ci/smoke-v3-apm-workflow.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: apm-synthetic-proof-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/apm-capacity
+            ${{ runner.temp }}/apm-workflow
+          retention-days: 7
 
   converter-scaling:
     name: Converter two-partition ownership and shutdown
