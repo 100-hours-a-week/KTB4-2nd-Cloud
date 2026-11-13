@@ -37,110 +37,110 @@ tests:
       - eval_time: 0s
         alertname: V3CdcTaskFailed
         exp_alerts: []
-- name: terminal-receipt-residue-is-not-active-cdc-stall
-  interval: 15s
-  input_series:
-  - &id002
-    series: yeodam_outbox_probe_success
-    values: 1+0x12
-  - &id003
-    series: yeodam_outbox_last_success_timestamp_seconds
-    values: 0+15x12
-  - series: yeodam_outbox_oldest_pending_age_seconds{outbox="attachment_conversion_outbox"}
-    values: 86400+15x12
-  - series: yeodam_conversion_outbox_oldest_pending_age_seconds{category="succeeded"}
-    values: 86400+15x12
-  - series: yeodam_conversion_outbox_oldest_pending_age_seconds{category="active"}
-    values: 0+0x12
-  alert_rule_test:
-  - eval_time: 75s
-    alertname: V3ConversionDeliveryStalled
-    exp_alerts: &id001 []
-  - eval_time: 75s
-    alertname: V3OutboxPendingTooOld
-    exp_alerts: *id001
-  - eval_time: 75s
-    alertname: V3ConversionOutboxResidue
-    exp_alerts:
-    - exp_labels:
-        category: succeeded
-        severity: warning
-      exp_annotations:
-        summary: Terminal conversion task retains an unconfirmed receipt; inspect
-          consistency, not active CDC recovery
-- name: running-task-stalls-and-recovers-by-real-publication
-  interval: 15s
-  input_series:
-  - *id002
-  - *id003
-  - series: yeodam_cdc_task_state{connector="yeodam-v3-outbox",task="0",state="RUNNING"}
-    values: 1+0x12
-  - series: yeodam_conversion_outbox_oldest_pending_age_seconds{category="active"}
-    values: 0 15 30 45 60 0+0x7
-  alert_rule_test:
-  - eval_time: 45s
-    alertname: V3ConversionDeliveryStalled
-    exp_alerts: *id001
-  - eval_time: 60s
-    alertname: V3ConversionDeliveryStalled
-    exp_alerts:
-    - exp_labels:
-        category: active
-        severity: warning
-      exp_annotations:
-        summary: Active conversion work has unconfirmed publication older than provisional
-          30s threshold
-  - eval_time: 90s
-    alertname: V3ConversionDeliveryStalled
-    exp_alerts: *id001
-- name: orphan-or-unrecognized-task-cannot-disappear
-  interval: 15s
-  input_series:
-  - *id002
-  - *id003
-  - series: yeodam_conversion_outbox_pending{category="unknown"}
-    values: 1+0x12
-  alert_rule_test:
-  - eval_time: 15s
-    alertname: V3ConversionOutboxUnknownTask
-    exp_alerts:
-    - exp_labels:
-        category: unknown
-        severity: warning
-      exp_annotations:
-        summary: Unconfirmed conversion receipt has missing or unknown task state;
-          do not infer healthy
-- name: failed-observation-is-unknown-not-business-recovery
-  interval: 15s
-  input_series:
-  - series: yeodam_outbox_probe_success
-    values: 0+0x12
-  - series: yeodam_outbox_last_success_timestamp_seconds
-    values: 0+15x12
-  - series: yeodam_conversion_outbox_oldest_pending_age_seconds{category="active"}
-    values: 900+15x12
-  alert_rule_test:
-  - eval_time: 60s
-    alertname: V3ConversionDeliveryStalled
-    exp_alerts: *id001
-  - eval_time: 60s
-    alertname: V3OutboxObservationUnavailable
-    exp_alerts:
-    - exp_labels:
-        severity: warning
-      exp_annotations:
-        summary: Outbox observation missing or stale; recovery cannot be inferred
-- name: capped-count-is-incomplete-not-exact
-  interval: 15s
-  input_series:
-  - series: yeodam_outbox_count_capped{outbox="attachment_conversion_outbox"}
-    values: '1'
-  alert_rule_test:
-  - eval_time: 0s
-    alertname: V3OutboxCountCapped
-    exp_alerts:
-    - exp_labels:
-        outbox: attachment_conversion_outbox
-        severity: warning
-      exp_annotations:
-        summary: Outbox count is a lower bound at 10001; do not report an exact backlog
+  - name: terminal-receipt-residue-is-not-active-cdc-stall
+    interval: 15s
+    input_series:
+    - &id002
+      series: yeodam_outbox_probe_success
+      values: 1+0x12
+    - &id003
+      series: yeodam_outbox_last_success_timestamp_seconds
+      values: 0+15x12
+    - series: yeodam_outbox_oldest_pending_age_seconds{outbox="attachment_conversion_outbox"}
+      values: 86400+15x12
+    - series: yeodam_conversion_outbox_oldest_pending_age_seconds{category="succeeded"}
+      values: 86400+15x12
+    - series: yeodam_conversion_outbox_oldest_pending_age_seconds{category="active"}
+      values: 0+0x12
+    alert_rule_test:
+    - eval_time: 75s
+      alertname: V3ConversionDeliveryStalled
+      exp_alerts: &id001 []
+    - eval_time: 75s
+      alertname: V3OutboxPendingTooOld
+      exp_alerts: *id001
+    - eval_time: 75s
+      alertname: V3ConversionOutboxResidue
+      exp_alerts:
+      - exp_labels:
+          category: succeeded
+          severity: warning
+        exp_annotations:
+          summary: Terminal conversion task retains an unconfirmed receipt; inspect
+            consistency, not active CDC recovery
+  - name: running-task-stalls-and-recovers-by-real-publication
+    interval: 15s
+    input_series:
+    - *id002
+    - *id003
+    - series: yeodam_cdc_task_state{connector="yeodam-v3-outbox",task="0",state="RUNNING"}
+      values: 1+0x12
+    - series: yeodam_conversion_outbox_oldest_pending_age_seconds{category="active"}
+      values: 0 15 30 45 60 0+0x7
+    alert_rule_test:
+    - eval_time: 45s
+      alertname: V3ConversionDeliveryStalled
+      exp_alerts: *id001
+    - eval_time: 60s
+      alertname: V3ConversionDeliveryStalled
+      exp_alerts:
+      - exp_labels:
+          category: active
+          severity: warning
+        exp_annotations:
+          summary: Active conversion work has unconfirmed publication older than provisional
+            30s threshold
+    - eval_time: 90s
+      alertname: V3ConversionDeliveryStalled
+      exp_alerts: *id001
+  - name: orphan-or-unrecognized-task-cannot-disappear
+    interval: 15s
+    input_series:
+    - *id002
+    - *id003
+    - series: yeodam_conversion_outbox_pending{category="unknown"}
+      values: 1+0x12
+    alert_rule_test:
+    - eval_time: 15s
+      alertname: V3ConversionOutboxUnknownTask
+      exp_alerts:
+      - exp_labels:
+          category: unknown
+          severity: warning
+        exp_annotations:
+          summary: Unconfirmed conversion receipt has missing or unknown task state;
+            do not infer healthy
+  - name: failed-observation-is-unknown-not-business-recovery
+    interval: 15s
+    input_series:
+    - series: yeodam_outbox_probe_success
+      values: 0+0x12
+    - series: yeodam_outbox_last_success_timestamp_seconds
+      values: 0+15x12
+    - series: yeodam_conversion_outbox_oldest_pending_age_seconds{category="active"}
+      values: 900+15x12
+    alert_rule_test:
+    - eval_time: 60s
+      alertname: V3ConversionDeliveryStalled
+      exp_alerts: *id001
+    - eval_time: 60s
+      alertname: V3OutboxObservationUnavailable
+      exp_alerts:
+      - exp_labels:
+          severity: warning
+        exp_annotations:
+          summary: Outbox observation missing or stale; recovery cannot be inferred
+  - name: capped-count-is-incomplete-not-exact
+    interval: 15s
+    input_series:
+    - series: yeodam_outbox_count_capped{outbox="attachment_conversion_outbox"}
+      values: '1'
+    alert_rule_test:
+    - eval_time: 0s
+      alertname: V3OutboxCountCapped
+      exp_alerts:
+      - exp_labels:
+          outbox: attachment_conversion_outbox
+          severity: warning
+        exp_annotations:
+          summary: Outbox count is a lower bound at 10001; do not report an exact backlog
