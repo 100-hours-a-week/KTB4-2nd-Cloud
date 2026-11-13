@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only, bounded experiment evidence. No traffic/faults, AWS calls or GPU APIs."""
+"""Read-only bounded evidence. No traffic/faults or lifecycle changes; optional exact-ID AWS describe."""
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -13,6 +13,8 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import v3_scaling_evidence as scaling
 
 APPS = {'frontend': 'frontend', 'auth-api': 'auth', 'trip-api': 'trip',
         'photo-api': 'photo', 'photo-converter': 'photo',
@@ -40,8 +42,15 @@ RANGE = {
     'cdc_connector': 'yeodam_cdc_connector_state',
     'cdc_task': 'yeodam_cdc_task_state',
     'cdc_task_present': 'yeodam_cdc_expected_task_present',
+    'outbox_probe': 'yeodam_outbox_probe_success',
+    'outbox_sample_age_seconds': 'time() - yeodam_outbox_last_success_timestamp_seconds',
+    'outbox_pending_raw': 'yeodam_outbox_pending',
+    'outbox_pending_age_raw_seconds': 'yeodam_outbox_oldest_pending_age_seconds',
+    'outbox_count_capped': 'yeodam_outbox_count_capped',
+    'conversion_lag': 'keda_scaler_metrics_value{scaledObject="photo-converter"}',
 }
-LABELS = {'job', 'namespace', 'deployment', 'workload', 'operation', 'status', 'phase', 'state', 'task', 'connector'}
+LABELS = {'job', 'namespace', 'deployment', 'workload', 'operation', 'status', 'phase', 'state', 'task', 'connector',
+          'outbox','scaledObject','metric','scaler','scalerIndex'}
 
 
 def utc(ts):
@@ -71,7 +80,7 @@ def kube_json(kubeconfig, *args):
     return json.loads(p.stdout)
 
 
-def snapshot(kubeconfig):
+def snapshot(kubeconfig, include_scaling=False):
     docs = kube_json(kubeconfig, 'get', 'deployments', '-A')['items']
     apps = []
     for d in docs:
@@ -95,10 +104,14 @@ def snapshot(kubeconfig):
     for node in nodes:
         label = node['metadata'].get('labels', {}).get('node.kubernetes.io/instance-type', 'unknown')
         capacity[label] = capacity.get(label, 0) + 1
-    return {'nodeTypes': capacity, 'capturedAt': utc(datetime.now(timezone.utc).timestamp()),
+    result = {'nodeTypes': capacity, 'capturedAt': utc(datetime.now(timezone.utc).timestamp()),
             'apps': sorted(apps, key=lambda x: x['name']),
             'approvedRevision': revision,
             'source': 'current observation only; not historical configuration proof'}
+    if include_scaling:
+        result['scalingPolicies']=scaling.policies(lambda *args:kube_json(kubeconfig,*args))
+        result['clusterUid']=scaling.CLUSTER_UID
+    return result
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -213,6 +226,10 @@ def markdown(result):
              f"- 구간: {result['start']} ~ {result['end']} (UTC)",
              f"- 수집 상태: {result['collectionStatus']}",
              f"- 실험 전후 설정 일치: {result['conditionsMatch']}",
+             f"- 이미지·앱 설정 일치: {result['conditionsComparison']['appConfigurationMatch']}",
+             f"- 자동 확장 정책 일치: {result['conditionsComparison']['scalingPolicyMatch']} (미수집 시 null)",
+             f"- Pod 수 변화: {result['conditionsComparison']['replicaChanges']}",
+             f"- Node 종류별 수 변화: {result['conditionsComparison']['nodeTypesChanged']}",
              '- 업무 성공/누락/중복/복구 목표 판정: 미수행. 별도 업무 결과 대조 및 합의 필요.',
              '', '| 전체 구간 지표 | 상태 | 시계열 수 |', '| --- | --- | --- |']
     for name, data in result['wholeWindow'].items():
@@ -234,6 +251,9 @@ def markdown(result):
               '- NaN/Inf는 null, 빈 결과는 missing, 조회 오류는 query_failed. 정상 0으로 대체하지 않음.',
               '- 표본 기준은 기본 미정. minSamples가 명시된 경우에만 해당 기준 미달을 표시하며 SLO 통과와 구분.',
               '- 설정은 시작 전과 수집 시점 관찰값. 중간 변경/과거 상태 일치를 보장하지 않음.',
+              '- 엄격한 시작/끝 일치와 정적 설정 일치를 구분. Pod/Node 변화 자체를 승인된 확장 성공으로 판정하지 않음.',
+              '- Outbox 원시 PENDING 집계는 시험 작업 전용/활성 작업 수가 아님. 성공 작업의 발행 확인 잔여가 포함될 수 있음.',
+              '- Outbox probe·표본 나이·count_capped를 함께 확인. Kafka lag=0만으로 상류 작업 없음 판정 금지.',
               '- 샘플 간 탐지/복구 시각과 업무 손실/중복을 자동 추정하지 않음.',
               '- AI total은 AI 측 구간이며 BE 요청부터 최종 DB 반영까지의 시간이 아님.']
     return '\n'.join(lines)
@@ -249,18 +269,20 @@ def collect(args):
     before_raw = Path(args.conditions).read_bytes(); before = json.loads(before_raw)
     if timestamp(before['capturedAt']) > start:
         raise ValueError('Conditions snapshot must precede collection window')
-    after = snapshot(args.kubeconfig)
+    after = snapshot(args.kubeconfig, include_scaling=True) if 'scalingPolicies'in before else snapshot(args.kubeconfig)
+    input_identity=scaling.input_summary(getattr(args,'input_manifest',None))
     client = Prometheus(args.prometheus)
     out = Path(args.output)
     out.mkdir(mode=0o700, parents=True, exist_ok=False)
     ranges = {k: dict(client.query(v, start, end, 30), expression=v) for k, v in RANGE.items()}
     whole = annotate_samples(counts_and_percentiles(client, start, end), args.min_samples)
     status = 'complete' if all(x['status']=='ok' for x in [*ranges.values(), *whole.values()]) else 'partial'
-    result = {'schemaVersion': 1, 'experimentId': args.experiment_id, 'start': utc(start), 'end': utc(end),
+    result = {'schemaVersion': 2, 'experimentId': args.experiment_id, 'start': utc(start), 'end': utc(end),
               'capturedAt': utc(datetime.now(timezone.utc).timestamp()), 'stepSeconds': 30,
               'collectionStatus': status, 'minSamples': args.min_samples, 'events': events, 'conditionsBefore': before,
               'conditionsAfter': after, 'conditionsSha256': hashlib.sha256(before_raw).hexdigest(),
               'conditionsMatch': all(before[k]==after[k] for k in ['apps', 'nodeTypes', 'approvedRevision']),
+              'conditionsComparison':scaling.compare_conditions(before,after),'input':input_identity,
               'wholeWindow': whole, 'ranges': ranges, 'verdict': 'not_assessed'}
     save(out/'result.json', result); save(out/'summary.md', markdown(result))
     print(json.dumps({'collectionStatus': status, 'conditionsMatch': result['conditionsMatch'],
@@ -273,19 +295,35 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     snap = commands.add_parser('snapshot'); snap.add_argument('--kubeconfig', required=True); snap.add_argument('--output', required=True)
+    snap.add_argument('--include-scaling',action='store_true',help='Read fixed HPA/KEDA and api/worker pool policy hashes')
     c = commands.add_parser('collect')
     for name in ['kubeconfig', 'conditions', 'start', 'end', 'output', 'experiment-id', 'prometheus']:
         c.add_argument('--'+name, required=True)
     c.add_argument('--events')
     c.add_argument('--min-samples', type=int, help='Optional agreed sample threshold; no default adequacy claim')
+    c.add_argument('--input-manifest',help='Private JPEG manifest; export only aggregate identity')
+    inp=commands.add_parser('input-manifest',help='Hash an explicit JPEG selection locally; no upload or EXIF export')
+    inp.add_argument('--root',required=True);inp.add_argument('--selection',required=True);inp.add_argument('--inspection');inp.add_argument('--expected-count',type=int,default=20);inp.add_argument('--output',required=True)
+    watch=commands.add_parser('observe-scaling',help='Read converter/HPA/worker lifecycle only; never generate load or mutate resources')
+    watch.add_argument('--kubeconfig',required=True);watch.add_argument('--experiment-id',required=True);watch.add_argument('--duration-seconds',type=int,required=True);watch.add_argument('--interval-seconds',type=int,default=15);watch.add_argument('--input-manifest');watch.add_argument('--output',required=True)
+    verify=commands.add_parser('verify-node-release',help='Optional AWS describe of removed new worker IDs only; no lifecycle commands')
+    verify.add_argument('--observation',required=True);verify.add_argument('--output',required=True)
     args = parser.parse_args()
     try:
         if args.command=='snapshot':
-            save(Path(args.output), snapshot(args.kubeconfig)); return 0
+            save(Path(args.output), snapshot(args.kubeconfig,args.include_scaling)); return 0
+        if args.command=='input-manifest':
+            data=scaling.input_manifest(args.root,args.selection,args.inspection,args.expected_count);scaling.save(args.output,data)
+            print(json.dumps(scaling.input_summary(args.output)));return 0
+        if args.command=='observe-scaling':
+            result=scaling.observe(lambda *items:kube_json(args.kubeconfig,*items),args.output,args.experiment_id,args.duration_seconds,args.interval_seconds,scaling.input_summary(args.input_manifest))
+            print(json.dumps({k:result[k]for k in ['collectionStatus','sampleCount','oneTwoOneObserved','twoReadyOnDistinctNodesObserved','observationGaps','policyOrRevisionChanged','ec2TerminationVerified','verdict']}));return 0 if result['collectionStatus']=='complete'else 2
+        if args.command=='verify-node-release':
+            result=scaling.verify_node_release(args.observation);scaling.save(args.output,result);print(json.dumps(result));return 0 if result.get('allRecordedCandidatesTerminated')is True else 2
         if args.min_samples is not None and args.min_samples < 1:
             raise ValueError('Sample threshold must be positive')
         return collect(args)
-    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         print('Evidence collection rejected; check inputs/access. No raw diagnostic exported.', file=sys.stderr)
         return 2
 

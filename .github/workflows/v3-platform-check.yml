@@ -33,6 +33,8 @@ on:
       - 'tests/ci/test_v3_apm.py'
       - 'tests/ci/smoke-v3-apm.py'
       - 'scripts/collect-v3-experiment.py'
+      - 'scripts/v3_scaling_evidence.py'
+      - 'tests/ci/test_v3_scaling_evidence.py'
       - 'scripts/*v3*cdc*fault*'
       - 'scripts/v3_chaos_install.py'
       - 'tests/ci/test_v3_cdc_fault.py'

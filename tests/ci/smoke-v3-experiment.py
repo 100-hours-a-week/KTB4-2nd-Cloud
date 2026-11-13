@@ -38,6 +38,18 @@ checks=[
 ]
 # Reset-aware increase is an estimate, not an exact DB count.
 series.append({'series':'http_server_requests_seconds_count{job="backend",workload="photo-api",uri="/api/photos",status="200"}','values':'0+1x9 0+1x10'})
+series.extend([
+ {'series':'yeodam_outbox_probe_success','values':'1+0x19 0'},
+ {'series':'yeodam_outbox_pending{outbox="photo"}','values':'8+0x20'},
+ {'series':'yeodam_outbox_count_capped{outbox="photo"}','values':'0+0x20'},
+ *[{'series':f'keda_scaler_metrics_value{{scaledObject="photo-converter",scalerIndex="{i}",metric="lane{i}"}}','values':'0+0x20'}for i in range(4)],
+])
+checks.extend([
+ {'expr':e.RANGE['outbox_probe'],'eval_time':'10m','exp_samples':[{'labels':'yeodam_outbox_probe_success','value':0}]},
+ {'expr':e.RANGE['outbox_pending_raw'],'eval_time':'10m','exp_samples':[{'labels':'yeodam_outbox_pending{outbox="photo"}','value':8}]},
+ {'expr':e.RANGE['outbox_count_capped'],'eval_time':'10m','exp_samples':[{'labels':'yeodam_outbox_count_capped{outbox="photo"}','value':0}]},
+ {'expr':e.RANGE['conversion_lag'],'eval_time':'10m','exp_samples':[{'labels':f'keda_scaler_metrics_value{{scaledObject="photo-converter",scalerIndex="{i}",metric="lane{i}"}}','value':0}for i in range(4)]},
+])
 # Keep reset measurement separate so trip-only expected samples stay exact.
 checks[0]['exp_samples'].append({'labels':'{workload="photo-api"}','value':18.94736842105263})
 checks[1]['exp_samples'].append({'labels':'{workload="photo-api"}','value':0})
@@ -47,4 +59,4 @@ with tempfile.TemporaryDirectory(prefix='645-promql-') as d:
     target='linux/arm64' if platform.system()=='Darwin' and platform.machine()=='arm64' else 'linux/amd64'
     command=['docker','run','--rm','--platform',target,'--network','none','--user',str(os.getuid())+':'+str(os.getgid()),'--read-only','--tmpfs','/tmp:size=32m,mode=1777','--cap-drop','ALL','--memory','128m','--cpus','.5','-v',str(p)+':/fixture:ro','-w','/fixture','--entrypoint','/bin/promtool',image,'test','rules','test.yaml']
     subprocess.run(command,check=True,timeout=60)
-print(json.dumps({'passed':True,'querySyntax':len(rules['groups'][0]['rules']),'checks':['health excluded','zero errors with traffic','whole-window histogram p95','shared AI queue not summed twice','missing CDC unknown','counter reset estimate'],'aws':False}))
+print(json.dumps({'passed':True,'querySyntax':len(rules['groups'][0]['rules']),'checks':['health excluded','zero errors with traffic','whole-window histogram p95','shared AI queue not summed twice','missing CDC unknown','counter reset estimate','Outbox backlog and four zero-lag lanes coexist','failed Outbox probe preserved separately from raw count','count cap retained'],'aws':False}))
