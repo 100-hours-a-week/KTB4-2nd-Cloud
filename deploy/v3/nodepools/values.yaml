@@ -18,3 +18,9 @@ pools:
     instanceType: t3a.medium
     cpuLimit: '4'
     memoryLimit: 8Gi
+
+# Explicit opt-in only; changes future Worker claims, never the API class.
+workerStartupBurst:
+  enabled: false
+  nodeClassName: yeodam-v3-worker
+  seconds: 600

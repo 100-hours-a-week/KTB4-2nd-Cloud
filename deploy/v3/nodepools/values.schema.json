@@ -103,12 +103,33 @@
         "api",
         "worker"
       ]
+    },
+    "workerStartupBurst": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "nodeClassName": {
+          "const": "yeodam-v3-worker"
+        },
+        "seconds": {
+          "const": 600
+        }
+      },
+      "required": [
+        "enabled",
+        "nodeClassName",
+        "seconds"
+      ]
     }
   },
   "required": [
     "enabled",
     "creditBootstrapReady",
     "nodeClass",
-    "pools"
+    "pools",
+    "workerStartupBurst"
   ]
 }

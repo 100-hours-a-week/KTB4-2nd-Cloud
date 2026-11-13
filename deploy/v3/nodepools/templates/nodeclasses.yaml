@@ -4,10 +4,17 @@
 {{- $_ := required "Pin a reviewed AL2023 x86_64 AMI" $c.amiId }}
 {{- $_ := required "Use the existing V3 security group" $c.securityGroupId }}
 {{- range $az, $id := $c.subnetIds }}{{- $_ := required (printf "Private subnet required for %s" $az) $id }}{{- end }}
+{{- $names := list $c.name }}
+{{- if .Values.workerStartupBurst.enabled }}{{ $names = append $names .Values.workerStartupBurst.nodeClassName }}{{ end }}
+{{- range $name := $names }}
+---
 apiVersion: karpenter.k8s.aws/v1
 kind: EC2NodeClass
 metadata:
-  name: {{ $c.name }}
+  name: {{ $name }}
+{{- if eq $name $.Values.workerStartupBurst.nodeClassName }}
+  annotations: {helm.sh/resource-policy: keep}
+{{- end }}
   labels: {app.kubernetes.io/part-of: yeodam, yeodam.io/stage: v3}
 spec:
   amiFamily: AL2023
@@ -55,15 +62,35 @@ spec:
     umask 077
     install -d /etc/systemd/system/kubelet.service.d
     cat > /etc/systemd/system/kubelet.service.d/20-yeodam-credit.conf <<'CREDIT_GATE'
-{{ .Files.Get "files/kubelet-credit-gate.conf" | indent 4 }}
+{{ $.Files.Get "files/kubelet-credit-gate.conf" | indent 4 }}
     CREDIT_GATE
     cat > /etc/systemd/system/yeodam-cpu-credit-standard.service <<'CREDIT_UNIT'
-{{ .Files.Get "files/cpu-credit-standard.service" | indent 4 }}
+{{ $.Files.Get "files/cpu-credit-standard.service" | indent 4 }}
     CREDIT_UNIT
     cat > /usr/local/sbin/yeodam-cpu-credit-standard <<'CREDIT_SCRIPT'
-{{ .Files.Get "files/cpu-credit-standard.sh" | indent 4 }}
+{{ $.Files.Get "files/cpu-credit-standard.sh" | indent 4 }}
     CREDIT_SCRIPT
     chmod 0700 /usr/local/sbin/yeodam-cpu-credit-standard
     systemctl daemon-reload
+{{- if eq $name $.Values.workerStartupBurst.nodeClassName }}
+    cat > /etc/systemd/system/kubelet.service.d/20-yeodam-credit.conf <<'WORKER_GATE'
+{{ $.Files.Get "files/kubelet-worker-credit-gate.conf" | indent 4 }}
+    WORKER_GATE
+    cat > /usr/local/sbin/yeodam-worker-credit <<'WORKER_SCRIPT'
+{{ $.Files.Get "files/worker-credit.sh" | indent 4 }}
+    WORKER_SCRIPT
+    cat > /etc/systemd/system/yeodam-worker-credit.service <<'WORKER_UNIT'
+{{ $.Files.Get "files/worker-credit.service" | indent 4 }}
+    WORKER_UNIT
+    cat > /etc/systemd/system/yeodam-worker-credit-restore.service <<'RESTORE_UNIT'
+{{ $.Files.Get "files/worker-credit-restore.service" | indent 4 }}
+    RESTORE_UNIT
+    cat > /etc/systemd/system/yeodam-worker-credit-restore.timer <<'RESTORE_TIMER'
+{{ $.Files.Get "files/worker-credit-restore.timer" | indent 4 }}
+    RESTORE_TIMER
+    chmod 0700 /usr/local/sbin/yeodam-worker-credit
+    systemctl daemon-reload
+{{- end }}
     --YEODAM-CPU-CREDIT--
+{{- end }}
 {{- end }}

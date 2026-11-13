@@ -16,7 +16,7 @@ spec:
       nodeClassRef:
         group: karpenter.k8s.aws
         kind: EC2NodeClass
-        name: {{ $.Values.nodeClass.name }}
+        name: {{ if and (eq $role "worker") $.Values.workerStartupBurst.enabled }}{{ $.Values.workerStartupBurst.nodeClassName }}{{ else }}{{ $.Values.nodeClass.name }}{{ end }}
       taints:
         - key: yeodam.io/role
           value: {{ $role }}

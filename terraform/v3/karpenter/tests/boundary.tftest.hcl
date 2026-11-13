@@ -100,7 +100,7 @@ run "app_class_empty_pool_validation_opt_in" {
       aws_iam_role_policy_attachment.nodeclass_validation[0].policy_arn == aws_iam_policy.nodeclass_validation[0].arn &&
       alltrue([for st in slice(jsondecode(aws_iam_policy.nodeclass_validation[0].policy).Statement, 0, 5) : (
         try(st.Condition.StringEquals["aws:RequestTag/karpenter.sh/nodepool"], st.Condition.StringEquals["aws:ResourceTag/karpenter.sh/nodepool"]) == "" &&
-        try(st.Condition.StringEquals["aws:RequestTag/karpenter.k8s.aws/ec2nodeclass"], st.Condition.StringEquals["aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass"]) == "yeodam-v3-app"
+        toset(try(st.Condition.StringEquals["aws:RequestTag/karpenter.k8s.aws/ec2nodeclass"], st.Condition.StringEquals["aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass"])) == toset(["yeodam-v3-app", "yeodam-v3-worker"])
       )]) &&
       jsondecode(aws_iam_policy.nodeclass_validation[0].policy).Statement[5].Action == "iam:GetInstanceProfile" &&
       jsondecode(aws_iam_policy.nodeclass_validation[0].policy).Statement[5].Resource == "arn:aws:iam::483175530259:instance-profile/yeodam-v3-foundation_7668371896316790615" &&
