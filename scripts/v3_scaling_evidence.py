@@ -225,6 +225,7 @@ def summarize(rows):
             j=sequence.index(2,i+1);path=path or 1 in sequence[j+1:]
     return {'events':events,'readyReplicaSequence':sequence,'oneTwoOneObserved':path,'continuousOneTwoOneObserved':path and not has_gap and not policy_changed,'twoReadyOnDistinctNodesObserved':distinct,
             'observationGaps':has_gap,'policyOrRevisionChanged':policy_changed,'removedNewWorkerInstanceIds':sorted(seen-baseline-last),
+            'remainingNewWorkerInstanceIds':sorted((seen-baseline)&last),
             'ec2TerminationVerified':False,'businessCompletionVerified':False,'verdict':'not_assessed'}
 
 
@@ -256,7 +257,8 @@ def verify_node_release(observation, run=subprocess.run):
     raw=raw_path.read_bytes();require(hashlib.sha256(raw).hexdigest()==meta['samplesSha256'],'Raw observation changed')
     facts=summarize([json.loads(x)for x in raw.splitlines()]);ids=facts['removedNewWorkerInstanceIds']
     require(len(ids)<=4 and all(re.fullmatch('i-[a-f0-9]{17}',x)for x in ids),'Unexpected instance scope')
-    if not ids:return {'observedAt':utc(),'instanceStates':{},'allRecordedCandidatesTerminated':None,'status':'no_removed_new_worker_observed'}
+    remaining=facts['remainingNewWorkerInstanceIds']
+    if not ids:return {'observedAt':utc(),'instanceStates':{},'remainingNewWorkerInstanceIds':remaining,'allRecordedCandidatesTerminated':None,'allNewWorkersTerminated':None,'status':'no_removed_new_worker_observed'}
     def aws(args):
         p=run(['aws','--profile','yeodam-admin','--region','ap-northeast-2',*args,'--output','json'],capture_output=True,text=True,timeout=25)
         require(p.returncode==0,'Read-only AWS verification unavailable');return json.loads(p.stdout)
@@ -266,5 +268,7 @@ def verify_node_release(observation, run=subprocess.run):
     for reservation in result.get('Reservations',[]):
         for inst in reservation['Instances']:
             require(inst['InstanceId']in ids,'Unexpected instance response');states[inst['InstanceId']]=inst['State']['Name']
-    return {'observedAt':utc(),'instanceStates':states,'allRecordedCandidatesTerminated':all(v=='terminated'for v in states.values()),
+    terminated=all(v=='terminated'for v in states.values())
+    return {'observedAt':utc(),'instanceStates':states,'remainingNewWorkerInstanceIds':remaining,
+            'allRecordedCandidatesTerminated':terminated,'allNewWorkersTerminated':terminated and not remaining,
             'status':'observed','exactTerminationTimeKnown':False,'lifecycleChanges':False}

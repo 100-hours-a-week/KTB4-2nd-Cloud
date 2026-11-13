@@ -319,7 +319,7 @@ def main():
             result=scaling.observe(lambda *items:kube_json(args.kubeconfig,*items),args.output,args.experiment_id,args.duration_seconds,args.interval_seconds,scaling.input_summary(args.input_manifest))
             print(json.dumps({k:result[k]for k in ['collectionStatus','sampleCount','oneTwoOneObserved','twoReadyOnDistinctNodesObserved','observationGaps','policyOrRevisionChanged','ec2TerminationVerified','verdict']}));return 0 if result['collectionStatus']=='complete'else 2
         if args.command=='verify-node-release':
-            result=scaling.verify_node_release(args.observation);scaling.save(args.output,result);print(json.dumps(result));return 0 if result.get('allRecordedCandidatesTerminated')is True else 2
+            result=scaling.verify_node_release(args.observation);scaling.save(args.output,result);print(json.dumps(result));return 0 if result.get('allNewWorkersTerminated')is True else 2
         if args.min_samples is not None and args.min_samples < 1:
             raise ValueError('Sample threshold must be positive')
         return collect(args)
