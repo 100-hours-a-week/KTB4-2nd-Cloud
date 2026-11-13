@@ -19,7 +19,7 @@ otelcol.processor.transform "sanitize" {
     context = "span"
     statements = [
       "delete_key(attributes, \"yeodam.boundary\")",
-      "set(attributes[\"yeodam.boundary\"], name) where IsMatch(name, \"^ai[.](receive|execute|publish)$\")",
+      "set(attributes[\"yeodam.boundary\"], name) where IsMatch(name, \"^(ai[.](receive|execute|publish)|photo[.]convert|trip[.](process[.]dispatch|result[.]apply))$\")",
       "keep_keys(attributes, [\"http.request.method\", \"http.response.status_code\", \"http.method\", \"http.status_code\", \"http.route\", \"db.system\", \"db.system.name\", \"db.operation.name\", \"error.type\", \"yeodam.operation\", \"yeodam.stage\", \"yeodam.result\", \"yeodam.boundary\"])",
       "delete_key(attributes, \"yeodam.operation\") where attributes[\"yeodam.operation\"] != nil and not IsMatch(attributes[\"yeodam.operation\"], \"^(process|story|parse|search)$\")",
       "delete_key(attributes, \"yeodam.stage\") where attributes[\"yeodam.stage\"] != nil and not IsMatch(attributes[\"yeodam.stage\"], \"^(downloading|embedding|clock|locating|clustering|filtering|finalizing|evaluate|filter|vectors|select|urls|place_notes|perceive|generate|validate|embed|retrieve|sign_url|parse|search|rewrite|selecting[.]filter|selecting[.]vectors|selecting[.]select|selecting[.]urls|writing[.]place_notes|writing[.]perceive|writing[.]generate|verifying[.]validate|finalizing[.]evaluate)$\")",
