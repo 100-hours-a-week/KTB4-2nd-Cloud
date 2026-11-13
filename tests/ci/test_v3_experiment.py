@@ -19,6 +19,12 @@ def series(value, **labels):
 
 
 class Evidence(unittest.TestCase):
+    def test_active_and_residual_evidence_are_collected_separately(self):
+        self.assertEqual(e.RANGE['outbox_pending_raw'],'yeodam_outbox_pending')
+        self.assertEqual(e.RANGE['conversion_outbox_by_state'],'yeodam_conversion_outbox_pending')
+        self.assertIn('conversion_outbox_classification_capped',e.RANGE)
+        self.assertIn('category',e.LABELS)
+
     def test_zero_unknown_low_sample_and_nonfinite_are_distinct(self):
         for count, value, status in [(0, None, 'no_traffic'), (None, .5, 'unknown'),
                                       (3, .5, 'low_sample'), (30, None, 'histogram_unavailable'), (30, .5, 'threshold_met')]:

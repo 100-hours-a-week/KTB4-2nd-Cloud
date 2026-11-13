@@ -104,7 +104,9 @@ class Capacity(unittest.TestCase):
 
 class Outbox(unittest.TestCase):
     def sample(self,rows=None,stamp=100):
-        return str(stamp)+'\n'+ '\n'.join(rows or [t+'\t2\t60.5'for t in outbox.TABLES])+'\n'
+        rows = rows or [t+'\t2\t60.5'for t in outbox.TABLES]
+        count = rows[-1].split('\t')[1]
+        return str(stamp)+'\n'+ '\n'.join(rows + ['conversion_'+c+'\t'+(count+'\t60.5' if c=='active' else '0\t0') for c in outbox.CLASSES])+'\n'
     def parse(self,text,now=110):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'snapshot';path.write_text(text);return outbox.metrics(path,now)
@@ -118,11 +120,20 @@ class Outbox(unittest.TestCase):
         for rows in [[outbox.TABLES[0]+'\t1\t1']*4, ['user-provided-id\t1\t1']*4]:self.assertEqual(self.parse(self.sample(rows)),'yeodam_outbox_probe_success 0\n')
     def test_capped_count_is_labelled_lower_bound(self):
         s=self.parse(self.sample([t+'\t10001\t100'for t in outbox.TABLES]));self.assertIn('yeodam_outbox_count_capped{outbox="trip_creation_outbox"} 1',s)
+    def test_classification_is_complete_or_entire_sample_unknown(self):
+        valid=self.sample()
+        self.assertIn('yeodam_conversion_outbox_pending{category="active"} 2',self.parse(valid))
+        for invalid in [valid.replace('conversion_active\t2', 'conversion_active\t1'), valid.replace('conversion_unknown\t0\t0\n',''), valid.replace('conversion_unknown','conversion_new-state')]:
+            self.assertEqual(self.parse(invalid),'yeodam_outbox_probe_success 0\n')
+        capped=self.parse(self.sample([t+'\t10001\t100'for t in outbox.TABLES]))
+        self.assertIn('yeodam_conversion_outbox_classification_capped 1',capped)
     def test_readonly_sql_and_privileges(self):
         source=(ROOT/'deploy/v3/metrics/files/outbox.sql').read_text()
-        self.assertEqual(source.count('MAX_EXECUTION_TIME(750)'),4);self.assertEqual(source.count('LIMIT 10001'),4);self.assertIn('TRANSACTION READ ONLY',source)
+        self.assertEqual(source.count('MAX_EXECUTION_TIME(750)'),5);self.assertEqual(source.count('LIMIT 10001'),5);self.assertIn('TRANSACTION READ ONLY',source)
         self.assertNotIn('payload',source);self.assertNotIn('trip_id',source)
         grants=provision.sql('a'*48);self.assertEqual(grants.count('GRANT SELECT (status,cdc_managed,created_at)'),4);self.assertNotIn('ON *.*',grants)
+        self.assertIn("GRANT SELECT (task_id,status) ON yeodam.attachment_conversion_tasks",grants)
+        self.assertIn("GRANT SELECT (task_id) ON yeodam.attachment_conversion_outbox",grants)
         with self.assertRaises(ValueError):provision.sql("'injection")
     def test_sidecar_is_opt_in_and_retains_all_existing_container_budgets(self):
         args=[os.environ['V3_HELM'],'template','metrics',str(ROOT/'deploy/v3/metrics'),'--set','enabled=true,outboxEnabled=true,autoscalingMetricsEnabled=true']

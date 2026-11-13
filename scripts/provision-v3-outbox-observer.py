@@ -10,7 +10,7 @@ TABLES=('trip_creation_outbox','additional_attachment_upload_outbox','story_gene
 def sql(password):
     require(bool(re.fullmatch('[a-f0-9]{48}',password)),'Generated observer password format required')
     statements=["CREATE USER IF NOT EXISTS 'cloud_outbox_observer'@'%' IDENTIFIED BY '"+password+"' REQUIRE SSL WITH MAX_USER_CONNECTIONS 1;", "ALTER USER 'cloud_outbox_observer'@'%' IDENTIFIED BY '"+password+"' REQUIRE SSL WITH MAX_USER_CONNECTIONS 1;", "REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'cloud_outbox_observer'@'%';"]
-    return '\n'.join(statements+[f"GRANT SELECT (status,cdc_managed,created_at) ON yeodam.{t} TO 'cloud_outbox_observer'@'%';"for t in TABLES])+'\n'
+    return '\n'.join(statements+[f"GRANT SELECT (status,cdc_managed,created_at) ON yeodam.{t} TO 'cloud_outbox_observer'@'%';"for t in TABLES]+["GRANT SELECT (task_id) ON yeodam.attachment_conversion_outbox TO 'cloud_outbox_observer'@'%';","GRANT SELECT (task_id,status) ON yeodam.attachment_conversion_tasks TO 'cloud_outbox_observer'@'%';"] )+'\n'
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--kubeconfig',required=True);p.add_argument('--mysql-pod-uid',required=True);p.add_argument('--execute-reviewed-provisioning',action='store_true');a=p.parse_args()

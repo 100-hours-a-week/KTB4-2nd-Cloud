@@ -32,7 +32,7 @@ def start(role,image,args,volumes=(),env=(),extra=(),memory='64m',network_mode=N
 
 with tempfile.TemporaryDirectory(prefix='v3-metrics-') as tmp:
     root=Path(tmp);conf=root/'config';conf.mkdir();sa=root/'sa';sa.mkdir()
-    docs=chart.render(apm=True,logs=True)
+    docs=chart.render(apm=True,logs=True,outbox=True)
     cm=next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='v3-metrics-config')['data']
     for key,value in cm.items():(conf/key).write_text(value)
     import yaml

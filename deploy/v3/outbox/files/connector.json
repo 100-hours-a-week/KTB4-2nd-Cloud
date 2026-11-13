@@ -74,5 +74,6 @@
   "transforms.outbox.negate": "true",
   "transforms.key.predicate": "heartbeat",
   "transforms.key.negate": "true",
-  "transforms.outbox.table.fields.additional.error.on.missing": "false"
+  "transforms.outbox.table.fields.additional.error.on.missing": "false",
+  "connect.keep.alive.interval.ms": "10000"
 }
