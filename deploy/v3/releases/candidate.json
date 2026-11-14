@@ -62,6 +62,7 @@
   "values": {
     "ai": {
       "accessEnabled": true,
+      "apmReliabilityEnabled": true,
       "apmWorkloads": [
         "api",
         "runner"
@@ -96,6 +97,7 @@
       }
     },
     "backend": {
+      "apmReliabilityEnabled": true,
       "apmWorkloads": [
         "auth-api",
         "trip-api",
