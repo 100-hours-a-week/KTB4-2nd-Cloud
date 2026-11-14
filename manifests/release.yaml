@@ -745,13 +745,19 @@ spec:
         - name: OTEL_LOGS_EXPORTER
           value: none
         - name: OTEL_BSP_MAX_QUEUE_SIZE
-          value: '128'
+          value: '512'
         - name: OTEL_BSP_MAX_EXPORT_BATCH_SIZE
-          value: '32'
+          value: '64'
         - name: OTEL_BSP_SCHEDULE_DELAY
-          value: '1000'
+          value: '200'
         - name: OTEL_EXPORTER_OTLP_TIMEOUT
-          value: '1000'
+          value: '2000'
+        - name: MYSQL_URL
+          value: jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true&openTelemetry=DISABLED
+        - name: OTEL_INSTRUMENTATION_HIBERNATE_ENABLED
+          value: 'false'
+        - name: OTEL_INSTRUMENTATION_SPRING_DATA_ENABLED
+          value: 'false'
         envFrom:
         - configMapRef:
             name: auth-api-runtime
@@ -1074,13 +1080,19 @@ spec:
         - name: OTEL_LOGS_EXPORTER
           value: none
         - name: OTEL_BSP_MAX_QUEUE_SIZE
-          value: '128'
+          value: '512'
         - name: OTEL_BSP_MAX_EXPORT_BATCH_SIZE
-          value: '32'
+          value: '64'
         - name: OTEL_BSP_SCHEDULE_DELAY
-          value: '1000'
+          value: '200'
         - name: OTEL_EXPORTER_OTLP_TIMEOUT
-          value: '1000'
+          value: '2000'
+        - name: MYSQL_URL
+          value: jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true&openTelemetry=DISABLED
+        - name: OTEL_INSTRUMENTATION_HIBERNATE_ENABLED
+          value: 'false'
+        - name: OTEL_INSTRUMENTATION_SPRING_DATA_ENABLED
+          value: 'false'
         envFrom:
         - configMapRef:
             name: photo-api-runtime
@@ -1410,13 +1422,19 @@ spec:
         - name: OTEL_LOGS_EXPORTER
           value: none
         - name: OTEL_BSP_MAX_QUEUE_SIZE
-          value: '128'
+          value: '512'
         - name: OTEL_BSP_MAX_EXPORT_BATCH_SIZE
-          value: '32'
+          value: '64'
         - name: OTEL_BSP_SCHEDULE_DELAY
-          value: '1000'
+          value: '200'
         - name: OTEL_EXPORTER_OTLP_TIMEOUT
-          value: '1000'
+          value: '2000'
+        - name: MYSQL_URL
+          value: jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true&openTelemetry=DISABLED
+        - name: OTEL_INSTRUMENTATION_HIBERNATE_ENABLED
+          value: 'false'
+        - name: OTEL_INSTRUMENTATION_SPRING_DATA_ENABLED
+          value: 'false'
         envFrom:
         - configMapRef:
             name: photo-converter-runtime
@@ -1739,13 +1757,19 @@ spec:
         - name: OTEL_LOGS_EXPORTER
           value: none
         - name: OTEL_BSP_MAX_QUEUE_SIZE
-          value: '128'
+          value: '512'
         - name: OTEL_BSP_MAX_EXPORT_BATCH_SIZE
-          value: '32'
+          value: '64'
         - name: OTEL_BSP_SCHEDULE_DELAY
-          value: '1000'
+          value: '200'
         - name: OTEL_EXPORTER_OTLP_TIMEOUT
-          value: '1000'
+          value: '2000'
+        - name: MYSQL_URL
+          value: jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true&openTelemetry=DISABLED
+        - name: OTEL_INSTRUMENTATION_HIBERNATE_ENABLED
+          value: 'false'
+        - name: OTEL_INSTRUMENTATION_SPRING_DATA_ENABLED
+          value: 'false'
         envFrom:
         - configMapRef:
             name: trip-api-runtime
@@ -2069,13 +2093,19 @@ spec:
         - name: OTEL_LOGS_EXPORTER
           value: none
         - name: OTEL_BSP_MAX_QUEUE_SIZE
-          value: '128'
+          value: '512'
         - name: OTEL_BSP_MAX_EXPORT_BATCH_SIZE
-          value: '32'
+          value: '64'
         - name: OTEL_BSP_SCHEDULE_DELAY
-          value: '1000'
+          value: '200'
         - name: OTEL_EXPORTER_OTLP_TIMEOUT
-          value: '1000'
+          value: '2000'
+        - name: MYSQL_URL
+          value: jdbc:mysql://mysql-primary.mysql.svc.cluster.local:3306/yeodam?sslMode=VERIFY_IDENTITY&fallbackToSystemTrustStore=true&openTelemetry=DISABLED
+        - name: OTEL_INSTRUMENTATION_HIBERNATE_ENABLED
+          value: 'false'
+        - name: OTEL_INSTRUMENTATION_SPRING_DATA_ENABLED
+          value: 'false'
         envFrom:
         - configMapRef:
             name: trip-result-worker-runtime
@@ -3087,15 +3117,17 @@ data:
     \            \"service.name\": os.environ[\"OTEL_SERVICE_NAME\"], \"service.namespace\"\
     : \"ai\",\n            \"service.version\": os.environ[\"OTEL_SERVICE_VERSION\"\
     ], \"deployment.environment.name\": \"production\",\n        }), sampler=ParentBased(TraceIdRatioBased(0.01)))\n\
+    \        reliable = os.environ.get('YEODAM_APM_RELIABILITY_ENABLED') == 'true'\n\
     \        provider.add_span_processor(BatchSpanProcessor(\n            OTLPSpanExporter(endpoint=os.environ[\"\
-    OTEL_EXPORTER_OTLP_ENDPOINT\"]+\"/v1/traces\", timeout=1),\n            max_queue_size=128,\
-    \ max_export_batch_size=32, schedule_delay_millis=1000, export_timeout_millis=1000))\n\
-    \        trace.set_tracer_provider(provider)\n        set_global_textmap(TraceContextTextMapPropagator())\n\
-    \        FastAPIInstrumentor().instrument(excluded_urls=r\".*/(health|metrics)(?:\\\
-    ?.*)?$\")\n        HTTPXClientInstrumentor().instrument()\n    except Exception\
-    \ as error:\n        # Telemetry setup must not prevent the original app from\
-    \ starting. CI rejects this condition.\n        print('{\"event\":\"cloud_apm_initialization_failed\"\
-    ,\"error_type\":\"'+type(error).__name__+'\"}', file=sys.stderr, flush=True)\n"
+    OTEL_EXPORTER_OTLP_ENDPOINT\"]+\"/v1/traces\", timeout=1),\n            max_queue_size=256\
+    \ if reliable else 128, max_export_batch_size=64 if reliable else 32, schedule_delay_millis=200\
+    \ if reliable else 1000, export_timeout_millis=1000))\n        trace.set_tracer_provider(provider)\n\
+    \        set_global_textmap(TraceContextTextMapPropagator())\n        FastAPIInstrumentor().instrument(excluded_urls=r\"\
+    .*/(health|metrics)(?:\\?.*)?$\")\n        HTTPXClientInstrumentor().instrument()\n\
+    \    except Exception as error:\n        # Telemetry setup must not prevent the\
+    \ original app from starting. CI rejects this condition.\n        print('{\"event\"\
+    :\"cloud_apm_initialization_failed\",\"error_type\":\"'+type(error).__name__+'\"\
+    }', file=sys.stderr, flush=True)\n"
   start-api.py: "\"\"\"Use the unchanged AI image with Cloud's reversible maintenance\
     \ adapter.\"\"\"\nimport os\nimport uvicorn\nfrom runpod_control import install\n\
     \ncontrol = install(int(os.environ['JOBS_STORY_CONCURRENCY']))\nfrom app.v2_main\
@@ -3282,7 +3314,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/apm: e837b5739f17e637c2a7e6c5273a9143940410e0ec59e20472642f96d61f32d0
+        checksum/apm: 17d933185ab6a8e597d6df4c1f7036fd9a4396b5f8d7d153009ded14aac7645a
         checksum/observability: 517dcf4ba67de6b30789e4f605471a31c4fdd62f32170426772807c509094a1a
         checksum/runtime: 2cf599f21ef2a192220cbac76a5e2c2b0657bf0adb7197a8041b50c580488c8e
         yeodam.io/configuration-revision: ad2084cb6b23375a3ae0bf27f248729c06dd8211176815617fce3b70e8609d4c
@@ -3364,6 +3396,8 @@ spec:
           value: none
         - name: OTEL_LOGS_EXPORTER
           value: none
+        - name: YEODAM_APM_RELIABILITY_ENABLED
+          value: 'true'
         envFrom:
         - configMapRef:
             name: ai-api-runtime
@@ -3539,7 +3573,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/apm: e837b5739f17e637c2a7e6c5273a9143940410e0ec59e20472642f96d61f32d0
+        checksum/apm: 17d933185ab6a8e597d6df4c1f7036fd9a4396b5f8d7d153009ded14aac7645a
         checksum/observability: 517dcf4ba67de6b30789e4f605471a31c4fdd62f32170426772807c509094a1a
         checksum/runtime: 2cf599f21ef2a192220cbac76a5e2c2b0657bf0adb7197a8041b50c580488c8e
         yeodam.io/configuration-revision: ad2084cb6b23375a3ae0bf27f248729c06dd8211176815617fce3b70e8609d4c
@@ -3626,6 +3660,8 @@ spec:
           value: none
         - name: OTEL_LOGS_EXPORTER
           value: none
+        - name: YEODAM_APM_RELIABILITY_ENABLED
+          value: 'true'
         envFrom:
         - configMapRef:
             name: ai-runner-runtime

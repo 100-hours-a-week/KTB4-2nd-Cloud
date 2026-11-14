@@ -255,3 +255,5 @@ workloads:
 
 # Explicit per-role opt-in; no app replacement by default.
 apmWorkloads: []
+
+apmReliabilityEnabled: false

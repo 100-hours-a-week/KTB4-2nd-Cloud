@@ -177,6 +177,9 @@ spec:
             - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: {{ $apmConfig.endpoint | quote }}}
             - {name: OTEL_METRICS_EXPORTER, value: none}
             - {name: OTEL_LOGS_EXPORTER, value: none}
+            {{- if $.Values.apmReliabilityEnabled }}
+            - {name: YEODAM_APM_RELIABILITY_ENABLED, value: 'true'}
+            {{- end }}
           {{- end }}
           resources:
 {{ $w.resources | toYaml | indent 12 }}

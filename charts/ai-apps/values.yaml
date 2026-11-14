@@ -27,3 +27,5 @@ traceContextEnabled: false
 traceContextWriteEnabled: false
 traceContextWriteEverEnabled: false
 langfuseEnabled: false
+
+apmReliabilityEnabled: false
