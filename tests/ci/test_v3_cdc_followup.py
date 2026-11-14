@@ -145,7 +145,7 @@ class Followup(unittest.TestCase):
             {'section':'final_attachment','attachmentId':9,'fileId':3},
             {'section':'delivery_trace','outboxId':'o','offset':12,'partition':0,'traceparent':'00-'+'a'*32+'-'+'b'*16+'-01'},
             {'section':'conversion_outbox','outboxId':'o','status':'PUBLISHED','createdAt':stamp(10),'publishedAt':stamp(100)},
-            {'section':'creation_execution','status':'SUCCEEDED'}])
+            {'section':'creation_execution','status':'COMPLETED'}])
         trace={'traceEvidenceReady':True,'telemetryIntegrity':'no_observed_loss','trace':{'traceId':'a'*32}}
         timing={'firstActiveCreatedAt':stamp(10),'firstFiringEvaluationAt':stamp(60),'releaseObservedAt':stamp(90),
                 'firstDeliveryObservedAt':stamp(100),'completedAt':stamp(290),'manualActions':[],'observationGaps':[],
@@ -159,5 +159,24 @@ class Followup(unittest.TestCase):
         # A later empty second phase must never become evidence of two recoveries.
         second={'injectedObservedAt':stamp(120),'recoveryRequestedAt':stamp(165)}
         self.assertFalse(m.assess('C1',a,b,trace,dict(timing,faultWindows=timing['faultWindows']+[second]))['evidenceComplete'])
+
+    def test_server_clock_skew_does_not_hide_fresh_or_stale_data(self):
+        def samples(stamp=999):
+            vals={'up':1,'yeodam_outbox_probe_success':1,
+                  'yeodam_outbox_query_started_timestamp_seconds':998.8,
+                  'yeodam_outbox_query_completed_timestamp_seconds':999,
+                  'yeodam_outbox_query_duration_seconds':.2}
+            return {'status':'success','data':{'result':[{'metric':{'__name__':n},'value':[stamp,str(v)]}for n,v in vals.items()]}}
+        rule={'status':'success','data':{'groups':[{'rules':[{'name':'V3ConversionDeliveryStalled','health':'ok','state':'inactive','lastEvaluation':'1970-01-01T00:16:39+00:00'}]}]}}
+        scrape={'status':'success','data':{'result':[{'value':[1000,'999']}]}}
+        clock={'status':'success','data':{'result':[{'value':[1000,'1000']}]}}
+        for metric_stamp,expected in ((999,True),(974,False),(1001,False)):
+            with self.subTest(stamp=metric_stamp),tempfile.TemporaryDirectory()as t:
+                o=m.Observer('http://127.0.0.1:12345',t)
+                with patch.object(o,'get',side_effect=[samples(metric_stamp),rule,scrape,clock]),patch.object(m.time,'time',side_effect=[9000,9000.1]):
+                    self.assertEqual(o(),expected)
+                evidence=json.loads((Path(t)/'observation-00001.json').read_text())
+                self.assertIn('clock',evidence)
+                self.assertLess(evidence['clock']['serverMinusLocalIntervalSeconds'][1],0)
 
 if __name__=='__main__':unittest.main()
