@@ -78,9 +78,15 @@ tests:
     - series: yeodam_conversion_outbox_oldest_pending_age_seconds{category="active"}
       values: 0 15 30 45 60 0+0x7
     alert_rule_test:
-    - eval_time: 45s
+    - eval_time: 15s
       alertname: V3ConversionDeliveryStalled
       exp_alerts: *id001
+    - eval_time: 30s
+      alertname: V3ConversionDeliveryStalled
+      exp_alerts:
+      - exp_labels: {category: active, severity: warning}
+        exp_annotations:
+          summary: Active conversion work has unconfirmed publication older than experimental 15s threshold
     - eval_time: 60s
       alertname: V3ConversionDeliveryStalled
       exp_alerts:
@@ -88,8 +94,8 @@ tests:
           category: active
           severity: warning
         exp_annotations:
-          summary: Active conversion work has unconfirmed publication older than provisional
-            30s threshold
+          summary: Active conversion work has unconfirmed publication older than experimental
+            15s threshold
     - eval_time: 90s
       alertname: V3ConversionDeliveryStalled
       exp_alerts: *id001

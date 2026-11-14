@@ -16,10 +16,9 @@ groups:
         labels: {severity: warning}
         annotations: {summary: Outbox count is a lower bound at 10001; do not report an exact backlog}
       - alert: V3ConversionDeliveryStalled
-        expr: (yeodam_conversion_outbox_oldest_pending_age_seconds{category="active"} > 30) and on(job,instance) (yeodam_outbox_probe_success == 1) and on(job,instance) (time() - yeodam_outbox_last_success_timestamp_seconds <= 65)
-        for: 15s
+        expr: (yeodam_conversion_outbox_oldest_pending_age_seconds{category="active"} > 15) and on(job,instance) (yeodam_outbox_probe_success == 1) and on(job,instance) (time() - yeodam_outbox_last_success_timestamp_seconds <= 65)
         labels: {severity: warning}
-        annotations: {summary: Active conversion work has unconfirmed publication older than provisional 30s threshold}
+        annotations: {summary: Active conversion work has unconfirmed publication older than experimental 15s threshold}
       - alert: V3ConversionOutboxResidue
         expr: (yeodam_conversion_outbox_oldest_pending_age_seconds{category=~"succeeded|canceled|failed"} > 120) and on(job,instance) (yeodam_outbox_probe_success == 1)
         for: 1m

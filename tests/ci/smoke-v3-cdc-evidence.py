@@ -71,6 +71,20 @@ INSERT INTO yeodam.attachment_conversion_tasks VALUES ('task-trial',7001,'SUCCEE
 INSERT INTO yeodam.trip_creation_executions VALUES ('execution-trial',7001,'PROCESSING',2,'PROCESSING',2);
 INSERT INTO yeodam.trip_attachments VALUES (7001,1,NULL),(7001,1,NULL),(7002,2,NULL);
 ''')
+    sql('''ALTER TABLE yeodam.trip_attachments ADD COLUMN trip_attachment_id BIGINT;
+UPDATE yeodam.trip_attachments SET trip_attachment_id=file_id;
+ALTER TABLE yeodam.attachment_conversion_outbox ADD COLUMN topic VARCHAR(255), ADD COLUMN traceparent VARCHAR(55), ADD COLUMN publication_version BIGINT DEFAULT 0;
+CREATE TABLE yeodam.initial_attachment_upload_batches (upload_batch_id BIGINT, trip_id BIGINT);
+CREATE TABLE yeodam.initial_attachment_upload_items (upload_item_id BIGINT,upload_batch_id BIGINT,trip_attachment_id BIGINT,conversion_attempts INT);
+INSERT INTO yeodam.initial_attachment_upload_batches VALUES (1,7001),(2,7002);
+INSERT INTO yeodam.initial_attachment_upload_items VALUES (10,1,1,2),(20,2,2,1);
+''')
+    detailed=sql(f.followup_evidence_sql([7001])); proof=[json.loads(x)for x in detailed.splitlines()]
+    assert all(x['tripId']==7001 for x in proof) and 'DO_NOT_EXPORT_PAYLOAD' not in detailed
+    assert [x['itemId']for x in proof if x['section']=='trial_item']==[10]
+    assert next(x['attempt']for x in proof if x['section']=='trial_item')==2
+    assert next(x['offset']for x in proof if x['section']=='delivery_trace')==123
+    assert len([x for x in proof if x['section']=='final_attachment'])==2
     count = sql('SELECT COUNT(*) FROM yeodam.attachment_conversion_outbox;')
     raw = sql(f.evidence_sql([7001])); rows = [json.loads(x) for x in raw.splitlines()]
     assert all(r['tripId'] == 7001 for r in rows) and 'DO_NOT_EXPORT_PAYLOAD' not in raw

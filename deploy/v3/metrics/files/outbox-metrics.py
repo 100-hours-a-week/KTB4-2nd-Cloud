@@ -12,7 +12,10 @@ def metrics(path='/outbox/snapshot', now=None):
         data = Path(path).read_text()
         if len(data) > 2048: raise ValueError()
         lines = data.splitlines()
-        stamp = int(lines[0])
+        # Legacy integer snapshots remain readable during rolling replacement.
+        timing = lines[0].split('\t')
+        started, stamp = (float(timing[0]), float(timing[-1]))
+        if len(timing) not in (1, 2) or not all(math.isfinite(x) for x in (started, stamp)) or not 0 <= stamp-started <= 8.5: raise ValueError()
         if not 0 <= now-stamp <= 65 or len(lines) != 1+len(KEYS): raise ValueError()
         samples = {}
         for line in lines[1:]:
@@ -22,6 +25,10 @@ def metrics(path='/outbox/snapshot', now=None):
             samples[key] = (count, age)
         if set(samples) != KEYS or sum(samples['conversion_'+c][0] for c in CLASSES) != samples['attachment_conversion_outbox'][0]: raise ValueError()
         result = ['yeodam_outbox_probe_success 1', f'yeodam_outbox_last_success_timestamp_seconds {stamp}']
+        if len(timing) == 2:
+            result += [f'yeodam_outbox_query_started_timestamp_seconds {started}',
+                       f'yeodam_outbox_query_completed_timestamp_seconds {stamp}',
+                       f'yeodam_outbox_query_duration_seconds {stamp-started:.6f}']
         for table in TABLES:
             count, age = samples[table]
             labels = '{outbox="'+table+'"}'
