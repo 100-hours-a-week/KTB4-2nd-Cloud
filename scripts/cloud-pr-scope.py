@@ -27,7 +27,7 @@ CONNECT_PREFIXES = ('deploy/v3/connect-image/', 'deploy/v3/connect/')
 CONNECT_FILES = frozenset({
     'deploy/v3/kafka-operator/upstream.lock.json',
     'scripts/prepare-v3-connect-image.py', 'scripts/validate-v3-connect-image.sh',
-    'tests/ci/smoke-v3-connect.py', 'tests/ci/v3/CheckConnectPlugins.java',
+    'tests/ci/smoke-v3-connect.py', 'tests/ci/smoke-v3-connect-recovery.py', 'tests/ci/v3/CheckConnectPlugins.java',
     '.github/workflows/v3-connect-check.yml', '.github/workflows/v3-connect-image.yml',
 })
 

@@ -61,6 +61,23 @@ class Connect(unittest.TestCase):
             if what=='db':docs.append({'kind':'KafkaConnector','metadata':{'name':'business'}})
             with self.subTest(what=what),self.assertRaises((ValueError,KeyError)):c.validate(docs,True)
 
+    def test_dependency_window_is_finite_and_plugins_are_service_loader_only(self):
+        for field, value in [('probe',6),('probe',999),('discovery','hybrid_warn'),('readiness',18)]:
+            docs=deepcopy(self.docs);spec=next(d for d in docs if d['kind']=='KafkaConnect')['spec']
+            if field=='probe':spec['livenessProbe']['failureThreshold']=value
+            elif field=='readiness':spec['readinessProbe']['failureThreshold']=value
+            else:spec['config']['plugin.discovery']=value
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):c.validate(docs,True)
+
+    def test_restart_readiness_waits_for_actual_health_not_only_rest(self):
+        recovery=module('recovery_probe','tests/ci/smoke-v3-connect-recovery.py')
+        with patch.object(recovery,'probe_health',side_effect=[False,False,True]) as health, \
+             patch.object(recovery.time,'sleep'),patch.object(recovery.time,'monotonic',side_effect=[0,1,2]):
+            recovery.wait_healthy({},5)
+        self.assertEqual(health.call_count,3)
+        with patch.object(recovery,'probe_health',return_value=False),patch.object(recovery.time,'monotonic',side_effect=[0,91]):
+            with self.assertRaises(AssertionError):recovery.wait_healthy({},5)
+
     def test_worker_state_cannot_expire_or_change_topology(self):
         for what in ('compact','retention','partition','replica','keep','name'):
             docs=deepcopy(self.docs);t=next(d for d in docs if d['kind']=='KafkaTopic')

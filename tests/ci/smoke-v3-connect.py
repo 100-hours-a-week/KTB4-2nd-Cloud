@@ -81,7 +81,7 @@ def smoke(image, output, extension=None):
         docker('run','--rm','--label','yeodam.run='+prefix,'--platform','linux/amd64','--memory','768m','--cpus','.5','--read-only','--tmpfs','/tmp:rw,size=64m','-v',f'{checks}:/checks:ro','--entrypoint','java',image,'-Xmx256m','-cp','/opt/kafka/libs/*:/opt/kafka/plugins/debezium-mysql/*:/checks','CheckConnectPlugins')
         context.update(directory=directory,prefix=prefix,net=net,containers=containers,docker=docker,command=command,cli=cli,password=password,user=user,tls=tls,image=image,output=output,wait_api=wait_api)
         if extension:extension.prepare(context)
-        worker='\n'.join(['bootstrap.servers=broker1:9093,broker2:9093,broker3:9093','group.id=connect-v3','config.storage.topic=prod.connect-configs','offset.storage.topic=prod.connect-offsets','status.storage.topic=prod.connect-status','config.storage.replication.factor=3','offset.storage.replication.factor=3','status.storage.replication.factor=3','offset.storage.partitions=1','status.storage.partitions=1','key.converter=org.apache.kafka.connect.storage.StringConverter','value.converter=org.apache.kafka.connect.storage.StringConverter','plugin.path=/opt/kafka/plugins','listeners=http://0.0.0.0:8083','rest.advertised.host.name=connect-check','connector.client.config.override.policy=None','producer.acks=all','producer.enable.idempotence=true'])+'\n'
+        worker='\n'.join(['bootstrap.servers=broker1:9093,broker2:9093,broker3:9093','group.id=connect-v3','config.storage.topic=prod.connect-configs','offset.storage.topic=prod.connect-offsets','status.storage.topic=prod.connect-status','config.storage.replication.factor=3','offset.storage.replication.factor=3','status.storage.replication.factor=3','offset.storage.partitions=1','status.storage.partitions=1','key.converter=org.apache.kafka.connect.storage.StringConverter','value.converter=org.apache.kafka.connect.storage.StringConverter','plugin.path=/opt/kafka/plugins','plugin.discovery=service_load','listeners=http://0.0.0.0:8083','rest.advertised.host.name=connect-check','connector.client.config.override.policy=None','producer.acks=all','producer.enable.idempotence=true'])+'\n'
         security=client.replace('username="'+admin+'"','username="'+user+'"')
         worker+=security
         for line in security.splitlines():
@@ -92,7 +92,11 @@ def smoke(image, output, extension=None):
         docker('run','-d','--name',name,'--label','yeodam.issue='+issue,'--label','yeodam.run='+prefix,'--platform','linux/amd64','--network',net,'--network-alias','connect-check','--stop-timeout','90','--memory','768m','--cpus','.5','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp:rw,nosuid,size=128m','-v',f'{directory}:/check:ro','-p','127.0.0.1::8083','-e','KAFKA_HEAP_OPTS=-Xms128m -Xmx256m','-e','LOG_DIR=/tmp/connect-logs',*(extension.worker_args(context) if extension else []),'--entrypoint','/opt/kafka/bin/connect-distributed.sh',image,'/check/worker.properties')
         state=json.loads(docker('inspect',name).stdout)[0];port=state['NetworkSettings']['Ports']['8083/tcp'][0]['HostPort']
         wait_api(port)
-        print('Minimum-budget Connect REST ready',flush=True)
+        log_result = docker('logs',name)
+        worker_log = log_result.stdout + log_result.stderr
+        assert 'ReflectionScanner' not in worker_log, 'Legacy reflection scan unexpectedly enabled'
+        assert 'plugin.discovery = service_load' in worker_log, 'Worker did not use reviewed discovery policy'
+        print('Minimum-budget Connect REST ready with ServiceLoader-only discovery',flush=True)
         with urllib.request.urlopen(f'http://127.0.0.1:{port}/connector-plugins',timeout=5) as response:plugins=json.load(response)
         assert any(p['class']=='io.debezium.connector.mysql.MySqlConnector' and p['version']==LOCK['debeziumVersion'] for p in plugins)
         assert not any(p['class'].startswith('io.debezium.') and p['class']!='io.debezium.connector.mysql.MySqlConnector' for p in plugins)
@@ -102,9 +106,14 @@ def smoke(image, output, extension=None):
         wait_api(port)
         state=json.loads(docker('inspect',name).stdout)[0];assert state['State']['Running'] and not state['State']['OOMKilled']
         peak=docker('exec',name,'cat','/sys/fs/cgroup/memory.peak').stdout.strip()
-        (output/'result.json').write_text(json.dumps({'tlsScram':True,'internalTopics':3,'replicationFactor':3,'minimumIsr':2,'memoryLimitMi':768,'heapMi':256,'cpuLimit':0.5,'mysqlPluginVersion':LOCK['debeziumVersion'],'connectorCount':0,'restartRecovered':True,'memoryPeakBytes':int(peak)},indent=2))
+        (output/'result.json').write_text(json.dumps({'tlsScram':True,'internalTopics':3,'replicationFactor':3,'minimumIsr':2,'memoryLimitMi':768,'heapMi':256,'cpuLimit':0.5,'pluginDiscovery':'service_load','reflectionScanObserved':False,'mysqlPluginVersion':LOCK['debeziumVersion'],'connectorCount':0,'restartRecovered':True,'memoryPeakBytes':int(peak)},indent=2))
         print('PASS: 768Mi/0.5CPU Connect, TLS/SCRAM, MySQL+Groovy plugins, RF3 internal topics, zero Connectors and restart recovery',flush=True)
         if extension:extension.exercise(context | {'worker':name,'port':port})
+        else:
+            import importlib.util
+            spec=importlib.util.spec_from_file_location('recovery', ROOT/'tests/ci/smoke-v3-connect-recovery.py')
+            recovery=importlib.util.module_from_spec(spec);spec.loader.exec_module(recovery)
+            recovery.exercise(context | {'worker':name,'port':port})
     finally:
         for name in reversed(containers):
             try:

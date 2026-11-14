@@ -35,8 +35,16 @@ def kafka_snapshot(k, controller_node=None, allow_worker=False):
         records.append(f.pod_record(p))
     svc = k.get('service', 'kafka', KAFKA+'-kafka-bootstrap')
     ports = [p for p in svc['spec']['ports'] if p['port'] == 9093]
-    f.require(len(ports) == 1 and ports[0]['protocol'] == 'TCP' and ports[0]['targetPort'] == 9093,
-              'Unexpected Kafka TLS port mapping')
+    f.require(len(ports) == 1 and ports[0]['protocol'] == 'TCP', 'Unexpected Kafka TLS port mapping')
+    target = ports[0].get('targetPort')
+    if isinstance(target, str):
+        f.require(target == 'tcp-clientstls', 'Unreviewed named Kafka TLS target')
+        for pod in pods:
+            resolved = [port for container in pod['spec']['containers'] for port in container.get('ports', []) if port.get('name') == target]
+            f.require(len(resolved) == 1 and resolved[0].get('containerPort') == 9093 and
+                      resolved[0].get('protocol', 'TCP') == 'TCP', 'Ambiguous or wrong named Kafka TLS port')
+    else:
+        f.require(type(target) is int and target == 9093, 'Unexpected Kafka TLS port mapping')
     slices = k.get('endpointslices', 'kafka', selector='kubernetes.io/service-name='+KAFKA+'-kafka-bootstrap')['items']
     f.require(all(any(p.get('port') == 9093 and p.get('protocol') == 'TCP' for p in x['ports']) for x in slices),
               'Kafka endpoint port mismatch')

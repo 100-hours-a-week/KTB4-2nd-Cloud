@@ -89,6 +89,40 @@ class Evidence(unittest.TestCase):
             docs.pop()
             with self.assertRaises(ValueError):e.snapshot('fixture')
 
+    def test_connect_container_restart_detected_with_same_pod_uid_without_secrets(self):
+        pod={'metadata':{'namespace':'kafka','name':'yeodam-v3-connect-connect-0','uid':'a'*8+'-1111-1111-1111-111111111111'},
+             'spec':{'containers':[{'env':[{'name':'PASSWORD','value':'SYNTHETIC_SECRET'}]}]},
+             'status':{'containerStatuses':[{'name':'yeodam-v3-connect-connect','containerID':'containerd://'+'a'*64,
+                        'ready':True,'restartCount':0,'state':{'running':{'startedAt':'2026-11-14T00:00:00Z'}}}]}}
+        with patch.object(e,'kube_json',return_value=pod):first=e.connect_runtime('fixture')
+        self.assertNotIn('SYNTHETIC_SECRET',json.dumps(first))
+        pod['status']['containerStatuses'][0].update(containerID='containerd://'+'b'*64,restartCount=1,
+            state={'running':{'startedAt':'2026-11-14T00:03:00Z'}},
+            lastState={'terminated':{'reason':'Completed','exitCode':0,'message':'SYNTHETIC_PRIVATE','finishedAt':'2026-11-14T00:02:59Z'}})
+        with patch.object(e,'kube_json',return_value=pod):second=e.connect_runtime('fixture')
+        self.assertEqual(first['podUid'],second['podUid']);self.assertNotEqual(first['containerId'],second['containerId'])
+        self.assertNotIn('SYNTHETIC_PRIVATE',json.dumps(second))
+        with tempfile.TemporaryDirectory() as t,patch.object(e,'kube_json',return_value={'metadata':{'uid':e.scaling.CLUSTER_UID}}),patch.object(e,'connect_runtime',side_effect=[first,second]), \
+             patch.object(e.time,'monotonic',side_effect=[0,0,120]),patch.object(e.time,'sleep'):
+            result=e.observe_connect('fixture',Path(t)/'watch',120,10)
+        self.assertTrue(result['containerLifecycleChanged']);self.assertEqual(result['restartDelta'],1)
+        self.assertFalse(result['noRestartProven']);self.assertFalse(result['podReplaced'])
+
+    def test_connect_observation_failure_is_unknown_and_not_raw_diagnostics(self):
+        with tempfile.TemporaryDirectory() as t,patch.object(e,'kube_json',return_value={'metadata':{'uid':e.scaling.CLUSTER_UID}}),patch.object(e,'connect_runtime',side_effect=ValueError('SYNTHETIC_PRIVATE')), \
+             patch.object(e.time,'monotonic',side_effect=[0,120]):
+            result=e.observe_connect('fixture',Path(t)/'watch',120,10)
+            raw=(Path(t)/'watch/sample-00000.json').read_text()
+        self.assertEqual(result['collectionStatus'],'partial');self.assertIsNone(result['restartDelta'])
+        self.assertNotIn('SYNTHETIC_PRIVATE',raw);self.assertIn('unknown',raw)
+
+    def test_cdc_query_success_does_not_erase_readability_gaps(self):
+        d={'status':'ok','series':[{'labels':{},'values':[[0,1],[30,0],[90,1]]}]}
+        result=e.cdc_observation_summary(d,0,90)
+        self.assertEqual(result['readableGridPoints'],2);self.assertEqual(result['unknownGridPoints'],2)
+        self.assertEqual(result['status'],'unknown_intervals')
+        d['status']='query_failed';self.assertEqual(e.cdc_observation_summary(d,0,90)['unknownGridPoints'],4)
+
     def test_event_times_do_not_invent_recovery(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/'events.json';p.write_text(json.dumps([{'event':'fault_injected','at':'2026-11-11T00:01:00Z'}]))
