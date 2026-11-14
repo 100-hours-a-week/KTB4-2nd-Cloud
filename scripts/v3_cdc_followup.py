@@ -175,26 +175,34 @@ class Observer:
             required=('up','yeodam_outbox_probe_success','yeodam_outbox_query_started_timestamp_seconds',
                       'yeodam_outbox_query_completed_timestamp_seconds','yeodam_outbox_query_duration_seconds')
             f.require(all(sum(x['metric']['__name__']==n for x in samples)==1 for n in required),'Missing/ambiguous timing metrics')
-            epoch=time.time()
-            f.require(all(0<=epoch-float(by[n]['value'][0])<=25 for n in required),'Old Prometheus evaluation')
-            f.require(all(float(by[n]['value'][1])==1 for n in ('up','yeodam_outbox_probe_success')) and
-                      0<=epoch-float(by['yeodam_outbox_query_completed_timestamp_seconds']['value'][1])<=25,
-                      'Outbox scrape/query not fresh')
             rules=self.get('/api/v1/rules?type=alert')
             found=[dict(rule) for g in rules.get('data',{}).get('groups',[]) for rule in g['rules']
                    if rule.get('name')=='V3ConversionDeliveryStalled']
             f.require(rules.get('status')=='success' and len(found)==1 and found[0].get('health')=='ok', 'Alert evaluation unavailable')
             rule=found[0]
-            stamp=datetime.fromisoformat(rule['lastEvaluation'].replace('Z','+00:00')).timestamp()
-            f.require(0<=epoch-stamp<=30,'Alert evaluation stale')
-            if not self.initial_clear:
-                f.require(rule.get('state') == 'inactive', 'Existing delivery alert prevents a fresh detection measurement')
             record['rule']={k:rule.get(k) for k in ('state','lastEvaluation','evaluationTime','alerts')}
             stamps=self.get('/api/v1/query?'+urllib.parse.urlencode({'query':'timestamp(yeodam_outbox_last_success_timestamp_seconds{job="cdc-status"})'}))
             f.require(stamps.get('status')=='success' and len(stamps['data']['result'])==1,'Missing scrape timestamp')
-            scrape=float(stamps['data']['result'][0]['value'][1])
+            scrape=float(stamps['data']['result'][0]['value'][1]);record['scrapeTimestamp']=scrape
+            # Read the server clock AFTER the observations. Instant-query timestamps
+            # and rule evaluation timestamps belong to Prometheus, not this Mac.
+            local_start=time.time();mono_start=time.monotonic()
+            clock=self.get('/api/v1/query?'+urllib.parse.urlencode({'query':'vector(time())'}))
+            local_end=time.time();elapsed=time.monotonic()-mono_start
+            f.require(clock.get('status')=='success' and len(clock['data']['result'])==1,'Server clock unavailable')
+            epoch=float(clock['data']['result'][0]['value'][1])
+            f.require(math.isfinite(epoch) and epoch>0 and 0<=elapsed<=4 and local_end>=local_start,'Invalid clock observation')
+            record['clock']={'prometheusEpochSeconds':epoch,'roundTripSeconds':elapsed,
+                             'serverMinusLocalIntervalSeconds':[epoch-local_end,epoch-local_start]}
+            f.require(all(0<=epoch-float(by[n]['value'][0])<=25 for n in required),'Old Prometheus evaluation')
+            f.require(all(float(by[n]['value'][1])==1 for n in ('up','yeodam_outbox_probe_success')) and
+                      0<=epoch-float(by['yeodam_outbox_query_completed_timestamp_seconds']['value'][1])<=25,
+                      'Outbox scrape/query not fresh')
+            stamp=datetime.fromisoformat(rule['lastEvaluation'].replace('Z','+00:00')).timestamp()
+            f.require(0<=epoch-stamp<=30,'Alert evaluation stale')
             f.require(0<=epoch-scrape<=25,'Scrape stale')
-            record['scrapeTimestamp']=scrape
+            if not self.initial_clear:
+                f.require(rule.get('state') == 'inactive', 'Existing delivery alert prevents a fresh detection measurement')
             record['healthy']=True
             self.initial_clear=True
         except (OSError,ValueError,KeyError,TypeError):
@@ -318,7 +326,7 @@ def assess(case, accepted, final, trace, timing):
     delivery=delta('releaseObservedAt','firstDeliveryObservedAt')
     completion=delta('releaseObservedAt','completedAt')
     executions=[r for r in final['rows'] if r['section']=='creation_execution']
-    done=len(executions)==1 and executions[0]['status']=='SUCCEEDED'
+    done=len(executions)==1 and executions[0]['status']=='COMPLETED'
     names=('firstActiveCreatedAt','firstFiringEvaluationAt','releaseObservedAt','firstDeliveryObservedAt','completedAt')
     # A second empty interruption is not evidence of a second recovery.
     windows=timing.get('faultWindows',[])
