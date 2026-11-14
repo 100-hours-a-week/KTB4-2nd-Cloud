@@ -306,10 +306,12 @@ def execute(k, p, expected, receipt_path, observe=None, snapshotter=None):
             'Exactly one reviewed Chaos daemon must be Ready')
     if observe is not None:
         require(observe() is True, 'Observation unavailable before fault; injection blocked')
+    # Creation happens after this request starts, so local monotonic elapsed is
+    # a conservative upper bound on the consumed duration, without assuming
+    # that the API server and this Mac share a wall clock.
+    creation_started = time.monotonic()
     created = bounded_json(k.call(['create', '-f', '-', '-o', 'json'], json.dumps(p['fault'])))
     uid = created['metadata']['uid']
-    created_at = datetime.fromisoformat(created['metadata']['creationTimestamp'].replace('Z', '+00:00'))
-    creation_age = (datetime.now(timezone.utc) - created_at).total_seconds()
     receipt = {'planSha256': expected, 'runId': p['runId'], 'faultUid': uid, 'createdAt': now(),
                'injectionConfirmed': False, 'recovery': None, 'businessRecoveryVerified': False}
     # Persist exact recovery identity BEFORE unpausing. Never overwrite an older run.
@@ -318,11 +320,16 @@ def execute(k, p, expected, receipt_path, observe=None, snapshotter=None):
         raise KeyboardInterrupt()
     old = signal.signal(signal.SIGTERM, interrupted)
     try:
-        require(0 <= creation_age <= 5, 'Paused resource creation consumed the fault window; do not resume')
         obj = k.get('networkchaos', 'kafka', p['runId']); owned_fault(obj, p, uid)
         patch = [{'op': 'test', 'path': '/metadata/uid', 'value': uid},
                  {'op': 'test', 'path': '/metadata/resourceVersion', 'value': obj['metadata']['resourceVersion']},
                  {'op': 'replace', 'path': '/metadata/annotations/experiment.chaos-mesh.org~1pause', 'value': 'false'}]
+        # Include the create round trip, receipt write and ownership read.
+        # Keep the five-second budget; never unpause a stale paused resource.
+        elapsed = time.monotonic() - creation_started
+        receipt['createToActivationElapsedSeconds'] = elapsed
+        receipt['creationBudgetClock'] = 'local-monotonic'
+        require(0 <= elapsed <= 5, 'Paused resource creation consumed the fault window; do not resume')
         started = time.monotonic()
         k.call(['-n', 'kafka', 'patch', 'networkchaos', p['runId'], '--type=json', '-p', json.dumps(patch)])
         receipt['activationRequestedAt'] = now()

@@ -1,4 +1,5 @@
 import copy
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -31,8 +32,9 @@ def fixture():
 
 
 class FakeKube:
-    def __init__(self, plan, interrupt=False):
+    def __init__(self, plan, interrupt=False, server_clock_offset=0):
         self.plan, self.interrupt, self.actions = plan, interrupt, []
+        self.server_clock_offset = server_clock_offset
         self.obj = None
 
     def get(self, kind, ns=None, name=None):
@@ -52,7 +54,7 @@ class FakeKube:
         self.actions.append(args)
         if args[0] == 'create':
             self.obj = json.loads(source)
-            self.obj['metadata'].update(uid='44444444-4444-4444-4444-444444444444', resourceVersion='7', creationTimestamp=f.now())
+            self.obj['metadata'].update(uid='44444444-4444-4444-4444-444444444444', resourceVersion='7', creationTimestamp=(datetime.fromisoformat(f.now()) + timedelta(seconds=self.server_clock_offset)).isoformat())
             self.obj['status'] = {'conditions': [{'type': 'AllInjected', 'status': 'True'}]}
             return json.dumps(self.obj)
         if 'patch' in args:
@@ -151,7 +153,7 @@ class FaultTests(unittest.TestCase):
     def test_success_requests_pause_and_does_not_claim_business_recovery(self):
         p = f.prepare(fixture(), 'cdc-first', 15); k = FakeKube(p)
         with tempfile.TemporaryDirectory() as t, patch.object(f, 'snapshot', return_value=p['snapshot']), \
-                patch.object(f.time, 'monotonic', side_effect=[0, 1, 16]), patch.object(f.time, 'sleep'):
+                patch.object(f.time, 'monotonic', side_effect=[0, 1, 1, 2, 17]), patch.object(f.time, 'sleep'):
             result = f.execute(k, p, p['planSha256'], Path(t)/'receipt.json')
             self.assertTrue(result['injectionConfirmed'])
             self.assertFalse(result['businessRecoveryVerified'])
@@ -160,6 +162,37 @@ class FaultTests(unittest.TestCase):
             self.assertEqual(k.obj['metadata']['annotations'][f.PAUSE], 'true')
             self.assertTrue(any('wait' in a for a in k.actions))
             self.assertFalse(any('delete' in a for a in k.actions))
+
+    def test_server_wall_clock_offset_does_not_change_creation_budget(self):
+        for offset in (-3600, 2, 3600):
+            with self.subTest(server_clock_offset=offset):
+                p = f.prepare(fixture(), 'cdc-clock', 15)
+                k = FakeKube(p, server_clock_offset=offset)
+                with tempfile.TemporaryDirectory() as t, patch.object(f, 'snapshot', return_value=p['snapshot']), \
+                        patch.object(f.time, 'monotonic', side_effect=[10, 11, 11, 12, 27]), patch.object(f.time, 'sleep'):
+                    result = f.execute(k, p, p['planSha256'], Path(t)/'receipt.json')
+                    self.assertTrue(result['injectionConfirmed'])
+                    self.assertEqual(result['createToActivationElapsedSeconds'], 1)
+                    self.assertEqual(result['creationBudgetClock'], 'local-monotonic')
+                    self.assertEqual(result['durationStartsAtCreation'], k.obj['metadata']['creationTimestamp'])
+
+    def test_slow_create_or_ownership_read_never_activates_and_still_recovers(self):
+        for offset in (-3600, 2, 3600):
+            with self.subTest(server_clock_offset=offset):
+                p = f.prepare(fixture(), 'cdc-slow', 15)
+                k = FakeKube(p, server_clock_offset=offset)
+                with tempfile.TemporaryDirectory() as t, patch.object(f, 'snapshot', return_value=p['snapshot']), \
+                        patch.object(f.time, 'monotonic', side_effect=[10, 15.001]):
+                    with self.assertRaisesRegex(f.GuardError, 'consumed the fault window'):
+                        f.execute(k, p, p['planSha256'], Path(t)/'receipt.json')
+                    result = json.loads((Path(t)/'receipt.json.finished.json').read_text())
+                    self.assertFalse(result['injectionConfirmed'])
+                    self.assertTrue(result['recovery']['controllerReportedRecovered'])
+                    self.assertEqual(result['creationBudgetClock'], 'local-monotonic')
+                    self.assertEqual(k.obj['metadata']['annotations'][f.PAUSE], 'true')
+                    patches = [json.loads(a[-1]) for a in k.actions if 'patch' in a]
+                    self.assertTrue(patches)
+                    self.assertTrue(all(ops[-1]['value'] == 'true' for ops in patches))
 
     def test_interrupt_after_activation_still_recovers_owned_fault(self):
         p = f.prepare(fixture(), 'cdc-first', 15); k = FakeKube(p, interrupt=True)
