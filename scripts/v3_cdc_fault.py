@@ -224,34 +224,46 @@ def validate_snapshot(s):
     require(0 <= age <= 300, 'Snapshot must be refreshed within five minutes')
 
 
-def prepare(s, run_id, seconds):
+def prepare(s, run_id, seconds, destination="mysql"):
+    require(destination in ("mysql", "kafka"), "Only reviewed MySQL or Kafka destination allowed")
     validate_snapshot(s)
     require(re.fullmatch(r'cdc-[a-z0-9-]{1,40}', run_id), 'Use a short cdc- run ID')
     require(type(seconds) is int and 15 <= seconds <= 120, 'First experiment bound is 15..120 seconds')
+    targets = sorted({s['mysql']['ip'] + ':3306', s['serviceIp'] + ':3306'})
+    if destination == 'kafka':
+        from v3_cdc_followup import kafka_targets
+        targets = kafka_targets(s)
     # Include both the DNAT peer and virtual Service IP, never a CIDR/DNS wildcard.
     fault = {'apiVersion': 'chaos-mesh.org/v1alpha1', 'kind': 'NetworkChaos',
              'metadata': {'name': run_id, 'namespace': 'kafka', 'annotations': {PAUSE: 'true'},
                           'labels': {'yeodam.io/issue': '656', 'yeodam.io/experiment': run_id}},
              'spec': {'action': 'partition', 'mode': 'all',
                       'selector': {'namespaces': ['kafka'], 'pods': {'kafka': [s['connect']['name']]}},
-                      'direction': 'to', 'externalTargets': sorted({s['mysql']['ip'] + ':3306', s['serviceIp'] + ':3306'}),
+                      'direction': 'to', 'externalTargets': targets,
                       'duration': str(seconds) + 's'}}
     p = {'version': 1, 'createdAt': now(), 'runId': run_id, 'seconds': seconds, 'snapshot': s,
          'scope': 'Connect egress to reviewed MySQL endpoint/Service IPv4:3306 only',
          'fault': fault, 'toolSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+    if destination == 'kafka':
+        p['destination'] = destination
+        p['scope'] = 'Connect egress to all reviewed Kafka brokers/bootstrap IPv4:9093; includes internal topics'
     return dict(p, planSha256=sha(p))
 
 
 def verify_plan(p, expected):
     payload = {k: v for k, v in p.items() if k != 'planSha256'}
     require(p.get('planSha256') == expected == sha(payload), 'Plan hash mismatch')
-    rebuilt = prepare(p['snapshot'], p['runId'], p['seconds'])
+    rebuilt = prepare(p['snapshot'], p['runId'], p['seconds'], p.get('destination', 'mysql'))
     require(p['fault'] == rebuilt['fault'] and p['scope'] == rebuilt['scope'] and
             p['toolSha256'] == rebuilt['toolSha256'], 'Changed fault scope or tool version')
 
 
 def compare_live(p, live):
     validate_snapshot(live)
+    if p.get('destination') == 'kafka':
+        from v3_cdc_followup import kafka_targets
+        kafka_targets(live)
+        require(p['snapshot']['kafka'] == live.get('kafka'), 'Kafka targets/config changed')
     for key in ('cluster', 'kubeSystemUid', 'approvedRevision', 'connect', 'mysql', 'serviceIp', 'controllerNode', 'controllerNodeUid', 'controllerRole', 'workerControllerApproved'):
         require(p['snapshot'][key] == live[key], 'Live target or deployment changed; prepare a new plan')
 
@@ -275,10 +287,10 @@ def recover(k, p, uid):
             'note': 'Retain paused resource until data-path recovery is independently checked'}
 
 
-def execute(k, p, expected, receipt_path):
+def execute(k, p, expected, receipt_path, observe=None, snapshotter=None):
     verify_plan(p, expected)
     require(not Path(str(receipt_path) + '.finished.json').exists(), 'Finished receipt already exists')
-    compare_live(p, snapshot(k, p['snapshot']['controllerNode'], p['snapshot']['workerControllerApproved']))
+    compare_live(p, (snapshotter or snapshot)(k, p['snapshot']['controllerNode'], p['snapshot']['workerControllerApproved']))
     # A new run cannot coexist even with a paused/unrecovered older experiment.
     require(not k.get('networkchaos', 'kafka')['items'], 'Existing NetworkChaos requires review/cleanup')
     connector = k.get('kafkaconnector', 'kafka', CONNECTOR)
@@ -292,6 +304,8 @@ def execute(k, p, expected, receipt_path):
     require(ds['spec']['template']['spec']['nodeSelector'] == {'yeodam.io/role': 'system', 'kubernetes.io/hostname': p['snapshot']['connect']['node']}
             and ds['status'].get('numberReady') == ds['status'].get('desiredNumberScheduled') == 1,
             'Exactly one reviewed Chaos daemon must be Ready')
+    if observe is not None:
+        require(observe() is True, 'Observation unavailable before fault; injection blocked')
     created = bounded_json(k.call(['create', '-f', '-', '-o', 'json'], json.dumps(p['fault'])))
     uid = created['metadata']['uid']
     created_at = datetime.fromisoformat(created['metadata']['creationTimestamp'].replace('Z', '+00:00'))
@@ -314,6 +328,8 @@ def execute(k, p, expected, receipt_path):
         receipt['activationRequestedAt'] = now()
         receipt['durationStartsAtCreation'] = created['metadata']['creationTimestamp']
         while time.monotonic() - started < p['seconds']:
+            if observe is not None:
+                require(observe() is True, 'Observation unavailable; recover owned fault now')
             obj = k.get('networkchaos', 'kafka', p['runId']); owned_fault(obj, p, uid)
             if any(c.get('type') == 'AllInjected' and c.get('status') == 'True'
                    for c in obj.get('status', {}).get('conditions', [])):
@@ -323,6 +339,7 @@ def execute(k, p, expected, receipt_path):
     finally:
         signal.signal(signal.SIGTERM, old)
         try:
+            receipt['recoveryRequestedAt'] = now()
             receipt['recovery'] = recover(k, p, uid)
         finally:
             receipt['finishedAt'] = now()
@@ -394,3 +411,12 @@ def compare_evidence(before, after):
             'duplicateBusinessEffects': None, 'duplicateActiveFileRowsByTrip': duplicate_files,
             'executionStates': statuses, 'businessRecoveryVerified': False,
             'verdict': 'not_assessed' if expected else 'no_committed_trial_evidence'}
+
+
+def followup_evidence_sql(ids):
+    selected = trip_ids(ids)
+    sql = evidence_sql(ids).removesuffix('COMMIT;\n')
+    sql += f"SELECT JSON_OBJECT('section','trial_item','tripId',b.trip_id,'itemId',i.upload_item_id,'attachmentId',i.trip_attachment_id,'attempt',i.conversion_attempts) FROM yeodam.initial_attachment_upload_items i JOIN yeodam.initial_attachment_upload_batches b ON b.upload_batch_id=i.upload_batch_id WHERE b.trip_id IN ({selected}) LIMIT 201;\n"
+    sql += f"SELECT JSON_OBJECT('section','final_attachment','tripId',trip_id,'attachmentId',trip_attachment_id,'fileId',file_id) FROM yeodam.trip_attachments WHERE trip_id IN ({selected}) AND deleted_at IS NULL LIMIT 201;\n"
+    sql += f"SELECT JSON_OBJECT('section','delivery_trace','tripId',trip_id,'outboxId',outbox_id,'topic',topic,'traceparent',traceparent,'partition',record_partition,'offset',record_offset,'publicationVersion',publication_version) FROM yeodam.attachment_conversion_outbox WHERE trip_id IN ({selected}) AND cdc_managed=TRUE LIMIT 201;\n"
+    return sql+'COMMIT;\n'

@@ -42,6 +42,11 @@ RANGE = {
     'cdc_connector': 'yeodam_cdc_connector_state',
     'cdc_task': 'yeodam_cdc_task_state',
     'cdc_task_present': 'yeodam_cdc_expected_task_present',
+    'outbox_query_started': 'yeodam_outbox_query_started_timestamp_seconds',
+    'outbox_query_completed': 'yeodam_outbox_query_completed_timestamp_seconds',
+    'outbox_query_duration': 'yeodam_outbox_query_duration_seconds',
+    'outbox_scrape_stamp': 'timestamp(yeodam_outbox_last_success_timestamp_seconds)',
+    'outbox_alert_firing': 'ALERTS{alertname="V3ConversionDeliveryStalled",alertstate="firing"}',
     'outbox_probe': 'yeodam_outbox_probe_success',
     'outbox_sample_age_seconds': 'time() - yeodam_outbox_last_success_timestamp_seconds',
     'outbox_pending_raw': 'yeodam_outbox_pending',
@@ -53,7 +58,7 @@ RANGE = {
     'conversion_lag': 'keda_scaler_metrics_value{scaledObject="photo-converter"}',
 }
 LABELS = {'job', 'namespace', 'deployment', 'workload', 'operation', 'status', 'phase', 'state', 'task', 'connector',
-          'outbox','category','scaledObject','metric','scaler','scalerIndex'}
+          'outbox','category','alertname','alertstate','severity','scaledObject','metric','scaler','scalerIndex'}
 
 
 def utc(ts):

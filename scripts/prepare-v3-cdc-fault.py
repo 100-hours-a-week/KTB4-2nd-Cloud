@@ -62,6 +62,8 @@ def main():
         if name == 'run':
             a.add_argument('--approve-plan-sha256', required=True)
             a.add_argument('--ack-shared-cdc-maintenance', action='store_true', required=True)
+            a.add_argument('--prometheus', required=True, help='Private localhost observation tunnel')
+            a.add_argument('--observation-directory', required=True, type=Path)
         else:
             a.add_argument('--receipt', required=True, type=Path)
     a = p.parse_args()
@@ -94,7 +96,9 @@ def main():
     elif a.action == 'compare':
         result = f.compare_evidence(load(a.before), load(a.after))
     elif a.action == 'run':
-        result = f.execute(f.Kube(a.kubeconfig), load(a.plan), a.approve_plan_sha256, a.output)
+        from v3_cdc_followup import Observer
+        f.require(a.observation_directory.is_dir() and not a.observation_directory.is_symlink() and a.observation_directory.stat().st_mode & 0o077 == 0 and not any(a.observation_directory.iterdir()), 'Use an empty mode-700 observation directory')
+        result = f.execute(f.Kube(a.kubeconfig), load(a.plan), a.approve_plan_sha256, a.output, observe=Observer(a.prometheus, a.observation_directory))
         print(json.dumps({'runFinished': True, 'injectionConfirmed': result['injectionConfirmed'],
                           'businessRecoveryVerified': False}))
         if not result['injectionConfirmed']:
