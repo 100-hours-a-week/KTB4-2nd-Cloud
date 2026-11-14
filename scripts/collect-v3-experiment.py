@@ -16,6 +16,7 @@ import urllib.parse
 import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import v3_scaling_evidence as scaling
+import v3_connect_recovery as recovery
 
 APPS = {'frontend': 'frontend', 'auth-api': 'auth', 'trip-api': 'trip',
         'photo-api': 'photo', 'photo-converter': 'photo',
@@ -187,6 +188,30 @@ def observe_connect(kubeconfig, output, duration, interval):
               'noRestartProven': False, 'verdict': 'business_recovery_not_assessed'}
     # Polling can miss a deleted/replaced intermediate Pod. Never claim continuous no-restart proof.
     save(out/'result.json', result)
+    return result
+
+
+def connect_events(kubeconfig, output, start, end):
+    """Read current container logs in memory, return only reviewed assignment fields."""
+    # Validate before any cluster call. The parser also enforces the response size.
+    recovery.parse_events('',start,end)
+    if kube_json(kubeconfig,'get','namespace','kube-system').get('metadata',{}).get('uid')!=scaling.CLUSTER_UID:
+        raise ValueError('Wrong V3 cluster identity')
+    before=connect_runtime(kubeconfig)
+    from v3_cdc_fault import Kube
+    raw=Kube(kubeconfig).call(['-n','kafka','logs','yeodam-v3-connect-connect-0',
+                             '-c','yeodam-v3-connect-connect','--since-time='+start,
+                             '--timestamps=true','--tail=5000','--limit-bytes='+str(recovery.MAX_BYTES)])
+    result=recovery.parse_events(raw,start,end)
+    after=connect_runtime(kubeconfig)
+    unchanged=all(before[k]==after[k]for k in ('podUid','containerId','restartCount','startedAt'))
+    result.update(capturedAt=utc(datetime.now(timezone.utc).timestamp()),clusterUid=scaling.CLUSTER_UID,
+                  containerBefore=before,containerAfter=after,containerUnchangedDuringRead=unchanged,
+                  collectionStatus='bounded' if unchanged else 'partial',
+                  logByteLimitReached=len(raw.encode())>=recovery.MAX_BYTES,
+                  start=start,end=end,firstDeliveryAssessed=False)
+    # Raw messages and literal client IDs/URLs are intentionally not exported.
+    save(Path(output),result)
     return result
 
 
@@ -400,6 +425,8 @@ def main():
     watch.add_argument('--kubeconfig',required=True);watch.add_argument('--experiment-id',required=True);watch.add_argument('--duration-seconds',type=int,required=True);watch.add_argument('--interval-seconds',type=int,default=15);watch.add_argument('--input-manifest');watch.add_argument('--output',required=True)
     conn=commands.add_parser('observe-connect',help='Read exact Connect container lifecycle; no logs, exec, Secrets or restarts')
     conn.add_argument('--kubeconfig',required=True);conn.add_argument('--output',required=True);conn.add_argument('--duration-seconds',type=int,required=True);conn.add_argument('--interval-seconds',type=int,default=10)
+    ce=commands.add_parser('connect-events',help='Read bounded exact-Connect logs; export only group/assignment timestamps, never raw logs or Secrets')
+    for name in ['kubeconfig','output','start','end']:ce.add_argument('--'+name,required=True)
     verify=commands.add_parser('verify-node-release',help='Optional AWS describe of removed new worker IDs only; no lifecycle commands')
     verify.add_argument('--observation',required=True);verify.add_argument('--output',required=True)
     args = parser.parse_args()
@@ -414,6 +441,8 @@ def main():
             print(json.dumps({k:result[k]for k in ['collectionStatus','sampleCount','oneTwoOneObserved','twoReadyOnDistinctNodesObserved','observationGaps','policyOrRevisionChanged','ec2TerminationVerified','verdict']}));return 0 if result['collectionStatus']=='complete'else 2
         if args.command=='observe-connect':
             result=observe_connect(args.kubeconfig,args.output,args.duration_seconds,args.interval_seconds);print(json.dumps(result));return 0 if result['collectionStatus']=='complete'else 2
+        if args.command=='connect-events':
+            result=connect_events(args.kubeconfig,args.output,args.start,args.end);print(json.dumps({'collectionStatus':result['collectionStatus'],'events':len(result['events']),'rawLogsPersisted':False}));return 0 if result['containerUnchangedDuringRead']else 2
         if args.command=='verify-node-release':
             result=scaling.verify_node_release(args.observation);scaling.save(args.output,result);print(json.dumps(result));return 0 if result.get('allNewWorkersTerminated')is True else 2
         if args.min_samples is not None and args.min_samples < 1:

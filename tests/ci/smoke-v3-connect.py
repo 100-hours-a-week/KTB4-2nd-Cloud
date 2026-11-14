@@ -19,6 +19,13 @@ LOCK=json.loads((ROOT/'deploy/v3/connect-image/source.lock.json').read_text())
 INTERNAL=['prod.connect-configs','prod.connect-offsets','prod.connect-status']
 
 
+def worker_rebalance_config():
+    text=(ROOT/'deploy/v3/connect/templates/connect.yaml').read_text()
+    match=re.findall(r'^    scheduled\.rebalance\.max\.delay\.ms: (\d+)$',text,re.M)
+    assert match==['0'], 'Reviewed single-worker reassignment policy required'
+    return 'scheduled.rebalance.max.delay.ms='+match[0]+'\n'
+
+
 def smoke(image, output, extension=None):
     issue='542' if extension is not None else '537'
     prefix='yeodam-connect-check-'+uuid.uuid4().hex[:10]
@@ -83,18 +90,21 @@ def smoke(image, output, extension=None):
         if extension:extension.prepare(context)
         worker='\n'.join(['bootstrap.servers=broker1:9093,broker2:9093,broker3:9093','group.id=connect-v3','config.storage.topic=prod.connect-configs','offset.storage.topic=prod.connect-offsets','status.storage.topic=prod.connect-status','config.storage.replication.factor=3','offset.storage.replication.factor=3','status.storage.replication.factor=3','offset.storage.partitions=1','status.storage.partitions=1','key.converter=org.apache.kafka.connect.storage.StringConverter','value.converter=org.apache.kafka.connect.storage.StringConverter','plugin.path=/opt/kafka/plugins','plugin.discovery=service_load','listeners=http://0.0.0.0:8083','rest.advertised.host.name=connect-check','connector.client.config.override.policy=None','producer.acks=all','producer.enable.idempotence=true'])+'\n'
         security=client.replace('username="'+admin+'"','username="'+user+'"')
-        worker+=security
+        worker+=security+worker_rebalance_config()
         for line in security.splitlines():
             if not line.startswith(('default.api.','request.timeout')):worker+='producer.'+line+'\nconsumer.'+line+'\n'
         if extension:worker+=extension.worker_config(context)
         (directory/'worker.properties').write_text(worker);(directory/'worker.properties').chmod(0o644)
         name=prefix+'-worker';containers.append(name)
         docker('run','-d','--name',name,'--label','yeodam.issue='+issue,'--label','yeodam.run='+prefix,'--platform','linux/amd64','--network',net,'--network-alias','connect-check','--stop-timeout','90','--memory','768m','--cpus','.5','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp:rw,nosuid,size=128m','-v',f'{directory}:/check:ro','-p','127.0.0.1::8083','-e','KAFKA_HEAP_OPTS=-Xms128m -Xmx256m','-e','LOG_DIR=/tmp/connect-logs',*(extension.worker_args(context) if extension else []),'--entrypoint','/opt/kafka/bin/connect-distributed.sh',image,'/check/worker.properties')
+        if context.get('sourceNetwork'):
+            docker('network','connect',context['sourceNetwork'],name)
         state=json.loads(docker('inspect',name).stdout)[0];port=state['NetworkSettings']['Ports']['8083/tcp'][0]['HostPort']
         wait_api(port)
         log_result = docker('logs',name)
         worker_log = log_result.stdout + log_result.stderr
         assert 'ReflectionScanner' not in worker_log, 'Legacy reflection scan unexpectedly enabled'
+        assert re.search(r'scheduled\.rebalance\.max\.delay\.ms\s*=\s*0\b',worker_log), 'Running Worker must accept the Chart reassignment policy'
         assert 'plugin.discovery = service_load' in worker_log, 'Worker did not use reviewed discovery policy'
         print('Minimum-budget Connect REST ready with ServiceLoader-only discovery',flush=True)
         with urllib.request.urlopen(f'http://127.0.0.1:{port}/connector-plugins',timeout=5) as response:plugins=json.load(response)

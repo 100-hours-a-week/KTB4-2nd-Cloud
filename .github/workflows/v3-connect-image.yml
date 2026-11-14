@@ -9,6 +9,8 @@ on:
       - 'scripts/v3_outbox_contract.py'
       - 'scripts/prepare-v3-outbox-ca.py'
       - 'tests/ci/smoke-v3-outbox.py'
+      - 'tests/ci/smoke-v3-connect-assignment.py'
+      - 'scripts/v3_connect_recovery.py'
       - 'tests/ci/v3/OutboxWire.java'
       - 'scripts/prepare-v3-connect-image.py'
       - 'scripts/validate-v3-connect-image.sh'
