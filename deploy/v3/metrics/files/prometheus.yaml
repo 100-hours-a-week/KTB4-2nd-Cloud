@@ -43,7 +43,7 @@ scrape_configs:
       - {source_labels: [__meta_kubernetes_node_name], target_label: __address__, replacement: '$1:10250'}
       - {source_labels: [__meta_kubernetes_node_name], target_label: node}
     metric_relabel_configs:
-      - {source_labels: [__name__], regex: 'container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_cpu_cfs_(throttled_)?periods_total', action: keep}
+      - {source_labels: [__name__], regex: 'container_start_time_seconds|container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_cpu_cfs_(throttled_)?periods_total', action: keep}
       - {source_labels: [namespace], regex: 'frontend|auth|trip|photo|ai|kafka|mysql|redis|mongodb|ai-redis|qdrant|observability|argocd|karpenter|external-secrets|kube-system', action: keep}
       - {source_labels: [container], regex: 'POD|', action: drop}
       - {regex: 'id|image', action: labeldrop}

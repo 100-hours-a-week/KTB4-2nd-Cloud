@@ -44,6 +44,32 @@ class Followup(unittest.TestCase):
             if change=='timer':s['kafka']['timers']['producer.delivery.timeout.ms']=120000
             with self.subTest(change=change), self.assertRaises(ValueError):m.prepare(s,'cdc-output','C2')
 
+    def test_named_broker_tls_port_requires_unique_9093_on_each_verified_pod(self):
+        records=kafka()['kafka']['brokers']
+        pods=[{'metadata':{'name':p['name'],'labels':{'strimzi.io/pool-name':'dual-role'}},
+               'spec':{'containers':[{'ports':[{'name':'tcp-clientstls','containerPort':9093,'protocol':'TCP'}]}]}}for p in records]
+        service={'metadata':{'uid':kafka()['kafka']['serviceUid']},'spec':{'clusterIP':'172.20.20.15','ports':[{'port':9093,'targetPort':'tcp-clientstls','protocol':'TCP'}]}}
+        slices={'items':[{'ports':[{'port':9093,'protocol':'TCP'}],'endpoints':[{'conditions':{'ready':True},'targetRef':{'kind':'Pod','uid':p['uid']},'addresses':[p['ip']]}for p in records]}]}
+        class Kube:
+            def get(self,kind,*args,**kwargs):
+                if kind=='pods':return {'items':pods}
+                if kind=='service':return service
+                if kind=='endpointslices':return slices
+                if kind=='kafkaconnect':return {'spec':{'version':'4.2.2','image':kafka()['kafka']['image'],'config':{'connector.client.config.override.policy':'None'}}}
+                if kind=='kafkaconnector':return {'spec':{'config':{}}}
+                raise AssertionError(kind)
+        def record(p):return next(x for x in records if x['name']==p['metadata']['name'])
+        with patch.object(f,'snapshot',return_value=fixture()),patch.object(f,'pod_record',side_effect=record):
+            self.assertEqual(m.kafka_snapshot(Kube())['kafka']['port'],9093)
+            original=copy.deepcopy(pods)
+            for bad in ('wrong-port','duplicate','unreviewed-name','foreign-endpoint'):
+                pods[:]=copy.deepcopy(original);service['spec']['ports'][0]['targetPort']='tcp-clientstls'
+                if bad=='wrong-port':pods[1]['spec']['containers'][0]['ports'][0]['containerPort']=9092
+                if bad=='duplicate':pods[0]['spec']['containers'][0]['ports']*=2
+                if bad=='unreviewed-name':service['spec']['ports'][0]['targetPort']='http'
+                if bad=='foreign-endpoint':slices['items'][0]['endpoints'][0]['targetRef']['uid']='foreign'
+                with self.subTest(bad=bad),self.assertRaises(ValueError):m.kafka_snapshot(Kube())
+
     def test_replaced_broker_requires_new_plan_even_same_ip(self):
         p=m.prepare(kafka(),'cdc-output','C2')['plans'][0];live=kafka()
         live['kafka']['brokers'][0]['uid']='f'*8+'-1111-1111-1111-111111111111'

@@ -4,11 +4,11 @@ tests:
   - name: connector-running-task-failed
     interval: 15s
     input_series:
-      - series: 'yeodam_cdc_connector_state{connector="yeodam-v3-outbox",state="RUNNING"}'
+      - series: 'yeodam_cdc_connector_state{connector="yeodam-v3-outbox",state="RUNNING",job="cdc-status"}'
         values: '1'
-      - series: 'yeodam_cdc_task_state{connector="yeodam-v3-outbox",task="0",state="FAILED"}'
+      - series: 'yeodam_cdc_task_state{connector="yeodam-v3-outbox",task="0",state="FAILED",job="cdc-status"}'
         values: '1'
-      - series: yeodam_cdc_probe_success
+      - series: 'yeodam_cdc_probe_success{job="cdc-status"}'
         values: '1'
       - series: 'up{job="cdc-status"}'
         values: '1'
@@ -16,7 +16,7 @@ tests:
       - eval_time: 0s
         alertname: V3CdcTaskFailed
         exp_alerts:
-          - exp_labels: {connector: yeodam-v3-outbox, task: '0', state: FAILED, severity: warning}
+          - exp_labels: {connector: yeodam-v3-outbox, task: '0', state: FAILED, severity: warning, job: cdc-status}
             exp_annotations: {summary: 'CDC Task reports FAILED; Connector health alone is insufficient'}
       - eval_time: 0s
         alertname: V3CdcStatusUnavailable
@@ -26,13 +26,13 @@ tests:
     input_series:
       - series: 'up{job="cdc-status"}'
         values: '1'
-      - series: yeodam_cdc_probe_success
+      - series: 'yeodam_cdc_probe_success{job="cdc-status"}'
         values: '0'
     alert_rule_test:
       - eval_time: 0s
         alertname: V3CdcStatusUnavailable
         exp_alerts:
-          - exp_labels: {severity: warning}
+          - exp_labels: {severity: warning, job: cdc-status}
             exp_annotations: {summary: 'CDC status is unknown; do not infer healthy or recovered'}
       - eval_time: 0s
         alertname: V3CdcTaskFailed
@@ -73,7 +73,7 @@ tests:
     input_series:
     - *id002
     - *id003
-    - series: yeodam_cdc_task_state{connector="yeodam-v3-outbox",task="0",state="RUNNING"}
+    - series: yeodam_cdc_task_state{connector="yeodam-v3-outbox",task="0",state="RUNNING",job="cdc-status"}
       values: 1+0x12
     - series: yeodam_conversion_outbox_oldest_pending_age_seconds{category="active"}
       values: 0 15 30 45 60 0+0x7
@@ -150,3 +150,38 @@ tests:
           severity: warning
         exp_annotations:
           summary: Outbox count is a lower bound at 10001; do not report an exact backlog
+
+
+  - name: old-status-must-not-override-unknown
+    interval: 15s
+    input_series:
+    - series: up{job="cdc-status"}
+      values: 1 1 0
+    - series: yeodam_cdc_probe_success{job="cdc-status"}
+      values: 1 0 1
+    - series: yeodam_cdc_task_state{job="cdc-status",state="FAILED"}
+      values: 1+0x2
+    - series: yeodam_cdc_expected_task_present{job="cdc-status"}
+      values: 0+0x2
+    alert_rule_test:
+    - eval_time: 15s
+      alertname: V3CdcTaskFailed
+      exp_alerts: []
+    - eval_time: 15s
+      alertname: V3CdcTaskMissing
+      exp_alerts: []
+    - eval_time: 30s
+      alertname: V3CdcTaskFailed
+      exp_alerts: []
+    - eval_time: 30s
+      alertname: V3CdcTaskMissing
+      exp_alerts: []
+    promql_expr_test:
+    - expr: yeodam_cdc_task_state and on(job, instance) (yeodam_cdc_probe_success ==
+        1) and on(job, instance) (up{job="cdc-status"} == 1)
+      eval_time: 15s
+      exp_samples: []
+    - expr: yeodam_cdc_task_state and on(job, instance) (yeodam_cdc_probe_success ==
+        1) and on(job, instance) (up{job="cdc-status"} == 1)
+      eval_time: 30s
+      exp_samples: []

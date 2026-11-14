@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
 import sys
 import urllib.error
 import urllib.parse
@@ -39,9 +40,12 @@ RANGE = {
     'ai_jobs': 'max by (state) (yeodam_ai_jobs{job="ai"})',
     'ai_p95_seconds_5m': 'histogram_quantile(0.95,sum by (le,operation,phase) (rate(yeodam_ai_operation_duration_seconds_bucket[5m])))',
     'cdc_probe': 'yeodam_cdc_probe_success',
-    'cdc_connector': 'yeodam_cdc_connector_state',
-    'cdc_task': 'yeodam_cdc_task_state',
-    'cdc_task_present': 'yeodam_cdc_expected_task_present',
+    'cdc_observation_available': '(yeodam_cdc_probe_success == 1) and on(job, instance) (up{job="cdc-status"} == 1)',
+    'cdc_connector': 'yeodam_cdc_connector_state and on(job, instance) (yeodam_cdc_probe_success == 1) and on(job, instance) (up{job="cdc-status"} == 1)',
+    'cdc_task': 'yeodam_cdc_task_state and on(job, instance) (yeodam_cdc_probe_success == 1) and on(job, instance) (up{job="cdc-status"} == 1)',
+    'cdc_task_present': 'yeodam_cdc_expected_task_present and on(job, instance) (yeodam_cdc_probe_success == 1) and on(job, instance) (up{job="cdc-status"} == 1)',
+    'connect_restarts_total': 'kube_pod_container_status_restarts_total{namespace="kafka",pod="yeodam-v3-connect-connect-0",container="yeodam-v3-connect-connect"}',
+    'connect_container_started': 'max(container_start_time_seconds{namespace="kafka",pod="yeodam-v3-connect-connect-0",container="yeodam-v3-connect-connect"})',
     'outbox_query_started': 'yeodam_outbox_query_started_timestamp_seconds',
     'outbox_query_completed': 'yeodam_outbox_query_completed_timestamp_seconds',
     'outbox_query_duration': 'yeodam_outbox_query_duration_seconds',
@@ -57,7 +61,7 @@ RANGE = {
     'conversion_outbox_classification_capped': 'yeodam_conversion_outbox_classification_capped',
     'conversion_lag': 'keda_scaler_metrics_value{scaledObject="photo-converter"}',
 }
-LABELS = {'job', 'namespace', 'deployment', 'workload', 'operation', 'status', 'phase', 'state', 'task', 'connector',
+LABELS = {'uid', 'pod', 'container', 'job', 'namespace', 'deployment', 'workload', 'operation', 'status', 'phase', 'state', 'task', 'connector',
           'outbox','category','alertname','alertstate','severity','scaledObject','metric','scaler','scalerIndex'}
 
 
@@ -119,6 +123,70 @@ def snapshot(kubeconfig, include_scaling=False):
     if include_scaling:
         result['scalingPolicies']=scaling.policies(lambda *args:kube_json(kubeconfig,*args))
         result['clusterUid']=scaling.CLUSTER_UID
+    return result
+
+
+def connect_runtime(kubeconfig):
+    """Only exact Connect container metadata; never copy env, messages, logs or Secret fields."""
+    pod = kube_json(kubeconfig, '-n', 'kafka', 'get', 'pod', 'yeodam-v3-connect-connect-0')
+    meta = pod['metadata']; name = 'yeodam-v3-connect-connect'
+    if meta.get('namespace') != 'kafka' or meta.get('name') != name+'-0':
+        raise ValueError('Unexpected Connect identity')
+    if not re.fullmatch(r'[a-f0-9-]{36}', meta.get('uid', '')):
+        raise ValueError('Missing Connect Pod UID')
+    containers = [c for c in pod['status'].get('containerStatuses', []) if c['name'] == name]
+    if len(containers) != 1:
+        raise ValueError('Connect container state unavailable')
+    c = containers[0]; count = c.get('restartCount')
+    if type(count) is not int or count < 0:
+        raise ValueError('Invalid restart count')
+    container_id = c.get('containerID') or None
+    if container_id and not re.fullmatch(r'containerd://[a-f0-9]{64}', container_id):
+        raise ValueError('Unexpected runtime container identity')
+    started = c.get('state', {}).get('running', {}).get('startedAt')
+    previous = c.get('lastState', {}).get('terminated', {})
+    for value in [started, previous.get('startedAt'), previous.get('finishedAt')]:
+        if value is not None:timestamp(value)
+    reason = previous.get('reason')
+    if reason is not None and reason not in ('Completed', 'Error', 'OOMKilled', 'ContainerCannotRun'):
+        reason = 'other'
+    return {'podUid': meta['uid'], 'containerId': container_id, 'restartCount': count,
+            'ready': c.get('ready') is True, 'startedAt': started,
+            'lastTermination': {'reason': reason, 'exitCode': previous.get('exitCode'),
+                                'startedAt': previous.get('startedAt'), 'finishedAt': previous.get('finishedAt')}}
+
+
+def observe_connect(kubeconfig, output, duration, interval):
+    if not 120 <= duration <= 1800 or not 5 <= interval <= 30:
+        raise ValueError('Use a bounded 2-30 minute observation at 5-30 second intervals')
+    identity = kube_json(kubeconfig, 'get', 'namespace', 'kube-system')
+    if identity.get('metadata', {}).get('uid') != scaling.CLUSTER_UID:
+        raise ValueError('Wrong V3 cluster identity')
+    out = Path(output); out.mkdir(mode=0o700, parents=True, exist_ok=False)
+    started = time.monotonic(); samples = []; first = last = None; changed = False
+    while True:
+        try:
+            state = connect_runtime(kubeconfig)
+            if first is None:first = state
+            if last is not None:
+                changed |= any(state[k] != last[k] for k in ('podUid','containerId','restartCount','startedAt'))
+            last = state
+            row = {'observedAt': utc(datetime.now(timezone.utc).timestamp()), 'status': 'ok', **state}
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+            row = {'observedAt': utc(datetime.now(timezone.utc).timestamp()), 'status': 'unknown'}
+        save(out/f'sample-{len(samples):05d}.json', row); samples.append(row)
+        remaining = duration-(time.monotonic()-started)
+        if remaining <= 0:break
+        time.sleep(min(interval,remaining))
+    gaps = sum(x['status'] != 'ok' for x in samples)
+    result = {'clusterUid': scaling.CLUSTER_UID, 'collectionStatus': 'partial' if gaps else 'complete', 'samples': len(samples),
+              'observationGaps': gaps, 'containerLifecycleChanged': changed,
+              'restartDelta': None if first is None or last is None or first['podUid'] != last['podUid'] else last['restartCount']-first['restartCount'],
+              'podReplaced': None if first is None or last is None else first['podUid'] != last['podUid'],
+              'restartCause': 'not_assessed; correlate exact kubelet and previous-container logs',
+              'noRestartProven': False, 'verdict': 'business_recovery_not_assessed'}
+    # Polling can miss a deleted/replaced intermediate Pod. Never claim continuous no-restart proof.
+    save(out/'result.json', result)
     return result
 
 
@@ -238,6 +306,7 @@ def markdown(result):
              f"- 자동 확장 정책 일치: {result['conditionsComparison']['scalingPolicyMatch']} (미수집 시 null)",
              f"- Pod 수 변화: {result['conditionsComparison']['replicaChanges']}",
              f"- Node 종류별 수 변화: {result['conditionsComparison']['nodeTypesChanged']}",
+             f"- CDC 상태 관측: {result.get('cdcObservation', 'not_collected')}",
              '- 업무 성공/누락/중복/복구 목표 판정: 미수행. 별도 업무 결과 대조 및 합의 필요.',
              '', '| 전체 구간 지표 | 상태 | 시계열 수 |', '| --- | --- | --- |']
     for name, data in result['wholeWindow'].items():
@@ -262,9 +331,23 @@ def markdown(result):
               '- 엄격한 시작/끝 일치와 정적 설정 일치를 구분. Pod/Node 변화 자체를 승인된 확장 성공으로 판정하지 않음.',
               '- Outbox 원시 PENDING 집계는 시험 작업 전용/활성 작업 수가 아님. 성공 작업의 발행 확인 잔여가 포함될 수 있음.',
               '- Outbox probe·표본 나이·count_capped를 함께 확인. Kafka lag=0만으로 상류 작업 없음 판정 금지.',
+              '- CDC REST 상태는 마지막 보고값일 수 있음. probe와 수집 성공 조건을 적용하고 공백은 UNKNOWN으로 해석.',
+              '- Pod UID 유지가 무재시작 증거는 아님. Connect 재시작 수·컨테이너 시작 시각과 observe-connect 기록을 대조.',
               '- 샘플 간 탐지/복구 시각과 업무 손실/중복을 자동 추정하지 않음.',
               '- AI total은 AI 측 구간이며 BE 요청부터 최종 DB 반영까지의 시간이 아님.']
     return '\n'.join(lines)
+
+
+def cdc_observation_summary(data, start, end, step=30):
+    expected = set(range(start, end+1, step))
+    # More than one exporter series is ambiguous; do not combine independent observers.
+    readable = set()
+    if data['status'] == 'ok' and len(data['series']) == 1:
+        readable = {t for t, value in data['series'][0]['values'] if t in expected and value == 1}
+    return {'expectedGridPoints':len(expected),'readableGridPoints':len(readable),
+            'unknownGridPoints':len(expected-readable),
+            'status':'observed' if readable == expected else 'unknown_intervals',
+            'meaning':'REST readability at the query grid only; neither current Task liveness nor delivery proof'}
 
 
 def collect(args):
@@ -292,6 +375,7 @@ def collect(args):
               'conditionsMatch': all(before[k]==after[k] for k in ['apps', 'nodeTypes', 'approvedRevision']),
               'conditionsComparison':scaling.compare_conditions(before,after),'input':input_identity,
               'wholeWindow': whole, 'ranges': ranges, 'verdict': 'not_assessed'}
+    result['cdcObservation'] = cdc_observation_summary(ranges['cdc_observation_available'],start,end)
     save(out/'result.json', result); save(out/'summary.md', markdown(result))
     print(json.dumps({'collectionStatus': status, 'conditionsMatch': result['conditionsMatch'],
                       'verdict': 'not_assessed'}))
@@ -314,6 +398,8 @@ def main():
     inp.add_argument('--root',required=True);inp.add_argument('--selection',required=True);inp.add_argument('--inspection');inp.add_argument('--expected-count',type=int,default=20);inp.add_argument('--output',required=True)
     watch=commands.add_parser('observe-scaling',help='Read converter/HPA/worker lifecycle only; never generate load or mutate resources')
     watch.add_argument('--kubeconfig',required=True);watch.add_argument('--experiment-id',required=True);watch.add_argument('--duration-seconds',type=int,required=True);watch.add_argument('--interval-seconds',type=int,default=15);watch.add_argument('--input-manifest');watch.add_argument('--output',required=True)
+    conn=commands.add_parser('observe-connect',help='Read exact Connect container lifecycle; no logs, exec, Secrets or restarts')
+    conn.add_argument('--kubeconfig',required=True);conn.add_argument('--output',required=True);conn.add_argument('--duration-seconds',type=int,required=True);conn.add_argument('--interval-seconds',type=int,default=10)
     verify=commands.add_parser('verify-node-release',help='Optional AWS describe of removed new worker IDs only; no lifecycle commands')
     verify.add_argument('--observation',required=True);verify.add_argument('--output',required=True)
     args = parser.parse_args()
@@ -326,6 +412,8 @@ def main():
         if args.command=='observe-scaling':
             result=scaling.observe(lambda *items:kube_json(args.kubeconfig,*items),args.output,args.experiment_id,args.duration_seconds,args.interval_seconds,scaling.input_summary(args.input_manifest))
             print(json.dumps({k:result[k]for k in ['collectionStatus','sampleCount','oneTwoOneObserved','twoReadyOnDistinctNodesObserved','observationGaps','policyOrRevisionChanged','ec2TerminationVerified','verdict']}));return 0 if result['collectionStatus']=='complete'else 2
+        if args.command=='observe-connect':
+            result=observe_connect(args.kubeconfig,args.output,args.duration_seconds,args.interval_seconds);print(json.dumps(result));return 0 if result['collectionStatus']=='complete'else 2
         if args.command=='verify-node-release':
             result=scaling.verify_node_release(args.observation);scaling.save(args.output,result);print(json.dumps(result));return 0 if result.get('allNewWorkersTerminated')is True else 2
         if args.min_samples is not None and args.min_samples < 1:
