@@ -47,6 +47,9 @@ spec:
     connector.client.config.override.policy: None
     # All pinned plugins must pass the ServiceLoader-only runtime check.
     plugin.discovery: service_load
+    # One Connect worker: do not retain unassigned work for the default five minutes.
+    # Revisit this policy before introducing multiple workers.
+    scheduled.rebalance.max.delay.ms: 0
     offset.flush.interval.ms: 60000
     producer.acks: all
     producer.enable.idempotence: true

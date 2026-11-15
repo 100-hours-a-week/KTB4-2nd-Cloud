@@ -69,6 +69,17 @@ class Connect(unittest.TestCase):
             else:spec['config']['plugin.discovery']=value
             with self.subTest(field=field,value=value),self.assertRaises(ValueError):c.validate(docs,True)
 
+    def test_single_worker_rebalance_policy_is_explicit_and_not_silently_reused(self):
+        spec=next(d for d in self.docs if d['kind']=='KafkaConnect')['spec']
+        self.assertEqual(spec['config']['scheduled.rebalance.max.delay.ms'],0)
+        for value in [None,300000,10000,-1,False,'0']:
+            docs=deepcopy(self.docs);config=next(d for d in docs if d['kind']=='KafkaConnect')['spec']['config']
+            if value is None:config.pop('scheduled.rebalance.max.delay.ms')
+            else:config['scheduled.rebalance.max.delay.ms']=value
+            with self.subTest(value=value),self.assertRaises(ValueError):c.validate(docs,True)
+        runtime=module('connect_runtime_policy','tests/ci/smoke-v3-connect.py')
+        self.assertEqual(runtime.worker_rebalance_config(),'scheduled.rebalance.max.delay.ms=0\n')
+
     def test_restart_readiness_waits_for_actual_health_not_only_rest(self):
         recovery=module('recovery_probe','tests/ci/smoke-v3-connect-recovery.py')
         with patch.object(recovery,'probe_health',side_effect=[False,False,True]) as health, \

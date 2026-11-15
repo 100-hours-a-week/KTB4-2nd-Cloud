@@ -18,6 +18,8 @@ on:
       - 'scripts/create-v3-mysql-bootstrap-secret.py'
       - 'tests/ci/smoke-v3-connect.py'
       - 'tests/ci/smoke-v3-outbox.py'
+      - 'tests/ci/smoke-v3-connect-assignment.py'
+      - 'scripts/v3_connect_recovery.py'
       - 'tests/ci/v3/OutboxWire.java'
       - 'tests/ci/test_v3_outbox.py'
       - 'deploy/v3/environments/foundation/connect-outbox.values.yaml'

@@ -13,14 +13,15 @@ base=module('foundation',ROOT/'tests/ci/smoke-v3-connect.py');bootstrap=module('
 MYSQL=next(line.split(': ',1)[1].strip() for line in (ROOT/'deploy/v3/mysql/values.yaml').read_text().splitlines() if line.startswith('image: '))
 TABLES=CONTRACT['tables'];HISTORY=CONTRACT['historyTopic'];OUTPUTS=CONTRACT['outputs'];NAME=CONTRACT['connectorName']
 class Outbox:
+ def __init__(self,assignment_only=False):self.assignment_only=assignment_only
  def sql(self,query,check=True):
   return self.ctx['docker']('exec','-i',self.mysql,'/bin/bash','-ec',cdc.ROOT_SHELL,source=query,check=check).stdout.strip()
  def prepare(self,ctx):
-  self.ctx=ctx;d=ctx['directory'];docker=ctx['docker'];cred=d/'mysql-credentials';cred.mkdir();values=bootstrap.create_payload(cred);cred.chmod(0o755)
+  self.ctx=ctx;d=ctx['directory'];docker=ctx['docker'];ctx['sourceNetwork']=ctx['prefix']+'-source';docker('network','create','--label','yeodam.run='+ctx['prefix'],ctx['sourceNetwork']);cred=d/'mysql-credentials';cred.mkdir();values=bootstrap.create_payload(cred);cred.chmod(0o755)
   for key,name in [('rootPassword','root'),('adminPassword','admin'),('appPassword','app'),('replicationPassword','replication'),('healthPassword','health')]: (cred/(name+'-password')).write_text(values[key])
   for f in cred.iterdir():f.chmod(0o444) # Disposable synthetic fixtures only.
   data=d/'mysql-data';data.mkdir();data.chmod(0o777);self.mysql=ctx['prefix']+'-mysql';ctx['containers'].append(self.mysql)
-  docker('run','-d','--name',self.mysql,'--label','yeodam.issue=542','--platform','linux/amd64','--network',ctx['net'],'--network-alias','mysql-primary.mysql.svc.cluster.local','--network-alias','mysql-0.mysql-members.mysql.svc.cluster.local','--memory','768m','--cpus','1','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--user','999:999','--tmpfs','/tmp:rw,size=128m','-v',f'{ROOT}/deploy/v3/mysql/files:/runtime:ro','-v',f'{cred}:/credentials:ro','-v',f'{cred}:/tls:ro','-v',f'{data}:/var/lib/mysql','-e','POD_NAME=mysql-0','-e','PRIMARY_MEMBER=mysql-0','--entrypoint','/bin/bash',MYSQL,'/runtime/entrypoint.sh')
+  docker('run','-d','--name',self.mysql,'--label','yeodam.issue=542','--platform','linux/amd64','--network',ctx['sourceNetwork'],'--network-alias','mysql-primary.mysql.svc.cluster.local','--network-alias','mysql-0.mysql-members.mysql.svc.cluster.local','--memory','768m','--cpus','1','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--user','999:999','--tmpfs','/tmp:rw,size=128m','-v',f'{ROOT}/deploy/v3/mysql/files:/runtime:ro','-v',f'{cred}:/credentials:ro','-v',f'{cred}:/tls:ro','-v',f'{data}:/var/lib/mysql','-e','POD_NAME=mysql-0','-e','PRIMARY_MEMBER=mysql-0','--entrypoint','/bin/bash',MYSQL,'/runtime/entrypoint.sh')
   for _ in range(90):
    state=json.loads(docker('inspect',self.mysql).stdout)[0]['State']
    if not state['Running']:raise RuntimeError('Synthetic MySQL exited; see fixture logs')
@@ -116,6 +117,9 @@ class Outbox:
   for table in TABLES:
    self.sql(f"UPDATE yeodam.{table} SET status='PUBLISHED' WHERE outbox_id LIKE '3%';"+self.insert(table,'5',False,'PENDING',OUTPUTS[0])+self.insert(table,'6',True,'PUBLISHED',OUTPUTS[0])+'START TRANSACTION;'+self.insert(table,'8',True,'PENDING',OUTPUTS[0])+'ROLLBACK;')
   self.stage_rows(4);self.receive(14)
+  if self.assignment_only:
+   module('assignment',ROOT/'tests/ci/smoke-v3-connect-assignment.py').exercise(self,ctx)
+   return
   print('PASS: stream7 and filtered insert/update/rollback checks; waiting for production60s offset flush',flush=True)
   raw=self.request('/connectors/'+NAME+'/config');assert raw['database.password']=='${env:V3_CDC_PASSWORD}' and self.dbpassword not in json.dumps(raw),'Config provider leaked literal credentials'
   # Wait through the real production60s flush budget; never modify/reset offsets.
@@ -167,8 +171,10 @@ class Outbox:
   state=json.loads(ctx['docker']('inspect',ctx['worker']).stdout)[0];assert state['State']['Running'] and not state['State']['OOMKilled']
   (ctx['output']/'outbox-result.json').write_text(json.dumps({'sourceTables':4,'businessTopics':7,'initialPendingRecords':7,'streamRecords':7,'offlineRecoveryRecords':7,'unexpectedEvents':0,'oldSchemaWithoutTracePassed':True,'newTraceHeadersPreserved':True,'nullableTraceRowsPassed':True,'controlledRestartDuplicates':0,'expiredBinlogRejected':True,'emptySnapshotOffsetCommitted':True,'heartbeatBusinessLeak':False,'emptyOutboxRecovery':True,'normalSnapshotModeRestored':True,'postRecoveryStreamRecords':7,'committedOffsetBeforeRestart':True,'configProviderReferencesRetained':True,'dbTlsVerifyIdentity':True,'kafkaTlsScram':True,'schemaHistoryRf':3,'schemaHistoryMinIsr':2,'connectMemoryMi':768,'heapMi':256,'cpuLimit':0.5,'businessTasks':1},indent=2))
   print('PASS: Outbox4 -> topics7 exact wire; snapshot/stream/offline recovery21, filters+rollback, committed offsets and768Mi worker',flush=True)
+  module('assignment',ROOT/'tests/ci/smoke-v3-connect-assignment.py').exercise(self,ctx)
  def cleanup(self,ctx):
+  if ctx.get('sourceNetwork'):ctx['docker']('network','rm',ctx['sourceNetwork'],check=False)
   data=ctx['directory']/'mysql-data'
   if data.exists():ctx['docker']('run','--rm','--platform','linux/amd64','--network','none','--read-only','--cap-drop','ALL','--user','999:999','-v',f'{data}:/cleanup','--entrypoint','/bin/bash',MYSQL,'-ec','rm -rf /cleanup/* /cleanup/.[!.]* /cleanup/..?*',check=False)
 if __name__=='__main__':
- p=argparse.ArgumentParser(description=__doc__);p.add_argument('--image',required=True);p.add_argument('--output',required=True,type=Path);a=p.parse_args();base.smoke(a.image,a.output,Outbox())
+ p=argparse.ArgumentParser(description=__doc__);p.add_argument('--image',required=True);p.add_argument('--output',required=True,type=Path);p.add_argument('--assignment-only',action='store_true',help='Focused real active-Connector Kafka outage check; no production access');a=p.parse_args();base.smoke(a.image,a.output,Outbox(a.assignment_only))

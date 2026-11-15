@@ -123,6 +123,48 @@ class Evidence(unittest.TestCase):
         self.assertEqual(result['status'],'unknown_intervals')
         d['status']='query_failed';self.assertEqual(e.cdc_observation_summary(d,0,90)['unknownGridPoints'],4)
 
+    def test_connect_assignment_parser_keeps_only_exact_group_fields(self):
+        prefix='2026-11-15T00:00:01.123456789Z '
+        msg="[Worker clientId=private-host, groupId=connect-v3] Joined group at generation 3 with protocol version 2 and got assignment: Assignment{error=0, leaderUrl='https://SYNTHETIC_PRIVATE', connectorIds=[], taskIds=[], delay=300000}"
+        line=prefix+'2026-11-15 00:00:01 INFO [thread] DistributedHerder:2626 - '+msg
+        resumed=line.replace('00:00:01.123456789Z','00:05:01.123456789Z').replace('generation 3','generation 4').replace('connectorIds=[]','connectorIds=[yeodam-v3-outbox]').replace('taskIds=[]','taskIds=[yeodam-v3-outbox-0]').replace('delay=300000','delay=0')
+        result=e.recovery.parse_events(line+'\n'+resumed,'2026-11-15T00:00:00Z','2026-11-15T00:06:00Z')
+        self.assertEqual(result['assignmentWaits'][0]['elapsedSeconds'],300)
+        self.assertTrue(result['events'][1]['task0Assigned']);self.assertFalse(result['businessRecoveryAssessed'])
+        self.assertNotIn('SYNTHETIC_PRIVATE',json.dumps(result));self.assertNotIn('private-host',json.dumps(result))
+        fixture=prefix+'[2026-11-15 00:00:01,123] INFO '+msg+' (org.apache.kafka.connect.runtime.distributed.DistributedHerder:2626)'
+        self.assertEqual(len(e.recovery.parse_events(fixture,'2026-11-15T00:00:00Z','2026-11-15T00:06:00Z')['events']),1)
+        for bad in [line.replace('connect-v3','other-group'),line.replace('DistributedHerder:2626','Application:1'),line.replace('INFO','ERROR'),line.replace('delay=300000','delay=-1')]:
+            self.assertEqual(e.recovery.parse_events(bad,'2026-11-15T00:00:00Z','2026-11-15T00:06:00Z')['events'],[])
+        foreign=resumed.replace('yeodam-v3-outbox','foreign-private-connector')
+        result=e.recovery.parse_events(foreign,'2026-11-15T00:00:00Z','2026-11-15T00:06:00Z')
+        self.assertEqual(result['rejectedAssignmentLines'],1);self.assertNotIn('foreign-private',json.dumps(result))
+
+    def test_missing_assignment_is_unknown_and_log_input_is_bounded(self):
+        result=e.recovery.parse_events('SYNTHETIC_PRIVATE','2026-11-15T00:00:00Z','2026-11-15T00:06:00Z')
+        self.assertEqual(result['assignmentWaits'],[]);self.assertEqual(result['events'],[])
+        for start,end,raw in [('2026-11-15T00:00:00','2026-11-15T00:06:00Z',''),('2026-11-15T00:00:00Z','2026-11-15T00:31:00Z',''),('2026-11-15T00:00:00Z','2026-11-15T00:00:00Z',''),('2026-11-15T00:00:00Z','2026-11-15T00:06:00Z','x'*(e.recovery.MAX_BYTES+1))]:
+            with self.subTest(start=start,end=end),self.assertRaises(ValueError):e.recovery.parse_events(raw,start,end)
+
+    def test_connect_events_wrong_cluster_stops_before_log_read(self):
+        with patch.object(e,'kube_json',return_value={'metadata':{'uid':'other'}}),patch.object(e,'connect_runtime') as read:
+            with self.assertRaises(ValueError):e.connect_events('fixture','unused','2026-11-15T00:00:00Z','2026-11-15T00:06:00Z')
+            read.assert_not_called()
+
+    def test_connect_event_read_detects_container_change_without_exporting_raw_logs(self):
+        before={'podUid':'same','containerId':'old','restartCount':0,'startedAt':'2026-11-15T00:00:00Z'}
+        after=before|{'containerId':'new','restartCount':1}
+        raw="2026-11-15T00:01:00Z 2026-11-15 00:01:00 INFO [t] DistributedHerder:1 - [Worker clientId=SYNTHETIC_PRIVATE, groupId=connect-v3] Joined group at generation 2 with protocol version 2 and got assignment: Assignment{error=0, connectorIds=[yeodam-v3-outbox], taskIds=[yeodam-v3-outbox-0], delay=0}"
+        with tempfile.TemporaryDirectory()as d,patch.object(e,'kube_json',return_value={'metadata':{'uid':e.scaling.CLUSTER_UID}}),patch.object(e,'connect_runtime',side_effect=[before,after]),patch('v3_cdc_fault.Kube')as kube:
+            kube.return_value.call.return_value=raw
+            result=e.connect_events('fixture',Path(d)/'events.json','2026-11-15T00:00:00Z','2026-11-15T00:06:00Z')
+            saved=(Path(d)/'events.json').read_text()
+            args=kube.return_value.call.call_args.args[0]
+        self.assertEqual(result['collectionStatus'],'partial');self.assertFalse(result['containerUnchangedDuringRead'])
+        self.assertFalse(result['firstDeliveryAssessed']);self.assertNotIn('SYNTHETIC_PRIVATE',saved)
+        self.assertIn('--tail=5000',args);self.assertIn('--limit-bytes='+str(e.recovery.MAX_BYTES),args)
+        self.assertNotIn('--previous',args)
+
     def test_event_times_do_not_invent_recovery(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/'events.json';p.write_text(json.dumps([{'event':'fault_injected','at':'2026-11-11T00:01:00Z'}]))
