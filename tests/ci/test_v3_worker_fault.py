@@ -7,6 +7,13 @@ import v3_worker_chaos as c
 import v3_cdc_fault as f
 U='00000000-0000-4000-8000-000000007050'
 
+def clock_owner(owner):
+ current=w.epoch(owner['observedAt'])
+ owner['clock']={'kind':'observer-pod-utc','podUid':U,'nodeUnixSeconds':current+.001,
+                 'localStartedUnixSeconds':current-.001,'localCompletedUnixSeconds':current,'monotonicElapsedSeconds':.001}
+ return owner
+
+
 def fixture():
  s={'version':1,'cluster':f.CLUSTER,'kubeSystemUid':U,'capturedAt':f.now(),'approvedRevision':'a'*40,
     'beSource':w.BE_SOURCE,'beImage':w.BE_IMAGE,'mysql':{'uid':U,'name':'mysql-0'},
@@ -29,7 +36,7 @@ def fixture():
  proof={'rows':rows,'approvedRevision':'a'*40,'observedAt':f.now(),'queryElapsedSeconds':.2,'attempt':1}
  owner={'observedAt':f.now(),'group':'prod.yeodam.image-conversion-initial-light','state':'Stable',
         'members':[{'host':'/10.40.1.2','partitions':[0,1]}],'committed':{'0':5,'1':0}}
- return p,proof,owner
+ return p,proof,clock_owner(owner)
 
 
 def trace_fixture():
@@ -231,7 +238,7 @@ class Worker(unittest.TestCase):
     if i==3:next(x for x in sample['rows']if x['section']=='execution_timing').update(status='COMPLETED',endedAt=sample['observedAt'])
     save('db/sample-'+str(i)+'.json',sample);rows.append('sample-'+str(i)+'.json')
    save('db-summary.json',{'sampleFiles':rows,'tripIds':[705],'observationGaps':[]})
-   oo=copy.deepcopy(o);oo.update(observedAt='2026-11-15T12:00:05Z');oo['members'][0]['host']='/10.40.1.3'
+   oo=copy.deepcopy(o);oo.update(observedAt='2026-11-15T12:00:05Z');clock_owner(oo);oo['members'][0]['host']='/10.40.1.3'
    save('runtime-0001.json',{'at':oo['observedAt'],'pods':[{'uid':'new','ip':'10.40.1.3','ready':True}],'ownership':oo})
    record=w.summarize(q);self.assertEqual(record['eligibilityToClaimBounds'],[0,3]);self.assertEqual(record['claimToCompletionBounds'],[77,79])
    self.assertTrue(w.bounded_target(record['eligibilityToClaimBounds'],15));self.assertIsNone(w.bounded_target([14,16],15))
@@ -255,6 +262,95 @@ class Worker(unittest.TestCase):
    q=Path(tmp);os.chmod(q,0o700);g=q/'guard.json';plan,_,_=fixture()
    f.private_write(g,{'planSha256':plan['planSha256'],'instanceId':'i-05e1ad9dd96dba4ae','independent':True,'pid':os.getpid(),'at':f.now(),'remainingSeconds':20,'stopFile':str(q/'stop')})
    with self.assertRaises(ValueError):m.guard_ready(g,plan)
+ def test_api_defaulted_none_conversion_reuses_existing_crd_only(self):
+  k=Fake();p=c.profile_plan(k);spec=copy.deepcopy(c.crd()['spec']);spec['conversion']={'strategy':'None'}
+  k.objs[('crd','podchaos.chaos-mesh.org')]={'metadata':{'uid':U},'spec':spec}
+  with tempfile.TemporaryDirectory()as tmp:
+   os.chmod(tmp,0o700);r=c.apply(k,p,p['planSha256'],Path(tmp)/'receipt.json');self.assertFalse(r['crdCreated']);c.restore(k,r)
+  self.assertFalse(any('create'in args and json.loads(body)['kind']=='CustomResourceDefinition'for args,body in k.calls if body))
+  for change in [{'strategy':'Webhook','webhook':{}},{'strategy':'None','extra':True}]:
+   bad=copy.deepcopy(spec);bad['conversion']=change
+   self.assertNotEqual(c.normalized_crd_spec(bad),c.normalized_crd_spec(c.crd()['spec']))
+ def test_sequential_ten_plus_ten_input_is_pending_not_eligible(self):
+  p,b,o=fixture()
+  b['rows']=[x for x in b['rows']if not(x['section']in ('worker_task','worker_delivery')and x.get('taskId')=='task2')]
+  for row in b['rows']:
+   if row['section']=='worker_item'and row['batchId']==2:row.update(accepted=0,route='DB')
+  w.validate_rows(b['rows'],705);self.assertFalse(w.input_accepted(b['rows']))
+  with self.assertRaisesRegex(f.GuardError,'All twenty'):w.partial(b,p,o)
+  for mutate in [dict(accepted=1),dict(attempt=1),dict(saved=1,derivedHash='a'*64),dict(attachmentId=99),dict(route='unknown')]:
+   bad=copy.deepcopy(b);next(x for x in bad['rows']if x.get('itemId')==20).update(mutate)
+   with self.subTest(mutate=mutate),self.assertRaises(f.GuardError):w.validate_rows(bad['rows'],705)
+ def test_slow_metadata_reads_precede_fresh_db_and_pending_input_never_kills(self):
+  from datetime import datetime,timezone
+  clock=[time.time()];calls=[]
+  def stamp():return datetime.fromtimestamp(clock[0]-.001,timezone.utc).isoformat()
+  class K(Fake):
+   def get(self,kind,namespace=None,name=None,**kw):
+    if kind=='pod':return {'metadata':{'uid':U}}
+    if kind=='pods':return {'items':[]}
+    if kind=='podchaos'and name:return copy.deepcopy(self.objs[(kind,name)])
+    return super().get(kind,namespace,name,**kw)
+   def call(self,args,source=None,timeout=20):
+    if 'create'in args:calls.append('create')
+    if 'patch'in args and 'podchaos'in args:return '{}'
+    if 'get'in args and 'podchaos'in args:return json.dumps(self.objs.get(('podchaos','w1-unit'),{}))
+    if 'get'in args and 'pod'in args:return '{}'
+    if 'get'in args and 'pods'in args:return '{"items":[]}'
+    return super().call(args,source,timeout)
+  class Observer:
+   gaps=[];exhausted=False
+   def __init__(self,*args):self.count=0
+   def sample(self):
+    calls.append('db');clock[0]+=.2;self.count+=1;_,b,_=fixture()
+    if self.count==1:
+     b['rows']=[x for x in b['rows']if not(x['section']in ('worker_task','worker_delivery')and x.get('taskId')=='task2')]
+     for row in b['rows']:
+      if row['section']=='worker_item'and row['batchId']==2:row.update(accepted=0,route='DB')
+    if self.count>=4:next(x for x in b['rows']if x['section']=='execution_timing')['status']='COMPLETED'
+    return b
+   def summary(self,state):return {'state':state}
+  def owner(**kw):calls.append('owner');clock[0]+=2.1;return fixture()[2]
+  with tempfile.TemporaryDirectory()as tmp:
+   os.chmod(tmp,0o700)
+   with patch.object(w.time,'time',side_effect=lambda:clock[0]),patch.object(f,'now',side_effect=stamp),patch.object(w.time,'sleep',side_effect=lambda x:clock.__setitem__(0,clock[0]+x)),patch.object(w,'runtime'),patch.object(c,'require_active'),patch.object(c,'restore',return_value={'restored':True}),patch.object(w,'WorkerDbObserver',Observer),patch.object(f,'ready_pod',return_value=True):
+    p,_,_=fixture();result=w.execute(K(),p,p['planSha256'],tmp,owner,{},lambda:None,lambda:True)
+   self.assertTrue(result['injectionRequested']);self.assertEqual(calls[:4],['owner','db','owner','db'])
+   self.assertGreater(calls.index('create'),calls.index('db',calls.index('db')+1))
+   pair=json.loads((Path(tmp)/'pair-0003.json').read_text());self.assertLess(pair['dbAgeSeconds'],2)
+   runtime=json.loads((Path(tmp)/'runtime-0001.json').read_text());self.assertGreaterEqual(w.epoch(runtime['at']),w.epoch(runtime['ownership']['observedAt']))
+ def test_controlled_failure_reason_is_private_and_cleanup_still_runs(self):
+  p,_,_=fixture();calls=[]
+  with tempfile.TemporaryDirectory()as tmp:
+   os.chmod(tmp,0o700)
+   with patch.object(w,'runtime',side_effect=f.GuardError('Victim changed')),patch.object(c,'restore',return_value={'restored':True}):
+    with self.assertRaisesRegex(f.GuardError,'Victim changed'):w.execute(Fake(),p,p['planSha256'],tmp,lambda **kw:None,{},lambda:calls.append('gpu-stop'),lambda:True)
+   failure=json.loads((Path(tmp)/'failure.json').read_text());self.assertEqual(failure['guardReason'],'Victim changed');self.assertFalse(failure['injectionRequested']);self.assertEqual(calls,['gpu-stop'])
+ def test_owner_node_clock_ahead_is_interval_mapped_not_assumed_local(self):
+  p,b,o=fixture();current=time.time()
+  from datetime import datetime,timezone
+  b['observedAt']=datetime.fromtimestamp(current-.01,timezone.utc).isoformat()
+  o['observedAt']=datetime.fromtimestamp(current+.25,timezone.utc).isoformat()
+  o['clock']={'kind':'observer-pod-utc','podUid':U,'nodeUnixSeconds':current+.5,
+              'localStartedUnixSeconds':current-.1,'localCompletedUnixSeconds':current,'monotonicElapsedSeconds':.1}
+  bounds=w.ownership_age_bounds(o,current);self.assertAlmostEqual(bounds[0],.25,places=5);self.assertAlmostEqual(bounds[1],.35,places=5)
+  self.assertEqual(w.partial(b,p,o,now=current)['currentItem'],3)
+  for change in ['stale','no-clock','jump','future-source']:
+   bad=copy.deepcopy(o)
+   if change=='stale':bad['observedAt']=datetime.fromtimestamp(current-10,timezone.utc).isoformat()
+   elif change=='no-clock':bad.pop('clock')
+   elif change=='jump':bad['clock']['monotonicElapsedSeconds']=1
+   else:bad['clock']['nodeUnixSeconds']=current
+   with self.subTest(change=change),self.assertRaises(f.GuardError):w.partial(b,p,bad,now=current)
+ def test_live_reader_clock_reference_uses_only_date_not_secrets(self):
+  spec=importlib.util.spec_from_file_location('clock_cli',ROOT/'scripts/prepare-v3-worker-fault.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+  class K:
+   def get(self,*args,**kwargs):return {'metadata':{'uid':U,'labels':{'yeodam.io/owner':'worker-fault-preparation'}}}
+   def call(self,args,source=None,timeout=20):
+    if 'get'in args:return json.dumps({'metadata':{'uid':U,'labels':{'yeodam.io/owner':'worker-fault-preparation'}}})
+    if 'logs'in args:return 'WORKER_OWNERSHIP '+json.dumps(fixture()[2])
+    self.assertion=args[-2:];return f'{time.time():.9f}\n'
+  k=K();row=m.ownership(k,'w1-reader',U);self.assertEqual(row['clock']['podUid'],U);self.assertEqual(k.assertion,['date','+%s.%N'])
  @unittest.skipUnless(os.environ.get('V3_KUBECONFORM'),'Pinned schema binary required')
  def test_actual_official_podchaos_and_rbac_schemas(self):
   p,_,_=fixture();d=c.crd();schema=next(v['schema']['openAPIV3Schema'] for v in d['spec']['versions']if v['name']=='v1alpha1')

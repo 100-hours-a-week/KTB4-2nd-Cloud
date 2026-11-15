@@ -79,8 +79,11 @@ def validate_rows(rows, trip_id, complete=False):
     items=[r for r in rows if r['section']=='worker_item']
     f.require(len({r['itemId'] for r in items})==len(items), 'Duplicate input item identity')
     for r in items:
-        f.require(type(r['attempt']) is int and 0<=r['attempt']<=3 and type(r['saved']) is int and r['saved'] in (0,1)
-                  and r['cleanupEntries']>=0 and r['route']=='KAFKA', 'Unreviewed item state')
+        pending=(r.get('accepted')==0 and r['route']=='DB' and r['attempt']==0 and r['saved']==0
+                 and r.get('startedAt') is None and r.get('attachmentId') is None)
+        f.require(type(r.get('accepted')) is int and r['accepted'] in (0,1) and
+                  type(r['attempt']) is int and 0<=r['attempt']<=3 and type(r['saved']) is int and r['saved'] in (0,1)
+                  and r['cleanupEntries']>=0 and (r['route']=='KAFKA' or pending), 'Unreviewed item state')
         f.require((r['saved']==0 and r['derivedHash'] is None) or (r['saved']==1 and SHA.fullmatch(r['derivedHash'] or '')), 'Invalid persisted photo hash')
     tasks=[r for r in rows if r['section']=='worker_task']
     f.require(all(r['kind']=='INITIAL' and r['lane']=='LIGHT' and type(r['photos']) is int and 1<=r['photos']<=10
@@ -89,6 +92,11 @@ def validate_rows(rows, trip_id, complete=False):
         f.require(len(items)==20 and all(r['accepted']==1 for r in items) and sum(r['photos'] for r in tasks)==20,
                   'All twenty accepted photos required')
     return rows
+
+
+def input_accepted(rows):
+    items=[r for r in rows if r['section']=='worker_item']
+    return len(items)==20 and all(r['accepted']==1 and r['route']=='KAFKA'for r in items) and sum(r['photos']for r in rows if r['section']=='worker_task')==20
 
 
 class DeadlineKube:
@@ -201,14 +209,32 @@ def verify(p,expected,fresh=True):
         'name':p['runId'],'namespace':'photo','labels':{LABEL:p['runId']},'annotations':{f.PAUSE:'true'}}, 'Exact inactive one-shot target required')
 
 
+def ownership_age_bounds(ownership,current):
+    # observedAt is the observer container's UTC clock, not this Mac's clock.
+    # Bind it to a read-only date sample from the same pinned observer Pod.
+    clock=ownership.get('clock',{});keys=['nodeUnixSeconds','localStartedUnixSeconds','localCompletedUnixSeconds','monotonicElapsedSeconds']
+    f.require(clock.get('kind')=='observer-pod-utc' and f.UUID.fullmatch(clock.get('podUid','')) and
+              all(finite(clock.get(key))for key in keys),'Observer clock proof required')
+    node,start,end,elapsed=(clock[key]for key in keys)
+    observed=epoch(ownership['observedAt'])
+    f.require(0<=end-start<=2 and 0<=elapsed<=2 and abs((end-start)-elapsed)<=.1 and current>=end and
+              0<=node-observed<=5,'Observer clock reference unavailable or stale')
+    # Offset is an interval: the node sampled its clock between local start/end.
+    # Causal node>=observed proves the metadata predates the reference; clamp only
+    # that lower uncertainty bound, never an unproven future timestamp.
+    low_offset,high_offset=node-end,node-start
+    return [max(0,current-(observed-low_offset)),max(0,current-(observed-high_offset))]
+
+
 def partial(proof,p,ownership,now=None):
     current=time.time() if now is None else now
     f.require(0<=current-epoch(proof['observedAt'])<=2 and proof['queryElapsedSeconds']<=2 and
               proof['attempt']==1, 'Partial state must be a fresh first-attempt observation')
     rows=validate_rows(proof['rows'],p['tripId'],True)
     f.require(next(r for r in rows if r['section']=='execution_timing')['status'] not in ['COMPLETED','FAILED','CANCELED'], 'Execution already terminal')
+    age=ownership_age_bounds(ownership,current)
     f.require(ownership['group']=='prod.yeodam.image-conversion-initial-light' and ownership['state']=='Stable'
-              and ownership.get('querySeconds',0)<=2 and 0<=current-epoch(ownership['observedAt'])<=5,'Fresh stable Kafka ownership required')
+              and ownership.get('querySeconds',0)<=2 and age[1]<=5,'Fresh stable Kafka ownership required')
     candidates=[]
     for task in [r for r in rows if r['section']=='worker_task']:
         items=[r for r in rows if r['section']=='worker_item' and r['batchId']==task['batchId']]
@@ -293,15 +319,24 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
         obsdir=directory/'db';obsdir.mkdir(mode=0o700)
         reads=DeadlineKube(k)
         observer=WorkerDbObserver(reads,p['snapshot'],p['tripId'],obsdir)
-        selected=None; search=time.monotonic()+p['criteria']['searchSeconds']
+        selected=None; search=time.monotonic()+p['criteria']['searchSeconds'];pairs=0
+        def observe_pair():
+            nonlocal pairs
+            owner=owner_reader(deadline=reads.deadline)
+            proof=observer.sample();pairs+=1
+            f.private_write(directory/f'pair-{pairs:04d}.json',{'at':f.now(),'ownership':owner,'dbProofSha256':f.sha(proof),
+                            'dbAgeSeconds':time.time()-epoch(proof['observedAt'])})
+            return proof,owner
         while time.monotonic()<search:
             reads.deadline=search
             observer.SAMPLE_SECONDS=min(45,max(.001,search-time.monotonic()))
-            proof=observer.sample()
+            proof,owner=observe_pair()
             f.require(not observer.gaps and not observer.exhausted,'Observation gap before injection')
-            try:selected=partial(proof,p,owner_reader(deadline=reads.deadline))
-            except f.GuardError as e:
-                if str(e)!='No unique partially persisted in-flight task; do not kill':raise
+            f.require(next(r for r in proof['rows']if r['section']=='execution_timing')['status']not in ('COMPLETED','FAILED','CANCELED'),'Execution already terminal')
+            if input_accepted(proof['rows']):
+                try:selected=partial(proof,p,owner)
+                except f.GuardError as e:
+                    if str(e)!='No unique partially persisted in-flight task; do not kill':raise
             if selected:break
             time.sleep(min(1,max(0,search-time.monotonic())))
         f.require(selected is not None,'Partial processing window missed; no injection')
@@ -317,7 +352,7 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
             f.private_write(directory/('owned-'+obj['kind']+'.json'),{'kind':obj['kind'],'name':obj['metadata']['name'],'uid':uid,'runId':p['runId']})
         # Revalidate DB after registration/permission work; stale/complete work is never killed.
         reads.deadline=time.monotonic()+10;observer.SAMPLE_SECONDS=10
-        selected=partial(observer.sample(),p,owner_reader(deadline=reads.deadline));f.private_write(directory/'pre-injection.json',selected)
+        proof,owner=observe_pair();selected=partial(proof,p,owner);f.private_write(directory/'pre-injection.json',selected)
         pod=k.get('pod','photo',p['snapshot']['victim']['name'])
         f.require(pod['metadata']['uid']==p['snapshot']['victim']['uid'] and f.ready_pod(pod),'Victim changed before unpause')
         fault=k.get('podchaos','photo',p['runId'])
@@ -348,6 +383,7 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
                                'containerStatuses':[{a:v for a,v in c.items() if a in ['name','restartCount','containerID','state','lastState']} for c in x['status'].get('containerStatuses',[])]}
                               for x in reads.get('pods','photo',selector='app.kubernetes.io/instance=photo-converter')['items']],
                       'ownership':owner_reader(deadline=deadline)}
+            evidence['at']=f.now() # completion upper bound, after ownership/Pod reads
             f.private_write(directory/f'runtime-{len(samples):04d}.json',evidence)
             # Preserve precise container termination if obtainable, otherwise only an API-object bound.
             if term and not receipt['terminationConfirmed']:
@@ -358,6 +394,11 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
             time.sleep(min(3,max(0,deadline-time.monotonic())))
         receipt['observationState']=state
         if samples:f.private_write(directory/'final.json',samples[-1])
+    except BaseException as error:
+        f.private_write(directory/'failure.json',{'at':f.now(),'kind':type(error).__name__,
+                        'guardReason':str(error)if isinstance(error,f.GuardError)else None,
+                        'injectionRequested':receipt['injectionRequested']})
+        raise
     finally:
         # Do not remove an active kill's CR and claim that the deleted Pod recovered.
         # Its one-shot effect is irreversible; preserve intent and separately follow ReplicaSet/business.
@@ -446,10 +487,12 @@ def summarize(directory):
     f.require(samples and receipt['injectionRequested'],'No injected recorded trial')
     runtime=[take(path) for path in sorted(directory.glob('runtime-*.json'))]
     task_id=selected['taskId'];old_hash=selected['claimHash'];last_old=None;new=None;new_prior=None
-    events={};series=[];completed=None
+    events={};series=[];completed=None;pre_acceptance=[]
     # Store local timeline with DB clock interval mapping per actual sample. No interpolation.
     for sample in samples:
-        rows=validate_rows(sample['rows'],db['tripIds'][0],True)
+        rows=validate_rows(sample['rows'],db['tripIds'][0],False)
+        if not input_accepted(rows):
+            pre_acceptance.append(sample['observedAt']);continue
         clock=epoch(next(r['utc'] for r in rows if r['section']=='db_clock'))
         task=next(r for r in rows if r['section']=='worker_task' and r['taskId']==task_id)
         offset=sample['dbMinusLocalIntervalSeconds']
@@ -479,7 +522,8 @@ def summarize(directory):
         pods=[p for p in pods if p['uid']!=intent['victimUid']]
         if ready is None and any(p['ready'] for p in pods):ready=[previous,at]
         owner=rt.get('ownership',{})
-        fresh=owner.get('observedAt') and owner.get('querySeconds',0)<=2 and 0<=at-epoch(owner['observedAt'])<=5
+        try:fresh=owner.get('querySeconds',0)<=2 and ownership_age_bounds(owner,at)[1]<=5
+        except (f.GuardError,KeyError,TypeError,ValueError):fresh=False
         if assigned is None and fresh and owner.get('state')=='Stable' and any(
             m['host'].lstrip('/')==p.get('ip') and selected['delivery']['partition'] in m['partitions']
             for p in pods for m in owner.get('members',[])):assigned=[previous,at]
@@ -513,7 +557,7 @@ def summarize(directory):
             'completedAtBounds':[iso(x) for x in completed] if completed else None,
             'manualActions':receipt.get('manualActions',[]),'observationGaps':db['observationGaps'],'sourceHashes':sources,
             'precision':'observer intervals; observed lease is a lower eligibility bound; API disappearance is not kernel death',
-            'traceStillRequired':True}
+            'traceStillRequired':True,'preAcceptanceSamples':pre_acceptance}
 
 
 def dashboard(record):

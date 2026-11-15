@@ -48,6 +48,12 @@ def crd():
         return yaml.safe_load(t.extractfile(members[0]).read())
 
 
+def normalized_crd_spec(spec):
+    value=copy.deepcopy(spec)
+    if value.get('conversion')=={'strategy':'None'}:value.pop('conversion')
+    return value
+
+
 def access():
     meta={'name':ROLE,'namespace':'photo','labels':{'yeodam.io/owner':'worker-fault-preparation'}}
     return [{'apiVersion':API,'kind':'Role','metadata':meta,'rules':[
@@ -156,7 +162,7 @@ def apply(k,p,expected,path):
     try:
         existing=json.loads(k.call(['get','crd','podchaos.chaos-mesh.org','--ignore-not-found','-o','json']) or '{}')
         if existing:
-            f.require(existing['spec']==crd()['spec'],'Review pre-existing different PodChaos CRD')
+            f.require(normalized_crd_spec(existing['spec'])==normalized_crd_spec(crd()['spec']),'Review pre-existing different PodChaos CRD')
         else:
             made=f.bounded_json(k.call(['create','-f','-','-o','json'],json.dumps(crd())))
             receipt['crdCreated']=True;receipt['crdUid']=made['metadata']['uid'];save()
