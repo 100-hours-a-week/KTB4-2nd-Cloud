@@ -1,6 +1,9 @@
 import copy
 import importlib.util
 import json
+import os
+import subprocess
+import yaml
 import sys
 import tempfile
 import time
@@ -21,7 +24,7 @@ def kafka():
     s=fixture()
     s['kafka']={'port':9093,'serviceIp':'172.20.20.15','serviceUid':'9'*8+'-1111-1111-1111-111111111111',
                 'image':'ghcr.io/100-hours-a-week/yeodam-v3-connect@sha256:'+'a'*64,
-                'timers':dict(m.WORKER_TIMERS),'brokers':[]}
+                'timers':dict(m.WORKER_TIMERS),'connectReplicas':1,'brokers':[]}
     for i in range(3):
         s['kafka']['brokers'].append({'name':m.KAFKA+'-dual-role-'+str(i),'uid':str(i+6)*8+'-1111-1111-1111-111111111111',
             'ip':'10.40.20.'+str(i+10),'node':'cpu-'+str(i),'ownerKind':'StrimziPodSet','ownerName':m.KAFKA+'-dual-role'})
@@ -35,12 +38,14 @@ class Followup(unittest.TestCase):
         self.assertEqual(spec['externalTargets'],['10.40.20.10:9093','10.40.20.11:9093','10.40.20.12:9093','172.20.20.15:9093'])
         self.assertEqual(spec['selector']['pods'],{'kafka':[fixture()['connect']['name']]})
         self.assertNotIn('target',spec)
-        for change in ('port','uid','ip','owner','timer'):
+        for change in ('port','uid','ip','owner','timer','scheduled-timer','replicas'):
             s=kafka()
             if change=='port':s['kafka']['port']=9091
             if change=='uid':s['kafka']['brokers'][0]['uid']='foreign'
             if change=='ip':s['kafka']['brokers'][0]['ip']='8.8.8.8'
             if change=='owner':s['kafka']['brokers'][0]['ownerName']='other'
+            if change=='scheduled-timer':s['kafka']['timers']['scheduled.rebalance.max.delay.ms']=300000
+            if change=='replicas':s['kafka']['connectReplicas']=2
             if change=='timer':s['kafka']['timers']['producer.delivery.timeout.ms']=120000
             with self.subTest(change=change), self.assertRaises(ValueError):m.prepare(s,'cdc-output','C2')
 
@@ -50,17 +55,39 @@ class Followup(unittest.TestCase):
                'spec':{'containers':[{'ports':[{'name':'tcp-clientstls','containerPort':9093,'protocol':'TCP'}]}]}}for p in records]
         service={'metadata':{'uid':kafka()['kafka']['serviceUid']},'spec':{'clusterIP':'172.20.20.15','ports':[{'port':9093,'targetPort':'tcp-clientstls','protocol':'TCP'}]}}
         slices={'items':[{'ports':[{'port':9093,'protocol':'TCP'}],'endpoints':[{'conditions':{'ready':True},'targetRef':{'kind':'Pod','uid':p['uid']},'addresses':[p['ip']]}for p in records]}]}
+        helm=os.environ.get('V3_HELM')
+        if not helm:self.skipTest('Set pinned V3_HELM for the actual merged Connect Chart profile')
+        rendered=subprocess.check_output([helm,'template','yeodam-v3-connect',str(ROOT/'deploy/v3/connect'),'-n','default','-f',str(ROOT/'tests/ci/v3/connect.values.fixture.yaml')],text=True)
+        connect=next(x for x in yaml.safe_load_all(rendered) if x and x['kind']=='KafkaConnect')
         class Kube:
             def get(self,kind,*args,**kwargs):
                 if kind=='pods':return {'items':pods}
                 if kind=='service':return service
                 if kind=='endpointslices':return slices
-                if kind=='kafkaconnect':return {'spec':{'version':'4.2.2','image':kafka()['kafka']['image'],'config':{'connector.client.config.override.policy':'None'}}}
+                if kind=='kafkaconnect':return connect
                 if kind=='kafkaconnector':return {'spec':{'config':{}}}
                 raise AssertionError(kind)
         def record(p):return next(x for x in records if x['name']==p['metadata']['name'])
         with patch.object(f,'snapshot',return_value=fixture()),patch.object(f,'pod_record',side_effect=record):
             self.assertEqual(m.kafka_snapshot(Kube())['kafka']['port'],9093)
+            # Match the merged Connect Chart profile, then reject stale or widened profiles
+            # before preparing a fault. Zero is never inferred from a missing override.
+            config=connect['spec']['config']
+            for bad in (None,300000,10000,False,'0',-1):
+                if bad is None:config.pop('scheduled.rebalance.max.delay.ms',None)
+                else:config['scheduled.rebalance.max.delay.ms']=bad
+                with self.subTest(timer=bad),self.assertRaises(ValueError):m.kafka_snapshot(Kube())
+            config['scheduled.rebalance.max.delay.ms']=0
+            for bad in (None,2,True,'1'):
+                connect['spec']['replicas']=bad
+                with self.subTest(replicas=bad),self.assertRaises(ValueError):m.kafka_snapshot(Kube())
+            connect['spec']['replicas']=1
+            config['worker.unsync.backoff.ms']=0
+            with self.assertRaises(ValueError):m.kafka_snapshot(Kube())
+            config.pop('worker.unsync.backoff.ms')
+            snap=m.kafka_snapshot(Kube());plan=m.prepare(snap,'cdc-reviewed-zero-delay','C2');m.verify(plan,plan['planSha256'])
+            self.assertEqual(plan['plans'][0]['seconds'],90)
+            self.assertEqual(plan['criteria'],m.criteria('C2'))
             original=copy.deepcopy(pods)
             for bad in ('wrong-port','duplicate','unreviewed-name','foreign-endpoint'):
                 pods[:]=copy.deepcopy(original);service['spec']['ports'][0]['targetPort']='tcp-clientstls'

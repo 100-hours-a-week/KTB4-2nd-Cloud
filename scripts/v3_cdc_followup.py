@@ -16,10 +16,11 @@ import urllib.parse
 import v3_cdc_fault as f
 
 KAFKA = 'yeodam-v3-kafka'
-# Source-derived, NOT a readout from the operating JVM. Validate overrides below.
+# Source defaults except the reviewed #700 single-worker rebalance override.
+# This profile is not a readout from the operating JVM. Validate live overrides below.
 WORKER_TIMERS = {'session.timeout.ms': 10000, 'heartbeat.interval.ms': 3000,
                  'rebalance.timeout.ms': 60000, 'worker.sync.timeout.ms': 3000,
-                 'worker.unsync.backoff.ms': 300000, 'scheduled.rebalance.max.delay.ms': 300000, 'offset.flush.interval.ms': 60000,
+                 'worker.unsync.backoff.ms': 300000, 'scheduled.rebalance.max.delay.ms': 0, 'offset.flush.interval.ms': 60000,
                  'offset.flush.timeout.ms': 5000, 'producer.request.timeout.ms': 30000,
                  'producer.delivery.timeout.ms': 2147483647,
                  'producer.max.block.ms': 9223372036854775807}
@@ -58,16 +59,22 @@ def kafka_snapshot(k, controller_node=None, allow_worker=False):
     cfg = connect['spec']['config']
     f.require(connect['spec']['version'] == '4.2.2' and cfg.get('connector.client.config.override.policy') == 'None',
               'Review changed Kafka version or client override policy')
+    # The zero-delay override is approved only for exactly one configured Worker.
+    # Missing CR config must not be mistaken for Kafka's 300000ms default.
+    f.require(type(connect['spec'].get('replicas')) is int and connect['spec']['replicas'] == 1 and
+              type(cfg.get('scheduled.rebalance.max.delay.ms')) is int and
+              cfg['scheduled.rebalance.max.delay.ms'] == 0,
+              'Reviewed explicit zero-delay single Worker profile required')
     # Inspect numeric allowlist only; never persist SASL/config providers/Secret values.
     timers = {key: cfg.get(key, value) for key, value in WORKER_TIMERS.items()}
-    f.require(all(str(timers[key]) == str(value) for key, value in WORKER_TIMERS.items()),
+    f.require(all(type(timers[key]) is int and timers[key] == value for key, value in WORKER_TIMERS.items()),
               'Review changed retry/group timers before a Kafka fault')
     connector = k.get('kafkaconnector', 'kafka', f.CONNECTOR)
     f.require(not any(x.startswith('producer.override.') for x in connector['spec']['config']),
               'Unexpected connector client overrides')
     s['kafka'] = {'brokers': sorted(records, key=lambda p: p['name']), 'serviceIp': svc['spec']['clusterIP'],
                   'serviceUid': svc['metadata']['uid'], 'port': 9093,
-                  'image': connect['spec']['image'], 'timers': timers,
+                  'image': connect['spec']['image'], 'timers': timers, 'connectReplicas': connect['spec']['replicas'],
                   'configSha256': f.sha(cfg), 'connectorConfigSha256': f.sha(connector['spec']['config']),
                   'timerEvidence': 'Kafka 4.2.2 source defaults plus Kubernetes CR numeric overrides; not JVM dump'}
     kafka_targets(s)
@@ -76,6 +83,8 @@ def kafka_snapshot(k, controller_node=None, allow_worker=False):
 
 def kafka_targets(s):
     v = s.get('kafka', {})
+    f.require(type(v.get('connectReplicas')) is int and v['connectReplicas'] == 1,
+              'Single Worker snapshot required for the reviewed zero-delay policy')
     f.require(v.get('port') == 9093 and len(v.get('brokers', [])) == 3, 'Reviewed Kafka snapshot required')
     f.require(f.UUID.fullmatch(v.get('serviceUid', '')) and
               re.fullmatch(r'ghcr.io/100-hours-a-week/yeodam-v3-connect@sha256:[a-f0-9]{64}', v.get('image', '')), 'Kafka service/image identity required')
@@ -86,7 +95,7 @@ def kafka_targets(s):
                   p['name'].startswith(KAFKA+'-dual-role-') and f.UUID.fullmatch(p['uid']) and
                   ipaddress.ip_address(p['ip']) in ipaddress.ip_network('10.40.0.0/16'), 'Wrong Kafka broker identity')
     f.require(ipaddress.ip_address(v['serviceIp']) in ipaddress.ip_network('172.20.0.0/16'), 'Wrong Kafka service IP')
-    f.require(set(v['timers']) == set(WORKER_TIMERS) and all(str(v['timers'][k]) == str(x) for k,x in WORKER_TIMERS.items()),
+    f.require(set(v['timers']) == set(WORKER_TIMERS) and all(type(v['timers'][k]) is int and v['timers'][k] == x for k,x in WORKER_TIMERS.items()),
               'Unreviewed Kafka timer profile')
     return sorted({p['ip']+':9093' for p in v['brokers']} | {v['serviceIp']+':9093'})
 
