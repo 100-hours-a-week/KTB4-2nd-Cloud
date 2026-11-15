@@ -84,9 +84,11 @@ class Fake:
 
 
 class Worker(unittest.TestCase):
- def test_plan_is_inactive_exact_one_pod_and_hash_bound(self):
+ def test_offline_plan_targets_one_pod_and_create_is_not_paused(self):
   p,_,_=fixture();w.verify(p,p['planSha256']);self.assertEqual(p['fault']['spec']['selector'],{'namespaces':['photo'],'pods':{'photo':['photo-converter-a-b']}})
-  self.assertEqual(p['fault']['metadata']['annotations'][f.PAUSE],'true')
+  self.assertNotIn('annotations',p['fault']['metadata'])
+  bad=copy.deepcopy(p);bad['fault']['metadata']['annotations']={f.PAUSE:'true'};bad['planSha256']=f.sha({k:v for k,v in bad.items()if k!='planSha256'})
+  with self.assertRaises(f.GuardError):w.verify(bad,bad['planSha256'])
   self.assertEqual(p['criteria']['leaseSeconds'],600)
   for key,value in [('mode','all'),('gracePeriod',180),('action','container-kill')]:
    bad=copy.deepcopy(p);bad['fault']['spec'][key]=value;bad['planSha256']=f.sha({k:v for k,v in bad.items()if k!='planSha256'})
@@ -192,14 +194,13 @@ class Worker(unittest.TestCase):
     if kind=='podchaos'and name:return copy.deepcopy(self.objs[(kind,name)])
     return super().get(kind,namespace,name,**kw)
    def call(self,args,source=None,timeout=20):
-    if 'create'in args and json.loads(source)['kind']=='PodChaos'and self.fail=='create':raise subprocess.TimeoutExpired(['create'],1)
-    if 'patch'in args and 'podchaos'in args:
+    if 'create'in args and json.loads(source)['kind']=='PodChaos':
      self.injected=True
+     if self.fail=='create':raise subprocess.TimeoutExpired(['create'],1)
      if self.fail=='interrupt':raise KeyboardInterrupt()
-     return '{}'
     if 'get'in args and 'podchaos'in args:return json.dumps(self.objs.get(('podchaos','w1-unit'),{}))
     if 'get'in args and 'pods'in args:return '{"items":[]}'
-    if 'get'in args and 'pod'in args:return '{}'
+    if 'get'in args and 'pod'in args:return '{}'if '--ignore-not-found'in args else json.dumps({'metadata':{'uid':U},'status':{'containerStatuses':[{'name':'backend','containerID':'containerd://abc'}]}})
     return super().call(args,source,timeout)
   class Observer:
    gaps=[];exhausted=False
@@ -220,9 +221,58 @@ class Worker(unittest.TestCase):
       with self.assertRaises((KeyboardInterrupt,subprocess.TimeoutExpired)):run()
      receipt=json.loads((Path(tmp)/'receipt.json').read_text())
      self.assertEqual(calls,['gpu-stop-signal','reader-cleanup','restore'])
-     self.assertEqual(receipt['injectionRequested'],failure!='create')
-     self.assertEqual(any(key[0]in ('role','rolebinding')for key in k.objs),failure=='create')
+     self.assertTrue(receipt['injectionRequested'])
+     self.assertEqual(json.loads((Path(tmp)/'injection-intent.json').read_text())['trigger'],'PodChaos.create')
+     self.assertEqual(any(key[0]in ('role','rolebinding')for key in k.objs),failure in ('create','interrupt'))
      if failure=='create':self.assertEqual(receipt['cleanupErrors'][0]['reason'],'create_response_unknown_manual_uid_review_required')
+ def test_one_shot_create_is_journaled_before_immediate_kill_and_metadata_gap(self):
+  for outcome in ('accepted','accepted-timeout','changed-target'):
+   with self.subTest(outcome=outcome),tempfile.TemporaryDirectory()as tmp:
+    os.chmod(tmp,0o700);directory=Path(tmp);p,_,owner=fixture();observed=[]
+    class K(Fake):
+     killed=False
+     def call(self,args,source=None,timeout=20):
+      if 'create'in args and json.loads(source)['kind']=='PodChaos':
+       # Model the real controller: CREATE is destructive even with no PATCH.
+       self_test.assertTrue((directory/'pre-injection.json').is_file())
+       intent=json.loads((directory/'injection-intent.json').read_text())
+       self_test.assertEqual(intent['trigger'],'PodChaos.create')
+       self_test.assertEqual(intent['victimUid'],U)
+       self.killed=True;answer=super().call(args,source,timeout)
+       if outcome=='accepted-timeout':raise subprocess.TimeoutExpired(['create'],1)
+       return answer
+      if 'patch'in args and 'podchaos'in args:raise AssertionError('No fictional unpause allowed')
+      if 'get'in args and 'pod'in args:
+       if '--ignore-not-found'in args:return '{}'
+       return json.dumps({'metadata':{'uid':'different'if outcome=='changed-target'else U},'status':{'containerStatuses':[{'name':'backend','containerID':'containerd://abc'}]}})
+      if 'get'in args and 'pods'in args:return '{"items":[]}'
+      return super().call(args,source,timeout)
+    self_test=self;k=K()
+    class Observer:
+     gaps=[];exhausted=False
+     def __init__(self,*args):pass
+     def sample(self):
+      _,proof,_=fixture();observed.append(k.killed)
+      if k.killed:next(row for row in proof['rows']if row['section']=='execution_timing')['status']='COMPLETED'
+      return proof
+     def summary(self,state):return {'state':state}
+    def read_owner(**kw):
+     if k.killed:raise f.GuardError('Metadata temporarily unavailable after rebalance')
+     return owner
+    with patch.object(w,'runtime'),patch.object(c,'require_active'),patch.object(c,'restore',return_value={'restored':True}),patch.object(w,'WorkerDbObserver',Observer),patch.object(f,'ready_pod',return_value=True):
+     run=lambda:w.execute(k,p,p['planSha256'],directory,read_owner,{},lambda:None,lambda:True)
+     if outcome=='accepted':
+      result=run();self.assertTrue(result['faultCreateAccepted']);self.assertEqual(observed,[False,True])
+      runtime=json.loads((directory/'runtime-0001.json').read_text());self.assertTrue(runtime['ownership']['unavailable'])
+      self.assertEqual(result['observationState'],'completed')
+     elif outcome=='accepted-timeout':
+      with self.assertRaises(subprocess.TimeoutExpired):run()
+      receipt=json.loads((directory/'receipt.json').read_text());self.assertTrue(receipt['injectionRequested']);self.assertTrue(k.killed)
+      self.assertFalse(receipt.get('faultCreateAccepted',False));self.assertTrue(receipt['cleanupErrors'])
+     else:
+      with self.assertRaisesRegex(f.GuardError,'Victim changed before create'):run()
+      self.assertFalse(k.killed);self.assertFalse((directory/'injection-intent.json').exists())
+      self.assertFalse(any(key[0]in ('role','rolebinding','podchaos')for key in k.objs))
  def test_recorded_timing_bounds_and_native_grafana_output(self):
   p,b,o=fixture();selected=w.partial(b,p,o)
   with tempfile.TemporaryDirectory()as tmp:
@@ -292,10 +342,10 @@ class Worker(unittest.TestCase):
     if kind=='podchaos'and name:return copy.deepcopy(self.objs[(kind,name)])
     return super().get(kind,namespace,name,**kw)
    def call(self,args,source=None,timeout=20):
-    if 'create'in args:calls.append('create')
+    if 'create'in args:calls.append('create-'+json.loads(source)['kind'])
     if 'patch'in args and 'podchaos'in args:return '{}'
     if 'get'in args and 'podchaos'in args:return json.dumps(self.objs.get(('podchaos','w1-unit'),{}))
-    if 'get'in args and 'pod'in args:return '{}'
+    if 'get'in args and 'pod'in args:return '{}'if '--ignore-not-found'in args else json.dumps({'metadata':{'uid':U},'status':{'containerStatuses':[{'name':'backend','containerID':'containerd://abc'}]}})
     if 'get'in args and 'pods'in args:return '{"items":[]}'
     return super().call(args,source,timeout)
   class Observer:
@@ -315,9 +365,10 @@ class Worker(unittest.TestCase):
    os.chmod(tmp,0o700)
    with patch.object(w.time,'time',side_effect=lambda:clock[0]),patch.object(f,'now',side_effect=stamp),patch.object(w.time,'sleep',side_effect=lambda x:clock.__setitem__(0,clock[0]+x)),patch.object(w,'runtime'),patch.object(c,'require_active'),patch.object(c,'restore',return_value={'restored':True}),patch.object(w,'WorkerDbObserver',Observer),patch.object(f,'ready_pod',return_value=True):
     p,_,_=fixture();result=w.execute(K(),p,p['planSha256'],tmp,owner,{},lambda:None,lambda:True)
-   self.assertTrue(result['injectionRequested']);self.assertEqual(calls[:4],['owner','db','owner','db'])
-   self.assertGreater(calls.index('create'),calls.index('db',calls.index('db')+1))
-   pair=json.loads((Path(tmp)/'pair-0003.json').read_text());self.assertLess(pair['dbAgeSeconds'],2)
+   self.assertTrue(result['injectionRequested']);self.assertEqual(calls[:2],['create-Role','create-RoleBinding'])
+   self.assertEqual(calls[2:6],['owner','db','owner','db'])
+   self.assertGreater(calls.index('create-PodChaos'),calls.index('db',calls.index('db')+1))
+   pair=json.loads((Path(tmp)/'pair-0002.json').read_text());self.assertLess(pair['dbAgeSeconds'],2)
    runtime=json.loads((Path(tmp)/'runtime-0001.json').read_text());self.assertGreaterEqual(w.epoch(runtime['at']),w.epoch(runtime['ownership']['observedAt']))
  def test_controlled_failure_reason_is_private_and_cleanup_still_runs(self):
   p,_,_=fixture();calls=[]
