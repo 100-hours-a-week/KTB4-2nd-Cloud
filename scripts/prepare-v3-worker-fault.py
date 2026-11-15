@@ -31,8 +31,20 @@ def ownership(k,name,uid,deadline=None):
     f.require(p['metadata']['uid']==uid and p['metadata'].get('labels',{}).get('yeodam.io/owner')=='worker-fault-preparation', 'Wrong observer Pod')
     raw=k.call(['-n','keda','logs',name,'-c','probe','--tail=30'])
     rows=[f.bounded_json(line.removeprefix('WORKER_OWNERSHIP ')) for line in raw.splitlines() if line.startswith('WORKER_OWNERSHIP ')]
-    f.require(rows and not rows[-1].get('unavailable'),'Kafka ownership unavailable')
-    return rows[-1]
+    f.require(rows,'Kafka ownership unavailable')
+    if rows[-1].get('unavailable'):
+        kind=rows[-1].get('errorType','')
+        suffix=' ('+kind+')' if re.fullmatch(r'[A-Za-z][A-Za-z0-9]{0,79}',kind)else''
+        raise f.GuardError('Kafka ownership unavailable'+suffix)
+    value=rows[-1]
+    started=time.time();mono=time.monotonic()
+    raw=k.call(['-n','keda','exec',name,'-c','probe','--','date','+%s.%N'])
+    ended=time.time();elapsed=time.monotonic()-mono
+    f.require(re.fullmatch(r'[0-9]{10}\.[0-9]{1,9}',raw.strip()),'Observer UTC reference unavailable')
+    value['clock']={'kind':'observer-pod-utc','podUid':uid,'nodeUnixSeconds':float(raw.strip()),
+                    'localStartedUnixSeconds':started,'localCompletedUnixSeconds':ended,'monotonicElapsedSeconds':elapsed}
+    w.ownership_age_bounds(value,ended)
+    return value
 
 
 def reader_node(node):

@@ -18,12 +18,17 @@ public final class ConverterOwnership {
         p.setProperty("sasl.jaas.config","org.apache.kafka.common.security.scram.ScramLoginModule required username="+q(u)+" password="+q(pw)+";");
         p.setProperty("ssl.truststore.type","PEM");p.setProperty("ssl.truststore.location","/auth/ca.crt");p.setProperty("ssl.endpoint.identification.algorithm","https");
         p.setProperty("request.timeout.ms","5000");p.setProperty("default.api.timeout.ms","10000");
-        AdminClient admin=AdminClient.create(p);long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(seconds);
+        AdminClient admin=AdminClient.create(p);boolean initialized=false;long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(seconds);
         try {
             while(System.nanoTime()<end) {
                 long start=System.nanoTime();
-                var g=admin.describeConsumerGroups(List.of(GROUP)).all().get(12,TimeUnit.SECONDS).get(GROUP);
-                var offsets=admin.listConsumerGroupOffsets(GROUP).partitionsToOffsetAndMetadata().get(12,TimeUnit.SECONDS);
+                int apiMs=initialized?10000:60000;
+                long queryEnd=start+TimeUnit.MILLISECONDS.toNanos(apiMs)+TimeUnit.SECONDS.toNanos(2);
+                var groupFuture=admin.describeConsumerGroups(List.of(GROUP),new DescribeConsumerGroupsOptions().timeoutMs(apiMs)).all();
+                var offsetFuture=admin.listConsumerGroupOffsets(GROUP,new ListConsumerGroupOffsetsOptions().timeoutMs(apiMs)).partitionsToOffsetAndMetadata();
+                var g=groupFuture.get(Math.max(1,queryEnd-System.nanoTime()),TimeUnit.NANOSECONDS).get(GROUP);
+                var offsets=offsetFuture.get(Math.max(1,queryEnd-System.nanoTime()),TimeUnit.NANOSECONDS);
+                initialized=true;
                 List<String> members=new ArrayList<>(),committed=new ArrayList<>();
                 for(var member:g.members()) {
                     List<Integer> partitions=member.assignment().topicPartitions().stream().filter(tp->tp.topic().equals(TOPIC)).map(TopicPartition::partition).sorted().toList();
@@ -33,7 +38,7 @@ public final class ConverterOwnership {
                 System.out.println("WORKER_OWNERSHIP {\"observedAt\":"+q(Instant.now().toString())+",\"group\":"+q(GROUP)+",\"state\":"+q(g.groupState().toString())+",\"querySeconds\":"+((System.nanoTime()-start)/1e9)+",\"members\":["+String.join(",",members)+"],\"committed\":{"+String.join(",",committed)+"}}");
                 System.out.flush();Thread.sleep(1000);
             }
-        }catch(Exception failure){System.out.println("WORKER_OWNERSHIP {\"unavailable\":true}");System.out.flush();throw new IllegalStateException("Metadata unavailable; credentials withheld");}
+        }catch(Exception failure){System.out.println("WORKER_OWNERSHIP {\"unavailable\":true,\"errorType\":"+q((failure.getCause()==null?failure:failure.getCause()).getClass().getSimpleName())+"}");System.out.flush();throw new IllegalStateException("Metadata unavailable; credentials withheld");}
         finally{admin.close(Duration.ofSeconds(2));}
     }
 }
