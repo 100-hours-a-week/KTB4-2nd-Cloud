@@ -237,6 +237,13 @@ class Worker(unittest.TestCase):
    self.assertTrue(w.bounded_target(record['eligibilityToClaimBounds'],15));self.assertIsNone(w.bounded_target([14,16],15))
    board=w.dashboard(record);self.assertEqual(board['panels'][0]['type'],'timeseries');self.assertTrue(board['panels'][0]['snapshotData'])
    self.assertIn('db/sample-0.json',record['sourceHashes'])
+ def test_reader_preserves_actual_eks_full_node_name_and_rejects_other_hosts(self):
+  spec=importlib.util.spec_from_file_location('node_cli',ROOT/'scripts/prepare-v3-worker-fault.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+  for node in ['ip-10-40-41-221','ip-10-40-41-221.ap-northeast-2.compute.internal']:
+   self.assertEqual(m.reader_node(node),node)
+   self.assertEqual(m.reader_manifest(node,'w1-reader','AA==')['items'][-1]['spec']['nodeName'],node)
+  for node in ['ip-10-41-41-221.ap-northeast-2.compute.internal','ip-10-40-256-1','ip-10-40-41-221.us-east-1.compute.internal','ip-10-40-41-221.attacker.example','ip-10-40-41-221.ap-northeast-2.compute.internal.extra',None]:
+   with self.subTest(node=node),self.assertRaises(ValueError):m.reader_node(node)
  def test_reader_bundle_rejects_mutation_before_any_live_read(self):
   spec=importlib.util.spec_from_file_location('reader_cli',ROOT/'scripts/prepare-v3-worker-fault.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
   bundle=m.reader_manifest('ip-10-40-1-2','w1-reader','AA==')

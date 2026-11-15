@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -34,10 +35,19 @@ def ownership(k,name,uid,deadline=None):
     return rows[-1]
 
 
+def reader_node(node):
+    # EKS uses the full private DNS name as metadata.name. Preserve that exact
+    # identity; shortening it produces a different, nonexistent Kubernetes Node.
+    match=re.fullmatch(r'ip-10-40-([0-9]{1,3})-([0-9]{1,3})(?:\.ap-northeast-2\.compute\.internal)?',node) if isinstance(node,str) else None
+    f.require(match is not None and all(int(part)<=255 for part in match.groups()),'Exact existing V3 CPU host required')
+    return node
+
+
 def reader_bundle(jar,node,name):
     lock=json.loads((w.ROOT/'deploy/v3/autoscaling/converter-runtime.lock.json').read_text())
     f.require(jar.is_file() and hashlib.sha256(jar.read_bytes()).hexdigest()==lock['kafkaClientSha256'],'Pinned Kafka client jar required')
-    f.require(w.NAME.fullmatch(name) and name.startswith('w1-') and __import__('re').fullmatch('ip-10-40-[0-9-]+',node),'Exact existing V3 CPU host required')
+    f.require(w.NAME.fullmatch(name) and name.startswith('w1-'),'Exact temporary reader name required')
+    reader_node(node)
     with tempfile.TemporaryDirectory() as tmp:
         p=subprocess.run([os.environ.get('JAVAC','javac'),'--release','17','-cp',str(jar),'-d',tmp,str(w.ROOT/'tests/ci/v3/worker/ConverterOwnership.java')],capture_output=True,timeout=30)
         f.require(p.returncode==0,'Kafka metadata reader compilation failed')
@@ -46,6 +56,7 @@ def reader_bundle(jar,node,name):
 
 
 def reader_manifest(node,name,binary):
+    reader_node(node)
     meta={'name':name,'namespace':'keda','labels':{'yeodam.io/owner':'worker-fault-preparation','yeodam.io/component':'converter-lag-probe'}}
     cm={'apiVersion':'v1','kind':'ConfigMap','metadata':meta,'binaryData':{'ConverterOwnership.class':binary}}
     image=json.loads((w.ROOT/'deploy/v3/connect-image/source.lock.json').read_text())['baseImage']
