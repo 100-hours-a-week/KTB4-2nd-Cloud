@@ -10,6 +10,7 @@
 | `plan` | C0 연속 MySQL / C1 간헐 MySQL / C2 Kafka 출력 차단의 비활성 계획 생성 |
 | `run` | 검토한 Plan 해시와 협조 확인을 요구하는 제한된 주입·복구 |
 | `collect` | 지정 시험 여행의 item·attachment·시도 횟수·receipt·Trace 메타데이터 조회 |
+| `observe` | 동일 여행의 읽기 전용 DB 반복 관측, 제한된 timeout 재조회와 공백 기록 |
 | `reconcile` | 접수·최종 ID 집합과 같은 Trace의 연결 범위 대조 |
 | `assess` | 시간·최종 상태·장애 노출·수동 조치·관측 공백을 구분한 결과 작성 |
 
@@ -31,3 +32,26 @@
 DB created_at은 정확한 commit 시각이 아니며 publication receipt는 Broker 도착의 정밀 측정이 아니다. Controller의 AllInjected/AllRecovered도 패킷 경계와 다르다. SQL 시작/완료·scrape timestamp·rule 평가 시각을 구분하고 DB/observer clock 오차를 별도 보고한다. firing은 외부 알림 수신 증거가 아니다.
 
 Kafka 증거는 BE receipt listener의 전달 위치이며 raw Broker 소비 횟수는 미측정으로 남긴다. 사진 행 수와 idempotent Producer만으로 모든 외부 부작용 중복0 또는 end-to-end exactly-once를 주장하지 않는다. 고정 Kafka 버전의 [Connect Worker](https://github.com/apache/kafka/blob/4.2.2/connect/runtime/src/main/java/org/apache/kafka/connect/runtime/Worker.java)가 source Producer의 대기 설정을 덮어쓰므로 일반 Producer 기본 timeout을 그대로 적용하지 않는다.
+
+## DB 관측의 일시 오류
+
+저장소 루트에서 아래 명령을 별도 프로세스로 실행한다. 기존 TLS 검증 kubeconfig와 미리 생성한 시험 여행 ID를 사용하며, 이 명령은 장애·GPU·업무 변경을 실행하지 않는다. 실제 조회 전 여행 메타데이터 접근 범위를 확인한다.
+
+```sh
+umask 077
+mkdir -m 700 /tmp/cdc-db-observation
+python3 scripts/prepare-v3-cdc-followup.py observe \
+  --kubeconfig "$KUBECONFIG" --trip-id '<시험 여행 ID>' \
+  --directory /tmp/cdc-db-observation --seconds 780 --ack-trial-metadata-read
+```
+
+- 먼저 정상 sample과 `status.json`의 ready를 확인한 뒤, 기존 `run` 명령에 `--db-observation-directory /tmp/cdc-db-observation`을 추가한다. 같은 여행·승인 Revision·30초 이내 상태만 허용한다. 다른 여행이나 오래된 경로를 재사용하지 않는다.
+- 기존 DB 호출 20초 제한을 유지하고 subprocess timeout에만 1초 후 1회 재조회한다. Pod UID 재확인과 backoff를 포함한 표본 전체 예산은 45초이며 남은 예산으로 각 호출을 제한한다. SQL은 기존 read-only transaction·SELECT 3초 제한·행 상한을 유지한다. 권한·대상 변경·잘못된 응답은 재조회하지 않는다.
+- `--seconds`는 준비·주입·복구를 포함한 이 관측 프로세스의 전체 실행 예산(최대960초)이다. 해제 후780초 진단 상한과 시작점이 다르므로 실험 명세에서 구분한다. 예산 도달은 완료로 처리하지 않는다.
+- 첫 실패부터 `blocked.json`을 보존한다. 관측은 재조회 성공 뒤에도 계속하지만 추가 주입은 다시 허용하지 않는다. 연결한 `run`은 이를 감지해 기존 finally 경로로 본인 장애를 복구한다. 이후 해당 시도는 중단/공백을 포함한 결과로 기록하며 정상 길이의 재시험과 합치지 않는다.
+- 이 interlock은 장애 실행기의 기존 Prometheus 신선도 검사에 추가된다. 관측 프로세스 종료·상태 누락·30초 초과도 실패로 처리한다. 독립 GPU 종료 가드를 대체하거나 GPU를 직접 중지하지 않는다.
+- attempt별 실패·회복·표본 파일은 새로만 생성하고 status만 원자적으로 교체한다. 원문 명령·stdout/stderr·비밀을 오류 기록에 넣지 않는다. `summary.json`과 각 sample의 시각·DB clock 범위를 보존한다. 브라우저 접수·Trace·지표 수집은 별도 프로세스를 유지한다.
+
+판정 시 기존 `assess`에 `--db-observation-summary /tmp/cdc-db-observation/summary.json`을 함께 전달한다. 같은 여행·배포인지 확인한 뒤 gap과 요약 해시를 timing에 연결한다. 재조회로 완료 시각을 회수해도 gap을 지우지 않아 strict evidenceComplete/automaticRecovery를 성공으로 승격하지 않는다. 최종 DB 상태는 sample의 execution_timing, 접수·최종 ID 대조는 기존 reconcile로 각각 확인한다.
+
+읽기 실패가 반복되면 관측 명령은 오류 종료한다. 추가 입력과 주입은 중단하고 소유 장애의 복구를 확인한다. 사후 읽기로 완료를 회수하더라도 수동 업무 복구와 구분하고, 원래 오류·공백·판정 파일을 덮어쓰지 않는다.

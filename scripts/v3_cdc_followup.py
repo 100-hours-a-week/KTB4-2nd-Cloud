@@ -7,6 +7,9 @@ import json
 import hashlib
 import ipaddress
 import re
+import os
+import subprocess
+import tempfile
 from datetime import datetime, timezone
 import math
 from pathlib import Path
@@ -289,6 +292,169 @@ def collect(k, ids):
     capped=any(sum(r['section']==name for r in rows)>200 for name in sections)
     return {'tripIds':ids,'approvedRevision':s['approvedRevision'],'observedAt':f.now(),
             'rows':rows,'coverage':'truncated' if capped else 'bounded-trial-only'}
+
+
+class DbObservationUnavailable(ValueError):
+    """The read-only observer exhausted its budget; never replay a mutation."""
+
+
+class DbObserver:
+    # Preserve Kube.call's 20s bound. One retry + 1s backoff + identity checks
+    # share 45s, rather than granting each stage a new overall budget.
+    ATTEMPTS = 2
+    CALL_SECONDS = 20
+    SAMPLE_SECONDS = 45
+    RETRY_SECONDS = 1
+
+    def __init__(self, k, snapshot, trip_id, directory):
+        f.trip_ids([trip_id])
+        f.require(re.fullmatch('[a-f0-9]{40}', snapshot['approvedRevision']) and
+                  f.UUID.fullmatch(snapshot['mysql']['uid']), 'Invalid observation identity')
+        self.k, self.snapshot, self.trip_id = k, snapshot, trip_id
+        self.directory = Path(directory)
+        f.require(self.directory.is_dir() and not self.directory.is_symlink() and
+                  self.directory.stat().st_mode & 0o077 == 0 and not any(self.directory.iterdir()),
+                  'Use empty mode-700 DB observation directory')
+        self.count, self.samples, self.gaps = 0, [], []
+        self.last_success = None
+        self.exhausted = False
+        selected = f.trip_ids([trip_id])
+        self.sql = f.followup_evidence_sql([trip_id]).removesuffix('COMMIT;\n') + (
+            "SELECT JSON_OBJECT('section','execution_timing','tripId',trip_id,'status',status,"
+            "'endedAt',ended_at) FROM yeodam.trip_creation_executions "
+            f"WHERE trip_id IN ({selected}) LIMIT 2;\n"
+            f"SELECT JSON_OBJECT('section','db_clock','tripId',{selected},'utc',UTC_TIMESTAMP(6));\nCOMMIT;\n")
+        f.private_write(self.directory/'policy.json', {
+            'tripIds': [trip_id], 'approvedRevision': snapshot['approvedRevision'],
+            'mysqlUid': snapshot['mysql']['uid'], 'maxAttempts': self.ATTEMPTS,
+            'callSeconds': self.CALL_SECONDS, 'sampleBudgetSeconds': self.SAMPLE_SECONDS,
+            'retryDelaySeconds': self.RETRY_SECONDS, 'retryOnly': 'subprocess-timeout',
+            'readOnly': True, 'failureLatchPreventsFurtherInjection': True})
+
+    def record(self, kind, value):
+        self.count += 1
+        name = f'{self.count:05d}-{kind}.json'
+        f.private_write(self.directory/name, value)
+        return name
+
+    def status(self, state):
+        # Only this owned status file is replaced; all samples/errors are create-only.
+        target = self.directory/'status.json'
+        f.require(not target.is_symlink(), 'Unsafe observer status path')
+        fd, name = tempfile.mkstemp(prefix='.status-', dir=self.directory)
+        try:
+            with os.fdopen(fd, 'w') as stream:
+                json.dump({'state': state, 'at': f.now(), 'monotonicAt': time.monotonic(),
+                           'tripIds': [self.trip_id], 'approvedRevision': self.snapshot['approvedRevision']}, stream)
+            os.replace(name, target)
+        finally:
+            if os.path.exists(name): os.unlink(name)
+
+    def sample(self):
+        f.require(not self.exhausted, 'Observer already exhausted; no further DB reads')
+        started = time.monotonic()
+        gap = None
+        def remaining(cap):
+            budget = self.SAMPLE_SECONDS - (time.monotonic() - started)
+            if budget <= 0: raise TimeoutError('Observation budget exhausted')
+            return min(cap, budget)
+        for attempt in range(1, self.ATTEMPTS + 1):
+            begin, mono_start = f.now(), time.monotonic()
+            try:
+                # Recheck the pinned Pod before every retry; do not follow a replacement.
+                pod = f.bounded_json(self.k.call(['-n','mysql','get','pod',self.snapshot['mysql']['name'],
+                                                 '-o','json'], timeout=remaining(5)))
+                f.require(pod['metadata']['uid'] == self.snapshot['mysql']['uid'] and
+                          f.ready_pod(pod) and any(o.get('controller') is True and
+                          o.get('kind') == 'StatefulSet' and o.get('name') == 'mysql'
+                          for o in pod['metadata'].get('ownerReferences', [])), 'MySQL observation target changed')
+                query_begin, wall_start, query_mono = f.now(), time.time(), time.monotonic()
+                raw = self.k.call(['-n','mysql','exec','-i',self.snapshot['mysql']['name'],'-c','mysql',
+                                   '--','bash','-c',f.DB_SHELL], self.sql, timeout=remaining(self.CALL_SECONDS))
+                remaining(self.CALL_SECONDS)
+                rows = [f.bounded_json(line) for line in raw.splitlines() if line]
+                f.require(rows and all(r.get('tripId') == self.trip_id for r in rows), 'Unexpected trial data')
+                f.require(all(sum(r['section'] == n for r in rows) <= 200 for n in {r['section'] for r in rows}),
+                          'Truncated DB observation')
+                clocks = [r for r in rows if r['section'] == 'db_clock']
+                execution = [r for r in rows if r['section'] == 'execution_timing']
+                f.require(len(clocks) == len(execution) == 1, 'Missing or ambiguous DB timing')
+                # time.time is for reported clock bounds only; durations use monotonic.
+                wall_end = time.time()
+                f.require(wall_end >= wall_start, 'Local wall clock moved backwards')
+                epoch = datetime.fromisoformat(clocks[0]['utc']).replace(tzinfo=timezone.utc).timestamp()
+                proof = {'tripIds': [self.trip_id], 'approvedRevision': self.snapshot['approvedRevision'],
+                         'observedAt': f.now(), 'queryStartedAt': query_begin, 'attempt': attempt,
+                         'queryElapsedSeconds': time.monotonic() - query_mono,
+                         'attemptElapsedSeconds': time.monotonic() - mono_start,
+                         'dbMinusLocalIntervalSeconds': [epoch-wall_end, epoch-wall_start],
+                         'coverage': 'bounded-trial-only', 'rows': rows}
+                name = self.record('sample', proof)
+                self.samples.append(name)
+                self.last_success = proof['observedAt']
+                if gap:
+                    self.record('gap-recovered', {'gap': gap, 'recoveredAt': proof['observedAt'],
+                                                  'sample': name, 'interpolated': False})
+                self.status('ready')
+                return proof
+            except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
+                retryable = isinstance(error, subprocess.TimeoutExpired)
+                failure = self.record('failure', {'startedAt': begin, 'failedAt': f.now(),
+                    'elapsedSeconds': time.monotonic()-mono_start, 'attempt': attempt,
+                    'error': 'subprocess_timeout' if retryable else 'observation_unavailable',
+                    'rawDiagnosticsWithheld': True})
+                if not gap:
+                    gap = self.record('gap-opened', {'lastSuccessfulSampleAt': self.last_success,
+                        'firstFailedAttemptStartedAt': begin, 'failure': failure, 'interpolated': False})
+                    self.gaps.append(gap)
+                self.status('unavailable')
+                # Sticky latch: even a later successful read cannot permit reinjection.
+                if not (self.directory/'blocked.json').exists():
+                    f.private_write(self.directory/'blocked.json', {'at': f.now(), 'gap': gap})
+                if retryable and attempt < self.ATTEMPTS and (
+                        self.SAMPLE_SECONDS-(time.monotonic()-started) > self.RETRY_SECONDS):
+                    time.sleep(self.RETRY_SECONDS)
+                    continue
+                self.exhausted = True
+                raise DbObservationUnavailable('DB observation unavailable; evidence preserved') from None
+
+    def summary(self, state):
+        return {'tripIds': [self.trip_id], 'approvedRevision': self.snapshot['approvedRevision'],
+                'state': state, 'sampleFiles': self.samples[:], 'observationGaps': self.gaps[:],
+                'lastSuccessfulSampleAt': self.last_success, 'readOnly': True,
+                'continuousObservationComplete': state == 'completed' and not self.gaps,
+                'allowNextInjection': state == 'completed' and not self.gaps and not self.exhausted,
+                'businessRecoveryVerified': False}
+
+
+def db_observer_ready(directory, trip_id, revision):
+    """Optional cross-process interlock; failure/staleness triggers existing finally recovery."""
+    try:
+        directory = Path(directory)
+        f.require(directory.is_dir() and not directory.is_symlink() and
+                  directory.stat().st_mode & 0o077 == 0, 'Unsafe DB observer directory')
+        f.require(not (directory/'blocked.json').exists(), 'DB observation failure latched')
+        path = directory/'status.json'
+        f.require(not path.is_symlink(), 'Unsafe DB observer status')
+        status = f.bounded_json(path.read_text())
+        age = time.monotonic()-status['monotonicAt']
+        return bool(status['state'] == 'ready' and status['tripIds'] == [trip_id] and
+                    status['approvedRevision'] == revision and 0 <= age <= 30)
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def with_db_observations(timing, summary, accepted, final):
+    f.require(summary['tripIds'] == accepted['tripIds'] == final['tripIds'] and
+              summary['approvedRevision'] == accepted['approvedRevision'] == final['approvedRevision'],
+              'DB observer trial/deployment mismatch')
+    gaps = summary['observationGaps']
+    f.require(isinstance(gaps, list) and all(isinstance(x, str) and x for x in gaps), 'Invalid DB gaps')
+    result = dict(timing, observationGaps=list(timing.get('observationGaps', [])) + gaps,
+                  dbObservationSummarySha256=f.sha(summary))
+    if summary['state'] != 'completed' or summary['continuousObservationComplete'] is not True:
+        result['observationGaps'].append('db-observation-incomplete')
+    return result
 
 
 def reconcile(accepted, final, trace):
