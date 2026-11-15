@@ -46,6 +46,10 @@ on:
       - 'tests/ci/test_v3_scaling_evidence.py'
       - 'scripts/*v3*cdc*fault*'
       - 'scripts/v3_chaos_install.py'
+      - 'scripts/v3_worker_*'
+      - 'scripts/prepare-v3-worker-fault.py'
+      - 'tests/ci/test_v3_worker_fault.py'
+      - 'tests/ci/smoke-v3-worker-fault.py'
       - 'tests/ci/test_v3_cdc_fault.py'
       - 'tests/ci/test_v3_cdc_followup.py'
       - 'scripts/v3_cdc_followup.py'
@@ -260,9 +264,9 @@ jobs:
           retention-days: 7
 
   converter-scaling:
-    name: Converter two-partition ownership and shutdown
+    name: Converter ownership, shutdown and abrupt recovery
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 12
     permissions:
       contents: read
       packages: read
@@ -279,10 +283,14 @@ jobs:
           password: ${{ github.token }}
       - name: Verify real converter classes with synthetic local work only
         run: python3 tests/ci/smoke-v3-converter-scaling.py --output "$RUNNER_TEMP/converter-proof.json"
+      - name: Verify abrupt JVM halt and partial persistence on isolated MySQL and Kafka
+        run: python3 tests/ci/smoke-v3-worker-fault.py --output "$RUNNER_TEMP/worker-crash-proof.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: converter-proof-${{ github.sha }}
-          path: ${{ runner.temp }}/converter-proof.json
+          path: |
+            ${{ runner.temp }}/converter-proof.json
+            ${{ runner.temp }}/worker-crash-proof.json
           retention-days: 7
 
   mongodb-health:
