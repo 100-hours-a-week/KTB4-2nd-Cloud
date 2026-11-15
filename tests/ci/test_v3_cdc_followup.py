@@ -232,4 +232,232 @@ class Followup(unittest.TestCase):
                 self.assertIn('clock',evidence)
                 self.assertLess(evidence['clock']['serverMinusLocalIntervalSeconds'][1],0)
 
+class ObservationClock:
+    def __init__(self): self.value=100.0
+    def monotonic(self): return self.value
+    def sleep(self, seconds): self.value+=seconds
+
+
+class ObservationKube:
+    def __init__(self, clock, results, identity_seconds=0):
+        self.clock,self.results,self.calls=clock,list(results),[]
+        self.identity_seconds=identity_seconds
+        self.pod={'metadata':{'uid':fixture()['mysql']['uid'],'ownerReferences':[
+            {'kind':'StatefulSet','name':'mysql','controller':True}]},'spec':{},
+            'status':{'phase':'Running','conditions':[{'type':'Ready','status':'True'}]}}
+        self.rows=[{'section':'execution_timing','tripId':1,'status':'COMPLETED',
+                    'endedAt':'2026-11-15 03:46:13.247857'},
+                   {'section':'db_clock','tripId':1,'utc':'2026-11-15 03:47:33.863688'}]
+
+    def call(self,args,source=None,timeout=20):
+        self.calls.append((args,source,timeout))
+        if 'get' in args:
+            self.clock.sleep(min(timeout,self.identity_seconds))
+            return json.dumps(self.pod)
+        assert 'exec' in args and source.startswith('SET SESSION MAX_EXECUTION_TIME=3000; START TRANSACTION READ ONLY;')
+        result=self.results.pop(0)
+        if result=='timeout':
+            self.clock.sleep(timeout)
+            raise subprocess.TimeoutExpired(['DO-NOT-EXPORT-RAW-COMMAND'],timeout,output='secret-row')
+        if isinstance(result,BaseException): raise result
+        return '\n'.join(json.dumps(r) for r in (self.rows if result=='success' else result))
+
+
+class DbObservationTests(unittest.TestCase):
+    def setup_observer(self, directory, results, identity_seconds=0):
+        os.chmod(directory,0o700)
+        clock=ObservationClock();k=ObservationKube(clock,results,identity_seconds)
+        return clock,k,m.DbObserver(k,fixture(),1,directory)
+
+    def test_timeout_then_success_preserves_gap_and_blocks_reinjection(self):
+        with tempfile.TemporaryDirectory() as t:
+            clock,k,o=self.setup_observer(t,['timeout','success','success'])
+            with patch.object(m.time,'monotonic',clock.monotonic),patch.object(m.time,'sleep',clock.sleep):
+                proof=o.sample()
+                self.assertEqual(proof['attempt'],2)
+                self.assertEqual(clock.value,121)
+                self.assertFalse(m.db_observer_ready(t,1,fixture()['approvedRevision']))
+                # Future observation is allowed even though additional injection is latched off.
+                o.sample()
+            summary=o.summary('completed')
+            self.assertFalse(summary['continuousObservationComplete'])
+            self.assertFalse(summary['allowNextInjection'])
+            self.assertEqual(len(summary['sampleFiles']),2)
+            self.assertEqual(len(summary['observationGaps']),1)
+            text=''.join(p.read_text() for p in Path(t).glob('*.json'))
+            self.assertNotIn('DO-NOT-EXPORT',text);self.assertNotIn('secret-row',text)
+            self.assertIn('gap-recovered',str(list(Path(t).iterdir())))
+            self.assertTrue(all(p.stat().st_mode&0o077==0 for p in Path(t).iterdir()))
+
+    def test_persistent_timeout_exhausts_two_reads_without_mutation(self):
+        with tempfile.TemporaryDirectory() as t:
+            clock,k,o=self.setup_observer(t,['timeout','timeout'])
+            with patch.object(m.time,'monotonic',clock.monotonic),patch.object(m.time,'sleep',clock.sleep):
+                with self.assertRaises(m.DbObservationUnavailable):o.sample()
+                with self.assertRaises(f.GuardError):o.sample()
+            self.assertEqual(len([c for c in k.calls if 'exec' in c[0]]),2)
+            self.assertLessEqual(clock.value-100,45)
+            self.assertFalse(any(set(c[0])&{'create','patch','delete','apply'} for c in k.calls))
+
+    def test_shared_budget_includes_identity_and_backoff(self):
+        with tempfile.TemporaryDirectory() as t:
+            clock,k,o=self.setup_observer(t,['timeout','timeout'],identity_seconds=5)
+            with patch.object(m.time,'monotonic',clock.monotonic),patch.object(m.time,'sleep',clock.sleep):
+                with self.assertRaises(m.DbObservationUnavailable):o.sample()
+            self.assertEqual([c[2] for c in k.calls if 'exec' in c[0]],[20,14])
+            self.assertEqual(clock.value-100,45)
+
+    def test_permission_or_identity_failure_is_not_retried(self):
+        for changed in (True,False):
+            with self.subTest(changed=changed),tempfile.TemporaryDirectory() as t:
+                clock,k,o=self.setup_observer(t,[f.GuardError('permission refused')])
+                if changed:k.pod['metadata']['uid']='changed'
+                with self.assertRaises(m.DbObservationUnavailable):o.sample()
+                self.assertEqual(len([c for c in k.calls if 'exec' in c[0]]),0 if changed else 1)
+
+    def test_foreign_truncated_and_malformed_data_are_not_zero_or_retryable(self):
+        for bad in ([{'section':'db_clock','tripId':2}],
+                    [{'section':'trial_item','tripId':1}]*201,
+                    [{'section':'unknown','tripId':1}]):
+            with self.subTest(bad=len(bad)),tempfile.TemporaryDirectory() as t:
+                clock,k,o=self.setup_observer(t,[bad])
+                with self.assertRaises(m.DbObservationUnavailable):o.sample()
+                self.assertEqual(o.samples,[])
+                self.assertTrue((Path(t)/'blocked.json').exists())
+
+    def test_success_interlock_is_fresh_and_trial_bound(self):
+        with tempfile.TemporaryDirectory() as t:
+            clock,k,o=self.setup_observer(t,['success'])
+            with patch.object(m.time,'monotonic',clock.monotonic):
+                o.sample()
+                self.assertTrue(m.db_observer_ready(t,1,fixture()['approvedRevision']))
+                self.assertFalse(m.db_observer_ready(t,2,fixture()['approvedRevision']))
+                self.assertFalse(m.db_observer_ready(t,1,'b'*40))
+                clock.value+=31
+                self.assertFalse(m.db_observer_ready(t,1,fixture()['approvedRevision']))
+                clock.value=99
+                self.assertFalse(m.db_observer_ready(t,1,fixture()['approvedRevision']))
+
+    def test_failed_db_interlock_invokes_existing_fault_finally_recovery(self):
+        phase=f.prepare(fixture(),'cdc-db-observer',15);k=FakeKube(phase)
+        with tempfile.TemporaryDirectory() as t,tempfile.TemporaryDirectory() as receipts:
+            clock,db,o=self.setup_observer(t,['success','timeout','timeout'])
+            calls=0
+            def healthy():
+                nonlocal calls
+                calls+=1
+                if calls==1:o.sample()
+                else:
+                    with self.assertRaises(m.DbObservationUnavailable):o.sample()
+                return m.db_observer_ready(t,1,fixture()['approvedRevision'])
+            with patch.object(f,'snapshot',return_value=phase['snapshot']), \
+                 patch.object(m.time,'monotonic',clock.monotonic),patch.object(m.time,'sleep',clock.sleep):
+                with self.assertRaises(f.GuardError):
+                    f.execute(k,phase,phase['planSha256'],Path(receipts)/'r.json',observe=healthy)
+            record=json.loads((Path(receipts)/'r.json.finished.json').read_text())
+            self.assertTrue(record['recovery']['controllerReportedRecovered'])
+            self.assertEqual(k.obj['metadata']['annotations'][f.PAUSE],'true')
+
+    def test_gap_attachment_cannot_promote_strict_assessment(self):
+        with tempfile.TemporaryDirectory() as t:
+            clock,k,o=self.setup_observer(t,['timeout','success'])
+            with patch.object(m.time,'monotonic',clock.monotonic),patch.object(m.time,'sleep',clock.sleep):o.sample()
+            a={'tripIds':[1],'approvedRevision':fixture()['approvedRevision']}
+            timing={'observationGaps':[]}
+            attached=m.with_db_observations(timing,o.summary('completed'),a,a)
+            self.assertTrue(attached['observationGaps'])
+            self.assertEqual(timing['observationGaps'],[])
+            with self.assertRaises(f.GuardError):
+                m.with_db_observations(timing,o.summary('completed'),dict(a,tripIds=[2]),a)
+            proof={'identityEvidenceComplete':True}
+            stamp='2026-11-15T00:00:00+00:00'
+            timed=dict(attached,manualActions=[],firstActiveCreatedAt=stamp,firstFiringEvaluationAt=stamp,
+                       releaseObservedAt=stamp,firstDeliveryObservedAt=stamp,completedAt=stamp,
+                       sources=dict.fromkeys(('firstActiveCreatedAt','firstFiringEvaluationAt','releaseObservedAt',
+                                              'firstDeliveryObservedAt','completedAt'),'source'),
+                       faultWindows=[{'injectedObservedAt':stamp,'recoveryRequestedAt':stamp}])
+            final=dict(a,rows=[{'section':'creation_execution','status':'COMPLETED'},
+                              {'section':'conversion_outbox','outboxId':'o','createdAt':stamp}])
+            with patch.object(m,'reconcile',return_value=proof):result=m.assess('C2',a,final,{},timed)
+            self.assertFalse(result['evidenceComplete']);self.assertIsNone(result['automaticRecovery'])
+            self.assertTrue(result['completionTargetMet'])
+
+    def test_cli_observe_persists_summary_on_both_success_and_failure(self):
+        spec=importlib.util.spec_from_file_location('follow_cli',ROOT/'scripts/prepare-v3-cdc-followup.py')
+        cli=importlib.util.module_from_spec(spec);spec.loader.exec_module(cli)
+        for results,ok in ((['success'],True),(['timeout','timeout'],False)):
+            with self.subTest(ok=ok),tempfile.TemporaryDirectory() as t:
+                os.chmod(t,0o700);clock=ObservationClock();k=ObservationKube(clock,results)
+                args=['tool','observe','--kubeconfig','synthetic','--trip-id','1','--directory',t,
+                      '--seconds','60','--ack-trial-metadata-read']
+                with patch.object(sys,'argv',args),patch.object(f,'Kube',return_value=k), \
+                     patch.object(f,'snapshot',return_value=fixture()), \
+                     patch.object(m.time,'monotonic',clock.monotonic),patch.object(m.time,'sleep',clock.sleep):
+                    if ok:cli.main()
+                    else:
+                        with self.assertRaises(m.DbObservationUnavailable):cli.main()
+                summary=json.loads((Path(t)/'summary.json').read_text())
+                self.assertEqual(summary['state'],'completed' if ok else 'observation_failed')
+                self.assertEqual(summary['continuousObservationComplete'],ok)
+
+    def test_cli_whole_deadline_is_not_renewed_for_a_retry(self):
+        spec=importlib.util.spec_from_file_location('follow_cli_deadline',ROOT/'scripts/prepare-v3-cdc-followup.py')
+        cli=importlib.util.module_from_spec(spec);spec.loader.exec_module(cli)
+        with tempfile.TemporaryDirectory() as t:
+            os.chmod(t,0o700);clock=ObservationClock();k=ObservationKube(clock,['timeout'])
+            args=['tool','observe','--kubeconfig','synthetic','--trip-id','1','--directory',t,
+                  '--seconds','1','--ack-trial-metadata-read']
+            with patch.object(sys,'argv',args),patch.object(f,'Kube',return_value=k), \
+                 patch.object(f,'snapshot',return_value=fixture()), \
+                 patch.object(m.time,'monotonic',clock.monotonic),patch.object(m.time,'sleep',clock.sleep):
+                with self.assertRaises(m.DbObservationUnavailable):cli.main()
+            self.assertEqual(clock.value,101)
+            self.assertEqual(len([c for c in k.calls if 'exec' in c[0]]),1)
+
+    def test_real_subprocess_timeout_recovers_using_only_fixed_read_sql(self):
+        with tempfile.TemporaryDirectory() as t,tempfile.TemporaryDirectory() as output:
+            os.chmod(output,0o700)
+            fake=ObservationKube(ObservationClock(),[])
+            stub=Path(t)/'kubectl-stub.py';count=Path(t)/'read-count'
+            stub.write_text('import json,sys,time\nfrom pathlib import Path\n'
+                +f'pod={fake.pod!r}\nrows={fake.rows!r}\n'
+                +'if "get" in sys.argv: print(json.dumps(pod))\n'
+                +'else:\n'
+                +' sql=sys.stdin.read();assert "START TRANSACTION READ ONLY" in sql and "COMMIT;" in sql\n'
+                +' p=Path(sys.argv[1]);n=int(p.read_text()) if p.exists() else 0;p.write_text(str(n+1))\n'
+                +' if n==0: time.sleep(1.5)\n'
+                +' print("\\n".join(json.dumps(r) for r in rows))\n')
+            k=f.Kube('unused');k.base=[sys.executable,str(stub),str(count)]
+            with patch.object(m.DbObserver,'CALL_SECONDS',.5),patch.object(m.DbObserver,'SAMPLE_SECONDS',3), \
+                 patch.object(m.DbObserver,'RETRY_SECONDS',.01):
+                o=m.DbObserver(k,fixture(),1,output);proof=o.sample()
+            self.assertEqual(proof['attempt'],2)
+            self.assertEqual(count.read_text(),'2')
+            self.assertEqual(len(o.gaps),1)
+            self.assertFalse(m.db_observer_ready(output,1,fixture()['approvedRevision']))
+
+    def test_cli_run_binds_real_nested_plan_revision_to_db_interlock(self):
+        spec=importlib.util.spec_from_file_location('follow_cli_run',ROOT/'scripts/prepare-v3-cdc-followup.py')
+        cli=importlib.util.module_from_spec(spec);spec.loader.exec_module(cli)
+        with tempfile.TemporaryDirectory() as t,tempfile.TemporaryDirectory() as output, \
+             tempfile.TemporaryDirectory() as inputs:
+            clock,k,o=self.setup_observer(t,['success'])
+            plan=m.prepare(kafka(),'cdc-703-wire','C2')
+            path=Path(inputs)/'plan.json';path.write_text(json.dumps(plan))
+            args=['tool','run','--kubeconfig','synthetic','--trip-id','1','--directory',output,
+                  '--plan',str(path),'--approve-plan-sha256',plan['planSha256'],
+                  '--ack-shared-cdc-maintenance','--prometheus','http://127.0.0.1:19091',
+                  '--db-observation-directory',t]
+            checked=[]
+            def execute(k,phase,expected,path,observe,snapshotter):
+                checked.append(observe())
+                return {'injectionConfirmed':True,'faultUid':'owned'}
+            with patch.object(sys,'argv',args),patch.object(f,'Kube',return_value=k), \
+                 patch.object(m,'Observer',return_value=lambda:True),patch.object(f,'execute',side_effect=execute), \
+                 patch.object(m.time,'monotonic',clock.monotonic):
+                o.sample();cli.main()
+            self.assertEqual(checked,[True])
+            self.assertTrue((Path(output)/'execution.json').exists())
+
+
 if __name__=='__main__':unittest.main()
