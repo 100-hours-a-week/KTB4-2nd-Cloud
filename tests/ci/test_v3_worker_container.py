@@ -202,14 +202,17 @@ class SamplingCorrection(unittest.TestCase):
   command=m.FAST_FRAME_COMMAND[-1];self.assertLess(command.index('cat '),command.index('date '))
   env=m.reader_manifest(WORKER,'w1-reader','AA==')['items'][-1]['spec']['containers'][0]['env']
   self.assertEqual(env,[{'name':'W1_OBSERVER_POD_UID','valueFrom':{'fieldRef':{'fieldPath':'metadata.uid'}}}])
- @unittest.skipUnless(os.environ.get('V3_SCHEMA_DIR'),'Pinned schemas required')
+ @unittest.skipUnless(os.environ.get('V3_SCHEMA_DIR')and os.environ.get('V3_KUBECONFORM'),'Pinned schemas required')
  def test_reader_pod_spec_against_pinned_deployment_pod_spec(self):
-  import jsonschema
-  schema=json.loads((Path(os.environ['V3_SCHEMA_DIR'])/'deployment.json').read_text())
-  spec=schema['properties']['spec']['properties']['template']['properties']['spec']
-  bundle=self.cli().reader_manifest(WORKER,'w1-reader','AA==')
-  jsonschema.validate(bundle['items'][-1]['spec'],spec)
-  self.assertEqual(bundle['items'][-1]['spec']['containers'][0]['resources'],{'requests':{'cpu':'25m','memory':'64Mi'},'limits':{'cpu':'250m','memory':'192Mi'}})
+  bundle=self.cli().reader_manifest(WORKER,'w1-reader','AA==');pod=bundle['items'][-1]
+  # The pinned Deployment schema embeds the Kubernetes PodSpec schema. Validate
+  # the reader spec in that structural wrapper, without adding a Python package.
+  wrapped={'apiVersion':'apps/v1','kind':'Deployment','metadata':pod['metadata'],
+           'spec':{'selector':{'matchLabels':pod['metadata']['labels']},'template':{'metadata':{'labels':pod['metadata']['labels']},'spec':pod['spec']}}}
+  with tempfile.TemporaryDirectory()as d:
+   path=Path(d)/'reader-podspec.json';path.write_text(json.dumps(wrapped))
+   subprocess.run([os.environ['V3_KUBECONFORM'],'-strict','-schema-location',str(Path(os.environ['V3_SCHEMA_DIR'])/'{{.ResourceKind}}.json'),str(path)],check=True)
+  self.assertEqual(pod['spec']['containers'][0]['resources'],{'requests':{'cpu':'25m','memory':'64Mi'},'limits':{'cpu':'250m','memory':'192Mi'}})
  def test_fast_frame_rejects_wrong_uid_partial_stale_and_unavailable(self):
   m=self.cli()
   for mode in ('uid','partial','stale','unavailable','future'):
