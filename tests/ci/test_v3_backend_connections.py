@@ -22,6 +22,19 @@ class Connections(unittest.TestCase):
    v=apps.load_values(files);docs=apps.platform.load_documents(apps.render(files));apps.validate(docs,v);return docs,v
  def reject(self,override):
   with self.assertRaises((ValueError,KeyError,subprocess.CalledProcessError)):self.rendered(override)
+ def test_converter_lease_pair_changes_only_config_and_checksum(self):
+  enabled={'workloads':{role:{'enabled':True}for role in values.ROLES}}
+  before,_=self.rendered(enabled)
+  for seconds in [600,120]:
+   override=__import__('copy').deepcopy(enabled)
+   override['workloads']['photo-converter']['configMapData']={'ATTACHMENT_CONVERSION_LEASE_DURATION':str(seconds)+'s','ATTACHMENT_CONVERSION_LEASE_RENEW_INTERVAL':'30s'}
+   after,_=self.rendered(override)
+   a={(x['kind'],x['metadata']['name']):x for x in before};b={(x['kind'],x['metadata']['name']):x for x in after}
+   self.assertEqual(set(a),set(b));self.assertEqual({key for key in a if a[key]!=b[key]},{('Deployment','photo-converter'),('ConfigMap','photo-converter-runtime')})
+   oldspec=a[('Deployment','photo-converter')]['spec']['template']['spec'];newspec=b[('Deployment','photo-converter')]['spec']['template']['spec']
+   self.assertEqual(oldspec,newspec)
+  for role in ['auth-api','photo-api','trip-api','trip-result-worker']:
+   wrong=__import__('copy').deepcopy(enabled);wrong['workloads'][role]['configMapData']={'ATTACHMENT_CONVERSION_LEASE_DURATION':'120s','ATTACHMENT_CONVERSION_LEASE_RENEW_INTERVAL':'30s'};self.reject(wrong)
  def test_disabled_creates_nothing(self):
   self.assertEqual(apps.platform.load_documents(apps.render([BASE,PROFILE])),[]);self.assertEqual(access.platform.load_documents(access.render()),[])
  def test_exact_cluster_ai_service_allowed_without_external_http(self):

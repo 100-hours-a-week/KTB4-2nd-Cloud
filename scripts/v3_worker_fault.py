@@ -49,7 +49,7 @@ def contract():
 
 def tool_hash():
     return f.sha({name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in
-                  ['scripts/v3_worker_fault.py','scripts/v3_worker_chaos.py','scripts/v3_worker_container.py','scripts/prepare-v3-worker-fault.py',
+                  ['scripts/v3_worker_fault.py','scripts/v3_conversion_lease.py','scripts/prepare-v3-conversion-lease.py','scripts/v3_worker_chaos.py','scripts/v3_worker_container.py','scripts/prepare-v3-worker-fault.py',
                    'scripts/v3_cdc_fault.py','scripts/v3_cdc_followup.py','deploy/v3/worker-fault/contract.json']})
 
 
@@ -225,7 +225,12 @@ def app_templates(k):
     return result
 
 
-def snapshot(k):
+def snapshot(k, lease_review=None):
+    if lease_review is not None:
+        import v3_conversion_lease as lease
+        lease.validate_review(lease_review)
+    image=lease_review['beImage'] if lease_review is not None else BE_IMAGE
+    source=lease_review['beSource'] if lease_review is not None else BE_SOURCE
     uid=k.identity()
     argo=k.get('application','argocd','yeodam-v3-apps')
     f.require(argo['spec']['source']['targetRevision']=='deploy/v3-approved' and
@@ -238,7 +243,7 @@ def snapshot(k):
     owners=rs['metadata'].get('ownerReferences',[])
     f.require(len(owners)==1 and owners[0]['kind']=='Deployment' and owners[0]['name']==CONVERTER and owners[0].get('controller'), 'Wrong ReplicaSet owner')
     c=[x for x in p['spec']['containers'] if x['name']=='backend']
-    f.require(len(c)==1 and c[0]['image']==BE_IMAGE and c[0]['resources']['limits']['memory']=='1Gi', 'Review changed converter image or memory')
+    f.require(len(c)==1 and c[0]['image']==image and c[0]['resources']['limits']['memory']=='1Gi', 'Review changed converter image or memory')
     statuses=[x for x in p['status']['containerStatuses'] if x['name']=='backend']
     f.require(len(statuses)==1 and statuses[0].get('state',{}).get('running'), 'Running backend container required')
     victim.update(rsUid=rs['metadata']['uid'],deploymentUid=owners[0]['uid'],image=c[0]['image'],
@@ -249,9 +254,13 @@ def snapshot(k):
     cs=connector['status']['connectorStatus']
     f.require(cs['connector']['state']=='RUNNING' and len(cs['tasks'])==1 and cs['tasks'][0]['state']=='RUNNING', 'CDC must remain normal')
     f.require(not k.get('networkchaos','kafka')['items'],'No concurrent CDC fault')
-    return {'version':1,'cluster':f.CLUSTER,'kubeSystemUid':uid,'capturedAt':f.now(),
+    result={'version':1,'cluster':f.CLUSTER,'kubeSystemUid':uid,'capturedAt':f.now(),
             'approvedRevision':argo['status']['sync']['revision'],'victim':victim,'mysql':mysql,
-            'apps':app_templates(k),'beSource':BE_SOURCE,'beImage':BE_IMAGE}
+            'apps':app_templates(k),'beSource':source,'beImage':image}
+    if lease_review is not None:
+        result['leaseReview']=lease_review
+        runtime_lease(k,result)
+    return result
 
 
 def validate_snapshot(s, current=None):
@@ -259,8 +268,14 @@ def validate_snapshot(s, current=None):
     f.require(s['version']==1 and s['cluster']==f.CLUSTER and f.UUID.fullmatch(s['kubeSystemUid']) and
               re.fullmatch('[a-f0-9]{40}',s['approvedRevision']), 'Invalid cluster/revision')
     f.require(0<=now-epoch(s['capturedAt'])<=300, 'Refresh snapshot within five minutes')
-    v=s['victim']
-    f.require(v['image']==BE_IMAGE and s['beImage']==BE_IMAGE and s['beSource']==BE_SOURCE and
+    v=s['victim'];review=s.get('leaseReview')
+    if review is not None:
+        import v3_conversion_lease as lease
+        lease.validate_review(review)
+        f.require(s['approvedRevision']==review['approvedRevision'],'Use the reviewed approved Snapshot')
+    image=review['beImage'] if review is not None else BE_IMAGE
+    source=review['beSource'] if review is not None else BE_SOURCE
+    f.require(v['image']==image and s['beImage']==image and s['beSource']==source and
               f.UUID.fullmatch(v['uid']) and f.UUID.fullmatch(v['rsUid']) and f.UUID.fullmatch(v['deploymentUid']) and
               v['ownerKind']=='ReplicaSet' and v['name'].startswith(CONVERTER+'-') and
               re.fullmatch('[a-z0-9.-]+',v['name']) and v['containerId'].startswith('containerd://'), 'Wrong converter identity')
@@ -283,13 +298,22 @@ def prepare(s,trip_id,run_id,input_manifest,traffic_quiet=False,daemon_plan=None
         f.require(daemon_plan['victim']==s['victim'] and daemon_plan['clusterUid']==s['kubeSystemUid'],'Daemon Plan must pin this exact victim')
         value.update(version=2,case='W1K',daemonPlan=daemon_plan,criteria=criteria(True))
         value['fault']['spec'].pop('gracePeriod');value['fault']['spec'].update(action='container-kill',containerNames=['backend'])
+    if s.get('leaseReview') is not None:
+        import v3_conversion_lease as lease
+        f.require(daemon_plan is not None,'W2K requires verified container-kill; PodKill is not equivalent')
+        value.update(case='W2K',criteria=lease.criteria(s['leaseReview']))
     return dict(value,planSha256=f.sha(value))
 
 
 def verify(p,expected,fresh=True):
     f.require(p['planSha256']==expected==f.sha({k:v for k,v in p.items() if k!='planSha256'}), 'Plan hash mismatch')
-    container=p.get('case')=='W1K'
-    f.require(p['toolSha256']==tool_hash() and p['criteria']==criteria(container) and p['case']in('W1','W1K'), 'Reprepare changed tool/criteria')
+    container=p.get('case') in ('W1K','W2K')
+    expected_criteria=criteria(container)
+    if p.get('case')=='W2K':
+        import v3_conversion_lease as lease
+        expected_criteria=lease.criteria(p['snapshot']['leaseReview'])
+    else:f.require('leaseReview' not in p['snapshot'],'A new lease policy cannot masquerade as W1/W1K')
+    f.require(p['toolSha256']==tool_hash() and p['criteria']==expected_criteria and p['case']in('W1','W1K','W2K'), 'Reprepare changed tool/criteria')
     if fresh: validate_snapshot(p['snapshot'])
     f.trip_ids([p['tripId']]);f.require(p['version']==(2 if container else 1) and p['injected'] is False and NAME.fullmatch(p['runId']) and p['runId'].startswith('w1-'),'Invalid one-shot identity')
     f.require(p['fault']['apiVersion']=='chaos-mesh.org/v1alpha1' and p['fault']['kind']=='PodChaos','PodChaos only')
@@ -335,11 +359,11 @@ def partial(proof,p,ownership,now=None):
         saved=[r for r in items if r['saved']==1]
         current_items=[r for r in items if r['itemId']==task['currentItem'] and r['saved']==0]
         if not (task['status']=='RUNNING' and 2<=len(saved)<len(items) and len(current_items)==1
-                and finite(task['leaseSeconds']) and 0<task['leaseSeconds']<=601 and
+                and finite(task['leaseSeconds']) and 0<task['leaseSeconds']<=p['criteria']['leaseSeconds']+1 and
                 SHA.fullmatch(task['claimHash'] or '') and task['claimHash']==task['attemptOwnerHash']
                 and task['currentAttempt']==current_items[0]['attempt'] and task['currentAttempt'] in (1,2)):
             continue
-        if p.get('case')=='W1K' and len(saved)>p['criteria']['searchSavedMaximum']:continue
+        if p.get('case') in ('W1K','W2K') and len(saved)>p['criteria']['searchSavedMaximum']:continue
         deliveries=[r for r in rows if r['section']=='worker_delivery' and r['taskId']==task['taskId'] and r['status']=='PUBLISHED']
         if not deliveries:continue
         delivery=max(deliveries,key=lambda r:r['deliveryNo'])
@@ -349,13 +373,13 @@ def partial(proof,p,ownership,now=None):
         f.require(host==p['snapshot']['victim']['ip'], 'Task assigned to a different Pod')
         committed=ownership['committed'].get(str(delivery['partition']))
         f.require(type(committed) is int and committed<=delivery['offset'], 'Task already committed or offset unknown')
-        if p.get('case')=='W1K':f.require(SHA.fullmatch(owners[0].get('memberHash','')),'Old consumer member hash required')
+        if p.get('case') in ('W1K','W2K'):f.require(SHA.fullmatch(owners[0].get('memberHash','')),'Old consumer member hash required')
         candidates.append({'taskId':task['taskId'],'batchId':task['batchId'],'claimHash':task['claimHash'],
                            'leaseUntil':task['leaseUntil'],'leaseSeconds':task['leaseSeconds'],
                            'currentItem':task['currentItem'],'currentAttempt':task['currentAttempt'],
                            'savedItems':saved,'delivery':delivery,'ownership':ownership,
                            'dbSampleAt':proof['observedAt'],'proofSha256':f.sha(proof),
-                           **({'memberHash':owners[0]['memberHash']}if p.get('case')=='W1K'else{})})
+                           **({'memberHash':owners[0]['memberHash']}if p.get('case') in ('W1K','W2K')else{})})
     f.require(len(candidates)==1,'No unique partially persisted in-flight task; do not kill')
     return candidates[0]
 
@@ -388,8 +412,19 @@ def owned_delete(k,kind,name,namespace,uid,run_id):
         raise f.GuardError('PodChaos finalizer pending; retain permissions and photo profile')
 
 
+def runtime_lease(k,s):
+    review=s.get('leaseReview')
+    if review is None:return
+    import v3_conversion_lease as lease
+    lease.validate_review(review)
+    f.require(s['approvedRevision']==review['approvedRevision'],'Approved revision differs from lease review')
+    data=k.get('configmap','photo','photo-converter-runtime')['data']
+    f.require(lease.policy(data)==review['policy'],'Live converter policy differs from preregistration')
+
+
 def runtime(k,p):
     f.require(k.identity()==p['snapshot']['kubeSystemUid'],'Wrong cluster')
+    runtime_lease(k,p['snapshot'])
     argo=k.get('application','argocd','yeodam-v3-apps')
     f.require(argo['status']['sync']['revision']==p['snapshot']['approvedRevision'] and
               argo['status']['sync']['status']=='Synced' and app_templates(k)==p['snapshot']['apps'], 'Apps changed since Plan')
@@ -413,7 +448,7 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
     f.require(directory.is_dir() and not directory.is_symlink() and directory.stat().st_mode&0o077==0 and not any(directory.iterdir()), 'Use empty private execution directory')
     # Exclusive local latch is never removed: repeating a one-shot after a timeout is unsafe.
     f.private_write(directory/'started.json',{'planSha256':expected,'at':f.now()})
-    container=p.get('case')=='W1K'
+    container=p.get('case') in ('W1K','W2K')
     import v3_worker_container as hard
     owned=[]; observer=None; receipt={'planSha256':expected,'injectionRequested':False,'terminationConfirmed':False,'cleanup':[]}
     try:
@@ -535,6 +570,11 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
                 # Re-read AFTER seeing old-container exit137; the earlier DB sample might predate death.
                 after=observer.sample();samples.append(after);f.private_write(directory/'post-termination.json',after)
                 receipt['postKillWindowObserved']=hard.post_kill_window(selected,after)
+                if p['case']=='W2K':
+                    import v3_conversion_lease as lease
+                    frozen=lease.cohort(selected,after)
+                    f.private_write(directory/'post-death-cohort.json',frozen)
+                    receipt['postDeathCohortQualified']=frozen['qualified']
                 receipt['processKillObserved']=True;receipt['terminationPrecision']='old containerID + exit137 (not OOM) + Chaos Injected required'
                 proof=after # business monitoring continues even when the selected photo window was missed
             status=next(r for r in proof['rows'] if r['section']=='execution_timing')['status']
@@ -578,6 +618,7 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
 
 
 def assess(before,after,timing,trace,db_summary):
+    f.require(timing.get('case','W1') in ('W1','W1K'),'Use the preregistered W2K assessor; never reclassify a lease trial as W1')
     trip=before['rows'][0]['tripId'];validate_rows(before['rows'],trip,True);validate_rows(after['rows'],trip,True)
     b={r['itemId']:r for r in before['rows'] if r['section']=='worker_item'}
     a={r['itemId']:r for r in after['rows'] if r['section']=='worker_item'}
@@ -682,7 +723,7 @@ def summarize(directory):
         at=epoch(rt['at']);pods=[p for p in rt['pods'] if p['uid']!=receipt.get('victimUid',selected.get('victimUid'))]
         # Exclude original Pod by its pinned name, available in the injection intent.
         intent=take(directory/'injection-intent.json') if 'injection-intent.json' not in sources else read(directory/'injection-intent.json')
-        if receipt.get('case')=='W1K':
+        if receipt.get('case') in ('W1K','W2K'):
             import v3_worker_container as hard
             pods=[p for p in rt['pods'] if hard.replacement({'snapshot':{'victim':{'containerId':intent['victimContainerId']}}},p)]
         else:pods=[p for p in pods if p['uid']!=intent['victimUid']]
@@ -690,7 +731,7 @@ def summarize(directory):
         owner=rt.get('ownership',{})
         try:fresh=owner.get('querySeconds',0)<=2 and ownership_age_bounds(owner,at)[1]<=5
         except (f.GuardError,KeyError,TypeError,ValueError):fresh=False
-        member_changed=(hard.new_owner(selected,pods,owner)if receipt.get('case')=='W1K'else True)
+        member_changed=(hard.new_owner(selected,pods,owner)if receipt.get('case') in ('W1K','W2K')else True)
         if assigned is None and fresh and member_changed and owner.get('state')=='Stable' and any(
             m['host'].lstrip('/')==p.get('ip') and selected['delivery']['partition'] in m['partitions']
             for p in pods for m in owner.get('members',[])):assigned=[previous,at]
@@ -725,15 +766,16 @@ def summarize(directory):
             'manualActions':receipt.get('manualActions',[]),'observationGaps':db['observationGaps'],'sourceHashes':sources,
             'precision':'observer intervals; observed lease is a lower eligibility bound; API disappearance is not kernel death',
             'traceStillRequired':True,'preAcceptanceSamples':pre_acceptance}
-    if receipt.get('case')=='W1K':
+    if receipt.get('case') in ('W1K','W2K'):
         import v3_worker_container as hard
         result=hard.lease_timing(result,receipt,selected,samples,runtime)
+        if receipt.get('case')=='W2K':result['case']='W2K'
     return result
 
 
 def dashboard(record):
     events=record['events'];samples=record['samples'];case=record.get('case','W1')
-    f.require(case in('W1','W1K'),'Known worker fault case required')
+    f.require(case in('W1','W1K','W2K'),'Known worker fault case required')
     allowed={'terminationLowerAt','terminationUpperAt','replacementReadyAt','consumerAssignedAt','leaseUntil','newClaimAt','firstNewSaveAt','completedAt'}
     f.require(set(events)<=allowed and events and samples,'Recorded events and samples required')
     names=list(events);times=[epoch(events[k])*1000 for k in names];start=min(times)

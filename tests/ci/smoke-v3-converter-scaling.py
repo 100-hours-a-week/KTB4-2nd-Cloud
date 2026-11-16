@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Actual BE image classes + local two-partition Kafka. No AWS, kubeconfig, user data or GPU."""
-import argparse,base64,hashlib,json,os,subprocess,tempfile,time,uuid,zipfile
+import argparse,base64,hashlib,json,os,subprocess,tempfile,time,uuid,zipfile,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(ROOT/'scripts'))
 
 def smoke(output=None):
     candidate=json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text());be=candidate['components']['backend']
@@ -21,6 +22,13 @@ def smoke(output=None):
             extract=prefix+'-extract';names.append(extract)
             cmd(['docker','create','--platform','linux/amd64','--name',extract,be['image']])
             cmd(['docker','cp',extract+':/app/app.jar',str(d/'app.jar')])
+            lease_support=None
+            profile=candidate['values']['backend']
+            data=dict(profile['defaults'].get('configMapData',{}));data.update(profile['workloads']['photo-converter'].get('configMapData',{}))
+            from v3_conversion_lease import ENV, policy, inspect_jar
+            if set(ENV)&set(data):
+                policy(data)
+                lease_support=inspect_jar(d/'app.jar',be['sourceSha'],be['image'])
             with zipfile.ZipFile(d/'app.jar') as jar:
                 for n in jar.namelist():
                     if n.startswith('BOOT-INF/classes/') or n.startswith('BOOT-INF/lib/')and n.endswith('.jar'):
@@ -49,6 +57,7 @@ def smoke(output=None):
             lines=[s.removeprefix('CONVERTER_PROOF ')for s in r.stdout.splitlines()if s.startswith('CONVERTER_PROOF ')]
             assert len(lines)==1,'Missing actual fixture proof'
             result=json.loads(lines[0]);result.update(image=be['image'],sourceSha=be['sourceSha'],fixtureSha256=hashlib.sha256((ROOT/'tests/ci/v3/converter/ConverterScalingFixture.java').read_bytes()).hexdigest())
+            if lease_support is not None:result['leaseImageCompatibility']=lease_support
             if output:
                 output=Path(output);assert not output.exists(),'Do not overwrite prior evidence';output.write_text(json.dumps(result,indent=2)+'\n')
             print(json.dumps(result));return result

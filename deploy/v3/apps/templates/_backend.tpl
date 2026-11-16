@@ -24,6 +24,16 @@
 {{- $connected := .root.Values.backendConnectionContract -}}
 {{- $allowed := concat $contract.requiredConfig $contract.topicConfig $contract.conversionConfig $contract.conversionTopicConfig $contract.optionalConfig (list "SPRING_APPLICATION_JSON") -}}
 {{- if $connected }}{{ $allowed = concat $allowed (keys $connection.commonConfig) (list "KAFKA_SASL_USERNAME") }}{{ end -}}
+{{- $leaseKey := "ATTACHMENT_CONVERSION_LEASE_DURATION" -}}
+{{- $renewKey := "ATTACHMENT_CONVERSION_LEASE_RENEW_INTERVAL" -}}
+{{- if or (hasKey $c.configMapData $leaseKey) (hasKey $c.configMapData $renewKey) -}}
+{{- if or (ne .instance "photo-converter") (not (hasKey $c.configMapData $leaseKey)) (not (hasKey $c.configMapData $renewKey)) }}{{ fail "Explicit lease pair belongs only to photo-converter" }}{{ end -}}
+{{- $lease := index $c.configMapData $leaseKey -}}
+{{- if or (not (regexMatch "^[1-9][0-9]{0,3}s$" $lease)) (ne (index $c.configMapData $renewKey) "30s") }}{{ fail "Explicit lease seconds and unchanged 30s heartbeat required" }}{{ end -}}
+{{- $seconds := int (trimSuffix "s" $lease) -}}
+{{- if or (lt $seconds 90) (gt $seconds 600) }}{{ fail "Reviewed lease range is 90..600 seconds" }}{{ end -}}
+{{- $allowed = concat $allowed (list $leaseKey $renewKey) -}}
+{{- end -}}
 {{- $boundedMemory := hasKey $c.configMapData "MALLOC_ARENA_MAX" -}}
 {{- if $boundedMemory -}}
 {{- if or (ne .instance "photo-converter") (ne $c.configMapData.MALLOC_ARENA_MAX $contract.photoConverterMemory.allocatorArenas) }}{{ fail "Allocator budget belongs only to the reviewed photo-converter profile" }}{{ end -}}
