@@ -63,7 +63,7 @@ RANGE = {
     'conversion_lag': 'keda_scaler_metrics_value{scaledObject="photo-converter"}',
 }
 LABELS = {'uid', 'pod', 'container', 'job', 'namespace', 'deployment', 'workload', 'operation', 'status', 'phase', 'state', 'task', 'connector',
-          'outbox','category','alertname','alertstate','severity','scaledObject','metric','scaler','scalerIndex'}
+          'outcome','outbox','category','alertname','alertstate','severity','scaledObject','metric','scaler','scalerIndex'}
 
 
 def utc(ts):
@@ -375,6 +375,13 @@ def cdc_observation_summary(data, start, end, step=30):
             'meaning':'REST readability at the query grid only; neither current Task liveness nor delivery proof'}
 
 
+
+def load_lease_snapshot(path):
+    if not path:raise ValueError('Explicit W2K snapshot required for lease metrics')
+    p=Path(path)
+    if not p.is_file() or p.is_symlink() or p.stat().st_size>MAX_BYTES:raise ValueError('Bounded regular W2K snapshot required')
+    return json.loads(p.read_text())
+
 def collect(args):
     start, end = timestamp(args.start), timestamp(args.end)
     if not 120 <= end-start <= 21600 or end > int(datetime.now(timezone.utc).timestamp()):
@@ -390,7 +397,16 @@ def collect(args):
     client = Prometheus(args.prometheus)
     out = Path(args.output)
     out.mkdir(mode=0o700, parents=True, exist_ok=False)
-    ranges = {k: dict(client.query(v, start, end, 30), expression=v) for k, v in RANGE.items()}
+    queries=dict(RANGE)
+    if getattr(args,'include_conversion_lease',False):
+        from v3_conversion_lease import QUERIES
+        import v3_worker_fault as worker
+        lease_snapshot=load_lease_snapshot(args.lease_snapshot)
+        worker.validate_snapshot(lease_snapshot,current=worker.epoch(lease_snapshot['capturedAt']))
+        if lease_snapshot.get('leaseReview')is None:raise ValueError('W2K reviewed snapshot required')
+        victim=lease_snapshot['victim']['name']
+        queries.update({'conversion_'+k:v.replace('{namespace="photo"}', '{namespace="photo",pod="'+victim+'"}') for k,v in QUERIES.items()})
+    ranges = {k: dict(client.query(v, start, end, 30), expression=v) for k, v in queries.items()}
     whole = annotate_samples(counts_and_percentiles(client, start, end), args.min_samples)
     status = 'complete' if all(x['status']=='ok' for x in [*ranges.values(), *whole.values()]) else 'partial'
     result = {'schemaVersion': 2, 'experimentId': args.experiment_id, 'start': utc(start), 'end': utc(end),
@@ -400,6 +416,9 @@ def collect(args):
               'conditionsMatch': all(before[k]==after[k] for k in ['apps', 'nodeTypes', 'approvedRevision']),
               'conditionsComparison':scaling.compare_conditions(before,after),'input':input_identity,
               'wholeWindow': whole, 'ranges': ranges, 'verdict': 'not_assessed'}
+    if getattr(args,'include_conversion_lease',False):
+        result['leaseReviewSha256']=lease_snapshot['leaseReview']['reviewSha256']
+        result['leaseVictimPod']=victim
     result['cdcObservation'] = cdc_observation_summary(ranges['cdc_observation_available'],start,end)
     save(out/'result.json', result); save(out/'summary.md', markdown(result))
     print(json.dumps({'collectionStatus': status, 'conditionsMatch': result['conditionsMatch'],
@@ -416,6 +435,8 @@ def main():
     c = commands.add_parser('collect')
     for name in ['kubeconfig', 'conditions', 'start', 'end', 'output', 'experiment-id', 'prometheus']:
         c.add_argument('--'+name, required=True)
+    c.add_argument('--include-conversion-lease',action='store_true',help='Fixed lease policy and heartbeat metrics; missing remains missing')
+    c.add_argument('--lease-snapshot',help='Private W2K snapshot pinning the exact converter Pod and review')
     c.add_argument('--events')
     c.add_argument('--min-samples', type=int, help='Optional agreed sample threshold; no default adequacy claim')
     c.add_argument('--input-manifest',help='Private JPEG manifest; export only aggregate identity')

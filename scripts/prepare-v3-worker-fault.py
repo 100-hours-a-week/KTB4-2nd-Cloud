@@ -178,6 +178,7 @@ def main():
     os.umask(0o077)
     parser=argparse.ArgumentParser(description=__doc__);sub=parser.add_subparsers(dest='action',required=True)
     a=sub.add_parser('snapshot');a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--output',type=Path,required=True)
+    a.add_argument('--lease-review',type=Path)
     a=sub.add_parser('plan')
     for key in ['snapshot','input','output']:a.add_argument('--'+key,type=Path,required=True)
     a.add_argument('--failure-mode',choices=['pod-kill','container-kill'],default='pod-kill');a.add_argument('--daemon-plan',type=Path)
@@ -215,7 +216,7 @@ def main():
         f.require(not args.output.exists() and not args.output.is_symlink() and args.output.parent.is_dir() and args.output.parent.stat().st_mode&0o077==0,'Fresh mode-700 output required')
     if args.action=='sampling-probe':
         s=load(args.snapshot);w.validate_snapshot(s);k=f.Kube(args.kubeconfig)
-        live=w.snapshot(k)
+        live=w.snapshot(k,s.get('leaseReview'))
         f.require(all(live[key]==s[key] for key in ('kubeSystemUid','approvedRevision','victim','mysql','apps')),'Sampling target changed')
         rr=load(args.reader_receipt);f.require(rr['clusterUid']==s['kubeSystemUid'],'Wrong reader cluster')
         pod=next(x for x in rr['resources']if x['kind']=='Pod')
@@ -232,7 +233,7 @@ def main():
         print(json.dumps({'profileApplied':receipt['complete'],'injected':False,'gpuChanged':False}));return
     if args.action=='run':
         plan=load(args.plan);w.verify(plan,args.approve_plan_sha256)
-        container=plan['case']=='W1K'
+        container=plan['case'] in ('W1K','W2K')
         f.require(container==args.ack_maintenance_and_one_container_kill,'Use acknowledgement for the exact fault mode')
         f.require((args.daemon_receipt is not None)==container,'Container kill needs its daemon receipt; PodKill must not move a daemon')
         dr=load(args.daemon_receipt)if container else None
@@ -263,7 +264,7 @@ def main():
     if args.action=='collect':
         observer=w.WorkerDbObserver(f.Kube(args.kubeconfig),load(args.snapshot),args.trip_id,args.directory)
         print(json.dumps({'sample':observer.sample()['observedAt'],'injected':False}));return
-    if args.action=='snapshot':result=w.snapshot(f.Kube(args.kubeconfig))
+    if args.action=='snapshot':result=w.snapshot(f.Kube(args.kubeconfig),load(args.lease_review)if args.lease_review else None)
     elif args.action=='profile-plan':result=chaos.profile_plan(f.Kube(args.kubeconfig))
     elif args.action=='reader-stop':result=reader_stop(f.Kube(args.kubeconfig),load(args.receipt))
     elif args.action=='profile-restore':result=chaos.restore(f.Kube(args.kubeconfig),load(args.receipt))
