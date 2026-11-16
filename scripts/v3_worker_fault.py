@@ -193,7 +193,7 @@ def prepare(s,trip_id,run_id,input_manifest,traffic_quiet=False):
     value={'version':1,'case':'W1','runId':run_id,'tripId':trip_id,'snapshot':s,'input':input_manifest,
            'criteria':criteria(),'toolSha256':tool_hash(),'createdAt':f.now(),'injected':False,
            'fault':{'apiVersion':'chaos-mesh.org/v1alpha1','kind':'PodChaos','metadata':{
-               'name':run_id,'namespace':'photo','labels':{LABEL:run_id},'annotations':{f.PAUSE:'true'}},
+               'name':run_id,'namespace':'photo','labels':{LABEL:run_id}},
                'spec':{'action':'pod-kill','mode':'one','gracePeriod':0,'selector':{'namespaces':['photo'],'pods':{'photo':[s['victim']['name']]}}}}}
     return dict(value,planSha256=f.sha(value))
 
@@ -206,7 +206,7 @@ def verify(p,expected,fresh=True):
     f.require(p['fault']['apiVersion']=='chaos-mesh.org/v1alpha1' and p['fault']['kind']=='PodChaos','PodChaos only')
     expected_spec={'action':'pod-kill','mode':'one','gracePeriod':0,'selector':{'namespaces':['photo'],'pods':{'photo':[p['snapshot']['victim']['name']]}}}
     f.require(p['fault']['spec']==expected_spec and p['fault']['metadata']=={
-        'name':p['runId'],'namespace':'photo','labels':{LABEL:p['runId']},'annotations':{f.PAUSE:'true'}}, 'Exact inactive one-shot target required')
+        'name':p['runId'],'namespace':'photo','labels':{LABEL:p['runId']}}, 'Exact create-triggered one-shot target required')
 
 
 def ownership_age_bounds(ownership,current):
@@ -319,6 +319,16 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
         obsdir=directory/'db';obsdir.mkdir(mode=0o700)
         reads=DeadlineKube(k)
         observer=WorkerDbObserver(reads,p['snapshot'],p['tripId'],obsdir)
+        # pod-kill is one-shot in pinned Chaos Mesh 2.8.8: pause is ignored.
+        # Only RBAC may be registered early; creating PodChaos IS the injection.
+        for obj in delete_role(p):
+            f.private_write(directory/('intent-'+obj['kind']+'.json'),{'kind':obj['kind'],'name':obj['metadata']['name'],'at':f.now()})
+            receipt['uncertainCreate']={'kind':obj['kind'],'name':obj['metadata']['name']}
+            made=f.bounded_json(k.call(['create','-f','-','-o','json'],json.dumps(obj)))
+            uid=made['metadata']['uid'];owned.append((obj['kind'].lower(),obj['metadata']['name'],uid))
+            receipt.pop('uncertainCreate',None)
+            f.private_write(directory/('owned-'+obj['kind']+'.json'),{'kind':obj['kind'],'name':obj['metadata']['name'],'uid':uid,'runId':p['runId']})
+        f.require(not k.get('podchaos','photo')['items'],'Concurrent PodChaos forbidden')
         selected=None; search=time.monotonic()+p['criteria']['searchSeconds'];pairs=0
         def observe_pair():
             nonlocal pairs
@@ -330,6 +340,12 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
         while time.monotonic()<search:
             reads.deadline=search
             observer.SAMPLE_SECONDS=min(45,max(.001,search-time.monotonic()))
+            pod=reads.get('pod','photo',p['snapshot']['victim']['name'])
+            f.require(pod['metadata']['uid']==p['snapshot']['victim']['uid'] and f.ready_pod(pod) and
+                      any(x.get('name')=='backend' and x.get('containerID')==p['snapshot']['victim']['containerId']
+                          for x in pod.get('status',{}).get('containerStatuses',[])), 'Victim changed before create')
+            # Fetch target identity before the final metadata -> DB pair, so no
+            # registration/API read consumes the fresh partial-work window.
             proof,owner=observe_pair()
             f.require(not observer.gaps and not observer.exhausted,'Observation gap before injection')
             f.require(next(r for r in proof['rows']if r['section']=='execution_timing')['status']not in ('COMPLETED','FAILED','CANCELED'),'Execution already terminal')
@@ -341,30 +357,21 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
             time.sleep(min(1,max(0,search-time.monotonic())))
         f.require(selected is not None,'Partial processing window missed; no injection')
         f.private_write(directory/'partial.json',selected)
-        # No intervening slow full-cluster snapshot after this point. Pin exact target again.
-        for obj in delete_role(p)+[p['fault']]:
-            f.private_write(directory/('intent-'+obj['kind']+'.json'),{'kind':obj['kind'],'name':obj['metadata']['name'],'at':f.now()})
-            receipt['uncertainCreate']={'kind':obj['kind'],'name':obj['metadata']['name']}
-            raw=k.call(['create','-f','-','-o','json'],json.dumps(obj))
-            made=f.bounded_json(raw);uid=made['metadata']['uid']
-            owned.append((obj['kind'].lower(),obj['metadata']['name'],uid))
-            receipt.pop('uncertainCreate',None)
-            f.private_write(directory/('owned-'+obj['kind']+'.json'),{'kind':obj['kind'],'name':obj['metadata']['name'],'uid':uid,'runId':p['runId']})
-        # Revalidate DB after registration/permission work; stale/complete work is never killed.
-        reads.deadline=time.monotonic()+10;observer.SAMPLE_SECONDS=10
-        proof,owner=observe_pair();selected=partial(proof,p,owner);f.private_write(directory/'pre-injection.json',selected)
-        pod=k.get('pod','photo',p['snapshot']['victim']['name'])
-        f.require(pod['metadata']['uid']==p['snapshot']['victim']['uid'] and f.ready_pod(pod),'Victim changed before unpause')
-        fault=k.get('podchaos','photo',p['runId'])
-        f.require(normalized_fault(fault['spec'])==p['fault']['spec'] and fault['metadata'].get('annotations',{}).get(f.PAUSE)=='true','Fault must remain paused')
-        # Fail before issuing if any post-sample API work consumed the freshness budget.
+        f.private_write(directory/'pre-injection.json',selected)
         f.require(time.time()-epoch(selected['dbSampleAt'])<=2,'Last partial observation expired')
-        f.private_write(directory/'injection-intent.json',{'at':f.now(),'uid':fault['metadata']['uid'],'victimUid':pod['metadata']['uid']})
+        # Journal before the destructive CREATE, including an ambiguous timeout.
+        # Never label a created one-shot as inactive or wait for an unpause PATCH.
         receipt['injectionRequested']=True;receipt['requestAt']=f.now();mono=time.monotonic()
-        patch=[{'op':'test','path':'/metadata/uid','value':fault['metadata']['uid']},
-               {'op':'test','path':'/spec','value':fault['spec']},
-               {'op':'replace','path':'/metadata/annotations/'+f.PAUSE.replace('/','~1'),'value':'false'}]
-        k.call(['-n','photo','patch','podchaos',p['runId'],'--type=json','-p',json.dumps(patch)])
+        f.private_write(directory/'injection-intent.json',{'at':receipt['requestAt'],'trigger':'PodChaos.create',
+                        'victimUid':pod['metadata']['uid'],'runId':p['runId']})
+        fault_obj=p['fault']
+        receipt['uncertainCreate']={'kind':'PodChaos','name':p['runId']}
+        raw=k.call(['create','-f','-','-o','json'],json.dumps(fault_obj))
+        receipt['createResponseAt']=f.now()
+        fault=f.bounded_json(raw);uid=fault['metadata']['uid']
+        owned.append(('podchaos',p['runId'],uid));receipt.pop('uncertainCreate',None)
+        receipt['faultCreateAccepted']=True
+        f.private_write(directory/'owned-PodChaos.json',{'kind':'PodChaos','name':p['runId'],'uid':uid,'runId':p['runId']})
         deadline=mono+p['criteria']['observationSeconds'];state='incomplete'; samples=[]
         while time.monotonic()<deadline:
             reads.deadline=deadline;observer.SAMPLE_SECONDS=min(45,max(.001,deadline-time.monotonic()))
@@ -377,12 +384,17 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
             old=json.loads(raw or '{}')
             term=not old or old['metadata']['uid']!=p['snapshot']['victim']['uid'] or any(
                 c['name']=='backend' and c.get('state',{}).get('terminated') for c in old.get('status',{}).get('containerStatuses',[]))
+            try:recovery_owner=owner_reader(deadline=deadline)
+            except (f.GuardError,subprocess.SubprocessError,OSError) as error:
+                # A post-injection metadata gap is evidence, not proof the fault
+                # did not happen and not a reason to abandon business recovery.
+                recovery_owner={'unavailable':True,'at':f.now(),'errorKind':type(error).__name__}
             evidence={'at':f.now(),'chaosRecords':records,'chaosConditions':[{key:value for key,value in condition.items() if key in ('type','status')}for condition in fault_state.get('status',{}).get('conditions',[])],'victimApiObjectAbsentOrReplaced':not old or old['metadata']['uid']!=p['snapshot']['victim']['uid'],
                       'terminationEvidenceObserved':bool(term),'apiAbsenceIsNotKernelDeathProof':True,
                       'pods':[{'name':x['metadata']['name'],'uid':x['metadata']['uid'],'ip':x['status'].get('podIP'),'node':x['spec'].get('nodeName'),'ready':f.ready_pod(x),
                                'containerStatuses':[{a:v for a,v in c.items() if a in ['name','restartCount','containerID','state','lastState']} for c in x['status'].get('containerStatuses',[])]}
                               for x in reads.get('pods','photo',selector='app.kubernetes.io/instance=photo-converter')['items']],
-                      'ownership':owner_reader(deadline=deadline)}
+                      'ownership':recovery_owner}
             evidence['at']=f.now() # completion upper bound, after ownership/Pod reads
             f.private_write(directory/f'runtime-{len(samples):04d}.json',evidence)
             # Preserve precise container termination if obtainable, otherwise only an API-object bound.

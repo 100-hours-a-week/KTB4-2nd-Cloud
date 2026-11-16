@@ -15,7 +15,10 @@ Do not shorten the lease before measuring the first result.
   Match its published partition and uncommitted offset to the exact Pod IP/UID.
 - Search at most 20s. A missing/stale/ambiguous state, completed task or observation
   failure prevents injection. No artificial photo delay is added to the app.
-- One paused PodChaos, `pod-kill`, zero grace, exact Pod name. Unpause once only.
+- One `pod-kill` PodChaos, zero grace, exact Pod name. Creating it is the one-shot injection; pause annotations do not defer it.
+- Register name-scoped RBAC before observing. Validate partial work, target UID and freshness before the sole PodChaos CREATE; journal possible injection before sending that request.
+- A CREATE timeout is an ambiguous injection, never evidence that no Pod was killed. Preserve its receipt for manual UID review; do not retry CREATE.
+- Pinned upstream semantics: [Chaos Mesh 2.8.8 run guide](https://chaos-mesh.org/docs/run-a-chaos-experiment/), one-shot actions ignore pause and duration.
   The local one-shot latch is never removed; a timeout requires receipt inspection.
 - This is abrupt Pod deletion, **not** an equivalent node-loss, OOM or split-brain test.
   The final UID check and Chaos API deletion are separate operations; there is no
