@@ -27,7 +27,8 @@ public final class WorkerCrashFixture {
  static final String TASK="00000000-0000-4000-8000-000000007050",TOPIC="worker-crash-fixture",GROUP="worker-crash-fixture";
  static final Duration BACKOFF=Duration.ofMillis(100);
  static final DerivedPhotoKeys OUTPUT=new DerivedPhotoKeys("synthetic-original","synthetic-analyze","synthetic-preview");
- static String url;static boolean crash;static volatile boolean leaseBlocked;
+ static String url;static boolean externalKill;
+ static boolean crash;static volatile boolean leaseBlocked;
  static void require(boolean ok,String msg){if(!ok)throw new AssertionError(msg);}
  static Connection connection()throws Exception{return DriverManager.getConnection(url,"fixture","fixture-only");}
  static int integer(String sql)throws Exception{try(var c=connection();var s=c.createStatement();var r=s.executeQuery(sql)){r.next();return r.getInt(1);}}
@@ -75,7 +76,7 @@ public final class WorkerCrashFixture {
   final AdminClient admin;
   Photos(AdminClient admin){super(null,null,null,null,null,null,null,null,null,null);this.admin=admin;}
   @Override public CompletableFuture<DerivedPhotoKeys> processConversionPhoto(AttachmentConversionClaim c,AttachmentConversionClaim.Photo p,AttachmentConversionClaim.Attempt a,BooleanSupplier active){
-   if(crash&&p.itemId()==3){try{var offsets=admin.listConsumerGroupOffsets(GROUP).partitionsToOffsetAndMetadata().get(5,TimeUnit.SECONDS);var v=offsets.get(new org.apache.kafka.common.TopicPartition(TOPIC,0));require(v==null||v.offset()==0,"Early ACK");require(integer("SELECT COUNT(*) FROM item WHERE saved=TRUE")==2,"Partial persistence required");System.out.println("WORKER_CRASH_READY noEarlyCommit=true saved=2 currentItem=3");System.out.flush();Runtime.getRuntime().halt(137);}catch(Exception e){throw new IllegalStateException("Pre-crash fixture check failed");}}
+   if(crash&&p.itemId()==3){try{var offsets=admin.listConsumerGroupOffsets(GROUP).partitionsToOffsetAndMetadata().get(5,TimeUnit.SECONDS);var v=offsets.get(new org.apache.kafka.common.TopicPartition(TOPIC,0));require(v==null||v.offset()==0,"Early ACK");require(integer("SELECT COUNT(*) FROM item WHERE saved=TRUE")==2,"Partial persistence required");System.out.println("WORKER_CRASH_READY noEarlyCommit=true saved=2 currentItem=3");System.out.flush();if(externalKill)return new CompletableFuture<>();Runtime.getRuntime().halt(137);}catch(Exception e){throw new IllegalStateException("Pre-crash fixture check failed");}}
    require(active.getAsBoolean(),"Valid owner required");return CompletableFuture.completedFuture(OUTPUT);
   }
  }
@@ -95,7 +96,7 @@ public final class WorkerCrashFixture {
   @Override public void close(){listener.close();worker.close();registry.stop();scheduler.shutdown();}
  }
  public static void main(String[] args)throws Exception{
-  url="jdbc:mysql://db:3306/fixture?sslMode=DISABLED&allowPublicKeyRetrieval=true&serverTimezone=UTC";crash=args[0].equals("crash");String bootstrap="broker:9092";
+  url="jdbc:mysql://db:3306/fixture?sslMode=DISABLED&allowPublicKeyRetrieval=true&serverTimezone=UTC";externalKill=args[0].equals("await-kill");crash=externalKill||args[0].equals("crash");String bootstrap="broker:9092";
   try(var admin=AdminClient.create(Map.of("bootstrap.servers",bootstrap))){
    if(crash){admin.createTopics(List.of(new NewTopic(TOPIC,1,(short)1))).all().get(10,TimeUnit.SECONDS);try(var producer=new KafkaProducer<String,String>(Map.of("bootstrap.servers",bootstrap,"key.serializer","org.apache.kafka.common.serialization.StringSerializer","value.serializer","org.apache.kafka.common.serialization.StringSerializer","acks","all"))){producer.send(new ProducerRecord<>(TOPIC,"trip","{\"schemaVersion\":1,\"taskId\":\""+TASK+"\"}")).get(5,TimeUnit.SECONDS);}}
    try(var runner=new Runner(bootstrap,new Store(),new Photos(admin))){
