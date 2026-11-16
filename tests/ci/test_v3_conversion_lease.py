@@ -1,12 +1,14 @@
 import copy,importlib.util,json,os,sys,tempfile,unittest,zipfile,subprocess
 from pathlib import Path
 from unittest.mock import patch
-ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts'))
+ROOT=Path(__file__).resolve().parents[2];sys.path[:0]=[str(ROOT/'scripts'),str(ROOT/'tests/ci/v3')]
 import v3_conversion_lease as l
 import v3_worker_fault as w
+import v3_worker_container as h
 import v3_cdc_fault as f
 import test_v3_worker_container as old
 import v3_release_bundle as bundle
+from full_release_fixture import candidate as synthetic_candidate
 
 
 def support(component):
@@ -15,7 +17,7 @@ def support(component):
     return dict(d,proofSha256=f.sha(d))
 
 
-def candidate():return json.loads((ROOT/'deploy/v3/releases/candidate.json').read_text())
+def candidate():return synthetic_candidate()
 def budget():return {'maxObservedRenewGapSeconds':31,'maxObservedRenewSeconds':1,
     'unobservedPauseAllowanceSeconds':25,'rationale':'Synthetic fixture engineering allowance, not measured production budget','evidenceSha256':['a'*64]}
 
@@ -24,7 +26,10 @@ def fixture(duration=600):
     p,b,o,k=old.fixture();c=candidate();s=support(c['components']['backend']);c=l.candidate(c,s,duration,budget()if duration<600 else None)
     review=l.review(c,s,p['snapshot']['approvedRevision'],budget()if duration<600 else None)
     snap=copy.deepcopy(p['snapshot']);snap['leaseReview']=review
-    p=w.prepare(snap,p['tripId'],p['runId'],p['input'],True,p['daemonPlan'])
+    snap.update(beSource=review['beSource'],beImage=review['beImage'])
+    snap['victim']['image']=review['beImage']
+    with patch.object(w,'runtime'):daemon=h.daemon_plan(k,snap)
+    p=w.prepare(snap,p['tripId'],p['runId'],p['input'],True,daemon)
     task=next(x for x in b['rows']if x['section']=='worker_task'and x['taskId']=='task1');task['leaseSeconds']=duration-1
     return p,b,o,k
 
@@ -44,6 +49,22 @@ class Lease(unittest.TestCase):
   self.assertEqual({k:delta.pop(k)for k in l.ENV},dict(zip(l.ENV,['600s','30s'])))
   self.assertEqual(result,c)
   with self.assertRaises(ValueError):l.candidate(c,s,120)
+ def test_already_enabled_policy_reapplication_is_idempotent(self):
+  for duration in (600,120):
+   c=candidate();proof=support(c['components']['backend']);margin=budget()if duration<600 else None
+   enabled=l.candidate(c,proof,duration,margin);original=copy.deepcopy(enabled)
+   self.assertEqual(l.candidate(enabled,proof,duration,margin),original)
+   self.assertEqual(enabled,original)
+ def test_lease_fixture_does_not_read_current_release_candidate(self):
+  live=ROOT/'deploy/v3/releases/candidate.json';read=Path.read_text
+  def guarded(path,*args,**kwargs):
+   if path==live:raise AssertionError('Use synthetic inputs, not the deployment candidate')
+   return read(path,*args,**kwargs)
+  with patch.object(Path,'read_text',guarded):
+   for duration in (600,120):
+    p,_,_,_=fixture(duration);w.verify(p,p['planSha256'])
+    self.assertEqual(p['snapshot']['beImage'],candidate()['components']['backend']['image'])
+    self.assertNotEqual(p['snapshot']['beImage'],w.BE_IMAGE)
  def test_inspected_supported_image_required_not_local_jar_or_self_claim(self):
   c=candidate();s=support(c['components']['backend'])
   for key,value in [('mode','local-jar'),('beImage','ghcr.io/100-hours-a-week/yeodam-backend@sha256:'+'b'*64),('semanticSafetyProven',True),('structuralCompatibility',False)]:
