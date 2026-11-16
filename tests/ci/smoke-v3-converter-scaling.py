@@ -43,8 +43,9 @@ def smoke(output=None):
             (d/'broker.properties').write_text(cfg)
             cmd(['docker','network','create','--internal',network])
             name=prefix+'-broker';names.append(name)
-            cluster=base64.urlsafe_b64encode(uuid.uuid4().bytes).decode().rstrip('=')
-            cmd(['docker','run','-d','--name',name,'--platform','linux/amd64','--network',network,'--network-alias','broker','--memory','512m','--cpus','1','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--tmpfs','/tmp:rw,mode=1777,size=384m','-v',str(d/'broker.properties')+':/fixture.properties:ro','-e','LOG_DIR=/tmp/kafka-logs','-e','KAFKA_HEAP_OPTS=-Xms128m -Xmx192m','--entrypoint','/bin/bash',broker,'-ec','/opt/kafka/bin/kafka-storage.sh format -t '+cluster+' -c /fixture.properties && exec /opt/kafka/bin/kafka-server-start.sh /fixture.properties'])
+            # Always exercise a valid '-' prefixed ID; bind its value to the option.
+            cluster=base64.urlsafe_b64encode(b'\xfb'+uuid.uuid4().bytes[1:]).decode().rstrip('=')
+            cmd(['docker','run','-d','--name',name,'--platform','linux/amd64','--network',network,'--network-alias','broker','--memory','512m','--cpus','1','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--tmpfs','/tmp:rw,mode=1777,size=384m','-v',str(d/'broker.properties')+':/fixture.properties:ro','-e','LOG_DIR=/tmp/kafka-logs','-e','KAFKA_HEAP_OPTS=-Xms128m -Xmx192m','--entrypoint','/bin/bash',broker,'-ec','/opt/kafka/bin/kafka-storage.sh format --cluster-id='+cluster+' -c /fixture.properties && exec /opt/kafka/bin/kafka-server-start.sh /fixture.properties'])
             for _ in range(12):
                 state=cmd(['docker','inspect','--format','{{.State.Running}}',name]).stdout.strip()
                 if state!='true':raise RuntimeError('Synthetic broker exited before readiness')
