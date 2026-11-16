@@ -275,6 +275,37 @@ class SamplingCorrection(unittest.TestCase):
     else:bad['snapshot']['victim']['uid']=NU
     bad['proofSha256']=f.sha({k:v for k,v in bad.items()if k!='proofSha256'})
     with self.subTest(mode=mode),self.assertRaises(f.GuardError):w.verify_sampling(bad,p['snapshot'])
+ def test_transport_margin_is_reported_without_widening_evidence_freshness(self):
+  p,Obs,owner,k=self.sampling_inputs()
+  with tempfile.TemporaryDirectory()as d,patch.object(w,'WorkerDbObserver',Obs):
+   os.chmod(d,0o700);v=w.sampling_probe(k,p['snapshot'],705,d,owner)
+   # Actual aborted r3 total: 1.505s. Under the revised, source-bound policy it
+   # misses the acquisition target; it never changes the old failed receipt.
+   v['cycles'][0].update(cycleSeconds=1.505,targetMet=False);v['targetMissCount']=1
+   v['proofSha256']=f.sha({k:v for k,v in v.items()if k!='proofSha256'})
+   w.verify_sampling(v,p['snapshot'])
+   for mode in ('over-deadline','false-target','hidden-miss','old-policy','long-interval'):
+    bad=copy.deepcopy(v)
+    if mode=='over-deadline':bad['cycles'][0]['cycleSeconds']=2.005
+    elif mode=='false-target':bad['cycles'][0]['targetMet']=True
+    elif mode=='hidden-miss':bad['targetMissCount']=0
+    elif mode=='old-policy':bad['samplingPolicy']={'samples':5,'cycleSeconds':1.5,'periodSeconds':1,'maxStartIntervalSeconds':2}
+    else:bad['startIntervalsSeconds'][0]=2.005
+    bad['proofSha256']=f.sha({k:v for k,v in bad.items()if k!='proofSha256'})
+    with self.subTest(mode=mode),self.assertRaises(f.GuardError):w.verify_sampling(bad,p['snapshot'])
+ def test_transport_margin_keeps_stale_db_and_changed_victim_blocked(self):
+  p,Obs,owner,k=self.sampling_inputs()
+  for mode in ('stale-db','slow-query','changed-victim','elapsed-cycle'):
+   class Reads:
+    deadline=time.monotonic()+(-.01 if mode=='elapsed-cycle' else 2)
+    def get(self,*a):return pod(uid=NU if mode=='changed-victim' else U)
+   class Db(Obs):
+    def sample(self):
+     value=super().sample()
+     if mode=='stale-db':value['observedAt']=w.iso(time.time()-2.01)
+     if mode=='slow-query':value['queryElapsedSeconds']=2.01
+     return value
+   with self.subTest(mode=mode),self.assertRaises(f.GuardError):w.search_sample(Reads(),Db(),p['snapshot'],owner,lambda x:None)
  def test_failed_parallel_read_records_error_and_never_creates_fault(self):
   p,Obs,owner,k=self.sampling_inputs();cleanup=[]
   def failed(**kw):raise subprocess.TimeoutExpired(['readonly-owner'],.01)
