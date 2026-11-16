@@ -44,6 +44,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Prepare pinned render tools
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/prepare-v3-validation.py "$RUNNER_TEMP/yeodam-v3-validation"
           echo "V3_HELM=$RUNNER_TEMP/yeodam-v3-validation/helm" >> "$GITHUB_ENV"
@@ -100,6 +102,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Prepare pinned render tools
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/prepare-v3-validation.py "$RUNNER_TEMP/yeodam-v3-validation"
           echo "V3_HELM=$RUNNER_TEMP/yeodam-v3-validation/helm" >> "$GITHUB_ENV"
