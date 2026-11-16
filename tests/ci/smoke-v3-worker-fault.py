@@ -36,6 +36,9 @@ def smoke(output):
             javac=str(Path(os.environ.get('JAVA_HOME','/usr'))/'bin/javac')
             cmd([javac,'--release','25','-cp',str(d/'BOOT-INF/classes')+':'+str(d/'BOOT-INF/lib/*'),'-d',str(d/'classes'),str(ROOT/'tests/ci/v3/worker/WorkerCrashFixture.java')])
             cmd([javac,'--release','17','-cp',str(d/'BOOT-INF/lib/kafka-clients-4.2.1.jar'),'-d',str(d/'classes'),str(ROOT/'tests/ci/v3/worker/ConverterOwnership.java')])
+            cmd([javac,'--release','17','-cp',str(d/'classes')+':'+str(d/'BOOT-INF/lib/*'),'-d',str(d/'classes'),str(ROOT/'tests/ci/v3/worker/OwnershipFrameFixture.java')])
+            frame=json.loads(cmd([str(Path(javac).with_name('java')),'-cp',str(d/'classes')+':'+str(d/'BOOT-INF/lib/*'),'OwnershipFrameFixture']).stdout)
+            assert frame['atomicFrameVerified'] and frame['unavailableReplacedHealthy']
             cmd(['docker','network','create','--internal',net])
             names.append(db)
             cmd(['docker','run','-d','--name',db,'--platform','linux/amd64','--network',net,'--network-alias','db','--memory','512m','--cpus','1','--tmpfs','/var/lib/mysql:size=384m','-e','MYSQL_ALLOW_EMPTY_PASSWORD=yes','-e','MYSQL_DATABASE=fixture','-e','MYSQL_USER=fixture','-e','MYSQL_PASSWORD=fixture-only',mysql,'--skip-log-bin','--innodb-buffer-pool-size=64M','--performance-schema=OFF'])
@@ -102,7 +105,7 @@ INSERT INTO yeodam.attachment_conversion_tasks VALUES(705,'task1',1,'INITIAL','L
             assert state['ExitCode']==0,'Recovery fixture did not finish cleanly'
             assert 'WORKER_RECOVERED' in cmd(['docker','logs',second]).stdout
             assert sql('SELECT SUM(saved),SUM(applications),SUM(attempt) FROM fixture.item;').strip()=='5\t5\t6'
-            proof={'schemaVersion':1,'image':w.BE_IMAGE,'sourceSha':w.BE_SOURCE,'actualImageClasses':True,'actualKafkaAndMySQL':True,
+            proof={'schemaVersion':1,'image':w.BE_IMAGE,'sourceSha':w.BE_SOURCE,'atomicOwnershipFrameVerified':frame['atomicFrameVerified'],'actualImageClasses':True,'actualKafkaAndMySQL':True,
                    'abruptJvmHalt':False,'externalContainerSigkill':True,'chaosMeshRpcTested':False,'drainSkipped':True,'noEarlyCommit':True,'partialSaved':2,'finalSaved':5,'applications':5,
                    'oldLeaseRejected':True,'savedItemsReused':True,'interruptedItemRetried':True,'syntheticLeaseExpiredByFixture':True,
                    'productionJpaTested':False,'nativeConversionTested':False,'operatingRecoveryTimeProven':False,
