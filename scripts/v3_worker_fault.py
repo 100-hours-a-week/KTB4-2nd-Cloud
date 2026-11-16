@@ -136,9 +136,11 @@ class WorkerDbObserver(DbObserver):
         return result
 
 
-# A 4.28s observed cadence skipped saved=2..4. Budget each concurrent read cycle
-# at 1.5s (below half that interval), not a guarantee of a native photo window.
-SAMPLING = {'samples':5,'cycleSeconds':1.5,'periodSeconds':1,'maxStartIntervalSeconds':2}
+# Preserve the existing 2s evidence-freshness ceiling as the total concurrent
+# cycle deadline. 1.5s is a reported acquisition target, not a transport timeout:
+# pinned MySQL Pod identity GET + exec are sequential inside the DB path. Neither
+# deadline nor a passing probe guarantees the native saved=2..4 kill window.
+SAMPLING = {'samples':5,'cycleSeconds':2,'targetCycleSeconds':1.5,'periodSeconds':1,'maxStartIntervalSeconds':2}
 
 
 def search_sample(reads,observer,snapshot,owner_reader,record):
@@ -165,9 +167,12 @@ def search_sample(reads,observer,snapshot,owner_reader,record):
         proof=values['db'];owner=values['ownership']
         f.require(0<=time.time()-epoch(proof['observedAt'])<=2 and proof['queryElapsedSeconds']<=2,'DB observation expired')
         ownership_age_bounds(owner,time.time())
+        f.require(time.monotonic()<=reads.deadline,'Concurrent observation deadline exceeded')
         return proof,owner,pod
     finally:
-        timing['cycleSeconds']=time.monotonic()-started;timing['completedAt']=f.now();record(timing)
+        timing['cycleSeconds']=time.monotonic()-started;timing['completedAt']=f.now()
+        timing['targetMet']=not timing['errors'] and timing['cycleSeconds']<=SAMPLING['targetCycleSeconds']
+        record(timing)
 
 
 def sampling_probe(k,snapshot,trip_id,directory,owner_reader):
@@ -186,7 +191,8 @@ def sampling_probe(k,snapshot,trip_id,directory,owner_reader):
     ready=error is None and len(cycles)==SAMPLING['samples'] and not observer.gaps and not observer.exhausted and all(
         not x['errors'] and x['cycleSeconds']<=SAMPLING['cycleSeconds']for x in cycles) and all(x<=SAMPLING['maxStartIntervalSeconds']for x in intervals)
     result={'at':f.now(),'toolSha256':tool_hash(),'snapshot':snapshot,'readTripId':trip_id,'samplingPolicy':SAMPLING,
-            'cycles':cycles,'startIntervalsSeconds':intervals,'samplingReady':ready,'errorKind':error,
+            'cycles':cycles,'targetMissCount':sum(not x['targetMet'] for x in cycles),
+            'startIntervalsSeconds':intervals,'samplingReady':ready,'errorKind':error,
             'injected':False,'gpuChanged':False,'notRecoveryOrWindowProof':True}
     result['proofSha256']=f.sha(result);f.private_write(directory/'sampling-proof.json',result)
     f.private_write(directory/'db-summary.json',observer.summary('sampling_ready'if ready else'sampling_unavailable'))
@@ -203,7 +209,9 @@ def verify_sampling(proof,snapshot):
     f.require(all(proof['snapshot'][key]==snapshot[key]for key in ('kubeSystemUid','approvedRevision','victim','mysql','apps')),'Sampling proof target changed')
     cycles=proof.get('cycles',[]);intervals=proof.get('startIntervalsSeconds',[])
     f.require(len(cycles)==SAMPLING['samples'] and len(intervals)==SAMPLING['samples']-1 and
-              all(not x['errors'] and finite(x['cycleSeconds']) and 0<=x['cycleSeconds']<=SAMPLING['cycleSeconds']for x in cycles)and
+              all(not x['errors'] and finite(x['cycleSeconds']) and 0<=x['cycleSeconds']<=SAMPLING['cycleSeconds'] and
+                  x.get('targetMet')is (x['cycleSeconds']<=SAMPLING['targetCycleSeconds'])for x in cycles)and
+              proof.get('targetMissCount')==sum(not x.get('targetMet')for x in cycles)and
               all(finite(x)and 0<=x<=SAMPLING['maxStartIntervalSeconds']for x in intervals),'Sampling timing proof incomplete')
 
 
@@ -436,11 +444,15 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
             f.private_write(directory/f'pair-{pairs:04d}.json',{'at':f.now(),'ownership':owner,'dbProofSha256':f.sha(proof),
                             'dbAgeSeconds':time.time()-epoch(proof['observedAt'])})
             return proof,owner
+        previous_start=None
         while time.monotonic()<search:
             reads.deadline=search
             observer.SAMPLE_SECONDS=min(45,max(.001,search-time.monotonic()))
             cycle_start=time.monotonic()
             if container:
+                if previous_start is not None:
+                    f.require(cycle_start-previous_start<=SAMPLING['maxStartIntervalSeconds'],'Search observation interval exceeded')
+                previous_start=cycle_start
                 reads.deadline=min(search,cycle_start+SAMPLING['cycleSeconds'])
                 observer.SAMPLE_SECONDS=max(.001,reads.deadline-time.monotonic())
                 timing=[]
