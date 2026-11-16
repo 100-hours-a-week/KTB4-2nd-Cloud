@@ -187,4 +187,112 @@ class ContainerFault(unittest.TestCase):
    h.daemon(Rendered());changed=copy.deepcopy(ds);changed['spec']=h.after_spec(ds['spec'],WORKER);path=d/'daemon.yaml';path.write_text(yaml.safe_dump(changed));subprocess.run([validator,'-strict','-kubernetes-version','1.36.0','-schema-location',str(Path(schemas)/'{{.ResourceKind}}.json'),str(path)],check=True)
    p,_,_,_=fixture();crd=c.crd();schema=next(x['schema']['openAPIV3Schema']for x in crd['spec']['versions']if x['name']=='v1alpha1');sp=d/'schema.json';sp.write_text(json.dumps(schema));fp=d/'fault.json';fp.write_text(json.dumps(p['fault']));subprocess.run([validator,'-strict','-schema-location',str(sp),str(fp)],check=True)
 
+
+class SamplingCorrection(unittest.TestCase):
+ def cli(self):
+  spec=importlib.util.spec_from_file_location('fast_reader_cli',ROOT/'scripts/prepare-v3-worker-fault.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
+ def test_fast_frame_one_exec_preserves_uid_and_causal_clock(self):
+  m=self.cli();calls=[]
+  class Reader:
+   def call(self,args,source=None,timeout=20):
+    calls.append(args);owner=fixture()[2];owner.pop('clock');owner['observedAt']=f.now()
+    return 'POD_UID '+U+'\n'+json.dumps(owner)+'\nNODE_UTC '+f'{time.time():.9f}'+'\n'
+  value=m.fast_ownership(Reader(),'w1-reader',U,time.monotonic()+2)
+  self.assertEqual(len(calls),1);self.assertIn('exec',calls[0]);self.assertNotIn('logs',calls[0]);self.assertNotIn('get',calls[0]);self.assertEqual(value['clock']['podUid'],U)
+  command=m.FAST_FRAME_COMMAND[-1];self.assertLess(command.index('cat '),command.index('date '))
+  env=m.reader_manifest(WORKER,'w1-reader','AA==')['items'][-1]['spec']['containers'][0]['env']
+  self.assertEqual(env,[{'name':'W1_OBSERVER_POD_UID','valueFrom':{'fieldRef':{'fieldPath':'metadata.uid'}}}])
+ @unittest.skipUnless(os.environ.get('V3_SCHEMA_DIR')and os.environ.get('V3_KUBECONFORM'),'Pinned schemas required')
+ def test_reader_pod_spec_against_pinned_deployment_pod_spec(self):
+  bundle=self.cli().reader_manifest(WORKER,'w1-reader','AA==');pod=bundle['items'][-1]
+  # The pinned Deployment schema embeds the Kubernetes PodSpec schema. Validate
+  # the reader spec in that structural wrapper, without adding a Python package.
+  wrapped={'apiVersion':'apps/v1','kind':'Deployment','metadata':pod['metadata'],
+           'spec':{'selector':{'matchLabels':pod['metadata']['labels']},'template':{'metadata':{'labels':pod['metadata']['labels']},'spec':pod['spec']}}}
+  with tempfile.TemporaryDirectory()as d:
+   path=Path(d)/'reader-podspec.json';path.write_text(json.dumps(wrapped))
+   subprocess.run([os.environ['V3_KUBECONFORM'],'-strict','-schema-location',str(Path(os.environ['V3_SCHEMA_DIR'])/'{{.ResourceKind}}.json'),str(path)],check=True)
+  self.assertEqual(pod['spec']['containers'][0]['resources'],{'requests':{'cpu':'25m','memory':'64Mi'},'limits':{'cpu':'250m','memory':'192Mi'}})
+ def test_fast_frame_rejects_wrong_uid_partial_stale_and_unavailable(self):
+  m=self.cli()
+  for mode in ('uid','partial','stale','unavailable','future'):
+   class Reader:
+    def call(self,*args,**kw):
+     row=fixture()[2];row['observedAt']=w.iso(time.time()+(-10 if mode=='stale'else 10 if mode=='future'else 0))
+     if mode=='unavailable':row={'unavailable':True}
+     return 'POD_UID '+(NU if mode=='uid'else U)+'\n'+('{'if mode=='partial'else json.dumps(row))+'\nNODE_UTC '+f'{time.time():.9f}'+'\n'
+   with self.subTest(mode=mode),self.assertRaises(ValueError):m.fast_ownership(Reader(),'w1-reader',U)
+ def test_real_shell_frame_protocol_reads_complete_json_before_clock(self):
+  m=self.cli()
+  with tempfile.TemporaryDirectory()as tmp:
+   target=Path(tmp)/'frame.json';target.write_text(json.dumps({'observedAt':f.now()})+'\n')
+   command=m.FAST_FRAME_COMMAND[-1].replace('/tmp/worker-ownership.json',str(target))
+   out=subprocess.check_output(['sh','-ec',command],env=dict(os.environ,W1_OBSERVER_POD_UID=U),text=True)
+   lines=out.splitlines();self.assertEqual(len(lines),3);self.assertEqual(lines[0],'POD_UID '+U)
+   self.assertLessEqual(w.epoch(json.loads(lines[1])['observedAt']),float(lines[2].split()[1]))
+ def sampling_inputs(self):
+  p,b,o,k=fixture()
+  class Observer:
+   gaps=[];exhausted=False
+   def __init__(self,*args):pass
+   def sample(self):
+    value=copy.deepcopy(b);value['observedAt']=f.now();return value
+   def summary(self,state):return {'state':state}
+  def owner(**kw):
+   value=copy.deepcopy(o);value['observedAt']=f.now();return old.clock_owner(value)
+  return p,Observer,owner,k
+ def test_independent_reads_overlap_with_real_subprocesses(self):
+  p,Obs,owner,k=self.sampling_inputs();timing=[]
+  def delay():subprocess.run([sys.executable,'-c','import time; time.sleep(.25)'],check=True,timeout=2)
+  class Reads:
+   deadline=time.monotonic()+3
+   def get(self,*a):delay();return pod()
+  class Db(Obs):
+   def sample(self):delay();return super().sample()
+  def read_owner(**kw):delay();return owner(**kw)
+  proof,ownership,v=w.search_sample(Reads(),Db(),p['snapshot'],read_owner,timing.append)
+  self.assertEqual(v['metadata']['uid'],U);self.assertEqual(len(timing),1)
+  durations=timing[0]['readSeconds'];self.assertEqual(set(durations),{'db','victim','ownership'})
+  self.assertLess(timing[0]['cycleSeconds'],sum(durations.values())*.8)
+  self.assertEqual(w.partial(proof,p,ownership)['taskId'],'task1')
+ def test_parallel_reads_share_one_real_subprocess_deadline(self):
+  p,Obs,owner,k=self.sampling_inputs();timing=[]
+  class Slow:
+   def call(self,args,source=None,timeout=20):
+    subprocess.run([sys.executable,'-c','import time; time.sleep(2)'],timeout=timeout,check=True)
+  reads=w.DeadlineKube(Slow());reads.deadline=time.monotonic()+.15;start=time.monotonic()
+  with self.assertRaises(subprocess.TimeoutExpired):w.search_sample(reads,Obs(),p['snapshot'],owner,timing.append)
+  self.assertLess(time.monotonic()-start,.8);self.assertEqual(timing[0]['errors']['victim'],'TimeoutExpired')
+ def test_probe_proof_rejects_slow_failed_old_and_changed_target(self):
+  p,Obs,owner,k=self.sampling_inputs()
+  with tempfile.TemporaryDirectory()as d,patch.object(w,'WorkerDbObserver',Obs):
+   os.chmod(d,0o700);v=w.sampling_probe(k,p['snapshot'],705,d,owner);w.verify_sampling(v,p['snapshot'])
+   for mode in ('slow','error','old','target'):
+    bad=copy.deepcopy(v)
+    if mode=='slow':bad['cycles'][0]['cycleSeconds']=4.281
+    elif mode=='error':bad['cycles'][0]['errors']={'ownership':'TimeoutExpired'}
+    elif mode=='old':bad['at']=w.iso(time.time()-301)
+    else:bad['snapshot']['victim']['uid']=NU
+    bad['proofSha256']=f.sha({k:v for k,v in bad.items()if k!='proofSha256'})
+    with self.subTest(mode=mode),self.assertRaises(f.GuardError):w.verify_sampling(bad,p['snapshot'])
+ def test_failed_parallel_read_records_error_and_never_creates_fault(self):
+  p,Obs,owner,k=self.sampling_inputs();cleanup=[]
+  def failed(**kw):raise subprocess.TimeoutExpired(['readonly-owner'],.01)
+  with tempfile.TemporaryDirectory()as d:
+   os.chmod(d,0o700)
+   with patch.object(w,'runtime'),patch.object(c,'require_active'),patch.object(h,'require_daemon'),patch.object(h,'restore_daemon',return_value={}),patch.object(c,'restore',return_value={}),patch.object(w,'WorkerDbObserver',Obs):
+    with self.assertRaises(subprocess.TimeoutExpired):w.execute(k,p,p['planSha256'],d,failed,{},lambda:cleanup.append('gpu-stop'),lambda:cleanup.append('reader'),{})
+   receipt=json.loads((Path(d)/'receipt.json').read_text());self.assertFalse(receipt['injectionRequested'])
+   timing=json.loads((Path(d)/'search-cycle-0001.json').read_text());self.assertEqual(timing['errors']['ownership'],'TimeoutExpired')
+   self.assertFalse((Path(d)/'injection-intent.json').exists());self.assertEqual(cleanup,['gpu-stop','reader'])
+   self.assertFalse(any('create'in args for args,body in k.calls))
+ def test_actual_missed_one_to_five_and_null_current_item_stay_ineligible(self):
+  p,b,o,k=fixture()
+  for saved,current in ((1,2),(5,6),(4,None)):
+   proof=copy.deepcopy(b)
+   for row in proof['rows']:
+    if row['section']=='worker_item'and row['batchId']==1:row.update(saved=int(row['itemId']<=saved),derivedHash='a'*64 if row['itemId']<=saved else None)
+    if row['section']=='worker_task'and row['taskId']=='task1':row['currentItem']=current
+   with self.subTest(saved=saved,current=current),self.assertRaisesRegex(f.GuardError,'No unique'):w.partial(proof,p,o)
+
 if __name__=='__main__':unittest.main()

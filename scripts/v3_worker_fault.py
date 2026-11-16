@@ -4,6 +4,7 @@ Offline by default. A kill is irreversible: cleanup removes owned CR/RBAC and
 restores the Chaos profile; kubelet/ReplicaSet, not this tool, restarts the victim.
 """
 import copy
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -133,6 +134,77 @@ class WorkerDbObserver(DbObserver):
             self.status('unavailable')
             raise
         return result
+
+
+# A 4.28s observed cadence skipped saved=2..4. Budget each concurrent read cycle
+# at 1.5s (below half that interval), not a guarantee of a native photo window.
+SAMPLING = {'samples':5,'cycleSeconds':1.5,'periodSeconds':1,'maxStartIntervalSeconds':2}
+
+
+def search_sample(reads,observer,snapshot,owner_reader,record):
+    started=time.monotonic();timing={'startedAt':f.now(),'readSeconds':{},'errors':{}}
+    def measure(name,call):
+        before=time.monotonic()
+        try:return call()
+        except BaseException as error:
+            timing['errors'][name]=type(error).__name__;raise
+        finally:timing['readSeconds'][name]=time.monotonic()-before
+    try:
+        # Exactly one DB sampler; the independent Pod and Kafka reads share the
+        # same phase deadline. All workers finish before cleanup can run.
+        with ThreadPoolExecutor(max_workers=3)as pool:
+            tasks={name:pool.submit(measure,name,call) for name,call in {
+                'victim':lambda:reads.get('pod','photo',snapshot['victim']['name']),
+                'ownership':lambda:owner_reader(deadline=reads.deadline),'db':observer.sample}.items()}
+            values={name:task.result()for name,task in tasks.items()}
+        pod=values['victim'];v=snapshot['victim']
+        f.require(pod['metadata']['uid']==v['uid'] and f.ready_pod(pod) and
+                  any(x.get('name')=='backend' and x.get('containerID')==v['containerId']
+                      for x in pod.get('status',{}).get('containerStatuses',[])),'Victim changed before create')
+        f.require(not observer.gaps and not observer.exhausted,'Observation gap before injection')
+        proof=values['db'];owner=values['ownership']
+        f.require(0<=time.time()-epoch(proof['observedAt'])<=2 and proof['queryElapsedSeconds']<=2,'DB observation expired')
+        ownership_age_bounds(owner,time.time())
+        return proof,owner,pod
+    finally:
+        timing['cycleSeconds']=time.monotonic()-started;timing['completedAt']=f.now();record(timing)
+
+
+def sampling_probe(k,snapshot,trip_id,directory,owner_reader):
+    validate_snapshot(snapshot);directory=Path(directory)
+    f.require(directory.is_dir() and not directory.is_symlink() and directory.stat().st_mode&0o077==0 and not any(directory.iterdir()),'Empty private sampling directory required')
+    db=directory/'db';db.mkdir(mode=0o700);reads=DeadlineKube(k);observer=WorkerDbObserver(reads,snapshot,trip_id,db)
+    cycles=[];starts=[];error=None
+    try:
+        for i in range(SAMPLING['samples']):
+            start=time.monotonic();starts.append(start);reads.deadline=start+SAMPLING['cycleSeconds']
+            observer.SAMPLE_SECONDS=SAMPLING['cycleSeconds']
+            search_sample(reads,observer,snapshot,owner_reader,cycles.append)
+            if i+1<SAMPLING['samples']:time.sleep(max(0,start+SAMPLING['periodSeconds']-time.monotonic()))
+    except (ValueError,OSError,subprocess.SubprocessError)as failure:error=type(failure).__name__
+    intervals=[b-a for a,b in zip(starts,starts[1:])]
+    ready=error is None and len(cycles)==SAMPLING['samples'] and not observer.gaps and not observer.exhausted and all(
+        not x['errors'] and x['cycleSeconds']<=SAMPLING['cycleSeconds']for x in cycles) and all(x<=SAMPLING['maxStartIntervalSeconds']for x in intervals)
+    result={'at':f.now(),'toolSha256':tool_hash(),'snapshot':snapshot,'readTripId':trip_id,'samplingPolicy':SAMPLING,
+            'cycles':cycles,'startIntervalsSeconds':intervals,'samplingReady':ready,'errorKind':error,
+            'injected':False,'gpuChanged':False,'notRecoveryOrWindowProof':True}
+    result['proofSha256']=f.sha(result);f.private_write(directory/'sampling-proof.json',result)
+    f.private_write(directory/'db-summary.json',observer.summary('sampling_ready'if ready else'sampling_unavailable'))
+    f.require(ready,'Sampling too slow or unavailable; no input or fault authorized')
+    return result
+
+
+def verify_sampling(proof,snapshot):
+    f.require(proof.get('proofSha256')==f.sha({k:v for k,v in proof.items()if k!='proofSha256'}) and
+              proof.get('toolSha256')==tool_hash() and proof.get('samplingPolicy')==SAMPLING and
+              proof.get('samplingReady')is True and proof.get('errorKind')is None and proof.get('injected')is False and proof.get('gpuChanged')is False and
+              0<=time.time()-epoch(proof['at'])<=300,'Fresh passing sampling proof required')
+    validate_snapshot(proof['snapshot'])
+    f.require(all(proof['snapshot'][key]==snapshot[key]for key in ('kubeSystemUid','approvedRevision','victim','mysql','apps')),'Sampling proof target changed')
+    cycles=proof.get('cycles',[]);intervals=proof.get('startIntervalsSeconds',[])
+    f.require(len(cycles)==SAMPLING['samples'] and len(intervals)==SAMPLING['samples']-1 and
+              all(not x['errors'] and finite(x['cycleSeconds']) and 0<=x['cycleSeconds']<=SAMPLING['cycleSeconds']for x in cycles)and
+              all(finite(x)and 0<=x<=SAMPLING['maxStartIntervalSeconds']for x in intervals),'Sampling timing proof incomplete')
 
 
 def app_templates(k):
@@ -356,7 +428,7 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
         f.require(not k.get('podchaos','photo')['items'],'Concurrent PodChaos forbidden')
         f.private_write(directory/'input-ready.json',{'at':f.now(),'planSha256':expected,'faultCreated':False,
                         'releaseInputNow':True,'case':p['case']})
-        selected=None; search=time.monotonic()+p['criteria']['searchSeconds'];pairs=0
+        selected=None; search=time.monotonic()+p['criteria']['searchSeconds'];pairs=0;previous_cycle=None
         def observe_pair():
             nonlocal pairs
             owner=owner_reader(deadline=reads.deadline)
@@ -367,13 +439,27 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
         while time.monotonic()<search:
             reads.deadline=search
             observer.SAMPLE_SECONDS=min(45,max(.001,search-time.monotonic()))
-            pod=reads.get('pod','photo',p['snapshot']['victim']['name'])
-            f.require(pod['metadata']['uid']==p['snapshot']['victim']['uid'] and f.ready_pod(pod) and
-                      any(x.get('name')=='backend' and x.get('containerID')==p['snapshot']['victim']['containerId']
-                          for x in pod.get('status',{}).get('containerStatuses',[])), 'Victim changed before create')
-            # Fetch target identity before the final metadata -> DB pair, so no
-            # registration/API read consumes the fresh partial-work window.
-            proof,owner=observe_pair()
+            cycle_start=time.monotonic()
+            if container:
+                reads.deadline=min(search,cycle_start+SAMPLING['cycleSeconds'])
+                observer.SAMPLE_SECONDS=max(.001,reads.deadline-time.monotonic())
+                timing=[]
+                try:proof,owner,pod=search_sample(reads,observer,p['snapshot'],owner_reader,timing.append)
+                finally:
+                    if timing:
+                        timing[0]['startIntervalSeconds']=None if previous_cycle is None else cycle_start-previous_cycle
+                        f.private_write(directory/f'search-cycle-{pairs+1:04d}.json',timing[0])
+                previous_cycle=cycle_start;pairs+=1
+                f.private_write(directory/f'pair-{pairs:04d}.json',{'at':f.now(),'ownership':owner,'dbProofSha256':f.sha(proof),
+                                'dbAgeSeconds':time.time()-epoch(proof['observedAt'])})
+            else:
+                pod=reads.get('pod','photo',p['snapshot']['victim']['name'])
+                f.require(pod['metadata']['uid']==p['snapshot']['victim']['uid'] and f.ready_pod(pod) and
+                          any(x.get('name')=='backend' and x.get('containerID')==p['snapshot']['victim']['containerId']
+                              for x in pod.get('status',{}).get('containerStatuses',[])), 'Victim changed before create')
+                # Fetch target identity before the final metadata -> DB pair, so no
+                # registration/API read consumes the fresh partial-work window.
+                proof,owner=observe_pair()
             f.require(not observer.gaps and not observer.exhausted,'Observation gap before injection')
             f.require(next(r for r in proof['rows']if r['section']=='execution_timing')['status']not in ('COMPLETED','FAILED','CANCELED'),'Execution already terminal')
             if input_accepted(proof['rows']):
@@ -381,7 +467,8 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
                 except f.GuardError as e:
                     if str(e)!='No unique partially persisted in-flight task; do not kill':raise
             if selected:break
-            time.sleep(min(1,max(0,search-time.monotonic())))
+            delay=max(0,cycle_start+p['criteria']['searchPollSeconds']-time.monotonic())if container else 1
+            time.sleep(min(delay,max(0,search-time.monotonic())))
         f.require(selected is not None,'Partial processing window missed; no injection')
         f.private_write(directory/'partial.json',selected)
         f.private_write(directory/'pre-injection.json',selected)

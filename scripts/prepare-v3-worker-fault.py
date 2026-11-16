@@ -48,6 +48,30 @@ def ownership(k,name,uid,deadline=None):
     return value
 
 
+# Read the atomically published frame BEFORE the node clock. Downward API binds
+# the exec to the expected observer identity without a separate API GET per poll.
+FAST_FRAME_COMMAND = ['sh','-ec',
+    'printf "POD_UID %s\\n" "$W1_OBSERVER_POD_UID"; cat /tmp/worker-ownership.json; printf "NODE_UTC %s\\n" "$(date +%s.%N)"']
+
+
+def fast_ownership(k,name,uid,deadline=None):
+    f.require(w.NAME.fullmatch(name) and name.startswith('w1-') and f.UUID.fullmatch(uid),'Exact observer identity required')
+    k=w.DeadlineKube(k);k.deadline=deadline
+    started=time.time();mono=time.monotonic()
+    raw=k.call(['-n','keda','exec',name,'-c','probe','--']+FAST_FRAME_COMMAND)
+    ended=time.time();elapsed=time.monotonic()-mono
+    f.require(len(raw)<=256*1024,'Bounded ownership frame required')
+    lines=raw.splitlines()
+    f.require(len(lines)==3 and lines[0]=='POD_UID '+uid and lines[2].startswith('NODE_UTC '),'Wrong or incomplete observer frame')
+    node=lines[2].removeprefix('NODE_UTC ')
+    f.require(re.fullmatch(r'[0-9]{10}\.[0-9]{1,9}',node),'Observer UTC reference unavailable')
+    value=f.bounded_json(lines[1]);f.require(isinstance(value,dict) and not value.get('unavailable'),'Kafka ownership unavailable')
+    value['clock']={'kind':'observer-pod-utc','podUid':uid,'nodeUnixSeconds':float(node),
+                    'localStartedUnixSeconds':started,'localCompletedUnixSeconds':ended,'monotonicElapsedSeconds':elapsed}
+    w.ownership_age_bounds(value,ended)
+    return value
+
+
 def reader_node(node):
     # EKS uses the full private DNS name as metadata.name. Preserve that exact
     # identity; shortening it produces a different, nonexistent Kubernetes Node.
@@ -77,6 +101,7 @@ def reader_manifest(node,name,binary):
         'activeDeadlineSeconds':1050,'automountServiceAccountToken':False,
         'securityContext':{'runAsNonRoot':True,'runAsUser':1001,'runAsGroup':1001,'seccompProfile':{'type':'RuntimeDefault'}},
         'containers':[{'name':'probe','image':image,'command':['java','-Xmx64m','-cp','/probe:/opt/kafka/libs/*','ConverterOwnership','1020'],
+          'env':[{'name':'W1_OBSERVER_POD_UID','valueFrom':{'fieldRef':{'fieldPath':'metadata.uid'}}}],
           'resources':{'requests':{'cpu':'25m','memory':'64Mi'},'limits':{'cpu':'250m','memory':'192Mi'}},
           'securityContext':{'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}},
           'volumeMounts':[{'name':'code','mountPath':'/probe','readOnly':True},{'name':'auth','mountPath':'/auth','readOnly':True},{'name':'tmp','mountPath':'/tmp'}]}],
@@ -169,11 +194,15 @@ def main():
     a=sub.add_parser('reader-start');a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--bundle',type=Path,required=True);a.add_argument('--approve-bundle-sha256',required=True);a.add_argument('--directory',type=Path,required=True);a.add_argument('--ack-mounted-describe-credentials',action='store_true',required=True)
     a=sub.add_parser('reader-stop');a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--receipt',type=Path,required=True);a.add_argument('--output',type=Path,required=True)
     a=sub.add_parser('collect');a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--snapshot',type=Path,required=True);a.add_argument('--trip-id',type=int,required=True);a.add_argument('--directory',type=Path,required=True);a.add_argument('--ack-trial-metadata-read',action='store_true',required=True)
+    a=sub.add_parser('sampling-probe')
+    a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--snapshot',type=Path,required=True)
+    a.add_argument('--reader-receipt',type=Path,required=True);a.add_argument('--trip-id',type=int,required=True)
+    a.add_argument('--directory',type=Path,required=True);a.add_argument('--ack-trial-metadata-read',action='store_true',required=True)
     a=sub.add_parser('run')
     a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--plan',type=Path,required=True);a.add_argument('--approve-plan-sha256',required=True)
     a.add_argument('--profile-receipt',type=Path,required=True);a.add_argument('--directory',type=Path,required=True)
     a.add_argument('--reader-receipt',type=Path,required=True);a.add_argument('--gpu-guard',type=Path,required=True)
-    a.add_argument('--daemon-receipt',type=Path)
+    a.add_argument('--daemon-receipt',type=Path);a.add_argument('--sampling-proof',type=Path)
     ack=a.add_mutually_exclusive_group(required=True)
     ack.add_argument('--ack-maintenance-and-one-pod-kill',action='store_true')
     ack.add_argument('--ack-maintenance-and-one-container-kill',action='store_true')
@@ -184,6 +213,15 @@ def main():
     args=parser.parse_args()
     if hasattr(args,'output'):
         f.require(not args.output.exists() and not args.output.is_symlink() and args.output.parent.is_dir() and args.output.parent.stat().st_mode&0o077==0,'Fresh mode-700 output required')
+    if args.action=='sampling-probe':
+        s=load(args.snapshot);w.validate_snapshot(s);k=f.Kube(args.kubeconfig)
+        live=w.snapshot(k)
+        f.require(all(live[key]==s[key] for key in ('kubeSystemUid','approvedRevision','victim','mysql','apps')),'Sampling target changed')
+        rr=load(args.reader_receipt);f.require(rr['clusterUid']==s['kubeSystemUid'],'Wrong reader cluster')
+        pod=next(x for x in rr['resources']if x['kind']=='Pod')
+        result=w.sampling_probe(k,s,args.trip_id,args.directory,
+            lambda deadline=None:fast_ownership(k,pod['name'],pod['uid'],deadline))
+        print(json.dumps({'samplingReady':result['samplingReady'],'injected':False,'gpuChanged':False}));return
     if args.action=='daemon-apply':
         plan=load(args.plan);hard.verify_daemon(plan,args.approve_daemon_sha256,True)
         result=hard.apply_daemon(f.Kube(args.kubeconfig),plan,args.approve_daemon_sha256,args.receipt)
@@ -198,21 +236,25 @@ def main():
         f.require(container==args.ack_maintenance_and_one_container_kill,'Use acknowledgement for the exact fault mode')
         f.require((args.daemon_receipt is not None)==container,'Container kill needs its daemon receipt; PodKill must not move a daemon')
         dr=load(args.daemon_receipt)if container else None
-        if container:f.require(dr.get('complete') and dr['plan']==plan['daemonPlan'],'Applied daemon receipt mismatch')
+        if container:
+            f.require(dr.get('complete') and dr['plan']==plan['daemonPlan'],'Applied daemon receipt mismatch')
+            f.require(args.sampling_proof is not None,'Run read-only sampling-probe before GPU start')
+        else:f.require(args.sampling_proof is None,'Sampling proof belongs to W1K only')
         stop_guard=guard_ready(args.gpu_guard,plan)
         f.private_write(args.plan.parent/('.w1-'+plan['planSha256']+'-started.json'),{'planSha256':plan['planSha256'],'at':f.now(),'oneShotNeverRetry':True})
         try:
+            if container:w.verify_sampling(load(args.sampling_proof),plan['snapshot'])
             rr=load(args.reader_receipt);pod=next(x for x in rr['resources'] if x['kind']=='Pod')
             if container:
                 # Node-clock age, not Mac-vs-server age. Preserve 900s observation plus cleanup margin.
-                kp=f.Kube(args.kubeconfig);rp=kp.get('pod','keda',pod['name']);own=ownership(kp,pod['name'],pod['uid'])
+                kp=f.Kube(args.kubeconfig);rp=kp.get('pod','keda',pod['name']);own=fast_ownership(kp,pod['name'],pod['uid'])
                 f.require(0<=own['clock']['nodeUnixSeconds']-w.epoch(rp['metadata']['creationTimestamp'])<=90,
                           'Reader too old for the full 900s trial; recreate before input')
         except BaseException:
             stop_guard() # GPU need not wait for watchdog expiry on a preflight failure.
             raise
         receipt=w.execute(f.Kube(args.kubeconfig),plan,args.approve_plan_sha256,args.directory,
-            lambda deadline=None:ownership(f.Kube(args.kubeconfig),pod['name'],pod['uid'],deadline),load(args.profile_receipt),stop_guard,
+            lambda deadline=None:(fast_ownership if container else ownership)(f.Kube(args.kubeconfig),pod['name'],pod['uid'],deadline),load(args.profile_receipt),stop_guard,
             lambda:reader_stop(f.Kube(args.kubeconfig),rr),dr)
         print(json.dumps({'oneShotRequested':receipt['injectionRequested'],'automaticRecovery':'use assess, not the controller status'}));return
     if args.action=='reader-start':

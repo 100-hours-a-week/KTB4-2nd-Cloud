@@ -10,6 +10,15 @@ public final class ConverterOwnership {
     static final String TOPIC="prod.yeodam.image.initial-light", GROUP="prod.yeodam.image-conversion-initial-light";
     static String q(String s){return "\""+s.replace("\\","\\\\").replace("\"","\\\"")+"\"";}
     static String hash(String s)throws Exception{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(s.getBytes(java.nio.charset.StandardCharsets.UTF_8)));}
+    // One complete latest frame; readers never see a partially written JSON line.
+    static void publish(Path target,String value)throws Exception {
+        Path pending=target.resolveSibling(target.getFileName()+".pending");
+        Files.writeString(pending,value+"\n",java.nio.charset.StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE,StandardOpenOption.TRUNCATE_EXISTING);
+        Files.setPosixFilePermissions(pending,java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+        Files.move(pending,target,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+        System.out.println("WORKER_OWNERSHIP "+value);System.out.flush();
+    }
     public static void main(String[] args)throws Exception {
         int seconds=Integer.parseInt(args[0]); if(seconds<1||seconds>1020)throw new IllegalArgumentException("Bounded metadata window required");
         Properties p=new Properties();p.setProperty("bootstrap.servers","yeodam-v3-kafka-kafka-bootstrap.kafka.svc:9093");
@@ -35,10 +44,10 @@ public final class ConverterOwnership {
                     members.add("{\"memberHash\":"+q(hash(member.consumerId()))+",\"host\":"+q(member.host())+",\"partitions\":"+partitions+"}");
                 }
                 for(var e:offsets.entrySet())if(e.getKey().topic().equals(TOPIC))committed.add(q(Integer.toString(e.getKey().partition()))+":"+e.getValue().offset());
-                System.out.println("WORKER_OWNERSHIP {\"observedAt\":"+q(Instant.now().toString())+",\"group\":"+q(GROUP)+",\"state\":"+q(g.groupState().toString())+",\"querySeconds\":"+((System.nanoTime()-start)/1e9)+",\"members\":["+String.join(",",members)+"],\"committed\":{"+String.join(",",committed)+"}}");
+                publish(Path.of("/tmp/worker-ownership.json"),"{\"observedAt\":"+q(Instant.now().toString())+",\"group\":"+q(GROUP)+",\"state\":"+q(g.groupState().toString())+",\"querySeconds\":"+((System.nanoTime()-start)/1e9)+",\"members\":["+String.join(",",members)+"],\"committed\":{"+String.join(",",committed)+"}}");
                 System.out.flush();Thread.sleep(1000);
             }
-        }catch(Exception failure){System.out.println("WORKER_OWNERSHIP {\"unavailable\":true,\"errorType\":"+q((failure.getCause()==null?failure:failure.getCause()).getClass().getSimpleName())+"}");System.out.flush();throw new IllegalStateException("Metadata unavailable; credentials withheld");}
+        }catch(Exception failure){publish(Path.of("/tmp/worker-ownership.json"),"{\"unavailable\":true,\"errorType\":"+q((failure.getCause()==null?failure:failure.getCause()).getClass().getSimpleName())+"}");System.out.flush();throw new IllegalStateException("Metadata unavailable; credentials withheld");}
         finally{admin.close(Duration.ofSeconds(2));}
     }
 }
