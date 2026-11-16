@@ -1,4 +1,4 @@
-import copy,importlib.util,json,os,sys,tempfile,unittest,zipfile
+import copy,importlib.util,json,os,sys,tempfile,unittest,zipfile,subprocess
 from pathlib import Path
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts'))
@@ -175,6 +175,11 @@ class Lease(unittest.TestCase):
    with self.assertRaises(ValueError):l.measured_budget(bad,25,'A synthetic rationale sufficiently long for validation')
  def test_legacy_assessor_rejects_w2_records(self):
   with self.assertRaises(ValueError):w.assess({}, {}, {'case':'W2K'}, {}, {})
+ def test_backend_policy_loads_in_an_isolated_interpreter_without_scripts_path(self):
+  source=ROOT/'scripts/v3_backend_contract.py'
+  code="import importlib.util; s=importlib.util.spec_from_file_location('backend',"+repr(str(source))+"); m=importlib.util.module_from_spec(s);s.loader.exec_module(m); assert m.conversion_lease_policy(dict(zip(m.LEASE_ENV,['120s','30s'])))['durationSeconds']==120"
+  result=subprocess.run([sys.executable,'-I','-c',code],text=True,capture_output=True,timeout=5)
+  self.assertEqual(result.returncode,0,result.stderr)
  def test_historical_contract_stays_frozen(self):
   lock=w.contract();self.assertEqual(lock['leaseSeconds'],600)
   self.assertEqual(lock['beSource'],w.BE_SOURCE)

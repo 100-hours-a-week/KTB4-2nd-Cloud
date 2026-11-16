@@ -14,7 +14,7 @@ import tempfile
 import zipfile
 import v3_cdc_fault as f
 
-ENV = ('ATTACHMENT_CONVERSION_LEASE_DURATION', 'ATTACHMENT_CONVERSION_LEASE_RENEW_INTERVAL')
+from v3_backend_contract import LEASE_ENV as ENV, conversion_lease_policy
 IMAGE = re.compile(r'ghcr.io/100-hours-a-week/yeodam-backend@sha256:[a-f0-9]{64}')
 SHA = re.compile(r'[a-f0-9]{64}')
 SOURCES = re.compile(r'[a-f0-9]{40}')
@@ -33,19 +33,7 @@ QUERIES = {
 
 
 def policy(data):
-    present = set(ENV) & set(data)
-    if not present: return None
-    f.require(present == set(ENV), 'Both lease settings required; no implicit mixed policy')
-    seconds=[]
-    for key in ENV:
-        value=data[key]
-        f.require(isinstance(value,str) and re.fullmatch(r'[1-9][0-9]{0,3}s',value), 'Explicit integer seconds required')
-        seconds.append(int(value[:-1]))
-    duration,renew=seconds
-    f.require(renew == 30 and 90 <= duration <= 600 and duration >= 3*renew,
-              'Reviewed 30s heartbeat and 90..600s lease only; vary one parameter')
-    return {'durationSeconds':duration,'renewIntervalSeconds':renew}
-
+    return conversion_lease_policy(data)
 
 def inspect_jar(path, source, image=None):
     path=Path(path)

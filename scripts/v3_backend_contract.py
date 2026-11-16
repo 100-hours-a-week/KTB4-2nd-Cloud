@@ -16,6 +16,23 @@ def require(ok, message):
         raise ValueError(message)
 
 
+LEASE_ENV = ('ATTACHMENT_CONVERSION_LEASE_DURATION', 'ATTACHMENT_CONVERSION_LEASE_RENEW_INTERVAL')
+
+def conversion_lease_policy(data):
+    present = set(LEASE_ENV) & set(data)
+    if not present: return None
+    require(present == set(LEASE_ENV), 'Both lease settings required; no implicit mixed policy')
+    seconds=[]
+    for key in LEASE_ENV:
+        value=data[key]
+        require(isinstance(value,str) and re.fullmatch(r'[1-9][0-9]{0,3}s',value), 'Explicit integer seconds required')
+        seconds.append(int(value[:-1]))
+    duration,renew=seconds
+    require(renew == 30 and 90 <= duration <= 600 and duration >= 3*renew,
+              'Reviewed 30s heartbeat and 90..600s lease only; vary one parameter')
+    return {'durationSeconds':duration,'renewIntervalSeconds':renew}
+
+
 def host(value):
     require(value and value.lower() not in ('localhost', '0.0.0.0', '::1')
             and not value.startswith('127.'), 'Dependency must not point at the BE container itself')
@@ -114,11 +131,10 @@ def validate_backend(configs, connected=False):
                     'Photo converter heap budget requires the existing 1Gi limit')
             allowed.add('MALLOC_ARENA_MAX')
             java = legacy_java.replace(CONTRACT['javaToolOptions'], memory['javaToolOptions'], 1)
-        from v3_conversion_lease import ENV as lease_env, policy as lease_policy
-        if set(lease_env) & set(data):
+        if set(LEASE_ENV) & set(data):
             require(instance == 'photo-converter', 'Lease policy belongs only to photo-converter')
-            lease_policy(data)
-            allowed |= set(lease_env)
+            conversion_lease_policy(data)
+            allowed |= set(LEASE_ENV)
         require(set(data) <= allowed, 'Unreviewed ConfigMap key could bypass the role contract')
         require(data.get('JAVA_TOOL_OPTIONS') == java, 'Use the reviewed heap settings; no JVM property override of role flags')
         require(set(config['secretRefs']) == set(CONTRACT['requiredSecrets']) | (set(CONNECTION['extraSecrets']) | {'KAFKA_SASL_PASSWORD'} if connected else set()), 'Only reviewed BE Secret bindings may inject environment values')
@@ -182,7 +198,7 @@ def validate_backend(configs, connected=False):
                 require(data[key].isdigit() and int(data[key]) > 0, 'Kafka count/byte settings must be positive integers')
         require(int(data['ATTACHMENT_CONVERSION_FETCH_MAX_BYTES']) >= int(data['ATTACHMENT_CONVERSION_PARTITION_FETCH_MAX_BYTES'])
                 >= int(data['ATTACHMENT_CONVERSION_MAX_MESSAGE_BYTES']), 'Inconsistent conversion fetch/message budgets')
-        common_data = {k: v for k, v in data.items() if k not in role['environment'] and k not in lease_env and k not in ('SPRING_APPLICATION_JSON', 'KAFKA_SASL_USERNAME', 'MALLOC_ARENA_MAX')}
+        common_data = {k: v for k, v in data.items() if k not in role['environment'] and k not in LEASE_ENV and k not in ('SPRING_APPLICATION_JSON', 'KAFKA_SASL_USERNAME', 'MALLOC_ARENA_MAX')}
         # The exact role-specific pair was checked above; dependency equality stays strict.
         common_data['JAVA_TOOL_OPTIONS'] = legacy_java
         shared_spring = deepcopy(app)

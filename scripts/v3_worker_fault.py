@@ -49,7 +49,7 @@ def contract():
 
 def tool_hash():
     return f.sha({name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in
-                  ['scripts/v3_worker_fault.py','scripts/v3_conversion_lease.py','scripts/prepare-v3-conversion-lease.py','scripts/v3_worker_chaos.py','scripts/v3_worker_container.py','scripts/prepare-v3-worker-fault.py',
+                  ['scripts/v3_worker_fault.py','scripts/v3_backend_contract.py','scripts/v3_conversion_lease.py','scripts/prepare-v3-conversion-lease.py','scripts/v3_worker_chaos.py','scripts/v3_worker_container.py','scripts/prepare-v3-worker-fault.py',
                    'scripts/v3_cdc_fault.py','scripts/v3_cdc_followup.py','deploy/v3/worker-fault/contract.json']})
 
 
