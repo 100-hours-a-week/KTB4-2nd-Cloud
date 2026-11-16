@@ -1,7 +1,7 @@
-"""W1: one converter pod kill, bounded business observations, no AWS lifecycle API.
+"""W1/W1K: one converter Pod/container kill, bounded evidence, no AWS lifecycle API.
 
 Offline by default. A kill is irreversible: cleanup removes owned CR/RBAC and
-restores the Chaos profile; ReplicaSet, not this tool, replaces the victim.
+restores the Chaos profile; kubelet/ReplicaSet, not this tool, restarts the victim.
 """
 import copy
 from datetime import datetime, timezone
@@ -48,12 +48,12 @@ def contract():
 
 def tool_hash():
     return f.sha({name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in
-                  ['scripts/v3_worker_fault.py','scripts/v3_worker_chaos.py','scripts/prepare-v3-worker-fault.py',
+                  ['scripts/v3_worker_fault.py','scripts/v3_worker_chaos.py','scripts/v3_worker_container.py','scripts/prepare-v3-worker-fault.py',
                    'scripts/v3_cdc_fault.py','scripts/v3_cdc_followup.py','deploy/v3/worker-fault/contract.json']})
 
 
-def criteria():
-    return {'claimAfterEligibilitySeconds':15,'completionAfterClaimSeconds':240,'observationSeconds':900,
+def criteria(container=False):
+    value = {'claimAfterEligibilitySeconds':15,'completionAfterClaimSeconds':240,'observationSeconds':900,
             'leaseSeconds':600,'heartbeatSeconds':30,'technicalBackoffSeconds':3,
             'searchSeconds':20,'searchPollSeconds':1,'recoveryPollSeconds':3,
             'basis':{'claim':'3s retry + 3s observation interval + 9s DB/scheduler policy margin',
@@ -61,6 +61,8 @@ def criteria():
                      'diagnostic':'max(lease 600, earlier one-sample cold readiness 165 rounded to 180) + recovery 60 + normal 210 + margin 30',
                      'criticalPath':'max(remaining lease, replacement consumer readiness); waits need not be serial'},
             'guaranteed':False,'statisticalSlo':False}
+    if container:value.update(searchSavedMaximum=4,requirePostKillUnfinishedPhoto=True,requireTerminatedContainer137=True,requireNewMemberHash=True)
+    return value
 
 
 def sql(trip_id):
@@ -185,7 +187,7 @@ def validate_snapshot(s, current=None):
     f.require(set(s['apps'])=={ns+'/'+name for ns,name in APPS}, 'All app templates required')
 
 
-def prepare(s,trip_id,run_id,input_manifest,traffic_quiet=False):
+def prepare(s,trip_id,run_id,input_manifest,traffic_quiet=False,daemon_plan=None):
     validate_snapshot(s);f.trip_ids([trip_id]);f.require(NAME.fullmatch(run_id or '') and run_id.startswith('w1-'), 'Use a unique w1- run ID')
     f.require(traffic_quiet is True, 'Current maintenance cooperation required')
     f.require(input_manifest.get('photos')==20 and input_manifest.get('totalBytes')==40302057 and
@@ -195,16 +197,28 @@ def prepare(s,trip_id,run_id,input_manifest,traffic_quiet=False):
            'fault':{'apiVersion':'chaos-mesh.org/v1alpha1','kind':'PodChaos','metadata':{
                'name':run_id,'namespace':'photo','labels':{LABEL:run_id}},
                'spec':{'action':'pod-kill','mode':'one','gracePeriod':0,'selector':{'namespaces':['photo'],'pods':{'photo':[s['victim']['name']]}}}}}
+    if daemon_plan is not None:
+        import v3_worker_container as hard
+        hard.verify_daemon(daemon_plan,daemon_plan['planSha256'])
+        f.require(daemon_plan['victim']==s['victim'] and daemon_plan['clusterUid']==s['kubeSystemUid'],'Daemon Plan must pin this exact victim')
+        value.update(version=2,case='W1K',daemonPlan=daemon_plan,criteria=criteria(True))
+        value['fault']['spec'].pop('gracePeriod');value['fault']['spec'].update(action='container-kill',containerNames=['backend'])
     return dict(value,planSha256=f.sha(value))
 
 
 def verify(p,expected,fresh=True):
     f.require(p['planSha256']==expected==f.sha({k:v for k,v in p.items() if k!='planSha256'}), 'Plan hash mismatch')
-    f.require(p['toolSha256']==tool_hash() and p['criteria']==criteria() and p['case']=='W1', 'Reprepare changed tool/criteria')
+    container=p.get('case')=='W1K'
+    f.require(p['toolSha256']==tool_hash() and p['criteria']==criteria(container) and p['case']in('W1','W1K'), 'Reprepare changed tool/criteria')
     if fresh: validate_snapshot(p['snapshot'])
-    f.trip_ids([p['tripId']]);f.require(p['version']==1 and p['injected'] is False and NAME.fullmatch(p['runId']) and p['runId'].startswith('w1-'),'Invalid one-shot identity')
+    f.trip_ids([p['tripId']]);f.require(p['version']==(2 if container else 1) and p['injected'] is False and NAME.fullmatch(p['runId']) and p['runId'].startswith('w1-'),'Invalid one-shot identity')
     f.require(p['fault']['apiVersion']=='chaos-mesh.org/v1alpha1' and p['fault']['kind']=='PodChaos','PodChaos only')
     expected_spec={'action':'pod-kill','mode':'one','gracePeriod':0,'selector':{'namespaces':['photo'],'pods':{'photo':[p['snapshot']['victim']['name']]}}}
+    if container:
+        import v3_worker_container as hard
+        hard.verify_daemon(p['daemonPlan'],p['daemonPlan']['planSha256'])
+        f.require(p['daemonPlan']['victim']==p['snapshot']['victim'] and p['daemonPlan']['clusterUid']==p['snapshot']['kubeSystemUid'],'Daemon Plan target mismatch')
+        expected_spec.pop('gracePeriod');expected_spec.update(action='container-kill',containerNames=['backend'])
     f.require(p['fault']['spec']==expected_spec and p['fault']['metadata']=={
         'name':p['runId'],'namespace':'photo','labels':{LABEL:p['runId']}}, 'Exact create-triggered one-shot target required')
 
@@ -245,6 +259,7 @@ def partial(proof,p,ownership,now=None):
                 SHA.fullmatch(task['claimHash'] or '') and task['claimHash']==task['attemptOwnerHash']
                 and task['currentAttempt']==current_items[0]['attempt'] and task['currentAttempt'] in (1,2)):
             continue
+        if p.get('case')=='W1K' and len(saved)>p['criteria']['searchSavedMaximum']:continue
         deliveries=[r for r in rows if r['section']=='worker_delivery' and r['taskId']==task['taskId'] and r['status']=='PUBLISHED']
         if not deliveries:continue
         delivery=max(deliveries,key=lambda r:r['deliveryNo'])
@@ -254,11 +269,13 @@ def partial(proof,p,ownership,now=None):
         f.require(host==p['snapshot']['victim']['ip'], 'Task assigned to a different Pod')
         committed=ownership['committed'].get(str(delivery['partition']))
         f.require(type(committed) is int and committed<=delivery['offset'], 'Task already committed or offset unknown')
+        if p.get('case')=='W1K':f.require(SHA.fullmatch(owners[0].get('memberHash','')),'Old consumer member hash required')
         candidates.append({'taskId':task['taskId'],'batchId':task['batchId'],'claimHash':task['claimHash'],
                            'leaseUntil':task['leaseUntil'],'leaseSeconds':task['leaseSeconds'],
                            'currentItem':task['currentItem'],'currentAttempt':task['currentAttempt'],
                            'savedItems':saved,'delivery':delivery,'ownership':ownership,
-                           'dbSampleAt':proof['observedAt'],'proofSha256':f.sha(proof)})
+                           'dbSampleAt':proof['observedAt'],'proofSha256':f.sha(proof),
+                           **({'memberHash':owners[0]['memberHash']}if p.get('case')=='W1K'else{})})
     f.require(len(candidates)==1,'No unique partially persisted in-flight task; do not kill')
     return candidates[0]
 
@@ -303,25 +320,33 @@ def runtime(k,p):
 
 
 def normalized_fault(spec):
-    result=copy.deepcopy(spec);result.setdefault('gracePeriod',0)
+    result=copy.deepcopy(spec)
+    if result.get('action')=='container-kill':
+        if result.get('gracePeriod')==0:result.pop('gracePeriod')
+    else:result.setdefault('gracePeriod',0)
     return result
 
 
-def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reader_cleanup):
+def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reader_cleanup,daemon_receipt=None):
     from v3_worker_chaos import require_active, restore
     verify(p,expected);directory=Path(directory)
     f.require(directory.is_dir() and not directory.is_symlink() and directory.stat().st_mode&0o077==0 and not any(directory.iterdir()), 'Use empty private execution directory')
     # Exclusive local latch is never removed: repeating a one-shot after a timeout is unsafe.
     f.private_write(directory/'started.json',{'planSha256':expected,'at':f.now()})
+    container=p.get('case')=='W1K'
+    import v3_worker_container as hard
     owned=[]; observer=None; receipt={'planSha256':expected,'injectionRequested':False,'terminationConfirmed':False,'cleanup':[]}
     try:
         runtime(k,p);require_active(k,profile_receipt)
+        if container:
+            f.require(daemon_receipt is not None,'Container kill requires applied daemon receipt')
+            hard.require_daemon(k,daemon_receipt,p)
         obsdir=directory/'db';obsdir.mkdir(mode=0o700)
         reads=DeadlineKube(k)
         observer=WorkerDbObserver(reads,p['snapshot'],p['tripId'],obsdir)
         # pod-kill is one-shot in pinned Chaos Mesh 2.8.8: pause is ignored.
         # Only RBAC may be registered early; creating PodChaos IS the injection.
-        for obj in delete_role(p):
+        for obj in ([] if container else delete_role(p)):
             f.private_write(directory/('intent-'+obj['kind']+'.json'),{'kind':obj['kind'],'name':obj['metadata']['name'],'at':f.now()})
             receipt['uncertainCreate']={'kind':obj['kind'],'name':obj['metadata']['name']}
             made=f.bounded_json(k.call(['create','-f','-','-o','json'],json.dumps(obj)))
@@ -329,6 +354,8 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
             receipt.pop('uncertainCreate',None)
             f.private_write(directory/('owned-'+obj['kind']+'.json'),{'kind':obj['kind'],'name':obj['metadata']['name'],'uid':uid,'runId':p['runId']})
         f.require(not k.get('podchaos','photo')['items'],'Concurrent PodChaos forbidden')
+        f.private_write(directory/'input-ready.json',{'at':f.now(),'planSha256':expected,'faultCreated':False,
+                        'releaseInputNow':True,'case':p['case']})
         selected=None; search=time.monotonic()+p['criteria']['searchSeconds'];pairs=0
         def observe_pair():
             nonlocal pairs
@@ -363,7 +390,7 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
         # Never label a created one-shot as inactive or wait for an unpause PATCH.
         receipt['injectionRequested']=True;receipt['requestAt']=f.now();mono=time.monotonic()
         f.private_write(directory/'injection-intent.json',{'at':receipt['requestAt'],'trigger':'PodChaos.create',
-                        'victimUid':pod['metadata']['uid'],'runId':p['runId']})
+                        'victimUid':pod['metadata']['uid'],'victimContainerId':p['snapshot']['victim']['containerId'],'runId':p['runId'],'case':p['case']})
         fault_obj=p['fault']
         receipt['uncertainCreate']={'kind':'PodChaos','name':p['runId']}
         raw=k.call(['create','-f','-','-o','json'],json.dumps(fault_obj))
@@ -372,18 +399,23 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
         owned.append(('podchaos',p['runId'],uid));receipt.pop('uncertainCreate',None)
         receipt['faultCreateAccepted']=True
         f.private_write(directory/'owned-PodChaos.json',{'kind':'PodChaos','name':p['runId'],'uid':uid,'runId':p['runId']})
+        receipt['case']=p['case'];receipt['victimContainerId']=p['snapshot']['victim']['containerId']
+        if container:f.require(normalized_fault(fault['spec'])==p['fault']['spec'],'Admitted container fault changed; inspect possible injection')
         deadline=mono+p['criteria']['observationSeconds'];state='incomplete'; samples=[]
         while time.monotonic()<deadline:
             reads.deadline=deadline;observer.SAMPLE_SECONDS=min(45,max(.001,deadline-time.monotonic()))
             proof=observer.sample();samples.append(proof)
             fault_state=reads.get('podchaos','photo',p['runId'])
             f.require(fault_state['metadata']['uid']==fault['metadata']['uid'],'Fault UID changed during observation')
+            if container:f.require(normalized_fault(fault_state['spec'])==p['fault']['spec'],'Container fault changed during observation')
             records=[{key:value for key,value in record.items() if key in ('id','phase','injectedCount','recoveredCount')} for record in fault_state.get('status',{}).get('experiment',{}).get('containerRecords',[])]
-            receipt['chaosInjectedObserved']=receipt.get('chaosInjectedObserved',False) or any(record.get('id')=='photo/'+p['snapshot']['victim']['name'] and record.get('injectedCount',0)>0 for record in records)
+            receipt['chaosInjectedObserved']=receipt.get('chaosInjectedObserved',False) or any(record.get('id')==('photo/'+p['snapshot']['victim']['name']+('/backend'if container else '')) and record.get('injectedCount',0)>0 for record in records)
             raw=reads.call(['-n','photo','get','pod',p['snapshot']['victim']['name'],'--ignore-not-found','-o','json'])
             old=json.loads(raw or '{}')
             term=not old or old['metadata']['uid']!=p['snapshot']['victim']['uid'] or any(
                 c['name']=='backend' and c.get('state',{}).get('terminated') for c in old.get('status',{}).get('containerStatuses',[]))
+            process_end=hard.termination(p,old) if container else None
+            if container:term=bool(process_end) # disappearance or a different Pod UID is not process death proof
             try:recovery_owner=owner_reader(deadline=deadline)
             except (f.GuardError,subprocess.SubprocessError,OSError) as error:
                 # A post-injection metadata gap is evidence, not proof the fault
@@ -394,12 +426,18 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
                       'pods':[{'name':x['metadata']['name'],'uid':x['metadata']['uid'],'ip':x['status'].get('podIP'),'node':x['spec'].get('nodeName'),'ready':f.ready_pod(x),
                                'containerStatuses':[{a:v for a,v in c.items() if a in ['name','restartCount','containerID','state','lastState']} for c in x['status'].get('containerStatuses',[])]}
                               for x in reads.get('pods','photo',selector='app.kubernetes.io/instance=photo-converter')['items']],
-                      'ownership':recovery_owner}
+                      'ownership':recovery_owner,'processTermination':process_end}
             evidence['at']=f.now() # completion upper bound, after ownership/Pod reads
             f.private_write(directory/f'runtime-{len(samples):04d}.json',evidence)
             # Preserve precise container termination if obtainable, otherwise only an API-object bound.
             if term and not receipt['terminationConfirmed']:
                 receipt['terminationConfirmed']=True;receipt['terminationObservedAt']=evidence['at'];receipt['terminationPrecision']='api-object-or-container-state; inspect runtime records'
+            if container and process_end and 'postKillWindowObserved'not in receipt:
+                # Re-read AFTER seeing old-container exit137; the earlier DB sample might predate death.
+                after=observer.sample();samples.append(after);f.private_write(directory/'post-termination.json',after)
+                receipt['postKillWindowObserved']=hard.post_kill_window(selected,after)
+                receipt['processKillObserved']=True;receipt['terminationPrecision']='old containerID + exit137 (not OOM) + Chaos Injected required'
+                proof=after # business monitoring continues even when the selected photo window was missed
             status=next(r for r in proof['rows'] if r['section']=='execution_timing')['status']
             if status in ('COMPLETED','FAILED','CANCELED'):
                 state='completed' if status=='COMPLETED' else 'business_failure';break
@@ -429,6 +467,9 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
                 if kind=='podchaos':break # do not revoke permissions required by its finalizer
         try:receipt['readerRemoved']=reader_cleanup()
         except Exception:errors.append({'kind':'reader','reason':'reader_cleanup_failed_raw_withheld'})
+        if container and daemon_receipt is not None:
+            try:receipt['daemonRestored']=hard.restore_daemon(k,daemon_receipt)
+            except Exception:errors.append({'kind':'chaos-daemon','reason':'restore_failed_raw_withheld'})
         try:receipt['profileRestored']=restore(k,profile_receipt)
         except Exception:errors.append({'kind':'chaos-profile','reason':'restore_failed_raw_withheld'})
         receipt['cleanupErrors']=errors
@@ -462,7 +503,7 @@ def assess(before,after,timing,trace,db_summary):
     interrupted=any(i in b and b[i]['attempt']>0 and a[i]['attempt']>b[i]['attempt'] for i in current_ids if i in a)
     f.require(before['approvedRevision']==after['approvedRevision']==db_summary['approvedRevision'] and db_summary['tripIds']==[trip], 'Mismatched deployment or DB summary')
     coverage=identity and saved_preserved and interrupted and valid_times and timing.get('derivedFromRecordedSamples') is True and timing.get('podKillObserved') is True and timing.get('prematureClaimObserved') is False and not gaps and db_summary.get('continuousObservationComplete') is True and not timing.get('manualActions') and trace_ready
-    return {'case':'W1','tripId':trip,'evidenceComplete':bool(coverage),'automaticRecovery':bool(status=='COMPLETED' and coverage) if coverage else None,
+    result={'case':'W1','tripId':trip,'evidenceComplete':bool(coverage),'automaticRecovery':bool(status=='COMPLETED' and coverage) if coverage else None,
             'savedItemsPreserved':saved_preserved,'identityMatched':identity,'interruptedAttemptReprocessed':interrupted,'attemptIncreases':{str(i):a[i]['attempt']-b[i]['attempt'] for i in a if i in b and a[i]['attempt']!=b[i]['attempt']},
             'eligibilityToClaimSeconds':eligible,'claimToCompletionSeconds':completion,
             'claimTargetMet':bounded_target(timing.get('eligibilityToClaimBounds'),15),
@@ -472,6 +513,17 @@ def assess(before,after,timing,trace,db_summary):
             'limitations':['timestamps are observer bounds; do not equate API disappearance with kernel death',
                            'raw broker delivery count and all S3 effects unmeasured','attempt increase is expected, not itself duplicate business output'],
             'sourceHashes':{name:f.sha(v) for name,v in [('before',before),('after',after),('timing',timing),('trace',trace),('db',db_summary)]}}
+    if timing.get('case')=='W1K':
+        result['case']='W1K'
+        chosen=timing.get('selectedItemId');chosen_attempt=timing.get('selectedAttempt')
+        result['selectedPhotoRetried']=bool(chosen in b and chosen in a and b[chosen]['attempt']==chosen_attempt and a[chosen]['attempt']>chosen_attempt)
+        result['selectedObservationMatched']=timing.get('selectedProofSha256')==f.sha(before)
+        result['processKillObserved']=timing.get('processKillObserved')is True
+        result['postKillWindowObserved']=timing.get('postKillWindowObserved')is True
+        result['leaseReleaseObserved']=timing.get('leaseReleaseObserved')is True
+        hard_coverage=(result['selectedPhotoRetried'] and result['selectedObservationMatched'] and result['processKillObserved'] and result['postKillWindowObserved'] and not result['leaseReleaseObserved'])
+        if not hard_coverage:result.update(evidenceComplete=False,automaticRecovery=None)
+    return result
 
 
 def bounded_target(bounds,target):
@@ -531,12 +583,16 @@ def summarize(directory):
         at=epoch(rt['at']);pods=[p for p in rt['pods'] if p['uid']!=receipt.get('victimUid',selected.get('victimUid'))]
         # Exclude original Pod by its pinned name, available in the injection intent.
         intent=take(directory/'injection-intent.json') if 'injection-intent.json' not in sources else read(directory/'injection-intent.json')
-        pods=[p for p in pods if p['uid']!=intent['victimUid']]
+        if receipt.get('case')=='W1K':
+            import v3_worker_container as hard
+            pods=[p for p in rt['pods'] if hard.replacement({'snapshot':{'victim':{'containerId':intent['victimContainerId']}}},p)]
+        else:pods=[p for p in pods if p['uid']!=intent['victimUid']]
         if ready is None and any(p['ready'] for p in pods):ready=[previous,at]
         owner=rt.get('ownership',{})
         try:fresh=owner.get('querySeconds',0)<=2 and ownership_age_bounds(owner,at)[1]<=5
         except (f.GuardError,KeyError,TypeError,ValueError):fresh=False
-        if assigned is None and fresh and owner.get('state')=='Stable' and any(
+        member_changed=(hard.new_owner(selected,pods,owner)if receipt.get('case')=='W1K'else True)
+        if assigned is None and fresh and member_changed and owner.get('state')=='Stable' and any(
             m['host'].lstrip('/')==p.get('ip') and selected['delivery']['partition'] in m['partitions']
             for p in pods for m in owner.get('members',[])):assigned=[previous,at]
         previous=at
@@ -560,7 +616,7 @@ def summarize(directory):
     if assigned:events['consumerAssignedAt']=iso(assigned[1])
     if completed:events['completedAt']=iso(completed[1])
     if termination:events.update(terminationLowerAt=iso(termination[0]),terminationUpperAt=iso(termination[1]))
-    return {'derivedFromRecordedSamples':True,'podKillObserved':receipt.get('chaosInjectedObserved') is True and receipt.get('terminationConfirmed') is True,'events':events,'samples':series,
+    result={'derivedFromRecordedSamples':True,'podKillObserved':receipt.get('chaosInjectedObserved') is True and receipt.get('terminationConfirmed') is True,'events':events,'samples':series,
             'eligibilityAt':iso(eligibility[0]) if eligibility else None,'newClaimAt':iso(claim[1]) if claim else None,
             'completedAt':iso(completed[1]) if completed else None,
             'terminationLowerAt':iso(termination[0]) if termination else None,'terminationUpperAt':iso(termination[1]) if termination else None,
@@ -570,23 +626,28 @@ def summarize(directory):
             'manualActions':receipt.get('manualActions',[]),'observationGaps':db['observationGaps'],'sourceHashes':sources,
             'precision':'observer intervals; observed lease is a lower eligibility bound; API disappearance is not kernel death',
             'traceStillRequired':True,'preAcceptanceSamples':pre_acceptance}
+    if receipt.get('case')=='W1K':
+        import v3_worker_container as hard
+        result=hard.lease_timing(result,receipt,selected,samples,runtime)
+    return result
 
 
 def dashboard(record):
-    events=record['events'];samples=record['samples']
+    events=record['events'];samples=record['samples'];case=record.get('case','W1')
+    f.require(case in('W1','W1K'),'Known worker fault case required')
     allowed={'terminationLowerAt','terminationUpperAt','replacementReadyAt','consumerAssignedAt','leaseUntil','newClaimAt','firstNewSaveAt','completedAt'}
     f.require(set(events)<=allowed and events and samples,'Recorded events and samples required')
     names=list(events);times=[epoch(events[k])*1000 for k in names];start=min(times)
     def frame(name,fields,values):return {'name':name,'fields':[dict(field,values=values[i])for i,field in enumerate(fields)],'length':len(values[0])}
-    table=frame('W1 recorded events',[{'name':'Event','type':'string'},{'name':'Time','type':'time'},{'name':'Elapsed seconds','type':'number'}],
+    table=frame(case+' recorded events',[{'name':'Event','type':'string'},{'name':'Time','type':'time'},{'name':'Elapsed seconds','type':'number'}],
                 [names,times,[(x-start)/1000 for x in times]])
     bounds=[record.get('eligibilityToClaimBounds'),record.get('claimToCompletionBounds')]
     duration=frame('Conservative duration bounds',[{'name':'Interval','type':'string'},{'name':'Lower seconds','type':'number'},{'name':'Upper seconds','type':'number'}],
                    [['Eligible → new claim','New claim → completed'],[x[0]if x else None for x in bounds],[x[1]if x else None for x in bounds]])
     series=frame('Recorded DB samples',[{'name':'Time','type':'time'},{'name':'Saved photos','type':'number'},{'name':'Attempt total','type':'number'},{'name':'Lease remaining seconds','type':'number'}],
                   [[epoch(x['at'])*1000 for x in samples]]+[[x[k]for x in samples]for k in ['savedPhotos','attempts','leaseRemainingSeconds']])
-    annotations=[{'time':epoch(v)*1000,'text':k,'tags':['W1 recorded evidence']}for k,v in events.items()]
-    return {'title':'W1 — persisted photos and recovery boundaries','timezone':'Asia/Seoul','schemaVersion':41,
+    annotations=[{'time':epoch(v)*1000,'text':k,'tags':[case+' recorded evidence']}for k,v in events.items()]
+    return {'title':case+' — persisted photos and recovery boundaries','timezone':'Asia/Seoul','schemaVersion':41,
             'time':{'from':iso((start-10000)/1000),'to':iso((max(times)+10000)/1000)},
             'description':'Native Grafana Snapshot of recorded evidence. Sample bounds and gaps remain visible; API disappearance is not kernel death.',
             'annotations':{'list':[{'name':'Recorded boundaries','type':'dashboard','enable':True,'hide':False,'iconColor':'#FF9830','datasource':{'type':'grafana','uid':'-- Grafana --'},'snapshotData':annotations}]},

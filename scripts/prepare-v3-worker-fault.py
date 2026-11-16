@@ -18,6 +18,7 @@ import time
 import v3_cdc_fault as f
 import v3_worker_fault as w
 import v3_worker_chaos as chaos
+import v3_worker_container as hard
 
 
 def load(path):
@@ -154,12 +155,16 @@ def main():
     a=sub.add_parser('snapshot');a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--output',type=Path,required=True)
     a=sub.add_parser('plan')
     for key in ['snapshot','input','output']:a.add_argument('--'+key,type=Path,required=True)
+    a.add_argument('--failure-mode',choices=['pod-kill','container-kill'],default='pod-kill');a.add_argument('--daemon-plan',type=Path)
     a.add_argument('--trip-id',type=int,required=True);a.add_argument('--run-id',required=True);a.add_argument('--ack-maintenance',action='store_true',required=True)
     a=sub.add_parser('profile-plan');a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--output',type=Path,required=True)
     a=sub.add_parser('profile-apply')
     a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--plan',type=Path,required=True);a.add_argument('--approve-profile-sha256',required=True)
     a.add_argument('--receipt',type=Path,required=True);a.add_argument('--ack-chaos-controller-retarget',action='store_true',required=True)
     a=sub.add_parser('profile-restore');a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--receipt',type=Path,required=True);a.add_argument('--output',type=Path,required=True)
+    a=sub.add_parser('daemon-plan');a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--snapshot',type=Path,required=True);a.add_argument('--output',type=Path,required=True)
+    a=sub.add_parser('daemon-apply');a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--plan',type=Path,required=True);a.add_argument('--approve-daemon-sha256',required=True);a.add_argument('--receipt',type=Path,required=True);a.add_argument('--ack-one-host-privileged-daemon',action='store_true',required=True)
+    a=sub.add_parser('daemon-restore');a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--receipt',type=Path,required=True);a.add_argument('--output',type=Path,required=True)
     a=sub.add_parser('reader-bundle');a.add_argument('--kafka-client',type=Path,required=True);a.add_argument('--node',required=True);a.add_argument('--name',required=True);a.add_argument('--output',type=Path,required=True)
     a=sub.add_parser('reader-start');a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--bundle',type=Path,required=True);a.add_argument('--approve-bundle-sha256',required=True);a.add_argument('--directory',type=Path,required=True);a.add_argument('--ack-mounted-describe-credentials',action='store_true',required=True)
     a=sub.add_parser('reader-stop');a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--receipt',type=Path,required=True);a.add_argument('--output',type=Path,required=True)
@@ -168,7 +173,10 @@ def main():
     a.add_argument('--kubeconfig',type=Path,required=True);a.add_argument('--plan',type=Path,required=True);a.add_argument('--approve-plan-sha256',required=True)
     a.add_argument('--profile-receipt',type=Path,required=True);a.add_argument('--directory',type=Path,required=True)
     a.add_argument('--reader-receipt',type=Path,required=True);a.add_argument('--gpu-guard',type=Path,required=True)
-    a.add_argument('--ack-maintenance-and-one-pod-kill',action='store_true',required=True)
+    a.add_argument('--daemon-receipt',type=Path)
+    ack=a.add_mutually_exclusive_group(required=True)
+    ack.add_argument('--ack-maintenance-and-one-pod-kill',action='store_true')
+    ack.add_argument('--ack-maintenance-and-one-container-kill',action='store_true')
     a=sub.add_parser('assess')
     for key in ['before','after','timing','trace','db-summary','output']:a.add_argument('--'+key,type=Path,required=True)
     a=sub.add_parser('summarize');a.add_argument('--directory',type=Path,required=True);a.add_argument('--output',type=Path,required=True)
@@ -176,17 +184,36 @@ def main():
     args=parser.parse_args()
     if hasattr(args,'output'):
         f.require(not args.output.exists() and not args.output.is_symlink() and args.output.parent.is_dir() and args.output.parent.stat().st_mode&0o077==0,'Fresh mode-700 output required')
+    if args.action=='daemon-apply':
+        plan=load(args.plan);hard.verify_daemon(plan,args.approve_daemon_sha256,True)
+        result=hard.apply_daemon(f.Kube(args.kubeconfig),plan,args.approve_daemon_sha256,args.receipt)
+        print(json.dumps({'daemonRetargeted':result['complete'],'injected':False,'gpuChanged':False}));return
     if args.action=='profile-apply':
         plan=load(args.plan);chaos.verify(plan,args.approve_profile_sha256)
         receipt=chaos.apply(f.Kube(args.kubeconfig),plan,args.approve_profile_sha256,args.receipt)
         print(json.dumps({'profileApplied':receipt['complete'],'injected':False,'gpuChanged':False}));return
     if args.action=='run':
-        plan=load(args.plan);w.verify(plan,args.approve_plan_sha256);stop_guard=guard_ready(args.gpu_guard,plan)
+        plan=load(args.plan);w.verify(plan,args.approve_plan_sha256)
+        container=plan['case']=='W1K'
+        f.require(container==args.ack_maintenance_and_one_container_kill,'Use acknowledgement for the exact fault mode')
+        f.require((args.daemon_receipt is not None)==container,'Container kill needs its daemon receipt; PodKill must not move a daemon')
+        dr=load(args.daemon_receipt)if container else None
+        if container:f.require(dr.get('complete') and dr['plan']==plan['daemonPlan'],'Applied daemon receipt mismatch')
+        stop_guard=guard_ready(args.gpu_guard,plan)
         f.private_write(args.plan.parent/('.w1-'+plan['planSha256']+'-started.json'),{'planSha256':plan['planSha256'],'at':f.now(),'oneShotNeverRetry':True})
-        rr=load(args.reader_receipt);pod=next(x for x in rr['resources'] if x['kind']=='Pod')
+        try:
+            rr=load(args.reader_receipt);pod=next(x for x in rr['resources'] if x['kind']=='Pod')
+            if container:
+                # Node-clock age, not Mac-vs-server age. Preserve 900s observation plus cleanup margin.
+                kp=f.Kube(args.kubeconfig);rp=kp.get('pod','keda',pod['name']);own=ownership(kp,pod['name'],pod['uid'])
+                f.require(0<=own['clock']['nodeUnixSeconds']-w.epoch(rp['metadata']['creationTimestamp'])<=90,
+                          'Reader too old for the full 900s trial; recreate before input')
+        except BaseException:
+            stop_guard() # GPU need not wait for watchdog expiry on a preflight failure.
+            raise
         receipt=w.execute(f.Kube(args.kubeconfig),plan,args.approve_plan_sha256,args.directory,
             lambda deadline=None:ownership(f.Kube(args.kubeconfig),pod['name'],pod['uid'],deadline),load(args.profile_receipt),stop_guard,
-            lambda:reader_stop(f.Kube(args.kubeconfig),rr))
+            lambda:reader_stop(f.Kube(args.kubeconfig),rr),dr)
         print(json.dumps({'oneShotRequested':receipt['injectionRequested'],'automaticRecovery':'use assess, not the controller status'}));return
     if args.action=='reader-start':
         result=reader_start(f.Kube(args.kubeconfig),load(args.bundle),args.approve_bundle_sha256,args.directory)
@@ -198,7 +225,11 @@ def main():
     elif args.action=='profile-plan':result=chaos.profile_plan(f.Kube(args.kubeconfig))
     elif args.action=='reader-stop':result=reader_stop(f.Kube(args.kubeconfig),load(args.receipt))
     elif args.action=='profile-restore':result=chaos.restore(f.Kube(args.kubeconfig),load(args.receipt))
-    elif args.action=='plan':result=w.prepare(load(args.snapshot),args.trip_id,args.run_id,load(args.input),args.ack_maintenance)
+    elif args.action=='daemon-plan':result=hard.daemon_plan(f.Kube(args.kubeconfig),load(args.snapshot))
+    elif args.action=='daemon-restore':result=hard.restore_daemon(f.Kube(args.kubeconfig),load(args.receipt))
+    elif args.action=='plan':
+        f.require((args.failure_mode=='container-kill')==(args.daemon_plan is not None),'Container-kill requires a daemon Plan')
+        result=w.prepare(load(args.snapshot),args.trip_id,args.run_id,load(args.input),args.ack_maintenance,load(args.daemon_plan)if args.daemon_plan else None)
     elif args.action=='reader-bundle':result=reader_bundle(args.kafka_client,args.node,args.name)
     elif args.action=='summarize':result=w.summarize(args.directory)
     elif args.action=='dashboard':result=w.dashboard(load(args.record))

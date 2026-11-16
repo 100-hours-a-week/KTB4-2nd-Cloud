@@ -5,7 +5,7 @@
   "files": {
     "deploy/v3/worker-fault/observe.sql": "edf984e8c553d6ce9309cca7c3d43b3798ff254b9e0ad916180dfb1076d869f9",
     "tests/ci/v3/worker/ConverterOwnership.java": "d511a742fc3f84c5b30c270976a3fa50f6e7a19eaf81006bee78a9b01af7e79d",
-    "tests/ci/v3/worker/WorkerCrashFixture.java": "29be43784d8007f0b9bda42b229e8e27c87a63b7204e75e415f4eb82f7e548f1"
+    "tests/ci/v3/worker/WorkerCrashFixture.java": "f7eae84b21cd3443144bfa42c705c82b7b552347d23833048745f87396df9d59"
   },
   "leaseSeconds": 600,
   "heartbeatSeconds": 30,

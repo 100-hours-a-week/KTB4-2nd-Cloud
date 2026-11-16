@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Abrupt real JVM halt with real Kafka+MySQL; synthetic persistence adapter/IO.
+"""External SIGKILL of the real JVM container with real Kafka+MySQL; synthetic persistence adapter/IO.
 
 No published ports, production credentials, kubeconfig, model call or AWS client.
 The fixture alone expires its synthetic lease AFTER proving it blocks recovery;
@@ -71,13 +71,19 @@ INSERT INTO yeodam.attachment_conversion_tasks VALUES(705,'task1',1,'INITIAL','L
             def java(name,mode,detached):
                 names.append(name)
                 return cmd(['docker','run']+(['-d']if detached else[])+['--name',name,'--platform','linux/amd64','--network',net,'--memory','1g','--cpus','1','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--user','10001:10001','--tmpfs','/tmp:uid=10001,gid=10001,size=32m','-v',str(d)+':/fixture:ro','--entrypoint','java',w.BE_IMAGE,'-Xmx384m','-cp','/fixture/classes:/fixture/BOOT-INF/classes:/fixture/BOOT-INF/lib/*','com.yeodam.yeodambe.trip.service.WorkerCrashFixture',mode],timeout=90)
-            first=prefix+'-first';java(first,'crash',True)
+            first=prefix+'-first';java(first,'await-kill',True)
             for _ in range(70):
+                log=cmd(['docker','logs',first]).stdout
                 state=json.loads(cmd(['docker','inspect','--format','{{json .State}}',first]).stdout)
-                if not state['Running']:break
+                assert state['Running'],'Worker exited before external kill'
+                if 'WORKER_CRASH_READY' in log:break
                 time.sleep(1)
-            assert state['ExitCode']==137 and not state['OOMKilled'],'Deliberate JVM halt was not observed'
-            log=cmd(['docker','logs',first]).stdout;assert 'WORKER_CRASH_READY' in log,'Missing partial/ACK proof'
+            else:raise RuntimeError('No in-flight partial work before SIGKILL')
+            # An actual external runtime signal, not a hook/Runtime.halt assertion.
+            cmd(['docker','kill','--signal=KILL',first])
+            cmd(['docker','wait',first],timeout=15)
+            state=json.loads(cmd(['docker','inspect','--format','{{json .State}}',first]).stdout)
+            assert state['ExitCode']==137 and not state['OOMKilled'],'External SIGKILL not observed'
             assert sql('SELECT SUM(saved),SUM(applications) FROM fixture.item;').strip()=='2\t2'
             assert int(sql('SELECT TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),lease_until) FROM fixture.task;').strip())>=500
             second=prefix+'-second';java(second,'recover',True)
@@ -97,7 +103,7 @@ INSERT INTO yeodam.attachment_conversion_tasks VALUES(705,'task1',1,'INITIAL','L
             assert 'WORKER_RECOVERED' in cmd(['docker','logs',second]).stdout
             assert sql('SELECT SUM(saved),SUM(applications),SUM(attempt) FROM fixture.item;').strip()=='5\t5\t6'
             proof={'schemaVersion':1,'image':w.BE_IMAGE,'sourceSha':w.BE_SOURCE,'actualImageClasses':True,'actualKafkaAndMySQL':True,
-                   'abruptJvmHalt':True,'drainSkipped':True,'noEarlyCommit':True,'partialSaved':2,'finalSaved':5,'applications':5,
+                   'abruptJvmHalt':False,'externalContainerSigkill':True,'chaosMeshRpcTested':False,'drainSkipped':True,'noEarlyCommit':True,'partialSaved':2,'finalSaved':5,'applications':5,
                    'oldLeaseRejected':True,'savedItemsReused':True,'interruptedItemRetried':True,'syntheticLeaseExpiredByFixture':True,
                    'productionJpaTested':False,'nativeConversionTested':False,'operatingRecoveryTimeProven':False,
                    'fixtureSha256':hashlib.sha256((ROOT/'tests/ci/v3/worker/WorkerCrashFixture.java').read_bytes()).hexdigest()}

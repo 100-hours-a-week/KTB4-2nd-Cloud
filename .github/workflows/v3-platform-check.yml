@@ -49,6 +49,7 @@ on:
       - 'scripts/v3_worker_*'
       - 'scripts/prepare-v3-worker-fault.py'
       - 'tests/ci/test_v3_worker_fault.py'
+      - 'tests/ci/test_v3_worker_container.py'
       - 'tests/ci/smoke-v3-worker-fault.py'
       - 'tests/ci/test_v3_cdc_fault.py'
       - 'tests/ci/test_v3_cdc_followup.py'
