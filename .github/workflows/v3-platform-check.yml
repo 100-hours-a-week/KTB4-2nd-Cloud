@@ -50,6 +50,8 @@ on:
       - 'scripts/prepare-v3-worker-fault.py'
       - 'scripts/v3_conversion_lease.py'
       - 'scripts/prepare-v3-conversion-lease.py'
+      - 'scripts/prepare-v3-request-defense-candidate.py'
+      - 'tests/ci/test_v3_request_defense.py'
       - 'tests/ci/test_v3_conversion_lease.py'
       - 'tests/ci/test_v3_worker_fault.py'
       - 'tests/ci/test_v3_worker_container.py'
