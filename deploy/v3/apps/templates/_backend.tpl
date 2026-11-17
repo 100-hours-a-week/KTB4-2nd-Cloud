@@ -34,6 +34,10 @@
 {{- if or (lt $seconds 90) (gt $seconds 600) }}{{ fail "Reviewed lease range is 90..600 seconds" }}{{ end -}}
 {{- $allowed = concat $allowed (list $leaseKey $renewKey) -}}
 {{- end -}}
+{{- if hasKey $c.configMapData "REQUEST_RATE_LIMIT_ENABLED" -}}
+{{- if or (not (has .instance (list "trip-api" "photo-api"))) (ne $c.configMapData.REQUEST_RATE_LIMIT_ENABLED "true") }}{{ fail "Request defense opt-in is true only on trip/photo APIs" }}{{ end -}}
+{{- $allowed = concat $allowed (list "REQUEST_RATE_LIMIT_ENABLED") -}}
+{{- end -}}
 {{- $boundedMemory := hasKey $c.configMapData "MALLOC_ARENA_MAX" -}}
 {{- if $boundedMemory -}}
 {{- if or (ne .instance "photo-converter") (ne $c.configMapData.MALLOC_ARENA_MAX $contract.photoConverterMemory.allocatorArenas) }}{{ fail "Allocator budget belongs only to the reviewed photo-converter profile" }}{{ end -}}

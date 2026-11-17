@@ -135,6 +135,10 @@ def validate_backend(configs, connected=False):
             require(instance == 'photo-converter', 'Lease policy belongs only to photo-converter')
             conversion_lease_policy(data)
             allowed |= set(LEASE_ENV)
+        if 'REQUEST_RATE_LIMIT_ENABLED' in data:
+            require(instance in ('trip-api', 'photo-api') and data['REQUEST_RATE_LIMIT_ENABLED'] == 'true',
+                    'Request defense opt-in is true only on trip/photo APIs; workers and auth remain unchanged')
+            allowed.add('REQUEST_RATE_LIMIT_ENABLED')
         require(set(data) <= allowed, 'Unreviewed ConfigMap key could bypass the role contract')
         require(data.get('JAVA_TOOL_OPTIONS') == java, 'Use the reviewed heap settings; no JVM property override of role flags')
         require(set(config['secretRefs']) == set(CONTRACT['requiredSecrets']) | (set(CONNECTION['extraSecrets']) | {'KAFKA_SASL_PASSWORD'} if connected else set()), 'Only reviewed BE Secret bindings may inject environment values')
@@ -198,7 +202,7 @@ def validate_backend(configs, connected=False):
                 require(data[key].isdigit() and int(data[key]) > 0, 'Kafka count/byte settings must be positive integers')
         require(int(data['ATTACHMENT_CONVERSION_FETCH_MAX_BYTES']) >= int(data['ATTACHMENT_CONVERSION_PARTITION_FETCH_MAX_BYTES'])
                 >= int(data['ATTACHMENT_CONVERSION_MAX_MESSAGE_BYTES']), 'Inconsistent conversion fetch/message budgets')
-        common_data = {k: v for k, v in data.items() if k not in role['environment'] and k not in LEASE_ENV and k not in ('SPRING_APPLICATION_JSON', 'KAFKA_SASL_USERNAME', 'MALLOC_ARENA_MAX')}
+        common_data = {k: v for k, v in data.items() if k not in role['environment'] and k not in LEASE_ENV and k not in ('SPRING_APPLICATION_JSON', 'KAFKA_SASL_USERNAME', 'MALLOC_ARENA_MAX', 'REQUEST_RATE_LIMIT_ENABLED')}
         # The exact role-specific pair was checked above; dependency equality stays strict.
         common_data['JAVA_TOOL_OPTIONS'] = legacy_java
         shared_spring = deepcopy(app)

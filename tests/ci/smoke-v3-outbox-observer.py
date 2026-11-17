@@ -36,11 +36,20 @@ with tempfile.TemporaryDirectory(prefix='outbox-observer-fixture-') as tmp:
     os.chmod(d/'key.pem',0o644)
     try:
         run(['docker','network','create','--internal',PREFIX])
-        run(['docker','run','-d','--name',PREFIX,'--network',PREFIX,'--platform','linux/amd64','--memory','512m','--cpus','1','--read-only','--security-opt','no-new-privileges:true','--tmpfs','/var/lib/mysql:uid=999,gid=999,size=512m','--tmpfs','/var/run/mysqld:uid=999,gid=999','--tmpfs','/tmp:size=64m','-v',str(d)+':/tls:ro','-e','MYSQL_ROOT_PASSWORD='+ROOT_PASSWORD,IMAGE,'--innodb-buffer-pool-size=64M','--innodb-redo-log-capacity=32M','--ssl-cert=/tls/cert.pem','--ssl-key=/tls/key.pem','--ssl-ca=/tls/cert.pem','--require-secure-transport=ON'])
+        run(['docker','run','-d','--name',PREFIX,'--network',PREFIX,'--platform','linux/amd64','--memory','512m','--cpus','1','--read-only','--security-opt','no-new-privileges:true','--tmpfs','/var/lib/mysql:uid=999,gid=999,size=512m','--tmpfs','/var/run/mysqld:uid=999,gid=999','--tmpfs','/tmp:size=64m','-v',str(d)+':/tls:ro','-e','MYSQL_ROOT_PASSWORD='+ROOT_PASSWORD,IMAGE,'--innodb-buffer-pool-size=64M','--performance-schema=OFF','--innodb-redo-log-capacity=32M','--ssl-cert=/tls/cert.pem','--ssl-key=/tls/key.pem','--ssl-ca=/tls/cert.pem','--require-secure-transport=ON'])
         for _ in range(100):
             if query('SELECT 1;',check=False).returncode==0:break
             time.sleep(1)
-        else:raise RuntimeError('Synthetic MySQL readiness timeout')
+        else:
+            inspected=run(['docker','inspect','--format','{{json .State}}',PREFIX],check=False)
+            try:
+                state=json.loads(inspected.stdout)
+                print(json.dumps({'syntheticMysql':{k:state.get(k)for k in ('Status','ExitCode','OOMKilled')}}),flush=True)
+            except ValueError:pass
+            logs=run(['docker','logs','--tail','25',PREFIX],check=False)
+            safe=(logs.stdout+logs.stderr).replace(ROOT_PASSWORD,'[REDACTED]').replace(PASSWORD,'[REDACTED]')
+            print(safe[-6000:],flush=True)
+            raise RuntimeError('Synthetic MySQL readiness timeout')
         ddl='CREATE DATABASE yeodam;\n'
         for table in observer.TABLES:
             ddl+=f'CREATE TABLE yeodam.{table} (status VARCHAR(20), cdc_managed BOOLEAN, created_at DATETIME(6), payload TEXT);\n'

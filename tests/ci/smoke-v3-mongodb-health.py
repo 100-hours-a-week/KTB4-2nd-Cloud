@@ -27,7 +27,13 @@ def exercise():
     bootstrap = importlib.util.module_from_spec(spec); spec.loader.exec_module(bootstrap)
     # Public immutable image only. Do not silently fall back to a mutable tag.
     if docker('image', 'inspect', IMAGE, check=False).returncode:
-        docker('pull', IMAGE, timeout=180)
+        for attempt in range(3):
+            pulled=docker('pull', IMAGE, check=False, timeout=180)
+            if pulled.returncode==0:break
+            # Retry this exact immutable public source only; no tag/mirror substitution.
+            print(json.dumps({'stage':'immutable_image_pull_failed','attempt':attempt+1}),flush=True)
+            if attempt<2:time.sleep((2,5)[attempt])
+        else:raise RuntimeError('Immutable MongoDB image pull failed after three bounded attempts')
     with tempfile.TemporaryDirectory(prefix=name) as private:
         root = Path(private); root.chmod(0o755)
         certs = root / 'certs'; certs.mkdir()
