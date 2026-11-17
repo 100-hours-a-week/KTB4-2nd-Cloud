@@ -64,6 +64,9 @@ class RequestDefense(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('V3_HELM'), 'Pinned Helm required')
     def test_rendered_diff_is_only_two_api_configmaps_and_deployments(self):
         data = json.loads((ROOT / 'deploy/v3/releases/candidate.json').read_text())
+        # Keep the inactive transition fixture independent of a later active candidate.
+        for role in module.TARGETS:
+            data['values']['backend']['workloads'][role].setdefault('configMapData', {}).pop(module.KEY, None)
         active = module.prepare(data)
         def render(value):
             raw = subprocess.check_output([os.environ['V3_HELM'], 'template', 'yeodam-v3-apps',
