@@ -1,4 +1,4 @@
-import copy,importlib.util,json,os,sys,tempfile,unittest,zipfile,subprocess
+import copy,importlib.util,json,os,sys,tempfile,unittest,zipfile,subprocess,time
 from pathlib import Path
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[2];sys.path[:0]=[str(ROOT/'scripts'),str(ROOT/'tests/ci/v3')]
@@ -183,7 +183,13 @@ class Lease(unittest.TestCase):
      'conditionsBefore':condition,'conditionsAfter':copy.deepcopy(condition),'start':'2026-11-16T00:00:00Z','end':'2026-11-16T00:14:00Z',
      'ranges':{'conversion_'+k:{'status':'ok','series':[{'values':[[100,120 if k=='lease_seconds'else 30 if k=='renew_interval_seconds'else 1]]}]}for k in l.QUERIES}}
   timing={'terminationLowerAt':'2026-11-16T00:00:01Z','completedAtBounds':['2026-11-16T00:13:00Z','2026-11-16T00:13:00.9Z']}
-  self.assertTrue(l.metrics_ready(m,p,timing)[0]);m['ranges']['conversion_renew_gap_max']['status']='missing'
+  self.assertTrue(l.metrics_ready(m,p,timing)[0])
+  not_exercised=copy.deepcopy(m);not_exercised['ranges']['conversion_heartbeat_renew_max']={'status':'missing','series':[]}
+  not_exercised['ranges']['conversion_heartbeat_outcomes']={'status':'ok','series':[{'labels':{'outcome':x,'namespace':'photo','pod':p['snapshot']['victim']['name']},'values':[[100,0]]}for x in ['renewed','lost','error']]}
+  self.assertTrue(l.metrics_ready(not_exercised,p,timing)[0]);self.assertEqual(not_exercised['ranges']['conversion_heartbeat_renew_max']['status'],'missing')
+  not_exercised['ranges']['conversion_heartbeat_outcomes']['series'][0]['values'][0][1]=1
+  self.assertFalse(l.metrics_ready(not_exercised,p,timing)[0])
+  m['ranges']['conversion_renew_gap_max']['status']='missing'
   self.assertFalse(l.metrics_ready(m,p,timing)[0]);m['leaseVictimPod']='other'
   with self.assertRaises(ValueError):l.metrics_ready(m,p,timing)
  def test_budget_uses_actual_recorded_maxima_not_missing_or_zero(self):
@@ -201,6 +207,81 @@ class Lease(unittest.TestCase):
   code="import importlib.util; s=importlib.util.spec_from_file_location('backend',"+repr(str(source))+"); m=importlib.util.module_from_spec(s);s.loader.exec_module(m); assert m.conversion_lease_policy(dict(zip(m.LEASE_ENV,['120s','30s'])))['durationSeconds']==120"
   result=subprocess.run([sys.executable,'-I','-c',code],text=True,capture_output=True,timeout=5)
   self.assertEqual(result.returncode,0,result.stderr)
+ def test_w2k_acquisition_and_query_freshness_have_separate_budgets(self):
+  p,_,_,_=fixture();legacy,_,_,_=old.fixture()
+  self.assertEqual(w.sampling_policy(legacy['snapshot']),w.SAMPLING)
+  policy=w.sampling_policy(p['snapshot'])
+  self.assertEqual(policy['cycleSeconds'],4);self.assertEqual(policy['callSeconds'],2)
+  self.assertEqual(policy['targetCycleSeconds'],1.5)
+  self.assertEqual(p['criteria']['collectionPolicy'],policy)
+ def test_actual_sequential_identity_and_query_rpcs_fit_only_the_new_total(self):
+  p,_,_,_=fixture();_,Obs,owner,_=old.SamplingCorrection().sampling_inputs()
+  class Backend:
+   def call(self,args,source=None,timeout=20):
+    delay=1.05 if 'mysql' in args else .03
+    subprocess.run([sys.executable,'-c','import time; time.sleep('+str(delay)+')'],check=True,timeout=timeout)
+    return json.dumps(old.pod())
+  def exercise(policy):
+   reads=w.DeadlineKube(Backend(),policy.get('callSeconds'));reads.deadline=time.monotonic()+policy['cycleSeconds'];timing=[]
+   class Db(Obs):
+    def sample(self):
+     reads.call(['-n','mysql','get','pod','mysql-0']);begin=time.monotonic()
+     reads.call(['-n','mysql','exec','mysql-0'])
+     value=super().sample();value['queryElapsedSeconds']=time.monotonic()-begin;return value
+   return w.search_sample(reads,Db(),p['snapshot'],owner,timing.append),timing
+  with self.assertRaises(subprocess.TimeoutExpired):exercise(w.SAMPLING)
+  (proof,_,_),timing=exercise(w.sampling_policy(p['snapshot']))
+  self.assertGreater(timing[0]['cycleSeconds'],2);self.assertLess(timing[0]['cycleSeconds'],4)
+  self.assertLess(proof['queryElapsedSeconds'],2);self.assertFalse(timing[0]['targetMet'])
+ def test_w2k_keeps_stale_query_old_result_changed_pod_and_rpc_timeout_blocked(self):
+  p,_,_,_=fixture();_,Obs,owner,_=old.SamplingCorrection().sampling_inputs()
+  for mode in ('old-result','slow-query','changed-pod'):
+   class Reads:
+    deadline=time.monotonic()+4
+    def get(self,*args):return old.pod(uid=old.NU if mode=='changed-pod'else old.U)
+   class Db(Obs):
+    def sample(self):
+     v=super().sample()
+     if mode=='old-result':v['observedAt']=w.iso(time.time()-2.01)
+     if mode=='slow-query':v['queryElapsedSeconds']=2.01
+     return v
+   with self.subTest(mode=mode),self.assertRaises(f.GuardError):w.search_sample(Reads(),Db(),p['snapshot'],owner,lambda x:None)
+  class Backend:
+   def call(self,args,source=None,timeout=20):
+    self.timeout=timeout
+    raise subprocess.TimeoutExpired(['synthetic-read'],timeout)
+  backend=Backend();reads=w.DeadlineKube(backend,2);reads.deadline=time.monotonic()+4
+  with self.assertRaises(subprocess.TimeoutExpired):reads.call(['get','pod'])
+  self.assertEqual(backend.timeout,2)
+ def test_new_proof_is_case_bound_and_preserves_target_misses(self):
+  p,_,_,k=fixture();_,Obs,owner,_=old.SamplingCorrection().sampling_inputs()
+  with tempfile.TemporaryDirectory()as d,patch.object(w,'WorkerDbObserver',Obs):
+   os.chmod(d,0o700);v=w.sampling_probe(k,p['snapshot'],705,d,owner)
+   v['cycles'][0].update(cycleSeconds=2.2,targetMet=False);v['targetMissCount']=1
+   v['proofSha256']=f.sha({k:x for k,x in v.items()if k!='proofSha256'});w.verify_sampling(v,p['snapshot'])
+   for mode in ('over-total','hidden-miss','legacy-profile','long-interval'):
+    bad=copy.deepcopy(v)
+    if mode=='over-total':bad['cycles'][0]['cycleSeconds']=4.01
+    elif mode=='hidden-miss':bad['targetMissCount']=0
+    elif mode=='legacy-profile':bad['samplingPolicy']=dict(w.SAMPLING)
+    else:bad['startIntervalsSeconds'][0]=4.01
+    bad['proofSha256']=f.sha({k:x for k,x in bad.items()if k!='proofSha256'})
+    with self.subTest(mode=mode),self.assertRaises(f.GuardError):w.verify_sampling(bad,p['snapshot'])
+ def test_lazy_heartbeat_duration_is_not_measured_zero_or_blanket_missing_permission(self):
+  m={'leaseVictimPod':'photo-converter-a-b','ranges':{
+   'conversion_heartbeat_renew_max':{'status':'missing','series':[]},
+   'conversion_heartbeat_outcomes':{'status':'ok','series':[{'labels':{'outcome':x,'namespace':'photo','pod':'photo-converter-a-b'},'values':[[1,0],[2,0]]}for x in ['renewed','lost','error']]}}}
+  original=copy.deepcopy(m);self.assertTrue(l.heartbeat_duration_not_exercised(m));self.assertEqual(m,original)
+  for mode in ('positive-count','missing-outcome','wrong-pod','nan-count','query-error','no-values','missing-counter'):
+   bad=copy.deepcopy(m);counts=bad['ranges']['conversion_heartbeat_outcomes'];duration=bad['ranges']['conversion_heartbeat_renew_max']
+   if mode=='positive-count':counts['series'][0]['values'][1][1]=1
+   elif mode=='missing-outcome':counts['series'].pop()
+   elif mode=='wrong-pod':counts['series'][0]['labels']['pod']='other'
+   elif mode=='nan-count':counts['series'][0]['values'][1][1]=float('nan')
+   elif mode=='query-error':duration['status']='error'
+   elif mode=='no-values':counts['series'][0]['values']=[]
+   else:counts['status']='missing'
+   with self.subTest(mode=mode):self.assertFalse(l.heartbeat_duration_not_exercised(bad))
  def test_historical_contract_stays_frozen(self):
   lock=w.contract();self.assertEqual(lock['leaseSeconds'],600)
   self.assertEqual(lock['beSource'],w.BE_SOURCE)

@@ -153,6 +153,7 @@ def criteria(r):
     validate_review(r)
     import v3_worker_fault as w
     value=w.criteria(True)
+    value['collectionPolicy']=w.sampling_policy({'leaseReview':r})
     value.update(leaseSeconds=r['policy']['durationSeconds'],heartbeatSeconds=30,postDeathCohortRule=COHORT_RULE,
                  terminationToCompletionTargetSeconds=max(r['policy']['durationSeconds'],180)+15+240+30)
     value['basis']=dict(value['basis'],overall='max(policy lease, earlier cold readiness rounded to 180) + claim 15 + completion 240 + observer/variation 30; engineering target, not SLO',
@@ -192,6 +193,19 @@ def metrics_conditions(m):
     return f.sha({'apps':apps,'scalingPolicies':a['scalingPolicies'],'nodeTypes':a['nodeTypes']})
 
 
+def heartbeat_duration_not_exercised(m):
+    # Micrometer creates this timer on the first periodic heartbeat. A short
+    # photo task can finish before 30s: preserve missing, never synthesize 0s.
+    rows=m.get('ranges',{});duration=rows.get('conversion_heartbeat_renew_max',{})
+    counts=rows.get('conversion_heartbeat_outcomes',{})
+    series=counts.get('series',[]);pod=m.get('leaseVictimPod')
+    return bool(duration.get('status')=='missing' and not duration.get('series') and
+        counts.get('status')=='ok' and len(series)==3 and pod and
+        {x.get('labels',{}).get('outcome')for x in series}=={'renewed','lost','error'} and
+        all(x.get('labels',{}).get('namespace')=='photo' and x.get('labels',{}).get('pod')==pod and
+            x.get('values') and all(type(v)in(int,float) and math.isfinite(v) and v==0 for _,v in x['values'])for x in series))
+
+
 def metrics_ready(m,plan,timing):
     import v3_worker_fault as w
     f.require(m.get('leaseReviewSha256')==plan['snapshot']['leaseReview']['reviewSha256'] and
@@ -201,8 +215,9 @@ def metrics_ready(m,plan,timing):
               w.epoch(m['end'])>=math.floor(w.epoch(timing['completedAtBounds'][1])),'Metrics window does not cover kill through completion')
     conditions=metrics_conditions(m)
     rows=m.get('ranges',{})
-    ok=all(rows.get('conversion_'+key,{}).get('status')=='ok' and rows['conversion_'+key].get('series') for key in QUERIES)
-    for key in QUERIES:
+    required=[key for key in QUERIES if key!='heartbeat_renew_max' or not heartbeat_duration_not_exercised(m)]
+    ok=all(rows.get('conversion_'+key,{}).get('status')=='ok' and rows['conversion_'+key].get('series') for key in required)
+    for key in required:
         points=[v for series in rows.get('conversion_'+key,{}).get('series',[])for _,v in series.get('values',[])]
         ok=ok and bool(points) and all(type(v)in(int,float) and math.isfinite(v) and v>=0 for v in points)
     for key,expected in [('lease_seconds',plan['criteria']['leaseSeconds']),('renew_interval_seconds',30)]:
@@ -241,6 +256,7 @@ def assess(plan,directory,trace,metrics):
         'policy':plan['snapshot']['leaseReview']['policy'],'beImage':plan['snapshot']['beImage'],'input':plan['input'],
         'conditionsFingerprint':condition_fingerprint,'metricsSourceSha256':f.sha(metrics),'leaseMetricsReady':metric_ready,
         'evidenceComplete':recovery,'automaticRecovery':True if recovery else None,'cohortRetried':bool(retried),
+        'heartbeatDurationStatus':'not_exercised' if heartbeat_duration_not_exercised(metrics) else 'observed' if metrics.get('ranges',{}).get('conversion_heartbeat_renew_max',{}).get('status')=='ok' else 'unavailable',
         'savedResultsPreserved':preserved,'finalIdentityMatched':original['identityMatched'],'traceReady':original['traceAvailable'],
         'eligibilityToClaimBounds':timing.get('eligibilityToClaimBounds'),'claimToCompletionBounds':timing.get('claimToCompletionBounds'),
         'terminationToCompletionBounds':total,'overallTargetSeconds':plan['criteria']['terminationToCompletionTargetSeconds'],

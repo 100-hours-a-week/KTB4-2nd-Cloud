@@ -104,11 +104,11 @@ def input_accepted(rows):
 
 class DeadlineKube:
     """All reads in one phase share a monotonic deadline; cleanup uses original Kube."""
-    def __init__(self,k):self.k,self.deadline=k,None
+    def __init__(self,k,call_seconds=None):self.k,self.deadline,self.call_seconds=k,None,call_seconds
     def call(self,args,source=None,timeout=20):
         remaining=self.deadline-time.monotonic() if self.deadline is not None else timeout
         if remaining<=0:raise subprocess.TimeoutExpired(['phase-budget'],0)
-        return self.k.call(args,source,timeout=min(timeout,remaining))
+        return self.k.call(args,source,timeout=min(timeout,remaining,self.call_seconds) if self.call_seconds is not None else min(timeout,remaining))
     def get(self,kind,namespace=None,name=None,selector=None):
         args=(['-n',namespace] if namespace else [])+['get',kind]
         if name:args.append(name)
@@ -136,11 +136,20 @@ class WorkerDbObserver(DbObserver):
         return result
 
 
-# Preserve the existing 2s evidence-freshness ceiling as the total concurrent
-# cycle deadline. 1.5s is a reported acquisition target, not a transport timeout:
-# pinned MySQL Pod identity GET + exec are sequential inside the DB path. Neither
-# deadline nor a passing probe guarantees the native saved=2..4 kill window.
+# Legacy W1/W1K retain the original 2s total deadline. W2K separates the
+# sequential identity and query RPCs below while retaining 2s result freshness.
+# The 1.5s acquisition target is still reported; passing a probe never
+# guarantees the native saved=2..4 kill window.
 SAMPLING = {'samples':5,'cycleSeconds':2,'targetCycleSeconds':1.5,'periodSeconds':1,'maxStartIntervalSeconds':2}
+
+
+def sampling_policy(snapshot):
+    # Keep W1/W1K frozen. W2K separates the sequential Pod identity RPC from
+    # the DB exec RPC: each remains bounded to 2s, total acquisition to 4s.
+    # Result age/query duration and the final pre-create age stay at 2s.
+    if snapshot.get('leaseReview') is not None:
+        return dict(SAMPLING,cycleSeconds=4,maxStartIntervalSeconds=4,callSeconds=2)
+    return dict(SAMPLING)
 
 
 def search_sample(reads,observer,snapshot,owner_reader,record):
@@ -171,26 +180,27 @@ def search_sample(reads,observer,snapshot,owner_reader,record):
         return proof,owner,pod
     finally:
         timing['cycleSeconds']=time.monotonic()-started;timing['completedAt']=f.now()
-        timing['targetMet']=not timing['errors'] and timing['cycleSeconds']<=SAMPLING['targetCycleSeconds']
+        timing['targetMet']=not timing['errors'] and timing['cycleSeconds']<=sampling_policy(snapshot)['targetCycleSeconds']
         record(timing)
 
 
 def sampling_probe(k,snapshot,trip_id,directory,owner_reader):
     validate_snapshot(snapshot);directory=Path(directory)
     f.require(directory.is_dir() and not directory.is_symlink() and directory.stat().st_mode&0o077==0 and not any(directory.iterdir()),'Empty private sampling directory required')
-    db=directory/'db';db.mkdir(mode=0o700);reads=DeadlineKube(k);observer=WorkerDbObserver(reads,snapshot,trip_id,db)
+    policy=sampling_policy(snapshot)
+    db=directory/'db';db.mkdir(mode=0o700);reads=DeadlineKube(k,policy.get('callSeconds'));observer=WorkerDbObserver(reads,snapshot,trip_id,db)
     cycles=[];starts=[];error=None
     try:
-        for i in range(SAMPLING['samples']):
-            start=time.monotonic();starts.append(start);reads.deadline=start+SAMPLING['cycleSeconds']
-            observer.SAMPLE_SECONDS=SAMPLING['cycleSeconds']
+        for i in range(policy['samples']):
+            start=time.monotonic();starts.append(start);reads.deadline=start+policy['cycleSeconds']
+            observer.SAMPLE_SECONDS=policy['cycleSeconds']
             search_sample(reads,observer,snapshot,owner_reader,cycles.append)
-            if i+1<SAMPLING['samples']:time.sleep(max(0,start+SAMPLING['periodSeconds']-time.monotonic()))
+            if i+1<policy['samples']:time.sleep(max(0,start+policy['periodSeconds']-time.monotonic()))
     except (ValueError,OSError,subprocess.SubprocessError)as failure:error=type(failure).__name__
     intervals=[b-a for a,b in zip(starts,starts[1:])]
-    ready=error is None and len(cycles)==SAMPLING['samples'] and not observer.gaps and not observer.exhausted and all(
-        not x['errors'] and x['cycleSeconds']<=SAMPLING['cycleSeconds']for x in cycles) and all(x<=SAMPLING['maxStartIntervalSeconds']for x in intervals)
-    result={'at':f.now(),'toolSha256':tool_hash(),'snapshot':snapshot,'readTripId':trip_id,'samplingPolicy':SAMPLING,
+    ready=error is None and len(cycles)==policy['samples'] and not observer.gaps and not observer.exhausted and all(
+        not x['errors'] and x['cycleSeconds']<=policy['cycleSeconds']for x in cycles) and all(x<=policy['maxStartIntervalSeconds']for x in intervals)
+    result={'at':f.now(),'toolSha256':tool_hash(),'snapshot':snapshot,'readTripId':trip_id,'samplingPolicy':policy,
             'cycles':cycles,'targetMissCount':sum(not x['targetMet'] for x in cycles),
             'startIntervalsSeconds':intervals,'samplingReady':ready,'errorKind':error,
             'injected':False,'gpuChanged':False,'notRecoveryOrWindowProof':True}
@@ -201,18 +211,19 @@ def sampling_probe(k,snapshot,trip_id,directory,owner_reader):
 
 
 def verify_sampling(proof,snapshot):
+    policy=sampling_policy(snapshot)
     f.require(proof.get('proofSha256')==f.sha({k:v for k,v in proof.items()if k!='proofSha256'}) and
-              proof.get('toolSha256')==tool_hash() and proof.get('samplingPolicy')==SAMPLING and
+              proof.get('toolSha256')==tool_hash() and proof.get('samplingPolicy')==policy and
               proof.get('samplingReady')is True and proof.get('errorKind')is None and proof.get('injected')is False and proof.get('gpuChanged')is False and
               0<=time.time()-epoch(proof['at'])<=300,'Fresh passing sampling proof required')
     validate_snapshot(proof['snapshot'])
     f.require(all(proof['snapshot'][key]==snapshot[key]for key in ('kubeSystemUid','approvedRevision','victim','mysql','apps')),'Sampling proof target changed')
     cycles=proof.get('cycles',[]);intervals=proof.get('startIntervalsSeconds',[])
-    f.require(len(cycles)==SAMPLING['samples'] and len(intervals)==SAMPLING['samples']-1 and
-              all(not x['errors'] and finite(x['cycleSeconds']) and 0<=x['cycleSeconds']<=SAMPLING['cycleSeconds'] and
-                  x.get('targetMet')is (x['cycleSeconds']<=SAMPLING['targetCycleSeconds'])for x in cycles)and
+    f.require(len(cycles)==policy['samples'] and len(intervals)==policy['samples']-1 and
+              all(not x['errors'] and finite(x['cycleSeconds']) and 0<=x['cycleSeconds']<=policy['cycleSeconds'] and
+                  x.get('targetMet')is (x['cycleSeconds']<=policy['targetCycleSeconds'])for x in cycles)and
               proof.get('targetMissCount')==sum(not x.get('targetMet')for x in cycles)and
-              all(finite(x)and 0<=x<=SAMPLING['maxStartIntervalSeconds']for x in intervals),'Sampling timing proof incomplete')
+              all(finite(x)and 0<=x<=policy['maxStartIntervalSeconds']for x in intervals),'Sampling timing proof incomplete')
 
 
 def app_templates(k):
@@ -471,6 +482,7 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
         f.require(not k.get('podchaos','photo')['items'],'Concurrent PodChaos forbidden')
         f.private_write(directory/'input-ready.json',{'at':f.now(),'planSha256':expected,'faultCreated':False,
                         'releaseInputNow':True,'case':p['case']})
+        policy=sampling_policy(p['snapshot']);reads.call_seconds=policy.get('callSeconds')
         selected=None; search=time.monotonic()+p['criteria']['searchSeconds'];pairs=0;previous_cycle=None
         def observe_pair():
             nonlocal pairs
@@ -486,9 +498,9 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
             cycle_start=time.monotonic()
             if container:
                 if previous_start is not None:
-                    f.require(cycle_start-previous_start<=SAMPLING['maxStartIntervalSeconds'],'Search observation interval exceeded')
+                    f.require(cycle_start-previous_start<=policy['maxStartIntervalSeconds'],'Search observation interval exceeded')
                 previous_start=cycle_start
-                reads.deadline=min(search,cycle_start+SAMPLING['cycleSeconds'])
+                reads.deadline=min(search,cycle_start+policy['cycleSeconds'])
                 observer.SAMPLE_SECONDS=max(.001,reads.deadline-time.monotonic())
                 timing=[]
                 try:proof,owner,pod=search_sample(reads,observer,p['snapshot'],owner_reader,timing.append)
@@ -535,6 +547,7 @@ def execute(k,p,expected,directory,owner_reader,profile_receipt,stop_guard,reade
         f.private_write(directory/'owned-PodChaos.json',{'kind':'PodChaos','name':p['runId'],'uid':uid,'runId':p['runId']})
         receipt['case']=p['case'];receipt['victimContainerId']=p['snapshot']['victim']['containerId']
         if container:f.require(normalized_fault(fault['spec'])==p['fault']['spec'],'Admitted container fault changed; inspect possible injection')
+        reads.call_seconds=None # recovery keeps its original 45s observation/retry budget
         deadline=mono+p['criteria']['observationSeconds'];state='incomplete'; samples=[]
         while time.monotonic()<deadline:
             reads.deadline=deadline;observer.SAMPLE_SECONDS=min(45,max(.001,deadline-time.monotonic()))
