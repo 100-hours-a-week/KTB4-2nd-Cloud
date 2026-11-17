@@ -440,7 +440,8 @@
             "STORY_RESULT_LISTENER_ENABLED": "false",
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
-            "TRIP_STATUS_POLLING_ENABLED": "false"
+            "TRIP_STATUS_POLLING_ENABLED": "false",
+            "REQUEST_RATE_LIMIT_ENABLED": "true"
           },
           "enabled": true,
           "imageRef": "backend",
@@ -554,7 +555,8 @@
             "STORY_RESULT_LISTENER_ENABLED": "false",
             "STORY_STATUS_POLLING_ENABLED": "false",
             "TRIP_RESULT_WORKER_ENABLED": "false",
-            "TRIP_STATUS_POLLING_ENABLED": "false"
+            "TRIP_STATUS_POLLING_ENABLED": "false",
+            "REQUEST_RATE_LIMIT_ENABLED": "true"
           },
           "enabled": true,
           "imageRef": "backend",
