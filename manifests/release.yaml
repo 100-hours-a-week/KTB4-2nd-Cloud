@@ -332,7 +332,7 @@ data:
   ATTACHMENT_CONVERSION_GROUP_PREFIX: prod.yeodam.image-conversion
   ATTACHMENT_CONVERSION_INITIAL_HEIC_TOPIC: prod.yeodam.image.initial-heic
   ATTACHMENT_CONVERSION_INITIAL_LIGHT_TOPIC: prod.yeodam.image.initial-light
-  ATTACHMENT_CONVERSION_LEASE_DURATION: 600s
+  ATTACHMENT_CONVERSION_LEASE_DURATION: 120s
   ATTACHMENT_CONVERSION_LEASE_RENEW_INTERVAL: 30s
   ATTACHMENT_CONVERSION_MAX_MESSAGE_BYTES: '262144'
   ATTACHMENT_CONVERSION_MODE: KAFKA
@@ -1315,7 +1315,7 @@ spec:
   template:
     metadata:
       annotations:
-        yeodam.io/configuration-checksum: 7e5793ade6f8600d3e235a9acd2349d60f0365517e8e9af6b2686bb08ae78142
+        yeodam.io/configuration-checksum: 9c49ca63be42506e2086eaef19389f5c99a3176bdf6aae135abb656e7082de35
         yeodam.io/configuration-revision: 42c0a06903d141bdfaca85b4c2d8ee32b13e18359f9712f94a7f05abc4abe26c
         yeodam.io/image: ghcr.io/100-hours-a-week/yeodam-backend@sha256:40d3a2da35571d673544351b04ec5096ac417f96b0a79e7fce81f6f72b9006f5
       labels:
