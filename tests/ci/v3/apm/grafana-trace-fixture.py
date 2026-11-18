@@ -8,8 +8,12 @@ STATE=Path('/state/workflow.json')
 BASE='http://v3-grafana:3000'
 def read(url,data=None,timeout=45):
     req=urllib.request.Request(url,data=data,headers={'Content-Type':'application/json','Accept':'application/json'})
-    with urllib.request.urlopen(req,timeout=timeout) as response:
-        raw=response.read(16*1024*1024+1)
+    try:
+        with urllib.request.urlopen(req,timeout=timeout) as response:
+            raw=response.read(16*1024*1024+1)
+    except urllib.error.HTTPError as error:
+        error.add_note('Synthetic query diagnostic: '+error.read(2048).decode(errors='replace'))
+        raise
     assert len(raw)<=16*1024*1024,'Response budget exceeded'
     return json.loads(raw)
 def wait(url):
@@ -41,12 +45,15 @@ def query():
     assert not disabled.intersection(ids),'Disabled backend still registered'
     expected={f'{i:016x}'for i in range(1,state['spanCount']+1)};durations=[];bytes_seen=[]
     for attempt in range(3):
-        payload={'from':str(int((time.time()-120)*1000)),'to':str(int((time.time()+5)*1000)),
-                 'queries':[{'refId':'A','datasource':{'type':'tempo','uid':'v3-tempo'},'queryType':'traceql','query':state['traceId'],'maxDataPoints':1000,'intervalMs':1000}]}
+        # The v13.3 frontend converts a raw ID to backend traceId and clears the
+        # time range in makeTraceIdRequest; traceql is only the UI input mode.
+        payload={'from':'0','to':'0',
+                 'queries':[{'refId':'A','datasource':{'type':'tempo','uid':'v3-tempo'},'queryType':'traceId','query':state['traceId'],'maxDataPoints':1000,'intervalMs':1000}]}
         started=time.monotonic();body=read(BASE+'/api/ds/query',json.dumps(payload).encode());durations.append(time.monotonic()-started)
         result=body['results']['A'];assert not result.get('error'),str(result.get('error'))[:200]
         frames=result.get('frames',[]);assert len(frames)==1,'Expected one complete Trace frame'
-        frame=frames[0];fields={x['name'].replace('_','').lower():v for x,v in zip(frame['schema']['fields'],frame['data']['values'])}
+        frame=frames[0];assert not frame.get('schema',{}).get('meta',{}).get('custom',{}).get('partial',False),'Partial Trace response'
+        fields={x['name'].replace('_','').lower():v for x,v in zip(frame['schema']['fields'],frame['data']['values'])}
         assert set(fields['spanid'])==expected,'Truncated or different span IDs'
         assert len(fields['spanid'])==state['spanCount'],'Duplicated frame spans'
         index={sid:i for i,sid in enumerate(fields['spanid'])}

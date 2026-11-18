@@ -230,6 +230,41 @@ permissions:
   contents: read
 
 jobs:
+  grafana-runtime:
+    name: Grafana bounded Trace runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Prepare pinned Helm and isolated renderer
+        run: |
+          python3 -m venv "$RUNNER_TEMP/grafana-venv"
+          "$RUNNER_TEMP/grafana-venv/bin/python" -m pip install --disable-pip-version-check -q PyYAML==6.0.2
+          python3 - <<'PY'
+          import importlib.util, io, json, os, tarfile
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('tools','scripts/prepare-v3-validation.py')
+          tools=importlib.util.module_from_spec(spec);spec.loader.exec_module(tools)
+          entry=json.loads(Path('tests/ci/v3/tools.lock.json').read_text())['platforms']['linux-amd64']['helm']
+          target=Path(os.environ['RUNNER_TEMP'])/'grafana-helm'
+          with tarfile.open(fileobj=io.BytesIO(tools.download(entry)),mode='r:gz') as archive:
+              member=archive.getmember(entry['member']);assert member.isfile()
+              target.write_bytes(archive.extractfile(member).read());target.chmod(0o755)
+          PY
+      - name: Compare identical-budget Grafana Trace queries
+        env:
+          V3_HELM: ${{ runner.temp }}/grafana-helm
+          V3_GRAFANA_RESULTS: ${{ runner.temp }}/grafana-trace
+        run: '"$RUNNER_TEMP/grafana-venv/bin/python" tests/ci/smoke-v3-grafana-trace.py'
+      - name: Preserve synthetic Grafana memory comparison
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: grafana-trace-memory-${{ github.run_id }}
+          path: ${{ runner.temp }}/grafana-trace
+          retention-days: 7
+          if-no-files-found: ignore
+
   apm-runtime:
     name: APM pipeline and real image compatibility
     runs-on: ubuntu-24.04
@@ -391,21 +426,6 @@ jobs:
           V3_HELM: ${{ runner.temp }}/yeodam-v3-validation/helm
         run: |
           "$RUNNER_TEMP/yeodam-v3-validation/venv/bin/python" tests/ci/smoke-v3-metrics.py
-
-      - name: Compare bounded Grafana Trace query with unused backend baseline
-        env:
-          V3_HELM: ${{ runner.temp }}/yeodam-v3-validation/helm
-          V3_GRAFANA_RESULTS: ${{ runner.temp }}/grafana-trace
-        run: '"$RUNNER_TEMP/yeodam-v3-validation/venv/bin/python" tests/ci/smoke-v3-grafana-trace.py'
-
-      - name: Preserve synthetic Grafana memory comparison
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: grafana-trace-memory-${{ github.run_id }}
-          path: ${{ runner.temp }}/grafana-trace
-          retention-days: 7
-          if-no-files-found: ignore
 
       - name: Validate AI log authority with mock AWS only
         run: |
