@@ -38,9 +38,10 @@ def main():
         grafana=next(x for x in docs if x['kind']=='Deployment'and x['metadata']['name']=='v3-grafana')['spec']['template']['spec']['containers'][0]
         import yaml
         source=next(x for x in docs if x['kind']=='ConfigMap'and x['metadata']['name']=='v3-grafana-config')['data']['datasource.yaml']
-        # No external datasource request: only local Tempo is provisioned here. The existing
-        # metrics runtime separately exercises Prometheus and CloudWatch with a fake SDK endpoint.
-        provision=yaml.safe_load(source);provision['datasources']=[x for x in provision['datasources']if x['uid']=='v3-tempo'];provision['datasources'][0]['url']='http://v3-tempo.observability.svc:3200'
+        # Preserve all three registered types. Only Tempo is queried here; the internal
+        # network has no AWS route. The existing metrics runtime exercises the other two.
+        provision=yaml.safe_load(source)
+        next(x for x in provision['datasources']if x['uid']=='v3-tempo')['url']='http://v3-tempo.observability.svc:3200'
         (root/'datasource.yaml').write_text(yaml.safe_dump(provision))
         fixture_mounts=[(sdk,'/otel','ro'),(ROOT/'tests/ci/v3/apm','/fixture','ro'),(ROOT/'scripts','/evidence','ro'),(state,'/state','rw')]
         fixture_env=['PYTHONPATH=/otel','PYTHONDONTWRITEBYTECODE=1','PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python']
@@ -59,12 +60,13 @@ def main():
                 if not s['Running']:break
                 time.sleep(1)
             else:raise AssertionError('Synthetic Grafana query exceeded total budget')
-            logs=run('docker','logs',probe);status=json.loads(run('docker','inspect','--format','{{json .State}}',name))
+            log_read=subprocess.run(['docker','logs',probe],capture_output=True,text=True,timeout=10)
+            logs=log_read.stdout;status=json.loads(run('docker','inspect','--format','{{json .State}}',name))
             process_count=subprocess.run(['docker','exec',name,'sh','-c','for d in /proc/[0-9]*/exe; do readlink "$d" 2>/dev/null; done'],capture_output=True,text=True,timeout=5)
             count=sum('/plugins-bundled/'in line for line in process_count.stdout.splitlines())
             row={'queryExitCode':s['ExitCode'],'grafanaOomKilled':status['OOMKilled'],'grafanaRunning':status['Running'],'backendProcesses':count,'memoryLimitBytes':268435456,'cpuLimitCores':.25,'memoryMaxSampleBytes':max(samples)if samples else None,'memorySamples':samples}
             if s['ExitCode']==0:row['query']=json.loads(logs.strip().splitlines()[-1])
-            else:row['queryFailure']=logs[-1800:]
+            else:row['queryFailure']=(logs+log_read.stderr)[-1800:]
             proof['profiles'][profile]=row
             (out/'comparison.json').write_text(json.dumps(proof,indent=2))
             if profile=='bounded':

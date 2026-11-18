@@ -34,8 +34,9 @@ def seed():
     print(json.dumps({'seeded':6144,'businessParentPath':True,'syntheticOnly':True}),flush=True)
 def query():
     wait(BASE+'/api/health');state=json.loads(STATE.read_text())
+    sources=read(BASE+'/api/datasources')
+    assert {(x['uid'],x['type'])for x in sources}=={('v3-prometheus','prometheus'),('v3-tempo','tempo'),('v3-cloudwatch-logs','cloudwatch')},'Registered datasource missing'
     plugins=read(BASE+'/api/plugins');ids={x['id']for x in plugins}
-    assert {'prometheus','tempo','cloudwatch'}<=ids,'Active datasource backend missing'
     disabled=set(os.environ.get('EXPECTED_DISABLED','').split(','))-{''}
     assert not disabled.intersection(ids),'Disabled backend still registered'
     expected={f'{i:016x}'for i in range(1,state['spanCount']+1)};durations=[];bytes_seen=[]
