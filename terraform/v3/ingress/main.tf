@@ -21,6 +21,12 @@ variable "enable_waf" {
   default = false
 }
 
+# Explicit rollout only after finite normal/abusive traffic measurements.
+variable "rate_limit_block_enabled" {
+  type    = bool
+  default = false
+}
+
 locals {
   cluster = "yeodam-v3-foundation"
   vpc     = "vpc-0ecc3132f3b2170e9"
@@ -140,7 +146,8 @@ output "alb_security_group_id" { value = var.enabled ? aws_security_group.alb[0]
 output "certificate_arn" { value = var.enabled ? aws_acm_certificate_validation.validation[0].certificate_arn : null }
 output "host" { value = local.host }
 
-# Managed here, not by Controller IAM. Rates are observation-only until measured.
+# Existing IP rates stay Count by default; reviewed rollout can enable Block.
+# This coarse emergency cap cannot isolate users sharing a NAT; user buckets remain in BE.
 resource "aws_wafv2_web_acl" "validation" {
   count = var.enabled && var.enable_waf ? 1 : 0
   name  = "yeodam-v3-validation"
@@ -157,7 +164,15 @@ resource "aws_wafv2_web_acl" "validation" {
     name     = "block-internal"
     priority = 0
     action {
-      block {}
+      block {
+        custom_response {
+          response_code = 403
+          response_header {
+            name  = "X-Yeodam-Edge"
+            value = "waf-internal"
+          }
+        }
+      }
     }
     statement {
       or_statement {
@@ -201,7 +216,22 @@ resource "aws_wafv2_web_acl" "validation" {
       name     = "observe-${rule.key}"
       priority = rule.value.priority
       action {
-        count {}
+        dynamic "count" {
+          for_each = var.rate_limit_block_enabled ? [] : [1]
+          content {}
+        }
+        dynamic "block" {
+          for_each = var.rate_limit_block_enabled ? [1] : []
+          content {
+            custom_response {
+              response_code = 429
+              response_header {
+                name  = "X-Yeodam-Edge"
+                value = "waf-rate-${rule.key}"
+              }
+            }
+          }
+        }
       }
       statement {
         rate_based_statement {

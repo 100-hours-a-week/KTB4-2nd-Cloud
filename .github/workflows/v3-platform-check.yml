@@ -363,6 +363,11 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/validate-v3-platform.sh
 
+      - name: Verify finite final-load evidence and operational restoration guards
+        run: |
+          node --test tests/load/tests/v3-final.test.mjs
+          python3 -m unittest discover -s tests/ci -p 'test_v3_final_controls.py'
+
       - name: Verify read-only Outbox aggregates with isolated MySQL
         run: python3 tests/ci/smoke-v3-outbox-observer.py
 
