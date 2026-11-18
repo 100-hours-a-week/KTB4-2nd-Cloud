@@ -34,6 +34,10 @@ export class Session {
     if(refreshed.status!==200&&refreshed.status!==204)throw Error('Authentication renewal failed');
     this.refreshes++;
   }
+  async ensureLifetime(seconds) {
+    const claims=JSON.parse(Buffer.from(this.cookies.get('accessToken').split('.')[1],'base64url'));
+    if(claims.exp*1000-Date.now()<(seconds+60)*1000)await this.renew();
+  }
   async identity() {
     const r=await this.request('/api/users/me');if(r.status!==200)throw Error('Identity failed: '+r.status);
     const token=this.cookies.get('accessToken');const claims=JSON.parse(Buffer.from(token.split('.')[1],'base64url'));
@@ -58,6 +62,7 @@ export async function readLoad(session, tripId, stages, {concurrency=48,emit=()=
   const inflight=new Set();let fatal=null;
   for(const [index,s] of stages.entries()){
     if(!await safe())throw Error('Pre-stage service health check failed');
+    await session.ensureLifetime(s.seconds+15);
     const origin=performance.now();const rows=[];const expected=s.rate*s.seconds;let droppedLate=0,droppedBusy=0;const counts={};
     emit({event:'stage_started',index,...s,at:new Date().toISOString()});
     for(let slot=0;slot<expected;slot++){
