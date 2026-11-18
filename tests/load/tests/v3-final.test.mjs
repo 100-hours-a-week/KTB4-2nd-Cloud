@@ -11,7 +11,7 @@ test('arrival budget rejects overrun, nonfinite and excessive concurrency',async
 test('slow responses produce visible generator drops; only valid business replies form latency sample',async()=>{
   let n=0;const session=new Session(cookies,async url=>{const isTrip=url.endsWith('/73');if(isTrip&&n++>0)await new Promise(r=>setTimeout(r,150));return new Response(JSON.stringify({data:{tripId:73}}),{status:200});});
   const r=await readLoad(session,73,[{rate:20,seconds:1}],{concurrency:1});const s=r.stages[0];
-  assert(s.droppedBusy>0);assert.equal(s.offered,s.emitted+s.droppedBusy+s.droppedLate);assert(s.validGoodputRps<20);assert(s.p95Ms>=100);
+  assert(s.droppedBusy>0);assert.equal(s.offered,s.emitted+s.droppedBusy+s.droppedLate);assert(s.validGoodputRps<20);assert(s.p95Ms>=100);assert(s.elapsedSeconds>=1);
 });
 test('an expired session stops measured traffic without mixing refresh or login into HTTP results',async()=>{
   let n=0;const session=new Session(cookies,async url=>new Response(JSON.stringify({data:{tripId:73}}),{status:url.endsWith('/73')&&n++>0?401:200}));

@@ -74,6 +74,7 @@ export async function readLoad(session, tripId, stages, {concurrency=48,emit=()=
       inflight.add(operation);operation.finally(()=>inflight.delete(operation));
       if(slot>0&&slot%s.rate===0){const last=rows.slice(-Math.max(20,s.rate*5));if(last.length>=20&&last.filter(r=>r.status===0||r.status>=500).length/last.length>0.05)fatal='Rolling transport/5xx budget exceeded';}
     }
+    const remaining=origin+s.seconds*1000-performance.now();if(remaining>0)await sleep(remaining);
     await Promise.all(inflight);const valid=rows.filter(x=>x.valid);const elapsed=(performance.now()-origin)/1000;
     const stage={...s,index,offered:expected,emitted:rows.length,droppedLate,droppedBusy,counts,elapsedSeconds:elapsed,achievedRps:rows.length/elapsed,validGoodputRps:valid.length/elapsed,p50Ms:percentile(valid.map(x=>x.ms),.5),p95Ms:percentile(valid.map(x=>x.ms),.95),p99Ms:percentile(valid.map(x=>x.ms),.99),samples:rows};
     result.stages.push(stage);emit({event:'stage_completed',index,counts,p95Ms:stage.p95Ms,droppedLate,droppedBusy,at:new Date().toISOString()});
