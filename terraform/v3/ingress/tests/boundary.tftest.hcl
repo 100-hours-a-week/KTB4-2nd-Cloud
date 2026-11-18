@@ -69,3 +69,20 @@ run "waf_before_dns" {
     error_message = "Rate rules must remain Count during initial measurement, with request samples disabled."
   }
 }
+
+run "explicit_measured_rate_block" {
+  command = plan
+  variables {
+    enabled                  = true
+    enable_waf               = true
+    rate_limit_block_enabled = true
+  }
+  assert {
+    condition     = length([for r in aws_wafv2_web_acl.validation[0].rule : r if length(r.action[0].block) > 0]) == 3 && alltrue([for r in aws_wafv2_web_acl.validation[0].rule : !r.visibility_config[0].sampled_requests_enabled])
+    error_message = "Explicit rollout blocks with source markers while preserving no request sampling."
+  }
+  assert {
+    condition     = toset([for r in aws_wafv2_web_acl.validation[0].rule : r.statement[0].rate_based_statement[0].limit if startswith(r.name, "observe-")]) == toset([500, 5000])
+    error_message = "Never silently lower thresholds to make a final trial pass."
+  }
+}
