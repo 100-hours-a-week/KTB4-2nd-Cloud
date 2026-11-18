@@ -8,6 +8,8 @@ from pathlib import Path
 import yaml
 ROOT = Path(__file__).resolve().parents[1]
 CHART = ROOT / 'deploy/v3/metrics'
+GRAFANA_DISABLED_PLUGINS = {'elasticsearch', 'grafana-postgresql-datasource', 'grafana-pyroscope-datasource',
+    'influxdb', 'jaeger', 'loki', 'mssql', 'mysql', 'opentsdb', 'stackdriver', 'zipkin'}
 
 def require(ok, message):
     if not ok:
@@ -51,6 +53,9 @@ def validate(docs):
     grafana=next(d for d in deps if d['metadata']['name']=='v3-grafana')['spec']['template']['spec']['containers'][0]
     env={x['name']:x.get('value')for x in grafana['env']}
     require(env['GF_AUTH_ANONYMOUS_ORG_ROLE']=='Viewer' and env['GF_AUTH_BASIC_ENABLED']=='false' and env['GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION']=='true','Viewer only; no administrator or login expansion')
+    require(set(env.get('GF_PLUGINS_DISABLE_PLUGINS', '').split(',')) == GRAFANA_DISABLED_PLUGINS,
+            'Only unused bundled backends disabled; Prometheus, Tempo and CloudWatch preserved')
+    require(env.get('GOMEMLIMIT') == '160MiB' and env.get('GOGC') == '50', 'Preserve reviewed Go memory budget')
     apm=any(x['job_name']=='apm-tempo'for x in cfg['scrape_configs'])
     sources=yaml.safe_load(next(x for x in docs if x['kind']=='ConfigMap' and x['metadata']['name']=='v3-grafana-config')['data']['datasource.yaml'])['datasources']
     logs=[x for x in sources if x.get('uid')=='v3-cloudwatch-logs']

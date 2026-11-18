@@ -32,6 +32,13 @@ class Chart(unittest.TestCase):
     def setUpClass(cls):cls.docs=chart.render()
     def test_disabled_and_auth_optional_without_plaintext(self):
         self.assertEqual(chart.render(False),[]);self.assertTrue(chart.validate(self.docs));self.assertTrue(chart.validate(chart.render(ai=False)))
+    def test_unused_backends_cannot_return_or_disable_active_sources(self):
+        for value in ['', ','.join(sorted(chart.GRAFANA_DISABLED_PLUGINS - {'loki'})), ','.join(sorted(chart.GRAFANA_DISABLED_PLUGINS | {'tempo'}))]:
+            docs=copy.deepcopy(self.docs)
+            env=next(x for x in docs if x['kind']=='Deployment' and x['metadata']['name']=='v3-grafana')['spec']['template']['spec']['containers'][0]['env']
+            next(x for x in env if x['name']=='GF_PLUGINS_DISABLE_PLUGINS')['value']=value
+            with self.assertRaises(ValueError):chart.validate(docs)
+
     def test_public_or_write_authority_rejected(self):
         for kind,change in [('Service',lambda d:d['spec'].update(type='LoadBalancer')),('ClusterRole',lambda d:d['rules'][0]['verbs'].append('create'))]:
             docs=copy.deepcopy(self.docs);change(next(x for x in docs if x['kind']==kind))
