@@ -70,6 +70,9 @@ spec:
           env:
             - {name: GOMEMLIMIT, value: 160MiB}
             - {name: GOGC, value: '50'}
+            # Bundled backends launch even when no datasource uses them. Keep only
+            # Prometheus, Tempo and CloudWatch within the existing 256Mi budget.
+            - {name: GF_PLUGINS_DISABLE_PLUGINS, value: 'elasticsearch,grafana-postgresql-datasource,grafana-pyroscope-datasource,influxdb,jaeger,loki,mssql,mysql,opentsdb,stackdriver,zipkin'}
             - {name: GF_AUTH_ANONYMOUS_ENABLED, value: 'true'}
             - {name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer}
 {{- if or $.Values.apmEnabled $.Values.cloudwatchLogsEnabled }}

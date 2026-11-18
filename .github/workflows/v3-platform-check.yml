@@ -76,6 +76,7 @@ on:
       - 'scripts/check-v3-metrics.py'
       - 'tests/ci/test_v3_metrics.py'
       - 'tests/ci/smoke-v3-metrics.py'
+      - 'tests/ci/smoke-v3-grafana-trace.py'
       - 'tests/ci/v3/metrics-alerts.test.yaml'
       - 'scripts/check-v3-ai-logs.py'
       - 'tests/ci/test_v3_ai_logs.py'
@@ -390,6 +391,21 @@ jobs:
           V3_HELM: ${{ runner.temp }}/yeodam-v3-validation/helm
         run: |
           "$RUNNER_TEMP/yeodam-v3-validation/venv/bin/python" tests/ci/smoke-v3-metrics.py
+
+      - name: Compare bounded Grafana Trace query with unused backend baseline
+        env:
+          V3_HELM: ${{ runner.temp }}/yeodam-v3-validation/helm
+          V3_GRAFANA_RESULTS: ${{ runner.temp }}/grafana-trace
+        run: '"$RUNNER_TEMP/yeodam-v3-validation/venv/bin/python" tests/ci/smoke-v3-grafana-trace.py'
+
+      - name: Preserve synthetic Grafana memory comparison
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: grafana-trace-memory-${{ github.run_id }}
+          path: ${{ runner.temp }}/grafana-trace
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Validate AI log authority with mock AWS only
         run: |
