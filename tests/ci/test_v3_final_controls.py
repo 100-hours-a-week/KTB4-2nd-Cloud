@@ -21,6 +21,17 @@ class FinalControls(unittest.TestCase):
  def test_count_return_retains_internal_block(self):
   w=c.waf_target(c.waf_target(waf(),True),False)
   self.assertIn('Block',w['Rules'][0]['Action']);self.assertTrue(all(x['Action']=={'Count':{}}for x in w['Rules'][1:]))
+ def test_actual_get_shape_empty_description_is_omitted_from_update(self):
+  from unittest.mock import patch
+  import tempfile,time
+  w=waf();w['Description']='';live={'WebACL':w,'LockToken':'synthetic-lock'};calls=[]
+  def api(*args):
+   if args[0]=='sts':return {'Account':c.ACCOUNT}
+   if args[1]=='get-web-acl':return copy.deepcopy(live)
+   calls.append(json.loads(Path(args[-1].replace('file://','')).read_text()));return {}
+  with patch.object(c,'aws',side_effect=api):
+   c.waf_apply({'expiresAt':time.time()+30,'beforeSha256':c.sha(w),'block':True})
+  self.assertNotIn('Description',calls[0]);self.assertEqual(calls[0]['Scope'],'REGIONAL');self.assertEqual(calls[0]['LockToken'],'synthetic-lock')
  def test_uid_and_concurrent_spec_change_block_restore(self):
   from unittest.mock import patch
   p={'resource':'hpa','namespace':'trip','name':'trip-api','uid':'target','before':{'spec':{'maxReplicas':2},'annotations':{}},'after':{'spec':{'maxReplicas':1},'annotations':{}},'expiresAt':0}

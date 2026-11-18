@@ -55,7 +55,7 @@ def waf_apply(p):
  if sha(live['WebACL'])!=p['beforeSha256']:raise ValueError('WAF changed since plan')
  target=waf_target(live['WebACL'],p['block'])
  keys=['Name','Id','DefaultAction','Rules','VisibilityConfig','Description','CustomResponseBodies','CaptchaConfig','ChallengeConfig','TokenDomains','AssociationConfig','OnSourceDDoSProtectionConfig']
- request={k:v for k,v in target.items()if k in keys};request.update(Scope='REGIONAL',LockToken=live['LockToken'])
+ request={k:v for k,v in target.items()if k in keys and not(k=='Description'and not v)};request.update(Scope='REGIONAL',LockToken=live['LockToken'])
  # Payload has policy only; no request samples, headers, cookies or credentials.
  path=Path('/tmp/yeodam-726-waf-policy-'+sha(request)[:12]+'.json');save(path,request)
  try:aws('wafv2','update-web-acl','--cli-input-json','file://'+str(path))
